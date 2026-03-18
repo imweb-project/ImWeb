@@ -1,0 +1,281 @@
+/**
+ * ImWeb Controller Manager
+ *
+ * Manages all controller instances and drives them each frame.
+ * Controllers write to ParameterSystem via setNormalized().
+ *
+ * Supported: Mouse, Keyboard, MIDI, LFO, Sound, Random, Fixed, Nudge
+ * Planned:   OSC (WebSocket), HID (Gamepad), Wacom (PointerEvents pressure)
+ */
+
+import { LFOController } from './LFO.js';
+
+export class ControllerManager {
+  constructor(ps) {
+    this.ps      = ps;          // ParameterSystem
+    this.lfos    = new Map();   // paramId → LFOController (for LFO-assigned params)
+    this.randoms = new Map();   // paramId → { hz, lastTick, value }
+    this.midi    = null;
+    this.sound   = null;
+    this.mouse   = { x: 0.5, y: 0.5 };
+    this.modifiers = { capsLock: false, shift: false, ctrl: false, alt: false, meta: false };
+
+    this._initKeyboard();
+    this._initMouse();
+    this._initMIDI();
+    this._initSound();
+  }
+
+  // ── Frame tick ────────────────────────────────────────────────────────────
+
+  tick(dt) {
+    // Tick all LFO controllers
+    this.lfos.forEach((lfo, paramId) => {
+      const v = lfo.tick(dt);
+      this.ps.setNormalized(paramId, v);
+    });
+
+    // Tick random controllers
+    const now = performance.now() / 1000;
+    this.randoms.forEach((r, paramId) => {
+      if (now - r.lastTick > 1 / r.hz) {
+        r.value = Math.random();
+        r.lastTick = now;
+        this.ps.setNormalized(paramId, r.value);
+      }
+    });
+
+    // Update sound controller if active
+    if (this.sound) this.sound.tick();
+  }
+
+  // ── Assign controller to parameter ───────────────────────────────────────
+
+  assign(paramId, controllerConfig) {
+    const p = this.ps.get(paramId);
+    if (!p) { console.warn(`[ControllerManager] Unknown param: ${paramId}`); return; }
+
+    // Clean up old controller
+    this._removeController(paramId);
+
+    if (!controllerConfig || controllerConfig.type === 'none') {
+      p.controller = null;
+      return;
+    }
+
+    p.controller = { ...controllerConfig };
+    const t = controllerConfig.type;
+
+    if (t.startsWith('lfo-')) {
+      const lfo = new LFOController({
+        shape: t.replace('lfo-', ''),
+        hz:    controllerConfig.hz    ?? 0.5,
+        phase: controllerConfig.phase ?? 0,
+        mode:  controllerConfig.mode  ?? 'norm',
+        width: controllerConfig.width ?? 0.5,
+      });
+      this.lfos.set(paramId, lfo);
+
+    } else if (t === 'random') {
+      this.randoms.set(paramId, {
+        hz: controllerConfig.hz ?? 1,
+        lastTick: 0,
+        value: Math.random(),
+      });
+
+    } else if (t === 'fixed') {
+      p.setNormalized(controllerConfig.value ?? 0);
+    }
+    // mouse, midi, sound, key are handled reactively in their event handlers
+  }
+
+  _removeController(paramId) {
+    this.lfos.delete(paramId);
+    this.randoms.delete(paramId);
+  }
+
+  // ── Retrigger all LFOs (on DisplayState recall) ───────────────────────────
+
+  retriggerLFOs() {
+    this.lfos.forEach(lfo => lfo.retrigger());
+  }
+
+  // ── Mouse ─────────────────────────────────────────────────────────────────
+
+  _initMouse() {
+    const canvas = document.getElementById('output-canvas');
+    if (!canvas) return;
+
+    canvas.addEventListener('mousemove', e => {
+      const r = canvas.getBoundingClientRect();
+      this.mouse.x = (e.clientX - r.left) / r.width;
+      this.mouse.y = 1 - (e.clientY - r.top) / r.height; // y=0 at bottom (ImOs9 convention)
+
+      // Drive all mouse-X/Y assigned params
+      this.ps.getAll().forEach(p => {
+        if (!p.controller) return;
+        const { type, modifiers } = p.controller;
+        if (!this._checkModifiers(modifiers)) return;
+        if (type === 'mouse-x') p.setNormalized(this.mouse.x);
+        if (type === 'mouse-y') p.setNormalized(this.mouse.y);
+      });
+    });
+
+    // Pointer pressure (Wacom / stylus)
+    canvas.addEventListener('pointermove', e => {
+      const pressure = e.pressure ?? 0;
+      if (pressure === 0 || e.pointerType === 'mouse') return;
+      this.ps.getAll().forEach(p => {
+        if (p.controller?.type === 'wacom-pressure') p.setNormalized(pressure);
+      });
+    });
+  }
+
+  _checkModifiers(combo) {
+    if (!combo) return true; // no modifier needed
+    const m = this.modifiers;
+    if (combo.includes('l') && !m.capsLock) return false;
+    if (combo.includes('s') && !m.shift)    return false;
+    if (combo.includes('c') && !m.ctrl)     return false;
+    if (combo.includes('o') && !m.alt)      return false;
+    if (combo.includes('d') && !m.meta)     return false;
+    return true;
+  }
+
+  // ── Keyboard ──────────────────────────────────────────────────────────────
+
+  _initKeyboard() {
+    window.addEventListener('keydown', e => {
+      this._updateModifiers(e);
+
+      // Global keybindings
+      if (e.metaKey || e.ctrlKey) {
+        if (e.key === 'f') { e.preventDefault(); document.body.classList.toggle('fullscreen-output'); }
+        return;
+      }
+
+      // Drive key-assigned params
+      const key = e.key;
+      this.ps.getAll().forEach(p => {
+        if (p.controller?.type !== 'key') return;
+        if (p.controller.key !== key) return;
+        if (p.type === 'toggle') p.toggle();
+        else if (p.type === 'trigger') p.trigger();
+        else p.setNormalized(1);
+      });
+    });
+
+    window.addEventListener('keyup', e => {
+      this._updateModifiers(e);
+      const key = e.key;
+      this.ps.getAll().forEach(p => {
+        if (p.controller?.type === 'key' && p.controller.key === key) {
+          if (p.type === 'continuous') p.setNormalized(0);
+        }
+      });
+    });
+  }
+
+  _updateModifiers(e) {
+    this.modifiers.capsLock = e.getModifierState?.('CapsLock') ?? false;
+    this.modifiers.shift    = e.shiftKey;
+    this.modifiers.ctrl     = e.ctrlKey;
+    this.modifiers.alt      = e.altKey;
+    this.modifiers.meta     = e.metaKey;
+  }
+
+  // ── MIDI ──────────────────────────────────────────────────────────────────
+
+  async _initMIDI() {
+    if (!navigator.requestMIDIAccess) return;
+    try {
+      const access = await navigator.requestMIDIAccess({ sysex: false });
+      this.midi = access;
+      access.inputs.forEach(input => this._attachMIDIInput(input));
+      access.onstatechange = e => {
+        if (e.port.type === 'input' && e.port.state === 'connected') {
+          this._attachMIDIInput(e.port);
+        }
+      };
+      document.getElementById('status-midi')?.classList.add('active');
+    } catch (err) {
+      console.info('[MIDI] Not available:', err.message);
+    }
+  }
+
+  _attachMIDIInput(input) {
+    input.onmidimessage = e => {
+      const [status, data1, data2] = e.data;
+      const type    = status & 0xF0;
+      const channel = (status & 0x0F) + 1;
+      const norm    = data2 / 127;
+
+      this.ps.getAll().forEach(p => {
+        if (!p.controller) return;
+        const c = p.controller;
+        if (c.channel && c.channel !== channel) return;
+
+        if (type === 0xB0 && c.type === 'midi-cc' && c.cc === data1) {
+          p.setNormalized(norm);
+        } else if (type === 0x90 && c.type === 'midi-note' && c.note === data1) {
+          if (p.type === 'toggle') { if (data2 > 0) p.toggle(); }
+          else if (p.type === 'trigger') { if (data2 > 0) p.trigger(); }
+          else p.setNormalized(data2 > 0 ? data2 / 127 : 0);
+        } else if (type === 0xC0 && c.type === 'midi-pc') {
+          p.value = data1;
+        }
+      });
+
+      // Show MIDI activity
+      const el = document.getElementById('status-midi');
+      if (el) {
+        el.classList.add('active');
+        clearTimeout(el._t);
+        el._t = setTimeout(() => el.classList.remove('active'), 100);
+      }
+    };
+  }
+
+  // ── Sound ─────────────────────────────────────────────────────────────────
+
+  async _initSound() {
+    // Sound controller initialized lazily when a sound-controlled param exists
+    // or when explicitly enabled
+  }
+
+  async enableSound() {
+    if (this.sound) return;
+    try {
+      const ctx  = new AudioContext();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      const source  = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      const buf = new Float32Array(analyser.frequencyBinCount);
+
+      this.sound = {
+        ctx, analyser, buf,
+        level: 0,
+        tick() {
+          analyser.getFloatTimeDomainData(buf);
+          let rms = 0;
+          for (let i = 0; i < buf.length; i++) rms += buf[i] * buf[i];
+          this.level = Math.sqrt(rms / buf.length);
+        }
+      };
+
+      // Wire sound-assigned params
+      setInterval(() => {
+        if (!this.sound) return;
+        const level = Math.min(1, this.sound.level * 4);
+        this.ps.getAll().forEach(p => {
+          if (p.controller?.type === 'sound') p.setNormalized(level);
+        });
+      }, 16);
+
+    } catch (err) {
+      console.warn('[Sound] Could not init audio input:', err.message);
+    }
+  }
+}

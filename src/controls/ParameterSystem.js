@@ -1,0 +1,476 @@
+/**
+ * ImWeb Parameter System
+ *
+ * Every controllable value in the system is a Parameter.
+ * Controllers write normalized (0–1) values to parameters.
+ * Effects and inputs read from parameters via reactive callbacks.
+ *
+ * Flow:
+ *   Controller → normalize(0–1) → [Invert] → [Table curve] → [min/max remap]
+ *   → Parameter.value → onChange callbacks → render update
+ */
+
+export const PARAM_TYPE = {
+  CONTINUOUS: 'continuous', // floating point in [min, max]
+  TOGGLE:     'toggle',     // 0 | 1
+  TRIGGER:    'trigger',    // fires event on set; value resets to 0 next frame
+  SELECT:     'select',     // integer index into options[]
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Parameter
+// ─────────────────────────────────────────────────────────────────────────────
+
+export class Parameter {
+  constructor(config) {
+    this.id      = config.id;
+    this.label   = config.label ?? config.id;
+    this.type    = config.type  ?? PARAM_TYPE.CONTINUOUS;
+    this.group   = config.group ?? null;
+    this.min     = config.min   ?? 0;
+    this.max     = config.max   ?? 100;
+    this.options = config.options ?? null; // for SELECT
+    this.unit    = config.unit  ?? '';     // display unit string e.g. '°', '%'
+    this.step    = config.step  ?? null;   // optional snap step
+
+    this._value  = config.value ?? this.min;
+    this.defaultValue = this._value;
+
+    // Controller assignment — set by ControllerManager
+    this.controller      = null;   // { type, ...config } — primary controller
+    this.xControllers    = [];     // external mapping controllers (controller-of-controller)
+    this.table           = null;   // response curve table name (string)
+
+    // Flags
+    this.invert          = false;
+    this.cycle           = false;   // for SELECT: cycle on trigger
+    this.feedbackVisible = config.feedbackVisible ?? false;
+    this.feedbackPos     = config.feedbackPos ?? { x: 20, y: 60 };
+
+    // Modifier combos for mouse controller (ImOs9 style: up to 32 combos)
+    this.mouseModifiers  = config.mouseModifiers ?? '';
+
+    this._listeners        = new Set();
+    this._triggerListeners = new Set();
+  }
+
+  // ── Value access ────────────────────────────────────────────────────────
+
+  get value() { return this._value; }
+
+  set value(v) {
+    let clamped;
+    if (this.type === PARAM_TYPE.TOGGLE) {
+      clamped = v ? 1 : 0;
+    } else if (this.type === PARAM_TYPE.SELECT) {
+      clamped = Math.max(0, Math.min((this.options?.length ?? 1) - 1, Math.round(v)));
+    } else {
+      clamped = Math.max(this.min, Math.min(this.max, v));
+      if (this.step) clamped = Math.round(clamped / this.step) * this.step;
+    }
+
+    const changed = clamped !== this._value;
+    this._value = clamped;
+
+    if (changed || this.type === PARAM_TYPE.TRIGGER) {
+      this._listeners.forEach(fn => fn(clamped, this));
+    }
+    if (this.type === PARAM_TYPE.TRIGGER && changed) {
+      this._triggerListeners.forEach(fn => fn(this));
+    }
+  }
+
+  // Normalized value in [0, 1]
+  get normalized() {
+    if (this.type === PARAM_TYPE.TOGGLE)  return this._value;
+    if (this.type === PARAM_TYPE.SELECT)  return this._value / Math.max(1, (this.options?.length ?? 1) - 1);
+    return (this._value - this.min) / (this.max - this.min);
+  }
+
+  /**
+   * Called by controllers. n is normalized 0–1.
+   * Applies invert and table before remapping to [min, max].
+   */
+  setNormalized(n, table = null) {
+    let applied = this.invert ? 1 - n : n;
+    if (table) applied = table.apply(applied);
+    if (this.type === PARAM_TYPE.TOGGLE) {
+      this.value = applied > 0.5 ? 1 : 0;
+    } else if (this.type === PARAM_TYPE.SELECT) {
+      this.value = Math.round(applied * ((this.options?.length ?? 1) - 1));
+    } else {
+      this.value = this.min + applied * (this.max - this.min);
+    }
+  }
+
+  toggle() {
+    if (this.type === PARAM_TYPE.TOGGLE) this.value = this._value ? 0 : 1;
+  }
+
+  trigger() {
+    if (this.type === PARAM_TYPE.TRIGGER) this.value = 1;
+  }
+
+  cycleNext() {
+    if (this.type === PARAM_TYPE.SELECT && this.options) {
+      this.value = (this._value + 1) % this.options.length;
+    }
+  }
+
+  // ── Subscriptions ────────────────────────────────────────────────────────
+
+  onChange(fn) {
+    this._listeners.add(fn);
+    return () => this._listeners.delete(fn);
+  }
+
+  onTrigger(fn) {
+    this._triggerListeners.add(fn);
+    return () => this._triggerListeners.delete(fn);
+  }
+
+  // ── Display ──────────────────────────────────────────────────────────────
+
+  get displayValue() {
+    const v = this._value;
+    if (this.type === PARAM_TYPE.TOGGLE)  return v ? '●' : '○';
+    if (this.type === PARAM_TYPE.TRIGGER) return '▶';
+    if (this.type === PARAM_TYPE.SELECT)  return this.options?.[v] ?? v;
+    const decimals = (this.max - this.min) > 10 ? 1 : 2;
+    return v.toFixed(decimals) + (this.unit ? ' ' + this.unit : '');
+  }
+
+  get controllerLabel() {
+    if (!this.controller) return '—';
+    const c = this.controller;
+    const labels = {
+      'mouse-x': 'MX', 'mouse-y': 'MY',
+      'midi-cc': `CC${c.cc ?? '?'}`,
+      'lfo-sine': 'LFO~', 'lfo-triangle': 'LFO△',
+      'lfo-sawtooth': 'LFO⊿', 'lfo-square': 'LFO▭',
+      'sound': 'SND', 'random': 'RND', 'fixed': 'FXD',
+      'key': `KEY:${c.key ?? '?'}`, 'nudge': 'NDG',
+      'movie-pos': 'MVP', 'osc': 'OSC',
+    };
+    return labels[c.type] ?? c.type.toUpperCase().slice(0, 4);
+  }
+
+  get controllerClass() {
+    if (!this.controller) return '';
+    const t = this.controller.type;
+    if (t.startsWith('lfo'))   return 'lfo';
+    if (t.startsWith('midi'))  return 'midi';
+    if (t.startsWith('mouse')) return 'mouse';
+    if (t === 'sound')         return 'sound';
+    return 'assigned';
+  }
+
+  // ── Serialization ────────────────────────────────────────────────────────
+
+  reset() { this.value = this.defaultValue; }
+
+  serialize() {
+    return {
+      id:          this.id,
+      value:       this._value,
+      controller:  this.controller   ? { ...this.controller }  : null,
+      table:       this.table,
+      invert:      this.invert,
+      cycle:       this.cycle,
+      feedbackVisible: this.feedbackVisible,
+      feedbackPos: { ...this.feedbackPos },
+    };
+  }
+
+  deserialize(data) {
+    if (data.value       !== undefined) this.value = data.value;
+    if (data.controller  !== undefined) this.controller = data.controller;
+    if (data.table       !== undefined) this.table = data.table;
+    if (data.invert      !== undefined) this.invert = data.invert;
+    if (data.cycle       !== undefined) this.cycle = data.cycle;
+    if (data.feedbackVisible !== undefined) this.feedbackVisible = data.feedbackVisible;
+    if (data.feedbackPos !== undefined) this.feedbackPos = data.feedbackPos;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ParameterSystem
+// ─────────────────────────────────────────────────────────────────────────────
+
+export class ParameterSystem extends EventTarget {
+  constructor() {
+    super();
+    this.params = new Map();    // id → Parameter
+    this.groups = new Map();    // groupName → [paramId, ...]
+  }
+
+  /**
+   * Register a parameter. Returns the Parameter instance.
+   */
+  register(config) {
+    const p = new Parameter(config);
+    this.params.set(p.id, p);
+    if (p.group) {
+      if (!this.groups.has(p.group)) this.groups.set(p.group, []);
+      this.groups.get(p.group).push(p.id);
+    }
+    return p;
+  }
+
+  get(id)     { return this.params.get(id); }
+  has(id)     { return this.params.has(id); }
+  getAll()    { return [...this.params.values()]; }
+
+  getGroup(name) {
+    return (this.groups.get(name) ?? []).map(id => this.params.get(id)).filter(Boolean);
+  }
+
+  set(id, value) {
+    const p = this.params.get(id);
+    if (p) p.value = value;
+    else console.warn(`[ParameterSystem] Unknown param: ${id}`);
+  }
+
+  setNormalized(id, n, table = null) {
+    const p = this.params.get(id);
+    if (p) p.setNormalized(n, table);
+  }
+
+  toggle(id)  { this.params.get(id)?.toggle(); }
+  trigger(id) { this.params.get(id)?.trigger(); }
+
+  // ── State snapshots ──────────────────────────────────────────────────────
+
+  captureState() {
+    const s = {};
+    this.params.forEach((p, id) => { s[id] = p.value; });
+    return s;
+  }
+
+  restoreState(state) {
+    Object.entries(state).forEach(([id, v]) => this.set(id, v));
+    this.dispatchEvent(new CustomEvent('stateRestored', { detail: state }));
+  }
+
+  // ── Preset serialization ─────────────────────────────────────────────────
+
+  serializeControllers() {
+    const r = {};
+    this.params.forEach((p, id) => {
+      if (p.controller || p.table || p.invert) r[id] = p.serialize();
+    });
+    return r;
+  }
+
+  deserializeControllers(data) {
+    Object.entries(data).forEach(([id, d]) => {
+      const p = this.params.get(id);
+      if (p) p.deserialize(d);
+    });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// registerCoreParameters  — defines all Phase 1 parameters
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function registerCoreParameters(ps) {
+
+  // ── Layer source selection ────────────────────────────────────────────────
+  const SOURCES = ['Camera', 'Movie', 'Buffer', 'Color', 'Noise', '3D Scene', 'Draw', 'Output'];
+
+  ps.register({ id: 'layer.fg', label: 'Foreground', group: 'layers',
+    type: PARAM_TYPE.SELECT, options: SOURCES, value: 0, feedbackVisible: true });
+  ps.register({ id: 'layer.bg', label: 'Background', group: 'layers',
+    type: PARAM_TYPE.SELECT, options: SOURCES, value: 3, feedbackVisible: true });
+  ps.register({ id: 'layer.ds', label: 'DisplaceSrc', group: 'layers',
+    type: PARAM_TYPE.SELECT, options: [...SOURCES, 'Sound'], value: 4, feedbackVisible: true });
+
+  // ── Keyer ─────────────────────────────────────────────────────────────────
+  ps.register({ id: 'keyer.active',     label: 'Keyer ON',      group: 'keyer',
+    type: PARAM_TYPE.TOGGLE, value: 0, feedbackVisible: true });
+  ps.register({ id: 'keyer.white',      label: 'KeyLevelWhite', group: 'keyer',
+    min: 0, max: 100, value: 80, unit: '%', feedbackVisible: true });
+  ps.register({ id: 'keyer.black',      label: 'KeyLevelBlack', group: 'keyer',
+    min: 0, max: 100, value: 10, unit: '%', feedbackVisible: true });
+  ps.register({ id: 'keyer.softness',   label: 'KeySoftness',   group: 'keyer',
+    min: 0, max: 100, value: 5,  unit: '%' });
+  ps.register({ id: 'keyer.extkey',     label: 'ExtKey',        group: 'keyer',
+    type: PARAM_TYPE.TOGGLE, value: 0 });
+  ps.register({ id: 'keyer.and_displace', label: 'KeyAndDisplace', group: 'keyer',
+    type: PARAM_TYPE.TOGGLE, value: 0 });
+  ps.register({ id: 'keyer.alpha',      label: 'Alpha',         group: 'keyer',
+    type: PARAM_TYPE.TOGGLE, value: 0 });
+  ps.register({ id: 'keyer.alpha_inv',  label: 'Invert Alpha',  group: 'keyer',
+    type: PARAM_TYPE.TOGGLE, value: 0 });
+
+  // ── Displacement ──────────────────────────────────────────────────────────
+  ps.register({ id: 'displace.amount',  label: 'Displace',      group: 'displace',
+    min: 0, max: 100, value: 0, feedbackVisible: true });
+  ps.register({ id: 'displace.angle',   label: 'DisplAngle',    group: 'displace',
+    min: 0, max: 360, value: 0, unit: '°', feedbackVisible: true });
+  ps.register({ id: 'displace.offset',  label: 'DisplOffset',   group: 'displace',
+    min: -100, max: 100, value: 0 });
+  ps.register({ id: 'displace.rotateg', label: 'RotateGrey',    group: 'displace',
+    type: PARAM_TYPE.TOGGLE, value: 0 });
+  ps.register({ id: 'displace.warp',    label: 'WarpMode',      group: 'displace',
+    min: 0, max: 32, value: 0, type: PARAM_TYPE.SELECT,
+    options: Array.from({ length: 33 }, (_, i) => i === 0 ? 'off' : `map${i}`) });
+
+  // ── Blend & Feedback ──────────────────────────────────────────────────────
+  ps.register({ id: 'blend.active',     label: 'Blend',         group: 'blend',
+    type: PARAM_TYPE.TOGGLE, value: 0, feedbackVisible: true });
+  ps.register({ id: 'feedback.hor',     label: 'HorFBOffset',   group: 'blend',
+    min: -100, max: 100, value: 0, unit: 'px' });
+  ps.register({ id: 'feedback.ver',     label: 'VerFBOffset',   group: 'blend',
+    min: -100, max: 100, value: 0, unit: 'px' });
+  ps.register({ id: 'feedback.scale',   label: 'FBScale',       group: 'blend',
+    min: -50, max: 50, value: 0 });
+  ps.register({ id: 'output.colorshift',label: 'ColorShift',    group: 'blend',
+    min: 0, max: 100, value: 0 });
+  ps.register({ id: 'output.transfer',  label: 'TransferMode',  group: 'blend',
+    type: PARAM_TYPE.SELECT, options: ['copy', 'xor', 'or', 'and'], value: 0,
+    feedbackVisible: true });
+  ps.register({ id: 'output.interlace', label: 'Interlace',     group: 'blend',
+    min: 0, max: 8, value: 0, step: 1 });
+  ps.register({ id: 'output.fade',      label: 'Fade',          group: 'blend',
+    min: 0, max: 100, value: 0 });
+  ps.register({ id: 'output.solo',      label: 'Solo',          group: 'blend',
+    type: PARAM_TYPE.TOGGLE, value: 0 });
+
+  // ── Color ─────────────────────────────────────────────────────────────────
+  ps.register({ id: 'color1.hue', label: 'Hue 1',  group: 'color',
+    min: 0, max: 100, value: 0, unit: '°', feedbackVisible: true });
+  ps.register({ id: 'color1.sat', label: 'Sat 1',  group: 'color',
+    min: 0, max: 100, value: 80 });
+  ps.register({ id: 'color1.val', label: 'Val 1',  group: 'color',
+    min: 0, max: 100, value: 60 });
+  ps.register({ id: 'color2.hue', label: 'Hue 2',  group: 'color',
+    min: 0, max: 100, value: 50 });
+  ps.register({ id: 'color2.sat', label: 'Sat 2',  group: 'color',
+    min: 0, max: 100, value: 80 });
+  ps.register({ id: 'color2.val', label: 'Val 2',  group: 'color',
+    min: 0, max: 100, value: 60 });
+
+  // ── Mirror ────────────────────────────────────────────────────────────────
+  ps.register({ id: 'mirror.camera', label: 'Mirror Cam',    group: 'mirror',
+    type: PARAM_TYPE.TOGGLE, value: 0 });
+  ps.register({ id: 'mirror.movie',  label: 'Mirror Movie',  group: 'mirror',
+    type: PARAM_TYPE.TOGGLE, value: 0 });
+  ps.register({ id: 'mirror.buffer', label: 'Mirror Buffer', group: 'mirror',
+    type: PARAM_TYPE.TOGGLE, value: 0 });
+
+  // ── Buffer / Stills ───────────────────────────────────────────────────────
+  ps.register({ id: 'buffer.panX',  label: 'PanX',  group: 'buffer',
+    min: 0, max: 100, value: 50, feedbackVisible: true });
+  ps.register({ id: 'buffer.panY',  label: 'PanY',  group: 'buffer',
+    min: 0, max: 100, value: 50, feedbackVisible: true });
+  ps.register({ id: 'buffer.scale', label: 'Scale', group: 'buffer',
+    min: 0, max: 5, value: 1, feedbackVisible: true });
+  ps.register({ id: 'buffer.fs1',   label: 'FrameSelect 1', group: 'buffer',
+    min: 0, max: 15, value: 0, step: 1 });
+  ps.register({ id: 'buffer.fs2',   label: 'FrameSelect 2', group: 'buffer',
+    min: 0, max: 15, value: 0, step: 1 });
+  ps.register({ id: 'buffer.fs3',   label: 'FrameSelect 3', group: 'buffer',
+    min: 0, max: 15, value: 0, step: 1 });
+  ps.register({ id: 'buffer.cap_screen', label: 'Screen→Buffer', group: 'buffer',
+    type: PARAM_TYPE.TRIGGER });
+  ps.register({ id: 'buffer.cap_video',  label: 'Video→Buffer',  group: 'buffer',
+    type: PARAM_TYPE.TRIGGER });
+  ps.register({ id: 'buffer.cap_movie',  label: 'Movie→Buffer',  group: 'buffer',
+    type: PARAM_TYPE.TRIGGER });
+  ps.register({ id: 'buffer.capture',    label: 'CaptBuffer',    group: 'buffer',
+    type: PARAM_TYPE.TRIGGER });
+
+  // ── Movie / clip ──────────────────────────────────────────────────────────
+  ps.register({ id: 'movie.active',  label: 'MovieOn',    group: 'movie',
+    type: PARAM_TYPE.TOGGLE, value: 0, feedbackVisible: true });
+  ps.register({ id: 'movie.speed',   label: 'MovieSpeed', group: 'movie',
+    min: -1, max: 3, value: 1, feedbackVisible: true });
+  ps.register({ id: 'movie.pos',     label: 'MoviePos',   group: 'movie',
+    min: 0, max: 100, value: 0, unit: '%' });
+  ps.register({ id: 'movie.start',   label: 'MovieStart', group: 'movie',
+    min: 0, max: 100, value: 0, unit: '%' });
+  ps.register({ id: 'movie.loop',    label: 'MovieLoop',  group: 'movie',
+    min: 0, max: 100, value: 100, unit: '%' });
+  ps.register({ id: 'movie.mirror',  label: 'MirrorMovie',group: 'movie',
+    type: PARAM_TYPE.TOGGLE, value: 0 });
+
+  // ── Camera ────────────────────────────────────────────────────────────────
+  ps.register({ id: 'camera.active', label: 'CameraOn',   group: 'camera',
+    type: PARAM_TYPE.TOGGLE, value: 0, feedbackVisible: true });
+  ps.register({ id: 'camera.device', label: 'Cam Device', group: 'camera',
+    type: PARAM_TYPE.SELECT, options: ['default'], value: 0 });
+
+  // ── 3D Scene ──────────────────────────────────────────────────────────────
+  ps.register({ id: 'scene3d.active',    label: '3D On',       group: 'scene3d',
+    type: PARAM_TYPE.TOGGLE, value: 0, feedbackVisible: true });
+  ps.register({ id: 'scene3d.geo',       label: 'Geometry',    group: 'scene3d',
+    type: PARAM_TYPE.SELECT,
+    options: ['Sphere','Torus','Cube','Plane','Cylinder','Capsule','TorusKnot','Cone','Dodecahedron','Icosahedron'],
+    value: 0 });
+  ps.register({ id: 'scene3d.rot.x',     label: 'Rotation X',  group: 'scene3d',
+    min: 0, max: 360, value: 0, unit: '°', feedbackVisible: true });
+  ps.register({ id: 'scene3d.rot.y',     label: 'Rotation Y',  group: 'scene3d',
+    min: 0, max: 360, value: 0, unit: '°', feedbackVisible: true });
+  ps.register({ id: 'scene3d.rot.z',     label: 'Rotation Z',  group: 'scene3d',
+    min: 0, max: 360, value: 0, unit: '°' });
+  ps.register({ id: 'scene3d.pos.x',     label: 'Position X',  group: 'scene3d',
+    min: -10, max: 10, value: 0 });
+  ps.register({ id: 'scene3d.pos.y',     label: 'Position Y',  group: 'scene3d',
+    min: -10, max: 10, value: 0 });
+  ps.register({ id: 'scene3d.pos.z',     label: 'Position Z',  group: 'scene3d',
+    min: -20, max: 20, value: 0 });
+  ps.register({ id: 'scene3d.scale',     label: 'Scale',       group: 'scene3d',
+    min: 0.01, max: 5, value: 1 });
+  ps.register({ id: 'scene3d.wireframe', label: 'Wireframe',   group: 'scene3d',
+    type: PARAM_TYPE.TOGGLE, value: 0 });
+  ps.register({ id: 'scene3d.cam.fov',   label: 'Cam FOV',     group: 'scene3d',
+    min: 10, max: 120, value: 60, unit: '°' });
+  ps.register({ id: 'scene3d.cam.x',     label: 'Cam X',       group: 'scene3d',
+    min: -20, max: 20, value: 0 });
+  ps.register({ id: 'scene3d.cam.y',     label: 'Cam Y',       group: 'scene3d',
+    min: -20, max: 20, value: 0 });
+  ps.register({ id: 'scene3d.cam.z',     label: 'Cam Z',       group: 'scene3d',
+    min: 0.1, max: 30, value: 5 });
+  ps.register({ id: 'scene3d.mat.roughness', label: 'Roughness', group: 'scene3d',
+    min: 0, max: 1, value: 0.5 });
+  ps.register({ id: 'scene3d.mat.metalness', label: 'Metalness', group: 'scene3d',
+    min: 0, max: 1, value: 0.0 });
+  ps.register({ id: 'scene3d.mat.emissive',  label: 'Emissive',  group: 'scene3d',
+    min: 0, max: 1, value: 0.0 });
+  ps.register({ id: 'scene3d.mat.opacity',   label: 'Opacity',   group: 'scene3d',
+    min: 0, max: 1, value: 1.0 });
+  ps.register({ id: 'scene3d.light.intensity', label: 'Light Int.', group: 'scene3d',
+    min: 0, max: 5, value: 1.0 });
+
+  // ── Draw ──────────────────────────────────────────────────────────────────
+  ps.register({ id: 'draw.pensize',   label: 'DrawPenSize',  group: 'draw',
+    min: 0, max: 100, value: 0 });
+  ps.register({ id: 'draw.erasesize', label: 'ErasePenSize', group: 'draw',
+    min: 0, max: 100, value: 10 });
+  ps.register({ id: 'draw.x',        label: 'DrawX',        group: 'draw',
+    min: 0, max: 100, value: 50 });
+  ps.register({ id: 'draw.y',        label: 'DrawY',        group: 'draw',
+    min: 0, max: 100, value: 50 });
+  ps.register({ id: 'draw.clear',    label: 'ClearDraw',    group: 'draw',
+    type: PARAM_TYPE.TRIGGER });
+
+  // ── Text ──────────────────────────────────────────────────────────────────
+  ps.register({ id: 'text.size',    label: 'TextSize',    group: 'text',
+    min: 0, max: 255, value: 48 });
+  ps.register({ id: 'text.advance', label: 'TextAdvance', group: 'text',
+    type: PARAM_TYPE.TRIGGER });
+
+  // ── Screen capture ────────────────────────────────────────────────────────
+  ps.register({ id: 'screen.bg1',   label: 'ScrBG1', group: 'screen',
+    type: PARAM_TYPE.TRIGGER });
+  ps.register({ id: 'screen.bg2',   label: 'ScrBG2', group: 'screen',
+    type: PARAM_TYPE.TRIGGER });
+
+  // ── Interpolation ─────────────────────────────────────────────────────────
+  ps.register({ id: 'output.interp', label: 'Interpolation', group: 'output',
+    type: PARAM_TYPE.SELECT, options: ['none', 'linear', 'bicubic'], value: 0 });
+
+  return ps;
+}

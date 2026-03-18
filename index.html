@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="ImWeb — Real-time video synthesis instrument" />
+  <title>ImWeb</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+
+  <!-- STATUS BAR -->
+  <div id="status-bar">
+    <span id="status-name">ImWeb</span>
+    <span id="status-fps">-- fps</span>
+    <span id="status-preset">Preset 0</span>
+    <span id="status-state">State 0</span>
+    <span id="status-midi" class="indicator" title="MIDI">MIDI</span>
+    <span id="status-osc"  class="indicator" title="OSC">OSC</span>
+    <div class="status-right">
+      <button id="btn-fullscreen" title="Fullscreen output (Cmd+F)">⛶</button>
+      <button id="btn-record"     title="Record output">⏺</button>
+    </div>
+  </div>
+
+  <!-- MAIN LAYOUT -->
+  <div id="app">
+
+    <!-- LEFT: Output canvas -->
+    <div id="output-panel">
+      <canvas id="output-canvas"></canvas>
+      <!-- Floating feedback indicators (repositionable) -->
+      <div id="feedback-overlay"></div>
+      <!-- Video Out Spy (small preview for dual-monitor mode) -->
+      <div id="video-spy" class="hidden">
+        <canvas id="spy-canvas" width="160" height="90"></canvas>
+        <span>output spy</span>
+      </div>
+    </div>
+
+    <!-- RIGHT: Control panels -->
+    <div id="control-panel">
+      <div id="tab-bar">
+        <button class="tab active" data-tab="mapping">Mapping</button>
+        <button class="tab" data-tab="buffer">Buffer</button>
+        <button class="tab" data-tab="scene3d">3D</button>
+        <button class="tab" data-tab="clips">Clips</button>
+        <button class="tab" data-tab="presets">Presets</button>
+        <button class="tab" data-tab="tables">Tables</button>
+      </div>
+
+      <!-- MAPPING TAB -->
+      <div id="tab-mapping" class="tab-content active">
+        <div class="panel-section">
+          <div class="section-header">Layers</div>
+          <div id="layer-params"></div>
+        </div>
+        <div class="panel-section">
+          <div class="section-header">Keyer</div>
+          <div id="keyer-params"></div>
+        </div>
+        <div class="panel-section">
+          <div class="section-header">Displacement</div>
+          <div id="displace-params"></div>
+        </div>
+        <div class="panel-section">
+          <div class="section-header">Blend &amp; Feedback</div>
+          <div id="blend-params"></div>
+        </div>
+        <div class="panel-section">
+          <div class="section-header">Color</div>
+          <div id="color-params"></div>
+        </div>
+        <div class="panel-section">
+          <div class="section-header">Output</div>
+          <div id="output-params"></div>
+        </div>
+      </div>
+
+      <!-- BUFFER TAB -->
+      <div id="tab-buffer" class="tab-content">
+        <div class="panel-section">
+          <div class="section-header">Stills Buffer</div>
+          <canvas id="buffer-canvas" width="320" height="240"></canvas>
+          <div id="buffer-controls"></div>
+          <div id="buffer-params"></div>
+        </div>
+      </div>
+
+      <!-- 3D SCENE TAB -->
+      <div id="tab-scene3d" class="tab-content">
+        <div class="panel-section">
+          <div class="section-header">Geometry</div>
+          <div id="geometry-controls"></div>
+        </div>
+        <div class="panel-section">
+          <div class="section-header">Transform</div>
+          <div id="transform-params"></div>
+        </div>
+        <div class="panel-section">
+          <div class="section-header">Camera</div>
+          <div id="camera3d-params"></div>
+        </div>
+        <div class="panel-section">
+          <div class="section-header">Material</div>
+          <div id="material-params"></div>
+        </div>
+        <div class="panel-section">
+          <div class="section-header">Import Model</div>
+          <div id="model-import"></div>
+        </div>
+      </div>
+
+      <!-- CLIPS TAB -->
+      <div id="tab-clips" class="tab-content">
+        <div class="panel-section">
+          <div class="section-header">Movie Clips</div>
+          <button id="btn-add-clip">+ Add Clip</button>
+          <div id="clips-list"></div>
+          <div id="clip-params"></div>
+        </div>
+      </div>
+
+      <!-- PRESETS TAB -->
+      <div id="tab-presets" class="tab-content">
+        <div class="panel-section">
+          <div class="section-header">Presets</div>
+          <div id="presets-list"></div>
+        </div>
+      </div>
+
+      <!-- TABLES TAB -->
+      <div id="tab-tables" class="tab-content">
+        <div class="panel-section">
+          <div class="section-header">Response Curves</div>
+          <div id="tables-list"></div>
+          <canvas id="table-editor" width="280" height="140"></canvas>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /app -->
+
+  <!-- SIGNAL PATH (bottom bar) -->
+  <div id="signal-path">
+    <div id="signal-path-display">
+      <!-- Built dynamically by SignalPath.js -->
+    </div>
+  </div>
+
+  <!-- STATE DOTS (bottom) -->
+  <div id="state-bar">
+    <div id="state-dots">
+      <!-- 128 dots built by StateDots.js -->
+    </div>
+    <div id="preset-nav">
+      <button id="btn-preset-prev" title="Previous preset (−)">−</button>
+      <span id="preset-label">Preset 0</span>
+      <button id="btn-preset-next" title="Next preset (+)">+</button>
+    </div>
+  </div>
+
+  <!-- Context menu for parameter mapping (shown on right-click) -->
+  <div id="param-context-menu" class="context-menu hidden">
+    <div class="menu-header" id="ctx-param-label">Parameter</div>
+    <div class="menu-section">Controller</div>
+    <button class="menu-item" data-ctrl="none">None</button>
+    <button class="menu-item" data-ctrl="mouse-x">Mouse X</button>
+    <button class="menu-item" data-ctrl="mouse-y">Mouse Y</button>
+    <button class="menu-item" data-ctrl="midi-cc">MIDI CC...</button>
+    <button class="menu-item" data-ctrl="lfo-sine">LFO Sine</button>
+    <button class="menu-item" data-ctrl="lfo-triangle">LFO Triangle</button>
+    <button class="menu-item" data-ctrl="lfo-sawtooth">LFO Sawtooth</button>
+    <button class="menu-item" data-ctrl="lfo-square">LFO Square</button>
+    <button class="menu-item" data-ctrl="sound">Sound Level</button>
+    <button class="menu-item" data-ctrl="random">Random</button>
+    <button class="menu-item" data-ctrl="fixed">Fixed Value</button>
+    <div class="menu-section">Options</div>
+    <button class="menu-item" data-action="invert">Toggle Invert</button>
+    <button class="menu-item" data-action="show">Toggle Feedback</button>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
