@@ -8,6 +8,10 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+---
+
+## [0.23.0] — 2026-09-10 — Within Reach
+
 ### Added
 - **Learning a control gives a continuous parameter a default slew
   (`midi.slew`, 0.3 s).** A hardware fader sends 7-bit steps, so a bare binding
@@ -266,6 +270,35 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   interactive, with a tooltip saying which shader they need.
 
 ### Added
+- **Detached panels stay where you put them.** The floating windows you tear off
+  with ⊞ now survive a reload — which sections are open, where each one sits and
+  how big it is. Two stores, two jobs: a per-origin autosave, rewritten on every
+  detach, drag, resize and re-attach, is what a plain reload restores; the
+  `.imweb` project file carries the same arrangement to another machine.
+  Deliberately **not** a Display State — states are recalled live from MIDI, and
+  layout in a state would rearrange the windows mid-performance. Restored
+  positions are clamped to the current viewport, so a window placed on a second
+  monitor comes back on screen when only the laptop is attached rather than
+  opening somewhere you cannot reach it.
+
+- **DeepSeek and Kimi join the switchable AI providers.** Both speak the OpenAI
+  `/chat/completions` shape verbatim, so the four OpenAI-shaped providers
+  (OpenAI, OpenRouter, DeepSeek, Kimi) now share one caller with the endpoint,
+  label and extra headers as data, rather than two more near-copies of it.
+  Anthropic, Gemini and Ollama keep their own callers — they differ in request
+  body, not just address. Kimi's seed model list is a starting point rather
+  than a claim: its lineup moves faster than anything shipped in source, and
+  both new providers serve OpenAI's `/models` listing, so **Refresh models**
+  replaces the seed with what your account can actually reach. Neither has been
+  exercised against its live API here — base URL, auth header and response
+  shape are the verified parts.
+- **The advertised default model is the one you get.** `buildDefaultConfig`
+  carried a hand-written second copy of the per-provider defaults and the two
+  had drifted: it pinned Anthropic to `claude-sonnet-4-6` while the provider
+  list advertised `claude-sonnet-5`, so the advertised default was one nothing
+  could ever select. Nothing catches that by itself — both ids are real, both
+  resolve, and the call succeeds against the wrong model. Defaults now derive
+  from `PROVIDERS`, so adding a provider needs no edit in a second place.
 - **Pos Play — the Playback zone finally has a playhead.** `aplay.pos`, a
   fraction of the region (0 = its start, 1 = its end), matching MoviePos being
   a fraction of the in/out window. Until now the zone always read from the
@@ -671,17 +704,6 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   to 0.
 
 ### Added
-- **Detached panels stay where you put them.** The floating windows you tear off
-  with ⊞ now survive a reload — which sections are open, where each one sits and
-  how big it is. Two stores, two jobs: a per-origin autosave, rewritten on every
-  detach, drag, resize and re-attach, is what a plain reload restores; the
-  `.imweb` project file carries the same arrangement to another machine.
-  Deliberately **not** a Display State — states are recalled live from MIDI, and
-  layout in a state would rearrange the windows mid-performance. Restored
-  positions are clamped to the current viewport, so a window placed on a second
-  monitor comes back on screen when only the laptop is attached rather than
-  opening somewhere you cannot reach it.
-
 - **One MIDI control per option on a button-group parameter.** Right-click P2
   on Partition Rec → its button pulses → move any control → that button now
   selects P2. Four buttons for four partitions, on a controller with no pads.
