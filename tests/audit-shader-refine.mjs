@@ -37,10 +37,13 @@ globalThis.fetch = async (url, opts) => {
   };
 };
 
+import { readFileSync } from 'node:fs';
+
 const { refineShader, generateShader } = await import('../src/ai/AIFeatures.js');
 
 const fails = [];
-const check = (label, cond) => { if (!cond) fails.push(label); };
+let ran = 0;
+const check = (label, cond) => { ran++; if (!cond) fails.push(label); };
 
 // A distinctive marker that can only reach the provider via currentCode.
 const CURRENT = `// uParams: Speed | Shape Morph | Evolve | Hue Shift
@@ -82,9 +85,140 @@ try { await refineShader('anything', '   \n  '); } catch { threw = true; }
 check('empty editor must be refused', threw);
 check('empty editor must cost no request', sent === null);
 
+
+// ── Truncation and stop reasons ──────────────────────────────────────────────
+//
+// The failure this half exists for: a thinking model that exhausts max_tokens
+// while still THINKING returns a 200 with no text block at all. That surfaced
+// as "Empty response from the AI provider — check the model name, quota, or
+// content filters", which is actively misleading — the model, key and quota
+// were all fine and the shader was simply too long to redo in the budget.
+//
+// Worse, a truncation that DOES return partial code must never be injected:
+// extractGlsl slices to the last closing brace, and a half-written shader has
+// plenty of those, so it can pass as valid code and silently replace a working
+// shader with a broken one. Truncation must throw, not return.
+
+const PROVIDER_CASES = [
+  {
+    id: 'anthropic',
+    cfg: { apiKey: 'sk-ant-audit', model: 'claude-sonnet-5' },
+    // Thinking blocks only + max_tokens: the exact shape that produced the
+    // misleading "Empty response" error.
+    truncatedEmpty: { content: [{ type: 'thinking', thinking: 'still reasoning…' }], stop_reason: 'max_tokens' },
+    truncatedPartial: { content: [{ type: 'text', text: 'void main() { gl_FragColor = vec4(0.0' }], stop_reason: 'max_tokens' },
+    refused: { content: [], stop_reason: 'refusal' },
+  },
+  {
+    id: 'gemini',
+    cfg: { apiKey: 'AIzaAudit', model: 'gemini-3.1-pro' },
+    truncatedEmpty: { candidates: [{ content: { parts: [] }, finishReason: 'MAX_TOKENS' }] },
+    truncatedPartial: { candidates: [{ content: { parts: [{ text: 'void main() { gl_FragColor = vec4(0.0' }] }, finishReason: 'MAX_TOKENS' }] },
+    refused: { candidates: [{ content: { parts: [] }, finishReason: 'SAFETY' }] },
+  },
+  {
+    id: 'openai',
+    cfg: { apiKey: 'sk-audit', model: 'gpt-4o' },
+    truncatedEmpty: { choices: [{ message: { content: '' }, finish_reason: 'length' }] },
+    truncatedPartial: { choices: [{ message: { content: 'void main() { gl_FragColor = vec4(0.0' }, finish_reason: 'length' }] },
+    refused: { choices: [{ message: { content: '' }, finish_reason: 'content_filter' }] },
+  },
+  {
+    id: 'ollama',
+    cfg: { apiKey: 'http://localhost:11434', model: 'llama3.2' },
+    truncatedEmpty: { message: { content: '' }, done_reason: 'length' },
+    truncatedPartial: { message: { content: 'void main() { gl_FragColor = vec4(0.0' }, done_reason: 'length' },
+    refused: null, // Ollama has no content filter — nothing to assert
+  },
+];
+
+const useProvider = (id, pcfg) => store.set('imweb-ai-config', JSON.stringify({
+  activeProvider: id, providers: { [id]: pcfg },
+}));
+// The config is read through a module-level singleton, so reach past it the
+// same way the app would on a settings change.
+const { AIFeatures } = await import('../src/ai/AIFeatures.js');
+
+for (const c of PROVIDER_CASES) {
+  const reply = (payload) => { globalThis.fetch = async () => ({ ok: true, json: async () => payload }); };
+  const fresh = async () => {
+    useProvider(c.id, c.cfg);
+    // Re-import with a cache-buster so the config singleton reloads.
+    return import(`../src/ai/AIFeatures.js?p=${c.id}${Math.random()}`);
+  };
+
+  {
+    const m = await fresh();
+    reply(c.truncatedEmpty);
+    let msg = '';
+    try { await m.refineShader('spin', CURRENT); } catch (e) { msg = e.message; }
+    check(`${c.id}: truncation (no text) must throw`, !!msg);
+    check(`${c.id}: truncation must say it ran out of room`, /ran out of room|unfinished/i.test(msg));
+    check(`${c.id}: truncation must NOT blame quota/key alone`, !/^Empty response/.test(msg));
+  }
+  {
+    const m = await fresh();
+    reply(c.truncatedPartial);
+    let threw = false, out = null;
+    try { out = await m.refineShader('spin', CURRENT); } catch { threw = true; }
+    // The critical one: partial code must never reach the editor.
+    check(`${c.id}: truncation WITH partial code must still throw, not inject`, threw && out === null);
+  }
+  if (c.refused) {
+    const m = await fresh();
+    reply(c.refused);
+    let msg = '';
+    try { await m.refineShader('spin', CURRENT); } catch (e) { msg = e.message; }
+    check(`${c.id}: refusal must be reported as a refusal`, /declined|filter/i.test(msg));
+  }
+}
+
+// A clean finish must still work — the guards must not reject good responses.
+useProvider('anthropic', { apiKey: 'sk-ant-audit', model: 'claude-sonnet-5' });
+{
+  const m = await import(`../src/ai/AIFeatures.js?ok=${Math.random()}`);
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({
+    content: [{ type: 'thinking', thinking: 'plan' }, { type: 'text', text: '// uParams: A | B | C | D\nvoid main() { gl_FragColor = texture2D(uTexture, vUv); }' }],
+    stop_reason: 'end_turn',
+  }) });
+  const code = await m.refineShader('spin', CURRENT);
+  check('a complete response still returns code', /void\s+main/.test(code));
+  check('thinking-first responses still find the text block', !code.includes('plan'));
+}
+
+// A provider that reports nothing recognisable must not be treated as truncated.
+{
+  const m = await import(`../src/ai/AIFeatures.js?unk=${Math.random()}`);
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ content: [], stop_reason: undefined }) });
+  let msg = '';
+  try { await m.refineShader('spin', CURRENT); } catch (e) { msg = e.message; }
+  check('unknown stop reason is reported as unknown, not truncation', /stop reason: unknown/.test(msg));
+}
+
+// Refine must have more room than generate: it re-emits the whole shader.
+{
+  const src = readFileSync(new URL('../src/ai/AIFeatures.js', import.meta.url), 'utf8');
+  const gen = Number(src.match(/const GENERATE_TOKENS\s*=\s*(\d+)/)?.[1]);
+  const ref = Number(src.match(/const REFINE_TOKENS\s*=\s*(\d+)/)?.[1]);
+  check('GENERATE_TOKENS is declared', Number.isFinite(gen));
+  check('REFINE_TOKENS is declared', Number.isFinite(ref));
+  check('refine budget exceeds generate budget', ref > gen);
+  // The observed failure was a real refine dying at 6000. Hold a floor so a
+  // future "trim the budget" change has to argue with this line.
+  check('refine budget is at least 12000 (a real refine died at 6000)', ref >= 12000);
+}
+
 if (fails.length) {
   console.error('FAIL audit-shader-refine:');
   for (const f of fails) console.error('  - ' + f);
   process.exit(1);
 }
-console.log('PASS audit-shader-refine — refine carries the editor source; generate does not');
+// An audit that passes because its body never executed is the worst outcome
+// (LEARNED.md 2026-08-15). Assert the check COUNT so a silently skipped
+// section fails loudly instead of reporting all-clear.
+const EXPECTED_CHECKS = 40;
+if (ran !== EXPECTED_CHECKS) {
+  console.error(`FAIL audit-shader-refine: ran ${ran} checks, expected ${EXPECTED_CHECKS} — a section was skipped or added without updating the count.`);
+  process.exit(1);
+}
+console.log(`PASS audit-shader-refine — ${ran} checks: refine carries the editor source, generate does not, truncation throws on every provider`);

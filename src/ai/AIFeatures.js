@@ -163,6 +163,36 @@ function _config() { return (_cfg ??= loadConfig()); }
 
 // ── Provider API callers ──────────────────────────────────────────────────────
 
+/**
+ * Normalised stop reasons. Every provider caller returns { text, stop } where
+ * `stop` is one of these, because the question "did the model finish?" has the
+ * same answer everywhere and four different field names:
+ *
+ *   'end'        finished on its own
+ *   'max_tokens' ran out of room — the output is TRUNCATED
+ *   'refusal'    declined, or a safety/content filter tripped
+ *   'unknown'    provider said nothing recognisable
+ *
+ * This exists because discarding it produced a genuinely misleading failure:
+ * a thinking model that exhausts max_tokens while still thinking returns a
+ * response with NO text block, which read as 'Empty response from the AI
+ * provider — check the model name, quota, or content filters'. The model name
+ * and the quota were both fine; the shader was simply too long to redo in the
+ * budget it had. Four fields, one meaning — map it once, at the edge.
+ */
+const STOP_MAP = {
+  // Anthropic — response.stop_reason
+  end_turn: 'end', stop_sequence: 'end', tool_use: 'end',
+  max_tokens: 'max_tokens', refusal: 'refusal',
+  // Gemini — candidates[0].finishReason (SCREAMING_CASE)
+  STOP: 'end', MAX_TOKENS: 'max_tokens',
+  SAFETY: 'refusal', PROHIBITED_CONTENT: 'refusal', BLOCKLIST: 'refusal',
+  RECITATION: 'refusal', SPII: 'refusal',
+  // OpenAI-shaped — choices[0].finish_reason  (also Ollama's done_reason)
+  stop: 'end', length: 'max_tokens', content_filter: 'refusal',
+};
+const _stop = (raw) => STOP_MAP[raw] ?? 'unknown';
+
 async function callAnthropic(pcfg, system, user, maxTokens) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -185,8 +215,11 @@ async function callAnthropic(pcfg, system, user, maxTokens) {
   }
   // Models with adaptive thinking (Sonnet 5, Opus 4.7+) return a thinking
   // block FIRST — content[0].text is undefined there. Find the text block.
-  const content = (await res.json()).content ?? [];
-  return content.find((b) => b.type === 'text')?.text ?? '';
+  const data = await res.json();
+  return {
+    text: (data.content ?? []).find((b) => b.type === 'text')?.text ?? '',
+    stop: _stop(data.stop_reason),
+  };
 }
 
 async function callGemini(pcfg, system, user, maxTokens) {
@@ -203,9 +236,16 @@ async function callGemini(pcfg, system, user, maxTokens) {
     const e = await res.json().catch(() => ({}));
     throw new Error(e.error?.message ?? `Gemini error ${res.status}`);
   }
-  return ((await res.json()).candidates?.[0]?.content?.parts ?? [])
-    .map((p) => p.text ?? '')
-    .join('');
+  const data = await res.json();
+  const cand = data.candidates?.[0];
+  return {
+    text: (cand?.content?.parts ?? []).map((p) => p.text ?? '').join(''),
+    // A prompt blocked before generation has no candidate at all — the reason
+    // is on promptFeedback instead, and reading only finishReason would report
+    // that as 'unknown' rather than the refusal it is.
+    stop: cand ? _stop(cand.finishReason)
+               : (data.promptFeedback?.blockReason ? 'refusal' : 'unknown'),
+  };
 }
 
 /**
@@ -251,7 +291,8 @@ async function callOpenAIShaped(providerId, pcfg, system, user, maxTokens) {
     const e = await res.json().catch(() => ({}));
     throw new Error(e.error?.message ?? `${ep.label} error ${res.status}`);
   }
-  return (await res.json()).choices?.[0]?.message?.content ?? '';
+  const choice = (await res.json()).choices?.[0];
+  return { text: choice?.message?.content ?? '', stop: _stop(choice?.finish_reason) };
 }
 
 async function callOllama(pcfg, system, user, _maxTokens) {
@@ -269,7 +310,8 @@ async function callOllama(pcfg, system, user, _maxTokens) {
     }),
   });
   if (!res.ok) throw new Error(`Ollama ${res.status} — is it running at ${base}?`);
-  return (await res.json()).message?.content ?? '';
+  const data = await res.json();
+  return { text: data.message?.content ?? '', stop: _stop(data.done_reason) };
 }
 
 // ── Model list fetchers ─────────────────────────────────────────────────────
@@ -346,7 +388,8 @@ async function fetchModels(providerId) {
 
 // ── Module-level call router ──────────────────────────────────────────────────
 
-async function _call(system, user, maxTokens = 512) {
+/** Full result: { text, stop }. Use when the stop reason matters. */
+async function _callRaw(system, user, maxTokens = 512) {
   const cfg  = _config();
   const id   = cfg.activeProvider;
   const pcfg = cfg.providers[id];
@@ -359,6 +402,15 @@ async function _call(system, user, maxTokens = 512) {
     case 'ollama':     return callOllama   (pcfg, system, user, maxTokens);
     default:           throw new Error(`Unknown provider: ${id}`);
   }
+}
+
+/**
+ * Text only — the long-standing contract for the Narrator, Coach, preset
+ * generator and connection test, none of which can act on a stop reason.
+ * Kept as a thin wrapper so those call sites are unchanged.
+ */
+async function _call(system, user, maxTokens = 512) {
+  return (await _callRaw(system, user, maxTokens)).text;
 }
 
 // ── Backward-compatible API key helpers ───────────────────────────────────────
@@ -623,18 +675,38 @@ export function extractGlsl(text) {
  * it to be dropped.
  */
 async function _shaderCall(system, user, maxTokens, tag) {
-  const raw = await _call(system, user, maxTokens);
+  const { text: raw, stop } = await _callRaw(system, user, maxTokens);
   // DEV-only ground truth for diagnosing extraction/model misbehaviour —
   // filter the console with [glsl-ai]
   if (import.meta.env?.DEV) {
-    console.log(`[glsl-ai] raw response (${tag}):\n${raw}`);
+    console.log(`[glsl-ai] raw response (${tag}, stop=${stop}):\n${raw}`);
   }
+
+  // Ran out of room. Check this BEFORE the empty-text check and before
+  // extraction: a truncated shader is the one failure that can still look like
+  // valid code, because extractGlsl slices to the last closing brace and a
+  // half-written shader has plenty of those. Injecting it would replace a
+  // working shader with a subtly broken one — worse than any error message.
+  if (stop === 'max_tokens') {
+    throw new Error(
+      `The model ran out of room at ${maxTokens} tokens, so the shader came back unfinished.\n` +
+      'This is not a quota or key problem. Ask for a smaller change, or shorten the shader ' +
+      'in the editor first — a refine has to rewrite the whole thing, so a long shader needs ' +
+      'more room than a short one.',
+    );
+  }
+  if (stop === 'refusal') {
+    throw new Error(
+      'The provider declined this request (safety or content filter) — rephrase the prompt.',
+    );
+  }
+
   // Providers throw on HTTP errors, but a 200 with an unexpected shape
-  // (content filter, exhausted quota, wrong model) falls back to '' —
-  // never feed that to the GLSL compiler as a phantom 'Missing main()'.
+  // (wrong model, exhausted quota, a filter that reports nothing) falls back
+  // to '' — never feed that to the GLSL compiler as a phantom 'Missing main()'.
   if (!raw?.trim()) {
     throw new Error(
-      'Empty response from the AI provider — check the model name, quota, or content filters.',
+      `Empty response from the AI provider (stop reason: ${stop}) — check the model name, quota, or content filters.`,
     );
   }
   const code = extractGlsl(raw);
@@ -646,6 +718,19 @@ async function _shaderCall(system, user, maxTokens, tag) {
 }
 
 /**
+ * Token ceilings for the two shader paths.
+ *
+ * Refine gets a much larger one than generate and it is not arbitrary: a
+ * generate writes ONE shader, a refine must re-emit the whole existing shader
+ * on top of whatever the model thinks first. At the old 4000/6000 a real
+ * refine of a ~60-line shader came back as 'Empty response from the AI
+ * provider' — the budget had gone entirely on thinking, leaving no text block
+ * at all. Raising a ceiling is free; hitting one wastes the whole request.
+ */
+const GENERATE_TOKENS = 8000;
+const REFINE_TOKENS   = 16000;
+
+/**
  * Generate a Live GLSL shader from a natural-language description.
  * Pass priorCode + priorError for the single automatic recovery retry.
  */
@@ -653,9 +738,11 @@ export async function generateShader(description, priorCode = null, priorError =
   const user = priorError
     ? `Your previous shader failed to compile.\nCompiler error:\n${priorError}\n\nBroken code:\n${priorCode}\n\nOutput ONLY the corrected COMPLETE shader (same rules) for the original request: "${description}". Do not explain the fix, do not quote the broken lines — code only.`
     : `Write a shader: "${description}"`;
-  // Generous budget: on adaptive-thinking models (Sonnet 5, Opus 4.7+)
-  // max_tokens covers thinking + code, and complex shaders think a lot
-  return _shaderCall(SHADER_SYSTEM, user, 4000, priorError ? 'generate retry' : 'generate');
+  // max_tokens is a CEILING, not a charge — you pay for tokens produced, so
+  // headroom costs nothing and truncation costs the whole request. On
+  // adaptive-thinking models this budget covers thinking AND code, and a
+  // complex shader thinks a lot before it writes a line.
+  return _shaderCall(SHADER_SYSTEM, user, GENERATE_TOKENS, priorError ? 'generate retry' : 'generate');
 }
 
 /**
@@ -663,18 +750,16 @@ export async function generateShader(description, priorCode = null, priorError =
  * `instruction`, complete shader back. Pass priorCode + priorError for the same
  * single compile-recovery retry generateShader gets.
  *
- * Budget is larger than generate's on purpose — a refine must re-emit the WHOLE
- * shader on top of whatever the model thinks, where generate only emits a new
- * one. A truncated refine is still possible on a long shader; that is what the
- * caller's undo is for, and what streaming + a stop_reason check would settle
- * properly.
+ * Budget is larger than generate's on purpose — see REFINE_TOKENS. Truncation
+ * is now DETECTED rather than injected: _shaderCall throws on a max_tokens
+ * stop, so a half-written shader can never replace the working one.
  */
 export async function refineShader(instruction, currentCode, priorCode = null, priorError = null) {
   if (!currentCode?.trim()) throw new Error('Nothing to refine — the editor is empty.');
   const user = priorError
     ? `Your previous edit failed to compile.\nCompiler error:\n${priorError}\n\nBroken code:\n${priorCode}\n\nThe shader you were asked to edit:\n${currentCode}\n\nThe requested change was: "${instruction}"\n\nOutput ONLY the corrected COMPLETE shader (same rules). Do not explain the fix — code only.`
     : `Here is the shader currently running. Keep it, and apply ONE change.\n\nCURRENT SHADER:\n${currentCode}\n\nCHANGE TO APPLY: "${instruction}"\n\nReturn the complete edited shader.`;
-  return _shaderCall(REFINE_SYSTEM, user, 6000, priorError ? 'refine retry' : 'refine');
+  return _shaderCall(REFINE_SYSTEM, user, REFINE_TOKENS, priorError ? 'refine retry' : 'refine');
 }
 
 // ── Feature 2: Parameter Narrator ────────────────────────────────────────────
