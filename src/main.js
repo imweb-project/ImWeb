@@ -135,6 +135,7 @@ import {
   buildActivitySnapshot,
   getNarratorConfig,
   getCoachConfig,
+  getVisionConfig,
 } from "./ai/AIFeatures.js";
 import {
   initTabs,
@@ -9648,6 +9649,46 @@ void main() {
     });
   })();
 
+  // ── Canvas vision ─────────────────────────────────────────────────────────
+  //
+  // Capture the output frame for the AI to LOOK at. Works because the renderer
+  // is created with preserveDrawingBuffer:true (main.js:271) — without it a
+  // WebGL canvas reads back blank outside its own frame, and the failure is
+  // silent: you get an image, it is just empty, and the model dutifully
+  // describes a black screen.
+  //
+  // 512px wide, JPEG q0.6. Vision cost scales with pixels, and nothing in a
+  // narration needs more: naming colour, movement, density and what dominates
+  // the frame survives the downscale intact. PNG would be several times larger
+  // for no gain on a photographic image.
+  const VISION_W = 512;
+  let _visionCanvas = null;
+  function captureVisionFrame() {
+    if (!canvas?.width || !canvas?.height) return null;
+    const h = Math.max(1, Math.round(VISION_W * (canvas.height / canvas.width)));
+    // One reused scratch canvas — the narrator fires on a timer, and a fresh
+    // 512px canvas every tick is garbage the GC has to chase mid-performance.
+    if (!_visionCanvas) _visionCanvas = document.createElement("canvas");
+    if (_visionCanvas.width !== VISION_W || _visionCanvas.height !== h) {
+      _visionCanvas.width = VISION_W;
+      _visionCanvas.height = h;
+    }
+    const ctx = _visionCanvas.getContext("2d");
+    if (!ctx) return null;
+    try {
+      ctx.drawImage(canvas, 0, 0, VISION_W, h);
+      const url = _visionCanvas.toDataURL("image/jpeg", 0.6);
+      const comma = url.indexOf(",");
+      if (comma === -1) return null;
+      return { b64: url.slice(comma + 1), mime: "image/jpeg" };
+    } catch {
+      // A tainted canvas (a cross-origin movie or image routed into the chain)
+      // throws here. Vision degrades to text-only rather than killing the
+      // narrator — losing the picture is not worth losing the feature.
+      return null;
+    }
+  }
+
   // ── Feature 2: Parameter Narrator ─────────────────────────────────────────
   let _narratorActive = false;
   let _narratorTimer = null;
@@ -9657,7 +9698,8 @@ void main() {
     if (!_narratorActive) return;
     try {
       const snapshot = buildStateSnapshot(ps);
-      const text = await narrateState(snapshot, getNarratorConfig().length);
+      const frame = getVisionConfig().narrator ? captureVisionFrame() : null;
+      const text = await narrateState(snapshot, getNarratorConfig().length, frame);
       if (_narratorOverlay && _narratorActive) {
         _narratorOverlay.textContent = text;
       }
@@ -9733,7 +9775,8 @@ void main() {
     if (!_coachActive) return;
     try {
       const snapshot = buildActivitySnapshot(_recentChanges, ps);
-      const text = await coachSuggestion(snapshot);
+      const frame = getVisionConfig().coach ? captureVisionFrame() : null;
+      const text = await coachSuggestion(snapshot, frame);
       if (_coachActive) {
         _showCoachNotif(text || '⚠ Coach: empty response from AI — try a different model');
       }

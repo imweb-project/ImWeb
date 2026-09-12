@@ -131,6 +131,10 @@ function buildDefaultConfig() {
     providers,
     narrator: { interval: 10000, length: 'medium' },
     coach:    { interval: 45000 },
+    // Vision is OFF by default. It is a real cost step — an image is worth
+    // roughly a thousand input tokens — and the narrator fires on a timer, so
+    // defaulting it on would quietly spend money on an idle patch.
+    vision:   { narrator: false, coach: false },
   };
 }
 
@@ -147,6 +151,7 @@ function loadConfig() {
       providers: { ...def.providers, ...saved.providers },
       narrator: { ...def.narrator, ...saved.narrator },
       coach: { ...def.coach, ...saved.coach },
+      vision: { ...def.vision, ...saved.vision },
     };
   } catch {
     return buildDefaultConfig();
@@ -193,7 +198,15 @@ const STOP_MAP = {
 };
 const _stop = (raw) => STOP_MAP[raw] ?? 'unknown';
 
-async function callAnthropic(pcfg, system, user, maxTokens) {
+/**
+ * Vision: each provider takes an image in its OWN envelope, so the four shapes
+ * are mapped here at the edge exactly as the stop reasons and usage fields are.
+ * `image` is { b64, mime } with NO data: prefix — three of the four want raw
+ * base64 and the OpenAI shape wants the full data URL, which is the kind of
+ * difference that is invisible until a provider silently ignores the image and
+ * describes the parameter list instead of the picture.
+ */
+async function callAnthropic(pcfg, system, user, maxTokens, image) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -206,7 +219,15 @@ async function callAnthropic(pcfg, system, user, maxTokens) {
       model:      pcfg.model,
       max_tokens: maxTokens,
       system,
-      messages: [{ role: 'user', content: user }],
+      messages: [{
+        role: 'user',
+        // Image FIRST: Anthropic documents better results with the image ahead
+        // of the question it is about.
+        content: image
+          ? [{ type: 'image', source: { type: 'base64', media_type: image.mime, data: image.b64 } },
+             { type: 'text', text: user }]
+          : user,
+      }],
     }),
   });
   if (!res.ok) {
@@ -230,13 +251,19 @@ async function callAnthropic(pcfg, system, user, maxTokens) {
   };
 }
 
-async function callGemini(pcfg, system, user, maxTokens) {
+async function callGemini(pcfg, system, user, maxTokens, image) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(pcfg.model)}:generateContent?key=${pcfg.apiKey}`;
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: `${system}\n\n${user}` }] }],
+      contents: [{
+        role: 'user',
+        parts: image
+          ? [{ inline_data: { mime_type: image.mime, data: image.b64 } },
+             { text: `${system}\n\n${user}` }]
+          : [{ text: `${system}\n\n${user}` }],
+      }],
       generationConfig: { maxOutputTokens: maxTokens },
     }),
   });
@@ -284,7 +311,7 @@ const OPENAI_SHAPED = {
   kimi:       { url: 'https://api.moonshot.ai/v1/chat/completions',   label: 'Kimi' },
 };
 
-async function callOpenAIShaped(providerId, pcfg, system, user, maxTokens) {
+async function callOpenAIShaped(providerId, pcfg, system, user, maxTokens, image) {
   const ep = OPENAI_SHAPED[providerId];
   const res = await fetch(ep.url, {
     method: 'POST',
@@ -298,7 +325,15 @@ async function callOpenAIShaped(providerId, pcfg, system, user, maxTokens) {
       max_tokens: maxTokens,
       messages: [
         { role: 'system', content: system },
-        { role: 'user',   content: user   },
+        {
+          role: 'user',
+          // This shape wants a full data: URL, not bare base64 — the one
+          // provider family that differs here.
+          content: image
+            ? [{ type: 'text', text: user },
+               { type: 'image_url', image_url: { url: `data:${image.mime};base64,${image.b64}` } }]
+            : user,
+        },
       ],
     }),
   });
@@ -315,7 +350,7 @@ async function callOpenAIShaped(providerId, pcfg, system, user, maxTokens) {
   };
 }
 
-async function callOllama(pcfg, system, user, _maxTokens) {
+async function callOllama(pcfg, system, user, _maxTokens, image) {
   const base = (pcfg.apiKey || 'http://localhost:11434').replace(/\/$/, '');
   const res = await fetch(`${base}/api/chat`, {
     method: 'POST',
@@ -325,7 +360,11 @@ async function callOllama(pcfg, system, user, _maxTokens) {
       stream: false,
       messages: [
         { role: 'system', content: system },
-        { role: 'user',   content: user   },
+        // Ollama keeps `content` a plain string and hangs raw base64 off a
+        // sibling `images` array. It does NOT take the OpenAI image_url shape
+        // — handed that, it ignores the picture and answers from the text,
+        // with no error and a plausible reply.
+        { role: 'user', content: user, ...(image ? { images: [image.b64] } : {}) },
       ],
     }),
   });
@@ -494,7 +533,7 @@ export function resetUsage() {
 }
 
 /** Full result: { text, stop, usage }. Use when the stop reason matters. */
-async function _callRaw(system, user, maxTokens = 512) {
+async function _callRaw(system, user, maxTokens = 512, image = null) {
   const cfg  = _config();
   const id   = cfg.activeProvider;
   const pcfg = cfg.providers[id];
@@ -505,10 +544,10 @@ async function _callRaw(system, user, maxTokens = 512) {
   // inside each of the four callers, is four places for the next one to be
   // forgotten, and an uncounted provider reads as "free".
   const res = (id in OPENAI_SHAPED)
-    ? await callOpenAIShaped(id, pcfg, system, user, maxTokens)
-    : id === 'anthropic' ? await callAnthropic(pcfg, system, user, maxTokens)
-    : id === 'gemini'    ? await callGemini   (pcfg, system, user, maxTokens)
-    : id === 'ollama'    ? await callOllama   (pcfg, system, user, maxTokens)
+    ? await callOpenAIShaped(id, pcfg, system, user, maxTokens, image)
+    : id === 'anthropic' ? await callAnthropic(pcfg, system, user, maxTokens, image)
+    : id === 'gemini'    ? await callGemini   (pcfg, system, user, maxTokens, image)
+    : id === 'ollama'    ? await callOllama   (pcfg, system, user, maxTokens, image)
     : null;
   if (!res) throw new Error(`Unknown provider: ${id}`);
   _recordUsage(id, pcfg.model ?? PROVIDERS[id]?.defaultModel ?? '?', res.usage);
@@ -520,8 +559,8 @@ async function _callRaw(system, user, maxTokens = 512) {
  * generator and connection test, none of which can act on a stop reason.
  * Kept as a thin wrapper so those call sites are unchanged.
  */
-async function _call(system, user, maxTokens = 512) {
-  return (await _callRaw(system, user, maxTokens)).text;
+async function _call(system, user, maxTokens = 512, image = null) {
+  return (await _callRaw(system, user, maxTokens, image)).text;
 }
 
 // ── Backward-compatible API key helpers ───────────────────────────────────────
@@ -546,6 +585,9 @@ export function getNarratorConfig() {
 }
 export function getCoachConfig() {
   return _config().coach;
+}
+export function getVisionConfig() {
+  return _config().vision;
 }
 
 // ── System prompts ────────────────────────────────────────────────────────────
@@ -1047,17 +1089,41 @@ const NARRATOR_LENGTHS = {
   long:   { words: 70, maxTokens: 250, sentences: 'two or three sentences' },
 };
 
-function narratorSystem(length) {
+function narratorSystem(length, seeing) {
   const cfg = NARRATOR_LENGTHS[length] ?? NARRATOR_LENGTHS.medium;
-  return `You are the voice of ImWeb, a real-time video synthesis instrument.
+  // With an image the instruction inverts: the patch stops being the subject
+  // and becomes vocabulary for naming what is actually on screen. Without this
+  // the model dutifully reads the parameter list back with a picture attached,
+  // which is the same narration as before at vision prices.
+  return seeing
+    ? `You are the voice of ImWeb, a real-time video synthesis instrument.
+You are shown THE CURRENT OUTPUT FRAME plus the signal path that produced it.
+Describe what you SEE — the image is the subject; the signal path is only there
+to give you the right words for it (source names, effects, modes).
+Return ${cfg.sentences} (max ${cfg.words} words total).
+Name colours, movement, texture, density, what dominates the frame. If the frame
+is black or nearly empty, say so plainly.
+Do not list parameters. Do not describe the patch. No preamble. No trailing punctuation.`
+    : `You are the voice of ImWeb, a real-time video synthesis instrument.
 Given a snapshot of the current signal path, return ${cfg.sentences} (max ${cfg.words} words total) describing
 what is visually happening — like "Camera keyed over noise with slow displacement feedback loop".
 Be specific about what's active: name the sources, effects, and modes in play. No punctuation at end. No preamble.`;
 }
 
-export async function narrateState(stateSnapshot, length = 'medium') {
+/**
+ * `image` — { b64, mime } of the current output frame, or null for the
+ * text-only narration.
+ */
+export async function narrateState(stateSnapshot, length = 'medium', image = null) {
   const cfg = NARRATOR_LENGTHS[length] ?? NARRATOR_LENGTHS.medium;
-  return _call(narratorSystem(length), `Current signal path: ${stateSnapshot}`, cfg.maxTokens);
+  return _call(
+    narratorSystem(length, !!image),
+    image
+      ? `This is the current output frame. The signal path producing it: ${stateSnapshot}`
+      : `Current signal path: ${stateSnapshot}`,
+    cfg.maxTokens,
+    image,
+  );
 }
 
 // Imported, not copied. A hand-copy here drifted twice: once causing the
@@ -1143,8 +1209,21 @@ Keep it under 12 words. Start with a verb. Be specific to ImWeb parameters and s
 Examples: "Try routing Noise to FG for more texture" or "Increase feedback.x to drift the frame"
 No preamble, no explanation, just the suggestion.`;
 
-export async function coachSuggestion(activitySnapshot) {
-  return _call(COACH_SYSTEM, `30-second performance activity: ${activitySnapshot}`, 80);
+const COACH_SEEING_SYSTEM = `You are a performance coach for ImWeb, a real-time video synthesis instrument.
+You are shown THE CURRENT OUTPUT FRAME and a 30-second snapshot of parameter activity.
+Judge the IMAGE first — is it too dark, blown out, static, cluttered, monotone? —
+then suggest ONE short actionable change that would improve what is on screen.
+Under 12 words. Start with a verb. Name a real ImWeb parameter or source.
+No preamble, no explanation, just the suggestion.`;
+
+/** `image` — { b64, mime } of the current frame, or null for text-only coaching. */
+export async function coachSuggestion(activitySnapshot, image = null) {
+  return _call(
+    image ? COACH_SEEING_SYSTEM : COACH_SYSTEM,
+    `30-second performance activity: ${activitySnapshot}`,
+    80,
+    image,
+  );
 }
 
 export function buildActivitySnapshot(recentChanges, ps) {
@@ -1180,6 +1259,8 @@ export class AIFeatures {
   setNarratorInterval(ms) { _config().narrator = { ..._config().narrator, interval: ms }; saveConfig(_config()); }
   setNarratorLength(len)  { _config().narrator = { ..._config().narrator, length: len }; saveConfig(_config()); }
   setCoachInterval(ms)    { _config().coach    = { ..._config().coach, interval: ms };    saveConfig(_config()); }
+  setVision(which, on)    { _config().vision   = { ..._config().vision, [which]: !!on };   saveConfig(_config()); }
+  getVisionConfig()       { return getVisionConfig(); }
 
   // Persist the result of a connection test for a provider, with a timestamp
   // so the status survives panel rebuilds and page reloads.

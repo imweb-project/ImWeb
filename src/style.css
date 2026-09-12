@@ -3495,6 +3495,28 @@ body.fullscreen-output #app {
     color: var(--red);
 }
 
+/* Canvas-vision toggles (AI settings panel) */
+.ai-vision-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.ai-vision-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-2);
+    cursor: pointer;
+}
+.ai-vision-toggle input {
+    margin: 0;
+    /* Touch target on iPad — the label text alone is too small to hit. */
+    width: 16px;
+    height: 16px;
+    flex: none;
+}
+
 /* Token usage readout (AI settings panel) */
 .ai-usage {
     font-size: 11px;

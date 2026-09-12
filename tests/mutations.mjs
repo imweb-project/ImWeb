@@ -963,4 +963,33 @@ export const MUTATIONS = [
     find: '      const baseCode = refining ? getGlslSource() : null;',
     replace: '      const baseCode = null;',
   },
+  {
+    name: 'Ollama is handed the OpenAI image envelope',
+    audit: 'audit-ai-vision.mjs',
+    file: 'src/ai/AIFeatures.js',
+    why: 'Ollama keeps content a string and wants raw base64 in a sibling images[] array; given the OpenAI image_url shape it ignores the picture entirely and answers from the text — no error, a plausible narration, billed as vision, describing the patch instead of the frame. THIS ONE SHIPPED: the OpenAI patch matched Ollama\'s identical message block and the audit caught it',
+    find: "        { role: 'user', content: user, ...(image ? { images: [image.b64] } : {}) },",
+    replace: [
+      "        { role: 'user', content: image",
+      "            ? [{ type: 'text', text: user },",
+      "               { type: 'image_url', image_url: { url: `data:${image.mime};base64,${image.b64}` } }]",
+      '            : user },',
+    ].join('\n'),
+  },
+  {
+    name: 'the vision narration keeps the text-only prompt',
+    audit: 'audit-ai-vision.mjs',
+    file: 'src/ai/AIFeatures.js',
+    why: 'attaching a frame while still asking for the signal path produces exactly the narration you had before vision existed, at vision prices — the image is paid for and ignored, and nothing about the output says so',
+    find: '  return seeing\n    ? `You are the voice of ImWeb',
+    replace: '  return false\n    ? `You are the voice of ImWeb',
+  },
+  {
+    name: 'the frame is captured whether or not vision is enabled',
+    audit: 'audit-ai-vision.mjs',
+    file: 'src/main.js',
+    why: 'the narrator fires on a timer, so an ungated capture sends an image on every tick — the toggle reads as off while every narration is billed at vision rates',
+    find: '      const frame = getVisionConfig().narrator ? captureVisionFrame() : null;',
+    replace: '      const frame = captureVisionFrame();',
+  },
 ];
