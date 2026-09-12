@@ -6913,13 +6913,29 @@ void main() {
       applyGLSL();
     });
 
+    // A refine can take 20s+ on a thinking model. Without a moving number the
+    // panel is indistinguishable from a hung one, and the temptation is to
+    // click Refine again — which spends a second request and races the first.
+    let _aiBusyTimer = null;
     function _aiSetBusy(busy, msg) {
       aiPromptEl.classList.toggle("hidden", busy);
       aiGenBtn.disabled = busy;
       aiStatusEl.className = busy ? "busy" : "hidden";
       aiStatusEl.textContent = msg ?? "";
+      clearInterval(_aiBusyTimer);
+      _aiBusyTimer = null;
+      if (busy && msg) {
+        const t0 = Date.now();
+        _aiBusyTimer = setInterval(() => {
+          aiStatusEl.textContent = `${msg}  ${Math.round((Date.now() - t0) / 1000)}s`;
+        }, 1000);
+      }
     }
     function _aiShowError(msg) {
+      // Stop the elapsed counter FIRST — it writes to the same element, so a
+      // live timer would overwrite the error a second after it appeared.
+      clearInterval(_aiBusyTimer);
+      _aiBusyTimer = null;
       aiPromptEl.classList.remove("hidden");
       aiGenBtn.disabled = false;
       aiStatusEl.className = "error";
@@ -6940,6 +6956,10 @@ void main() {
       // A live mic must never outlive the panel that started it — there is no
       // other indication it is still on once the modal is gone.
       _micStop();
+      // Same for the elapsed counter: a closed modal must leave no interval
+      // running against a hidden element.
+      clearInterval(_aiBusyTimer);
+      _aiBusyTimer = null;
       aiModal.classList.add("hidden");
     }
     // '// uParams: A | B | C | D' metadata line → knob labels
@@ -7019,7 +7039,9 @@ void main() {
           });
           aiStatusEl.appendChild(fixBtn);
         } else {
-          _aiShowError(`Generation failed: ${e?.message ?? e}`);
+          // Name the mode that actually failed. "Generation failed" on a
+          // refine sent the reader looking for a generation problem.
+          _aiShowError(`${refining ? "Refine" : "Generation"} failed: ${e?.message ?? e}`);
         }
       }
     });

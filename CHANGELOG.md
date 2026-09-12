@@ -39,7 +39,44 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   not), including on the compile-recovery retry. The bug this replaces could not
   be seen in the output, only in the request.
 
+### Fixed
+- **A truncated shader is now detected and reported, not injected.** Every
+  provider caller returns a normalised stop reason (`end` / `max_tokens` /
+  `refusal` / `unknown`) mapped from its own field — Anthropic's `stop_reason`,
+  Gemini's `finishReason` (plus `promptFeedback.blockReason`, which is the only
+  signal when a prompt is blocked before any candidate exists), the
+  OpenAI-shaped `finish_reason`, Ollama's `done_reason`. A `max_tokens` stop now
+  says *"the model ran out of room at N tokens, so the shader came back
+  unfinished — this is not a quota or key problem"* and names the fix (ask for a
+  smaller change, or shorten the shader first).
+
+  Two distinct bugs are closed. A thinking model that exhausts its budget while
+  still *thinking* returns a 200 with **no text block at all**, which read as
+  "Empty response from the AI provider — check the model name, quota, or content
+  filters": the model, key and quota were all fine. And a truncation that *does*
+  return partial code was previously **injected** — `extractGlsl` slices to the
+  last closing brace and a half-written shader has plenty of those, so it passed
+  as valid code and could replace a working shader with a broken one. Truncation
+  now throws before extraction, so the shader on screen survives.
+- **Token ceilings raised: generate 4000 → 8000, refine 6000 → 16000.**
+  `max_tokens` is a ceiling, not a charge — you pay for tokens produced, so
+  headroom is free while hitting the ceiling wastes the entire request. A real
+  refine of a ~60-line shader died at 6000. `tests/audit-shader-refine.mjs`
+  holds a 12000 floor so a future trim has to argue with that line.
+- **Refusals are reported as refusals** ("the provider declined this request —
+  rephrase the prompt") instead of arriving as an empty response.
+- **Errors name the mode that failed.** "Generation failed" on a refine sent the
+  reader looking for the wrong problem.
+
 ### Changed
+- **The busy panel shows elapsed seconds** (`Refining shader…  7s`). A refine on
+  a thinking model can take 20s+, and a still panel is indistinguishable from a
+  hung one — the temptation is to click Refine again, which spends a second
+  request and races the first. The interval is cleared on close, on error and on
+  completion, so nothing ticks against a hidden element.
+- `_call` is now a text-only wrapper over `_callRaw`, which returns
+  `{ text, stop }`. The Narrator, Coach, preset generator and connection test
+  cannot act on a stop reason and keep their unchanged string contract.
 - `SHADER_CONTRACT` in `AIFeatures.js` now holds the uniform list and output
   rules once, shared by the generate and refine system prompts. A refine prompt
   with its own hand-copied uniform list is the `SOURCE_DEFS` failure in prompt
