@@ -486,8 +486,15 @@ export async function generatePreset(description) {
 
 // ── Feature: Live GLSL shader generator ──────────────────────────────────────
 
-const SHADER_SYSTEM = `You write GLSL ES 1.00 fragment shaders for ImWeb, a live video synthesis instrument.
-The following uniforms are ALREADY DECLARED and fed per-frame — never redeclare them:
+/**
+ * The uniform contract and output rules, shared verbatim by the generate and
+ * refine prompts. One origin: a refine prompt carrying its own hand-copied
+ * uniform list is the SOURCE_DEFS failure (CLAUDE.md) in prompt form — the two
+ * would drift the first time a uniform is added, and the only symptom would be
+ * refined shaders quietly failing to compile against a uniform they were never
+ * told about.
+ */
+const SHADER_CONTRACT = `The following uniforms are ALREADY DECLARED and fed per-frame — never redeclare them:
   varying vec2 vUv;              // 0..1 UV coords
   uniform sampler2D uTexture;    // input frame at the routed insert point
   uniform sampler2D tAudio;      // 256x2 texture: y<0.5 FFT bins, y>0.5 waveform; .r = 0..1
@@ -523,6 +530,31 @@ Rules:
 - Define void main() exactly once. The shader is a full-screen pass.
 - Base the image on uTexture unless the request is clearly fully generative.
 - Wire uParam1..4 to the most performance-relevant quantities in the effect.`;
+
+const SHADER_SYSTEM = `You write GLSL ES 1.00 fragment shaders for ImWeb, a live video synthesis instrument.
+${SHADER_CONTRACT}`;
+
+/**
+ * Refine mode. The performer already has a shader they like on screen and wants
+ * ONE thing changed about it — the failure this prompt exists to prevent is the
+ * model quietly starting over, which is what happened for every "add to current
+ * code …" request before the editor's source was sent at all.
+ */
+const REFINE_SYSTEM = `You EDIT an existing GLSL ES 1.00 fragment shader for ImWeb, a live video synthesis instrument.
+${SHADER_CONTRACT}
+
+REFINEMENT RULES — these override any instinct to write a better shader:
+- You are given a WORKING shader and ONE instruction. Apply the instruction and
+  change NOTHING else. This is an edit, not a rewrite.
+- NEVER start over. Keep the existing structure, helper functions, variable
+  names, constants and overall look intact. If the instruction can be satisfied
+  by adding a few lines, add a few lines.
+- Return the COMPLETE shader, ready to compile — never a diff, never a snippet,
+  never "…rest unchanged", never only the function you touched.
+- If the instruction introduces a new controllable quantity, wire it to the most
+  suitable uParam and update the // uParams: line to match. Keep the existing
+  uParam meanings and labels unless the instruction reassigns them.
+- If the instruction is vague, make the SMALLEST change that satisfies it.`;
 
 /**
  * Extract GLSL from a model response, discarding conversational text.
@@ -584,20 +616,18 @@ export function extractGlsl(text) {
 }
 
 /**
- * Generate a Live GLSL shader from a natural-language description.
- * Pass priorCode + priorError for the single automatic recovery retry.
+ * Call a provider for shader code and hand back the extracted GLSL.
+ * Shared by generate and refine so the empty-response abort and the extraction
+ * logging have ONE implementation — the guard below is a documented safety net
+ * (CLAUDE.md, Live GLSL & AI Subsystem) and a second copy is a second place for
+ * it to be dropped.
  */
-export async function generateShader(description, priorCode = null, priorError = null) {
-  const user = priorError
-    ? `Your previous shader failed to compile.\nCompiler error:\n${priorError}\n\nBroken code:\n${priorCode}\n\nOutput ONLY the corrected COMPLETE shader (same rules) for the original request: "${description}". Do not explain the fix, do not quote the broken lines — code only.`
-    : `Write a shader: "${description}"`;
-  // Generous budget: on adaptive-thinking models (Sonnet 5, Opus 4.7+)
-  // max_tokens covers thinking + code, and complex shaders think a lot
-  const raw = await _call(SHADER_SYSTEM, user, 4000);
+async function _shaderCall(system, user, maxTokens, tag) {
+  const raw = await _call(system, user, maxTokens);
   // DEV-only ground truth for diagnosing extraction/model misbehaviour —
   // filter the console with [glsl-ai]
   if (import.meta.env?.DEV) {
-    console.log(`[glsl-ai] raw response${priorError ? ' (retry)' : ''}:\n${raw}`);
+    console.log(`[glsl-ai] raw response (${tag}):\n${raw}`);
   }
   // Providers throw on HTTP errors, but a 200 with an unexpected shape
   // (content filter, exhausted quota, wrong model) falls back to '' —
@@ -609,10 +639,42 @@ export async function generateShader(description, priorCode = null, priorError =
   }
   const code = extractGlsl(raw);
   if (import.meta.env?.DEV) {
-    console.log(`[glsl-ai] extracted:\n${code}`);
+    console.log(`[glsl-ai] extracted (${tag}):\n${code}`);
   }
   if (!code) throw new Error('The AI response contained no usable code.');
   return code;
+}
+
+/**
+ * Generate a Live GLSL shader from a natural-language description.
+ * Pass priorCode + priorError for the single automatic recovery retry.
+ */
+export async function generateShader(description, priorCode = null, priorError = null) {
+  const user = priorError
+    ? `Your previous shader failed to compile.\nCompiler error:\n${priorError}\n\nBroken code:\n${priorCode}\n\nOutput ONLY the corrected COMPLETE shader (same rules) for the original request: "${description}". Do not explain the fix, do not quote the broken lines — code only.`
+    : `Write a shader: "${description}"`;
+  // Generous budget: on adaptive-thinking models (Sonnet 5, Opus 4.7+)
+  // max_tokens covers thinking + code, and complex shaders think a lot
+  return _shaderCall(SHADER_SYSTEM, user, 4000, priorError ? 'generate retry' : 'generate');
+}
+
+/**
+ * Refine the shader the performer already has on screen: `currentCode` plus one
+ * `instruction`, complete shader back. Pass priorCode + priorError for the same
+ * single compile-recovery retry generateShader gets.
+ *
+ * Budget is larger than generate's on purpose — a refine must re-emit the WHOLE
+ * shader on top of whatever the model thinks, where generate only emits a new
+ * one. A truncated refine is still possible on a long shader; that is what the
+ * caller's undo is for, and what streaming + a stop_reason check would settle
+ * properly.
+ */
+export async function refineShader(instruction, currentCode, priorCode = null, priorError = null) {
+  if (!currentCode?.trim()) throw new Error('Nothing to refine — the editor is empty.');
+  const user = priorError
+    ? `Your previous edit failed to compile.\nCompiler error:\n${priorError}\n\nBroken code:\n${priorCode}\n\nThe shader you were asked to edit:\n${currentCode}\n\nThe requested change was: "${instruction}"\n\nOutput ONLY the corrected COMPLETE shader (same rules). Do not explain the fix — code only.`
+    : `Here is the shader currently running. Keep it, and apply ONE change.\n\nCURRENT SHADER:\n${currentCode}\n\nCHANGE TO APPLY: "${instruction}"\n\nReturn the complete edited shader.`;
+  return _shaderCall(REFINE_SYSTEM, user, 6000, priorError ? 'refine retry' : 'refine');
 }
 
 // ── Feature 2: Parameter Narrator ────────────────────────────────────────────

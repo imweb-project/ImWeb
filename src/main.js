@@ -128,6 +128,7 @@ import {
   clearApiKey,
   generatePreset,
   generateShader,
+  refineShader,
   narrateState,
   buildStateSnapshot,
   coachSuggestion,
@@ -6746,6 +6747,15 @@ void main() {
     aiBtn.textContent = "✨ Prompt AI";
     aiBtn.style.cssText = "flex:1;min-height:32px;";
     aiRow.appendChild(aiBtn);
+    // Undo sits beside Prompt AI rather than inside the modal: the modal is
+    // closed by the time you can tell whether the refine was any good.
+    const aiUndoBtn = document.createElement("button");
+    aiUndoBtn.id = "btn-glsl-ai-undo";
+    aiUndoBtn.className = "import-btn hidden";
+    aiUndoBtn.textContent = "↩";
+    aiUndoBtn.title = "Undo the last AI shader change";
+    aiUndoBtn.style.cssText = "min-width:32px;min-height:32px;";
+    aiRow.appendChild(aiUndoBtn);
     if (uniformsEl) glslSection.insertBefore(aiRow, uniformsEl);
     else glslSection.appendChild(aiRow);
 
@@ -6755,6 +6765,10 @@ void main() {
     aiModal.innerHTML = `
       <div id="glsl-ai-box">
         <div id="glsl-ai-title">✨ AI Shader</div>
+        <div id="glsl-ai-mode" class="hidden">
+          <button id="glsl-ai-mode-refine" class="glsl-ai-mode-btn">Refine this shader</button>
+          <button id="glsl-ai-mode-new" class="glsl-ai-mode-btn">Start new</button>
+        </div>
         <textarea id="glsl-ai-prompt" placeholder="Describe the effect… e.g. 'kaleidoscope that pulses with the bass, trails on the beat'"></textarea>
         <div id="glsl-ai-status" class="hidden"></div>
         <div id="glsl-ai-actions">
@@ -6768,6 +6782,57 @@ void main() {
     const aiStatusEl = aiModal.querySelector("#glsl-ai-status");
     const aiGenBtn = aiModal.querySelector("#glsl-ai-generate");
     const aiCancelBtn = aiModal.querySelector("#glsl-ai-cancel");
+    const aiModeRow = aiModal.querySelector("#glsl-ai-mode");
+    const aiModeRefineBtn = aiModal.querySelector("#glsl-ai-mode-refine");
+    const aiModeNewBtn = aiModal.querySelector("#glsl-ai-mode-new");
+
+    // Refine mode is only offered when there is something to refine. BOTH stock
+    // docs count as nothing — GLSL_DEFAULT_DOC (the boot doc: uniform reference
+    // comments + a passthrough main) as much as GLSL_BLANK_DOC. Checking only
+    // the blank one offered "Refine this shader" on a freshly loaded page, which
+    // spends a call to be told the picture is unchanged.
+    let _aiRefine = false;
+    let _aiUndo = null; // { source, labels } — the state before the last AI write
+
+    const PROMPT_PLACEHOLDERS = {
+      new: "Describe the effect… e.g. 'kaleidoscope that pulses with the bass, trails on the beat'",
+      refine:
+        "Describe ONE change… e.g. 'add zoom in/out and 360 spin on uParam3, keep everything else'",
+    };
+
+    const GLSL_STOCK_DOCS = [GLSL_DEFAULT_DOC, GLSL_BLANK_DOC].map((d) => d.trim());
+    function _aiCanRefine() {
+      const src = getGlslSource().trim();
+      return !!src && !GLSL_STOCK_DOCS.includes(src) && /void\s+main\s*\(/.test(src);
+    }
+    function _aiSetMode(refine) {
+      _aiRefine = refine;
+      aiModeRefineBtn.classList.toggle("active", refine);
+      aiModeNewBtn.classList.toggle("active", !refine);
+      aiPromptEl.placeholder = PROMPT_PLACEHOLDERS[refine ? "refine" : "new"];
+      aiGenBtn.textContent = refine ? "Refine" : "Generate";
+    }
+    aiModeRefineBtn.addEventListener("click", () => _aiSetMode(true));
+    aiModeNewBtn.addEventListener("click", () => _aiSetMode(false));
+
+    // Read the four knob labels back off the DOM — the same elements
+    // _updateGlslParamLabels writes to, so an undo restores what the eye saw.
+    function _readGlslParamLabels() {
+      return GLSL_PARAM_DEFAULT_LABELS.map(
+        (def, i) =>
+          uniformsEl?.querySelector(
+            `[data-param-id="glsl.param${i + 1}"] .param-label`,
+          )?.textContent || def,
+      );
+    }
+    aiUndoBtn.addEventListener("click", () => {
+      if (!_aiUndo) return;
+      setGlslSource(_aiUndo.source);
+      _updateGlslParamLabels(_aiUndo.labels);
+      _aiUndo = null;
+      aiUndoBtn.classList.add("hidden");
+      applyGLSL();
+    });
 
     function _aiSetBusy(busy, msg) {
       aiPromptEl.classList.toggle("hidden", busy);
@@ -6784,6 +6849,11 @@ void main() {
     function openAiModal() {
       _aiSetBusy(false, "");
       aiStatusEl.className = "hidden";
+      const canRefine = _aiCanRefine();
+      aiModeRow.classList.toggle("hidden", !canRefine);
+      // Default to Refine whenever there is a shader on screen: reopening the
+      // prompt mid-patch almost always means "change this", not "throw it away".
+      _aiSetMode(canRefine);
       aiModal.classList.remove("hidden");
       aiPromptEl.focus();
     }
@@ -6799,11 +6869,17 @@ void main() {
     }
 
     // Generate → validate (standalone compile) → ONE auto-retry with the
-    // compiler error → inject. DEV hook __glslAIGenerate lets headless
-    // tests stub the provider call.
-    async function _runAiGeneration(promptText) {
-      const gen =
-        (import.meta.env.DEV && window.__glslAIGenerate) || generateShader;
+    // compiler error → inject. `baseCode` non-null routes to refineShader, so
+    // both modes share one validate/retry path. DEV hook __glslAIGenerate lets
+    // headless tests stub the provider call; it receives baseCode as a 4th arg
+    // so a test can assert the editor's source actually reached the model.
+    async function _runAiGeneration(promptText, baseCode = null) {
+      const stub = import.meta.env.DEV ? window.__glslAIGenerate : null;
+      const gen = stub
+        ? (p, pc, pe) => stub(p, pc, pe, baseCode)
+        : baseCode
+          ? (p, pc, pe) => refineShader(p, baseCode, pc, pe)
+          : (p, pc, pe) => generateShader(p, pc, pe);
       let code = await gen(promptText);
       let hdr = buildGlslHeader(code);
       let err = pipeline.validateShaderSource(hdr ? `${hdr}\n${code}` : code);
@@ -6823,9 +6899,16 @@ void main() {
     aiGenBtn.addEventListener("click", async () => {
       const promptText = aiPromptEl.value.trim();
       if (!promptText) return;
-      _aiSetBusy(true, "Generating shader…");
+      const refining = _aiRefine && _aiCanRefine();
+      const baseCode = refining ? getGlslSource() : null;
+      // Captured BEFORE the call, so a refine that never returns leaves the
+      // editor untouched and no stale undo armed.
+      const undoSnapshot = { source: getGlslSource(), labels: _readGlslParamLabels() };
+      _aiSetBusy(true, refining ? "Refining shader…" : "Generating shader…");
       try {
-        const { code } = await _runAiGeneration(promptText);
+        const { code } = await _runAiGeneration(promptText, baseCode);
+        _aiUndo = undoSnapshot;
+        aiUndoBtn.classList.remove("hidden");
         // Inject even if the retry still errors — the editor error panel
         // and last-good fallback handle it non-destructively.
         setGlslSource(code);

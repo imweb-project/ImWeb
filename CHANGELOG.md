@@ -8,6 +8,37 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Added
+- **AI Shader: Refine mode.** The ✨ Prompt AI modal now offers *Refine this
+  shader* alongside *Start new*, and defaults to Refine whenever there is a
+  custom shader in the editor. Refine sends the editor's current source with
+  your instruction and asks for the complete edited shader back, so "add zoom
+  in/out and 360 spin to this" adds to what is on screen instead of replacing
+  it. Previously the modal only ever called `generateShader(prompt)` — the
+  editor's code never reached the model at all, so every "add to current
+  code …" request produced a brand-new shader. The failure was invisible: a
+  valid, good-looking shader came back and compiled; only the thing you asked
+  to keep was gone.
+- **Undo for AI shader writes (`↩`, beside Prompt AI).** Restores the shader
+  and the four knob labels as they were before the last generate or refine.
+  Refining live is only usable if a bad result is one click back; the snapshot
+  is taken *before* the request, so a call that never returns leaves the editor
+  untouched and arms no stale undo.
+- `tests/audit-shader-refine.mjs` — stubs `fetch` and asserts the refine request
+  body actually carries the editor's source (and that plain generation does
+  not), including on the compile-recovery retry. The bug this replaces could not
+  be seen in the output, only in the request.
+
+### Changed
+- `SHADER_CONTRACT` in `AIFeatures.js` now holds the uniform list and output
+  rules once, shared by the generate and refine system prompts. A refine prompt
+  with its own hand-copied uniform list is the `SOURCE_DEFS` failure in prompt
+  form — the two drift the first time a uniform is added, and the only symptom
+  is refined shaders failing to compile against a uniform they were never told
+  about.
+- Refine gets a larger token budget than generate (6000 vs 4000): it must
+  re-emit the whole shader, where generate only writes a new one.
+
 ---
 
 ## [0.23.0] — 2026-09-10 — Within Reach
