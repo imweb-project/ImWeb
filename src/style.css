@@ -5193,6 +5193,33 @@ body.fullscreen-output #app {
     min-width: 96px;
     font-size: 13px;
 }
+/* Mic sits left of Cancel/Refine; margin-right:auto keeps those two on the
+   right without restructuring the actions row. Square, so it reads as a
+   toggle rather than a third confirm button. */
+/* Specificity must beat `#glsl-ai-actions button` above (id + type), or the
+   96px min-width meant for Cancel/Refine makes the mic a third wide button. */
+#glsl-ai-actions #glsl-ai-mic {
+    min-width: 44px;
+    margin-right: auto;
+    font-size: 16px;
+}
+#glsl-ai-mic.hidden {
+    display: none;
+}
+#glsl-ai-mic.active {
+    color: var(--red, #e05);
+    border-color: var(--red, #e05);
+    animation: glslAiPulse 1.2s ease-in-out infinite;
+}
+/* Unlike .busy, the listening line is shown WITH the textarea still visible,
+   so it must not carry the full 24px block padding or it shoves the actions
+   row down while you are dictating. */
+#glsl-ai-status.listening {
+    display: block;
+    padding: 8px;
+    color: var(--accent, #e8b33a);
+    animation: glslAiPulse 1.4s ease-in-out infinite;
+}
 @keyframes glslAiPulse {
     0%, 100% { opacity: 0.35; }
     50% { opacity: 1; }

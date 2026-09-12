@@ -24,6 +24,16 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   Refining live is only usable if a bad result is one click back; the snapshot
   is taken *before* the request, so a call that never returns leaves the editor
   untouched and arms no stale undo.
+- **Dictate the shader prompt (🎤, in the AI Shader modal).** Uses the browser's
+  built-in Web Speech API — no key, no provider call, no audio leaves the
+  browser's own speech path. Interim words appear in the textarea as you speak
+  so a misheard term is caught early; click the mic again to stop. Recognition
+  is pinned to `en-US` because the prompt vocabulary is English shader jargon.
+  The button renders only where the API exists, and every failure reports a
+  plain reason in the status line (permission denied, no speech service, no
+  network, no mic) rather than sitting there dead. The mic is stopped by all
+  four exits — mic click, Cancel, click-outside, Escape — and by committing the
+  prompt: a live mic must never outlive the panel that opened it.
 - `tests/audit-shader-refine.mjs` — stubs `fetch` and asserts the refine request
   body actually carries the editor's source (and that plain generation does
   not), including on the compile-recovery retry. The bug this replaces could not
