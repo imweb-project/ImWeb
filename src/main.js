@@ -9610,19 +9610,25 @@ void main() {
         result.classList.add("hidden");
 
         try {
-          const { params, explanation } = await generatePreset(desc);
-          // Apply parameters
-          let applied = 0;
-          for (const [id, val] of Object.entries(params)) {
-            const p = ps.get(id);
-            if (p) {
-              ps.set(id, val);
-              applied++;
-            }
-          }
-          result.textContent = `✦ ${explanation} (${applied} params set)`;
+          // ps is passed in: the reference and the validation both derive from
+          // it, so the prompt cannot advertise an id the instrument lacks.
+          const { params, explanation, rejected, clamped } =
+            await generatePreset(desc, ps);
+          // Everything here is already validated against ps — ids exist, types
+          // and ranges are enforced upstream — so nothing is silently skipped.
+          for (const [id, val] of Object.entries(params)) ps.set(id, val);
+          const applied = Object.keys(params).length;
+          let msg = `✦ ${explanation} (${applied} params set`;
+          if (clamped.length) msg += `, ${clamped.length} clamped`;
+          // Rejections were previously invisible: the apply loop skipped an
+          // unresolvable id and the count still read as a success.
+          if (rejected.length) msg += `, ${rejected.length} ignored`;
+          msg += ")";
+          if (rejected.length) msg += `\n⚠ ignored: ${rejected.join(", ")}`;
+          result.textContent = msg;
           result.classList.remove("hidden");
           result.style.color = "";
+          if (rejected.length) console.warn("[ai-preset] ignored:", rejected);
         } catch (err) {
           result.textContent =
             err.message === "no-key"

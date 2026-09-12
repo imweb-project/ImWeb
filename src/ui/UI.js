@@ -3942,6 +3942,92 @@ export function buildAISettingsPanel(ai, panelEl) {
   });
   panelEl.appendChild(testBtn);
 
+  // ── Token usage ───────────────────────────────────────────────────────────
+  // Counts come from the provider's own usage fields, never estimated here:
+  // a chars/4 guess cannot see thinking tokens, which are billed as output and
+  // are most of the spend on a shader refine. Cost is shown only where the rate
+  // is known (see RATES in AIFeatures.js) — an unpriced model gets a dash
+  // rather than a confident wrong number.
+  const usageHdr = document.createElement('div');
+  usageHdr.className = 'ai-settings-hdr';
+  usageHdr.style.marginTop = '10px';
+  usageHdr.textContent = 'TOKENS USED';
+  panelEl.appendChild(usageHdr);
+
+  const usageEl = document.createElement('div');
+  usageEl.className = 'ai-usage';
+  panelEl.appendChild(usageEl);
+
+  const fmt = (n) =>
+    n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`;
+  // null = no published rate (a dash, never a number). Exact zero is a real
+  // zero — free local inference, or nothing spent yet — and must not render as
+  // "<$0.01", which reads as "a little" where the truth is "none".
+  const money = (c) =>
+    c === null ? '—' : c === 0 ? '$0.00' : c < 0.01 ? '<$0.01' : `$${c.toFixed(2)}`;
+
+  function refreshUsage() {
+    const { session, totals, last } = ai.getUsage();
+    const rows = [];
+    const cfg = ai.getConfig();
+    const active = cfg.activeProvider;
+    const activeModel = cfg.providers[active]?.model ?? '?';
+
+    if (!session.calls && !Object.keys(totals).length) {
+      usageEl.textContent = 'No AI calls yet.';
+      return;
+    }
+    // Session first — "since this page loaded" is the number you act on during
+    // a session; the all-time total is the one you act on about the bill.
+    rows.push(
+      `<div class="ai-usage-row"><span>This session</span>` +
+      `<span>${fmt(session.in)} in · ${fmt(session.out)} out · ${session.calls} call${session.calls === 1 ? '' : 's'}` +
+      ` · ${money(ai.usageCost(active, activeModel, session.in, session.out))}</span></div>`,
+    );
+    if (last) {
+      rows.push(
+        `<div class="ai-usage-row dim"><span>Last call</span>` +
+        `<span>${fmt(last.in)} in · ${fmt(last.out)} out · ${relTime(last.ts)}</span></div>`,
+      );
+    }
+    let allIn = 0, allOut = 0, allCost = 0, anyUnpriced = false;
+    for (const [key, v] of Object.entries(totals)) {
+      const [prov, ...rest] = key.split(':');
+      const model = rest.join(':');
+      const c = ai.usageCost(prov, model, v.in, v.out);
+      if (c === null) anyUnpriced = true; else allCost += c;
+      allIn += v.in; allOut += v.out;
+      rows.push(
+        `<div class="ai-usage-row dim"><span>${model}</span>` +
+        `<span>${fmt(v.in)} in · ${fmt(v.out)} out · ${money(c)}</span></div>`,
+      );
+    }
+    rows.push(
+      `<div class="ai-usage-row total"><span>All time</span>` +
+      `<span>${fmt(allIn)} in · ${fmt(allOut)} out · ${money(allCost)}${anyUnpriced ? '+' : ''}</span></div>`,
+    );
+    if (anyUnpriced) {
+      rows.push('<div class="ai-usage-note">— = no published rate on file for that model; its tokens are counted but not priced.</div>');
+    }
+    usageEl.innerHTML = rows.join('');
+  }
+  refreshUsage();
+
+  const usageBtnRow = document.createElement('div');
+  usageBtnRow.style.cssText = 'display:flex;gap:6px;margin-top:6px;';
+  const usageRefreshBtn = document.createElement('button');
+  usageRefreshBtn.className = 'import-btn';
+  usageRefreshBtn.textContent = '⟳ Refresh';
+  usageRefreshBtn.style.flex = '1';
+  usageRefreshBtn.addEventListener('click', refreshUsage);
+  const usageResetBtn = document.createElement('button');
+  usageResetBtn.className = 'import-btn';
+  usageResetBtn.textContent = 'Reset';
+  usageResetBtn.title = 'Clear the stored token totals for this origin';
+  usageResetBtn.addEventListener('click', () => { ai.resetUsage(); refreshUsage(); });
+  usageBtnRow.append(usageRefreshBtn, usageResetBtn);
+  panelEl.appendChild(usageBtnRow);
+
   // AI sub-header
   const aiHdr = document.createElement('div');
   aiHdr.className = 'ai-settings-hdr';
