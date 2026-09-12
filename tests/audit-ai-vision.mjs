@@ -252,10 +252,14 @@ useProvider('anthropic', 'claude-sonnet-5'); reply(OK_REPLY);
 // only on a refine — a new shader has no current output to judge.
 check('the shader frame is gated on the checkbox AND refine mode',
   /refining && aiSeeCb\.checked \? captureVisionFrame\(\) : null/.test(main));
-check('the captured frame is passed into the generation runner',
-  /_runAiGeneration\(promptText, baseCode, seeFrame\)/.test(main));
-check('a non-null image routes to refineShader with it',
-  /refineShader\(p, baseCode, pc, pe, image\)/.test(main));
+// Tolerant of TRAILING arguments, strict about position. Pinning exact arity
+// broke twice in this session — once when vision added an image parameter and
+// again when streaming added onDelta — and an audit that fails on correct code
+// teaches people to edit the audit rather than the code.
+check('the captured frame is passed into the generation runner as its 3rd argument',
+  /_runAiGeneration\(promptText,\s*baseCode,\s*seeFrame\b/.test(main));
+check('a non-null image routes to refineShader in the image position',
+  /refineShader\(p,\s*baseCode,\s*pc,\s*pe,\s*image\b/.test(main));
 
 // ── The narrator dirty-check ─────────────────────────────────────────────────
 //

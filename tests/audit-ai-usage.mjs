@@ -126,13 +126,33 @@ useProvider('anthropic', 'claude-sonnet-5');
 // Structural: ONE metering point. A _recordUsage call inside each provider
 // caller is four places for the next provider to be forgotten.
 const src = readFileSync(resolve(root, 'src/ai/AIFeatures.js'), 'utf8');
+// The invariant is WHERE metering happens, not how many times. There are two
+// routers — _callRaw and _callStream — and metering belongs to them. Putting it
+// inside the provider callers instead would be EIGHT places (four plain, four
+// streaming) for the next provider to be forgotten, and a forgotten provider
+// reads as free.
 const callSites = (src.match(/_recordUsage\(/g) ?? []).length;
-check(`_recordUsage is called from exactly one place (found ${callSites - 1})`, callSites === 2); // 1 definition + 1 call
-check('every provider caller returns a usage field', (src.match(/usage: \{/g) ?? []).length >= 4);
+check(`_recordUsage is called from the routers only (1 definition + 2 calls, found ${callSites})`,
+  callSites === 3);
+const PROVIDER_FNS = [
+  'callAnthropic', 'callGemini', 'callOpenAIShaped', 'callOllama',
+  'streamAnthropic', 'streamGemini', 'streamOpenAIShaped', 'streamOllama',
+];
+for (const fn of PROVIDER_FNS) {
+  const i = src.indexOf(`async function ${fn}(`);
+  check(`${fn} exists`, i !== -1);
+  // Body runs to the next top-level `async function`, which is close enough to
+  // scope the check without parsing.
+  const next = src.indexOf('\nasync function ', i + 1);
+  const body = i === -1 ? '' : src.slice(i, next === -1 ? i + 4000 : next);
+  check(`${fn} does NOT meter itself — that belongs to the router`,
+    !body.includes('_recordUsage('));
+  check(`${fn} reports usage back to the router`, /usage: \{|usage,/.test(body));
+}
 // Rates carry a verification date, so a stale table is visible rather than assumed.
 check('the rate table records when it was verified', /RATES VERIFIED \d{4}-\d{2}-\d{2}/.test(src));
 
-const EXPECTED_CHECKS = 32;
+const EXPECTED_CHECKS = 55;
 if (ran !== EXPECTED_CHECKS) {
   console.error(`FAIL audit-ai-usage: ran ${ran} checks, expected ${EXPECTED_CHECKS} — a section was skipped or added without updating the count.`);
   process.exit(1);
@@ -142,4 +162,4 @@ if (fails.length) {
   for (const f of fails) console.error('  - ' + f);
   process.exit(1);
 }
-console.log(`PASS audit-ai-usage — ${ran} checks: all four provider shapes counted, one metering point, unpriced models not faked as free`);
+console.log(`PASS audit-ai-usage — ${ran} checks: all four provider shapes counted, metering lives in the routers only, unpriced models not faked as free`);

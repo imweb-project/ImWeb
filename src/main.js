@@ -6989,13 +6989,13 @@ void main() {
     // both modes share one validate/retry path. DEV hook __glslAIGenerate lets
     // headless tests stub the provider call; it receives baseCode as a 4th arg
     // so a test can assert the editor's source actually reached the model.
-    async function _runAiGeneration(promptText, baseCode = null, image = null) {
+    async function _runAiGeneration(promptText, baseCode = null, image = null, onDelta = null) {
       const stub = import.meta.env.DEV ? window.__glslAIGenerate : null;
       const gen = stub
         ? (p, pc, pe) => stub(p, pc, pe, baseCode)
         : baseCode
-          ? (p, pc, pe) => refineShader(p, baseCode, pc, pe, image)
-          : (p, pc, pe) => generateShader(p, pc, pe);
+          ? (p, pc, pe) => refineShader(p, baseCode, pc, pe, image, onDelta)
+          : (p, pc, pe) => generateShader(p, pc, pe, onDelta);
       let code = await gen(promptText);
       let hdr = buildGlslHeader(code);
       let err = pipeline.validateShaderSource(hdr ? `${hdr}\n${code}` : code);
@@ -7027,8 +7027,23 @@ void main() {
       _aiSetBusy(true, refining
         ? (seeFrame ? "Refining shader (looking at the canvas)…" : "Refining shader…")
         : "Generating shader…");
+      // Live preview: the modal closes the moment the first characters arrive
+      // so the code can be watched landing in the editor. That is the whole
+      // point of streaming — a 20-second still panel is indistinguishable from
+      // a hung one, and this is a performance instrument.
+      let _streamOpen = false;
+      const onDelta = (soFar) => {
+        if (!_streamOpen) {
+          _streamOpen = true;
+          closeAiModal();
+        }
+        // Written straight in, unextracted: a partial response has no closing
+        // brace and nothing to extract yet. The FINAL value below is the
+        // extracted, validated one — this is a view, not the result.
+        setGlslSource(soFar);
+      };
       try {
-        const { code } = await _runAiGeneration(promptText, baseCode, seeFrame);
+        const { code } = await _runAiGeneration(promptText, baseCode, seeFrame, onDelta);
         _aiUndo = undoSnapshot;
         aiUndoBtn.classList.remove("hidden");
         // Inject even if the retry still errors — the editor error panel
@@ -7037,7 +7052,7 @@ void main() {
         glslPresetSel.value = "__custom"; // generated code is unsaved
         const labels = _parseAiLabels(code);
         if (labels) _updateGlslParamLabels(labels);
-        closeAiModal();
+        closeAiModal(); // no-op when the stream already closed it
         applyGLSL();
       } catch (e) {
         if (e?.message === "no-key") {
@@ -7058,6 +7073,16 @@ void main() {
           });
           aiStatusEl.appendChild(fixBtn);
         } else {
+          // A stream that already wrote partial text into the editor must put
+          // it back — otherwise a truncation or a network drop leaves a
+          // half-written shader where a working one used to be, which is
+          // exactly what the truncation guard exists to prevent.
+          if (_streamOpen) {
+            setGlslSource(undoSnapshot.source);
+            _updateGlslParamLabels(undoSnapshot.labels);
+            applyGLSL();
+            aiModal.classList.remove("hidden"); // reopen to show why
+          }
           // Name the mode that actually failed. "Generation failed" on a
           // refine sent the reader looking for a generation problem.
           _aiShowError(`${refining ? "Refine" : "Generation"} failed: ${e?.message ?? e}`);
