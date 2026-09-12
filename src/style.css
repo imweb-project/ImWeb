@@ -5152,6 +5152,37 @@ body.fullscreen-output #app {
     max-height: 160px;
     overflow: auto;
 }
+/* Refine / New segmented switch — only rendered when there is a shader on
+   screen to refine, so it is .hidden by default from the markup. */
+#glsl-ai-mode {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+#glsl-ai-mode.hidden {
+    display: none;
+}
+.glsl-ai-mode-btn {
+    flex: 1;
+    min-height: 32px;
+    font-family: inherit;
+    font-size: 12px;
+    color: var(--dim, #888);
+    background: transparent;
+    border: 1px solid var(--border, #333);
+    border-radius: 3px;
+    cursor: pointer;
+}
+.glsl-ai-mode-btn:hover {
+    color: var(--fg, #ddd);
+    border-color: var(--accent, #e8b33a);
+}
+.glsl-ai-mode-btn.active {
+    color: var(--accent, #e8b33a);
+    border-color: var(--accent, #e8b33a);
+    background: rgba(232, 179, 58, 0.08);
+}
+
 #glsl-ai-actions {
     display: flex;
     gap: 8px;
