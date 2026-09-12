@@ -997,7 +997,7 @@ export const MUTATIONS = [
     audit: 'audit-ai-vision.mjs',
     file: 'src/main.js',
     why: 'the narrator fires on a timer, so an ungated capture sends an image on every tick — the toggle reads as off while every narration is billed at vision rates',
-    find: '      const frame = getVisionConfig().narrator ? captureVisionFrame() : null;',
+    find: '      const frame = seeing ? captureVisionFrame() : null;',
     replace: '      const frame = captureVisionFrame();',
   },
   {

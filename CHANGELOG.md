@@ -9,6 +9,32 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **A home for the Narrator and Coach.** Both were reachable only as unlabelled
+  glyphs in the status bar (`𝔸` and `⬡`) while everything that configures them
+  lived in the AI panel. There are now labelled Run buttons beside those
+  settings. They *delegate* to the toolbar buttons rather than keeping their own
+  idea of on-ness — one source of truth, so the two can never disagree about
+  whether the narrator is running, and either place reflects the other
+  instantly.
+
+### Changed
+- **The Narrator only speaks when something has actually changed.** It fired on
+  a timer regardless, so an untouched patch was re-described every interval for
+  the life of the session — the same sentence, billed each time. Measured in a
+  browser: **1 provider call over ~6 ticks on an idle patch, where it was 6.**
+
+  The dirty check is not params-only, and that distinction is the whole
+  difficulty: with vision on, a live camera, a playing movie, a feedback loop
+  and any running LFO all move the picture while every parameter sits still, so
+  a params-only skip would fall silent over exactly the most visually active
+  patches — the ones most worth narrating. When vision is on it also compares an
+  8×8 average hash of the frame, and narrates when either the patch or the
+  picture has moved. An unreadable canvas counts as *changed*, so a failure can
+  never silence the narrator permanently, and the state is recorded only after a
+  successful call, so one network blip does not mute it until you happen to
+  touch a parameter.
+
+### Added
 - **Refine with vision.** A `Let it see the canvas` checkbox in the AI Shader
   modal, shown only in Refine mode — "Start new" has no current output to judge.
   The frame is captured before the editor is touched, so it is the picture you

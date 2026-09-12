@@ -4051,6 +4051,41 @@ export function buildAISettingsPanel(ai, panelEl) {
   const narrCfg = cfg.narrator ?? { interval: 10000, length: 'medium' };
   const coachCfg = cfg.coach ?? { interval: 45000 };
 
+  // ── Narrator / Coach on-off, beside their own settings ────────────────────
+  // Until now the only way to run either was an unlabelled glyph in the status
+  // bar (𝔸 and ⬡), while everything that configures them lived here. These
+  // buttons DELEGATE to those toolbar buttons rather than keeping their own
+  // idea of on-ness: one source of truth, so the two can never disagree about
+  // whether the narrator is running.
+  const runRow = document.createElement('div');
+  runRow.className = 'ai-run-row';
+  const runBtn = (label, btnId, title) => {
+    const b = document.createElement('button');
+    b.className = 'import-btn ai-run-btn';
+    b.textContent = label;
+    b.title = title;
+    const target = () => document.getElementById(btnId);
+    b.addEventListener('click', () => target()?.click());
+    // Mirror the toolbar button's state instead of tracking our own.
+    const sync = () => b.classList.toggle('active', !!target()?.classList.contains('active'));
+    sync();
+    const t = target();
+    if (t) new MutationObserver(sync).observe(t, { attributes: true, attributeFilter: ['class'] });
+    return b;
+  };
+  runRow.append(
+    runBtn('𝔸 Narrator', 'btn-ai-narrator',
+      'Start/stop the live narration overlay (also the 𝔸 button in the status bar, or press n)'),
+    runBtn('⬡ Coach', 'btn-ai-coach',
+      'Start/stop performance suggestions (also the ⬡ button in the status bar)'),
+  );
+  panelEl.appendChild(row('Run', runRow));
+  const runNote = document.createElement('div');
+  runNote.className = 'ai-settings-note';
+  runNote.textContent =
+    'The Narrator only speaks when the patch or the picture has actually changed.';
+  panelEl.appendChild(runNote);
+
   panelEl.appendChild(row('Narrator interval', makeSelect(
     [5000, 10000, 15000, 30000, 60000].map(v => ({ value: String(v), label: `${v / 1000}s` })),
     String(narrCfg.interval),
