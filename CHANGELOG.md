@@ -9,6 +9,36 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Canvas vision — the AI can look at the output.** Two toggles in the AI
+  settings panel (`Canvas vision`): *Narrator sees canvas* and *Coach sees
+  canvas*. With vision on, the Narrator describes **the picture** rather than
+  the patch — colour, movement, texture, what dominates the frame — and the
+  Coach can judge the image ("too dark", "gone static") instead of only your
+  recent edits. The frame is a 512px-wide JPEG (q0.6) of `#output-canvas`,
+  captured through the same path as the preset thumbnails.
+
+  The prompt changes with the image, not just the payload: with a frame
+  attached the signal path is demoted to vocabulary for naming what is on
+  screen, and the model is told not to list parameters. Sending a picture while
+  still asking "describe the signal path" returns the narration you already had,
+  at vision prices — an expensive no-op, and one that looks like success.
+
+  Each provider takes an image in its own envelope, mapped at the edge like the
+  stop reasons and usage fields: Anthropic an `image` content block (raw
+  base64), Gemini `inline_data` in `parts` (raw base64), the OpenAI shape
+  `image_url` (a full `data:` URL — the one family that differs), Ollama a
+  sibling `images[]` array (raw base64). A provider handed the wrong envelope
+  does not error; it ignores the picture and answers from the text.
+
+  **Off by default**, and the panel says what it costs (~1k extra input tokens
+  per call). The narrator fires on a timer, so defaulting it on would spend
+  money describing an unchanged frame. A tainted canvas (a cross-origin movie in
+  the chain) degrades to text-only rather than killing the narrator.
+- `tests/audit-ai-vision.mjs` (38 checks) and three more mutations.
+  `npm run mutate`: **99/99 caught** — including the Ollama envelope bug this
+  audit caught before it shipped.
+
+### Added
 - **The AI State Generator works again, and now reaches the whole instrument.**
   The parameter reference sent to the model is **derived from the live
   ParameterSystem** instead of being a hand-typed prose block. The block it

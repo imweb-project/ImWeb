@@ -4069,6 +4069,39 @@ export function buildAISettingsPanel(ai, panelEl) {
     v => ai.setCoachInterval(Number(v))
   )));
 
+  // ── Canvas vision ─────────────────────────────────────────────────────────
+  // Off by default and shown with its cost, because the narrator fires on a
+  // timer: left on over an idle patch it spends real money describing a frame
+  // that has not changed. The checkbox is the honest place to say so.
+  const visCfg = cfg.vision ?? { narrator: false, coach: false };
+  const visionToggle = (label, which, title) => {
+    const wrap = document.createElement('label');
+    wrap.className = 'ai-vision-toggle';
+    wrap.title = title;
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = !!visCfg[which];
+    cb.addEventListener('change', () => ai.setVision(which, cb.checked));
+    const span = document.createElement('span');
+    span.textContent = label;
+    wrap.append(cb, span);
+    return wrap;
+  };
+  const visRow = document.createElement('div');
+  visRow.className = 'ai-vision-row';
+  visRow.append(
+    visionToggle('Narrator sees canvas', 'narrator',
+      'Send the current output frame with each narration — it describes the picture instead of the patch.'),
+    visionToggle('Coach sees canvas', 'coach',
+      'Send the current output frame with each coaching tip — it can judge the image, not just your recent edits.'),
+  );
+  panelEl.appendChild(row('Canvas vision', visRow));
+  const visNote = document.createElement('div');
+  visNote.className = 'ai-settings-note';
+  visNote.textContent =
+    'Sends a 512px JPEG of the output — roughly 1k extra input tokens per call. Needs a vision-capable model.';
+  panelEl.appendChild(visNote);
+
   // The DOCUMENTATION block that used to sit here moved to the Help menu
   // (buildHelpMenu, below). It was the only persistent route to the manual and
   // the tour, and it was inside the AI provider panel — nobody configuring an
