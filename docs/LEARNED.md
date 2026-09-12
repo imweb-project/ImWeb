@@ -14,6 +14,14 @@ useful ones do. Do not compress a lesson to fit a line.
 The status tag says whether a lesson is still carried in prose or has been made
 mechanical. Promoting an entry is the point; the `new-audit` skill exists for it.
 
+A tag may be CORRECTED in place. The no-rewrite rule above protects a lesson's
+text, not its status line: a tag is a claim about which mechanism carries the
+lesson today, so when that changes — or when it was wrong when written — change
+it and note the correction with a date inside the entry. A stale tag understates
+the repo's coverage and draws promotion pressure at a lesson that already has a
+fence, which is how the 2026-08-13 `git checkout` entry stayed unpromoted for a
+week after a hook had already mechanised it.
+
 - `[audit]`    enforced by a script in tests/, run by `npm test`
 - `[tool]`     mechanical, but ON DEMAND rather than in `npm test` — the rule is
                executable and nothing runs it for you (`npm run mutate`). Added
