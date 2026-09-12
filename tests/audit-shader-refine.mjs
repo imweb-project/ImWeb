@@ -210,10 +210,15 @@ useProvider('anthropic', { apiKey: 'sk-ant-audit', model: 'claude-sonnet-5' });
   // Positive assertions: the editor source must be READ and PASSED at the site.
   check('refine mode reads the editor source for baseCode',
     /const baseCode\s*=\s*refining\s*\?\s*getGlslSource\(\)\s*:\s*null/.test(site));
+  // Signature-tolerant but still specific: baseCode must be the SECOND
+  // argument to the runner and the SECOND to refineShader. Pinning the exact
+  // arity broke when vision added a trailing image parameter — a stale audit
+  // that fails on correct code trains people to edit the audit, which is how a
+  // real check gets loosened into nothing.
   check('baseCode is handed to the generation runner',
-    /_runAiGeneration\(promptText,\s*baseCode\)/.test(main));
-  check('a non-null baseCode routes to refineShader',
-    /baseCode\s*\n?\s*\?\s*\(p, pc, pe\) => refineShader\(p, baseCode, pc, pe\)/.test(main));
+    /_runAiGeneration\(promptText,\s*baseCode\b/.test(main));
+  check('a non-null baseCode routes to refineShader as its source argument',
+    /refineShader\(p,\s*baseCode,\s*pc,\s*pe/.test(main));
 }
 
 // Refine must have more room than generate: it re-emits the whole shader.

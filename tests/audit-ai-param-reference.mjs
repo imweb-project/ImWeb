@@ -116,7 +116,47 @@ check('the preset prompt takes the reference as an argument',
   /function presetSystem\(paramReference\)/.test(src));
 check('generatePreset requires ps', /generatePreset needs the ParameterSystem/.test(src));
 
-const EXPECTED_CHECKS = 73;
+// 7. A truncated patch must be reported as truncated, not as missing JSON.
+// Reported live: a real Generate State run returned valid JSON cut off
+// mid-string, and the error blamed the reply for containing "no JSON object" —
+// sending the user to hunt for a model or prompt fault when the actual answer
+// was that the patch needed more room. Same misdiagnosis already fixed on the
+// shader path; this half was missed.
+{
+  const CUT = '{\n  "params": {\n    "layer.fg": 21,\n    "sdf.active": 1,\n    "';
+  const reply = (text, stop) => {
+    globalThis.fetch = async () => ({ ok: true, json: async () => ({
+      content: [{ type: 'text', text }], stop_reason: stop }) });
+  };
+  store.set('imweb-ai-config', JSON.stringify({
+    activeProvider: 'anthropic', providers: { anthropic: { apiKey: 'k', model: 'claude-sonnet-5' } } }));
+  const m = await import(`../src/ai/AIFeatures.js?trunc=${Math.random()}`);
+
+  reply(CUT, 'max_tokens');
+  let msg = '';
+  try { await m.generatePreset('x', ps); } catch (e) { msg = e.message; }
+  check('a provider-reported truncation says it ran out of room', /ran out of room/.test(msg));
+  check('and denies the quota/key theory outright', /not a quota or key problem/i.test(msg));
+  check('and does not claim there was no JSON', !/contained no JSON object/.test(msg));
+
+  // Some providers report a clean stop on a reply the model simply stopped
+  // writing, so the shape has to be detected independently of the stop reason.
+  reply(CUT, 'end_turn');
+  msg = '';
+  try { await m.generatePreset('x', ps); } catch (e) { msg = e.message; }
+  check('a silently truncated patch is still detected as cut off', /cut off mid-object|unfinished/i.test(msg));
+
+  // A genuinely JSON-free reply must still say exactly that.
+  reply('I cannot help with that.', 'end_turn');
+  msg = '';
+  try { await m.generatePreset('x', ps); } catch (e) { msg = e.message; }
+  check('a real no-JSON reply still reports no JSON', /contained no JSON object/.test(msg));
+
+  const budget = Number(src.match(/const PRESET_TOKENS = (\d+)/)?.[1]);
+  check('the preset budget is well clear of the 2000 that failed', budget >= 8000);
+}
+
+const EXPECTED_CHECKS = 79;
 if (ran !== EXPECTED_CHECKS) {
   console.error(`FAIL audit-ai-param-reference: ran ${ran} checks, expected ${EXPECTED_CHECKS} — a section was skipped or added without updating the count.`);
   process.exit(1);
