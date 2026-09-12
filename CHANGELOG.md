@@ -9,6 +9,56 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **The AI State Generator works again, and now reaches the whole instrument.**
+  The parameter reference sent to the model is **derived from the live
+  ParameterSystem** instead of being a hand-typed prose block. The block it
+  replaces had rotted exactly as CLAUDE.md's `SOURCE_DEFS` lesson predicts:
+  **17 of the 39 ids it advertised no longer existed** (`keyer.soft` for
+  `keyer.softness`, `feedback.x/y` for `feedback.hor/ver`,
+  `transfermode.mode` for the blend system that replaced it, `color.*` for
+  `color1.*`, `effect.kaleid` for `effect.kaleidoscope`, `output.brightness`
+  for `effect.outbright`, …), and its source table listed **20 of 33 sources
+  with every index from 4 upward shifted by one** — so "put Noise on the
+  foreground" routed Color2, and sources 20–32 (SDF, Analog, TimeDisp, Movie B,
+  the three Mix buses, Rutt-Etra, RGB Delay, Motion) were invisible to the AI
+  entirely. **Params reachable by the AI: 22 → 594.**
+- **Token counter** in the AI settings panel: this session, the last call, a row
+  per provider:model, and an all-time total. Counts come from each provider's
+  own usage fields — Anthropic `usage.input_tokens` (plus both cache fields),
+  Gemini `usageMetadata.promptTokenCount` and `thoughtsTokenCount`, the
+  OpenAI-shaped `usage.prompt_tokens`, Ollama `prompt_eval_count` — never
+  estimated locally, because a chars/4 guess cannot see thinking tokens, which
+  are billed as output and dominate a shader refine. Cost is shown only where a
+  published rate is on file (dated in source); an unpriced model shows `—`
+  rather than a confident wrong number, and local Ollama is a real `$0.00`.
+- `tests/audit-ai-param-reference.mjs` (73 checks) and `tests/audit-ai-usage.mjs`
+  (32 checks), plus six entries in `tests/mutations.mjs`. `npm run mutate`
+  reports **96/96 caught**.
+
+### Fixed
+- **"Bad response: no JSON found" is fixed.** The old parse was a greedy
+  `/\{[\s\S]*\}/`, defeated by three shapes the models actually produce: a
+  ```json fence, prose around the object, and — because greedy matching ends at
+  the LAST brace in the message — any trailing commentary containing one. The
+  replacement walks braces tracking string state and escapes, and tries every
+  `{` in turn, returning the first candidate that parses AND carries `params`.
+  (Found while testing: taking only the first `{` is not enough — prose like
+  "I think {like this} you want: {…}" opens with a balanced pair that is not
+  JSON at all.)
+- **A parameter the model gets wrong is now reported, not silently dropped.**
+  The apply loop was `if (p) ps.set(id, val)`, so an unresolvable id vanished
+  while the readout still said "(N params set)" — the reason a year of drift
+  went unnoticed. Values are validated against the descriptor before anything
+  is written: ids must exist, `true/false` becomes 1/0, a SELECT answered with
+  its label instead of its index is recovered, out-of-range SELECT indices are
+  rejected, and continuous values are clamped. The panel now reports what was
+  set, what was clamped and what was ignored.
+- Preset generation budget 600 → 2000 tokens; 600 could not hold a patch plus
+  an explanation.
+- A zero cost renders as `$0.00`, not `<$0.01` — "a little" where the truth is
+  "none".
+
+### Added
 - **AI Shader: Refine mode.** The ✨ Prompt AI modal now offers *Refine this
   shader* alongside *Start new*, and defaults to Refine whenever there is a
   custom shader in the editor. Refine sends the editor's current source with

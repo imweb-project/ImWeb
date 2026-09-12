@@ -907,4 +907,60 @@ export const MUTATIONS = [
     find: '<div class="section-header">Mix 2</div>',
     replace: '<div class="section-header">Mix 1</div>',
   },
+  // ═════════════════════════════════════════════════════════════════════════
+  // AI parameter reference and token accounting (#113)
+  //
+  // The reference was a hand-typed prose block that had rotted to 17 dead ids
+  // of 39 and a source table off by one from index 4 up. Derivation is the
+  // fix; these hold the fix in place.
+  // ═════════════════════════════════════════════════════════════════════════
+  {
+    name: 'the parameter reference reverts to a hand-written literal',
+    audit: 'audit-ai-param-reference.mjs',
+    file: 'src/ai/AIFeatures.js',
+    why: 'a literal cannot track the instrument: the last one advertised keyer.soft, feedback.x and transfermode.mode long after they were renamed, and listed 20 of 33 sources with every index from 4 up shifted by one — so "put Noise on FG" routed Color2, and a dead id was skipped in silence while the panel still reported "(N params set)"',
+    find: 'const NON_VISUAL_PREFIXES = [',
+    replace: 'const PARAM_REFERENCE = `layer.fg [0..19] — foreground`;\nconst NON_VISUAL_PREFIXES = [',
+  },
+  {
+    name: 'SELECT options are reduced to a bare range',
+    audit: 'audit-ai-param-reference.mjs',
+    file: 'src/ai/AIFeatures.js',
+    why: 'an index with no legend is exactly how "route to Noise" became "route to Color2" — the model has to be told that 5 means Noise ON THIS BUILD, because the list is append-only and every index shifts when one is inserted',
+    find: "      return (p.options ?? []).map((o, i) => `${i}=${o}`).join(' ');",
+    replace: '      return `0..${(p.options ?? []).length - 1}`;',
+  },
+  {
+    name: 'an unpriced model is costed as free instead of unknown',
+    audit: 'audit-ai-usage.mjs',
+    file: 'src/ai/AIFeatures.js',
+    why: 'a confident $0.00 against a model whose rate is not on file reads as "this provider is free" — the one thing a spend readout must never say; an unknown rate has to show a dash so the number that IS shown can be trusted',
+    find: '  if (!r) return null;',
+    replace: '  if (!r) return 0;',
+  },
+  {
+    name: 'Gemini thinking tokens are dropped from the output count',
+    audit: 'audit-ai-usage.mjs',
+    file: 'src/ai/AIFeatures.js',
+    why: 'thoughtsTokenCount is billed as output and dominates a shader refine, so counting only candidatesTokenCount under-reports the expensive calls by most of their cost while the cheap ones look right — the shape of error nobody catches by eye',
+    find: `      out: (data.usageMetadata?.candidatesTokenCount ?? 0)
+         + (data.usageMetadata?.thoughtsTokenCount ?? 0),`,
+    replace: '      out: data.usageMetadata?.candidatesTokenCount ?? 0,',
+  },
+  {
+    name: 'a truncated shader response is injected instead of refused',
+    audit: 'audit-shader-refine.mjs',
+    file: 'src/ai/AIFeatures.js',
+    why: 'extractGlsl slices to the last closing brace and a half-written shader has plenty, so a max_tokens truncation passes as valid code and replaces the working shader on screen with a broken one — silently, mid-performance',
+    find: "  if (stop === 'max_tokens') {",
+    replace: "  if (false && stop === 'max_tokens') {",
+  },
+  {
+    name: 'refine stops sending the editor source',
+    audit: 'audit-shader-refine.mjs',
+    file: 'src/main.js',
+    why: 'this is the original bug: without the current shader in the request, every "add to current code ..." prompt returns a brand-new shader that compiles and looks fine, and the only tell is that the thing you asked to keep is gone',
+    find: '      const baseCode = refining ? getGlslSource() : null;',
+    replace: '      const baseCode = null;',
+  },
 ];

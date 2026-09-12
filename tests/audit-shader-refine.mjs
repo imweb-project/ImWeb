@@ -195,6 +195,27 @@ useProvider('anthropic', { apiKey: 'sk-ant-audit', model: 'claude-sonnet-5' });
   check('unknown stop reason is reported as unknown, not truncation', /stop reason: unknown/.test(msg));
 }
 
+// ── The WIRING, not just the function ────────────────────────────────────────
+//
+// Found by `npm run mutate`: every check above exercises refineShader()
+// directly, so replacing main.js's `baseCode = refining ? getGlslSource()
+// : null` with `= null` left this audit fully green while reproducing the
+// original bug exactly — refine silently degrades to generate, returns a
+// perfectly good shader, and the only tell is that your shader is gone.
+// A correct function reached by a broken call site is still a broken feature.
+{
+  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  const site = main.slice(main.indexOf('aiGenBtn.addEventListener'));
+  check('the refine call site is still present', site.length > 0);
+  // Positive assertions: the editor source must be READ and PASSED at the site.
+  check('refine mode reads the editor source for baseCode',
+    /const baseCode\s*=\s*refining\s*\?\s*getGlslSource\(\)\s*:\s*null/.test(site));
+  check('baseCode is handed to the generation runner',
+    /_runAiGeneration\(promptText,\s*baseCode\)/.test(main));
+  check('a non-null baseCode routes to refineShader',
+    /baseCode\s*\n?\s*\?\s*\(p, pc, pe\) => refineShader\(p, baseCode, pc, pe\)/.test(main));
+}
+
 // Refine must have more room than generate: it re-emits the whole shader.
 {
   const src = readFileSync(new URL('../src/ai/AIFeatures.js', import.meta.url), 'utf8');
@@ -216,7 +237,7 @@ if (fails.length) {
 // An audit that passes because its body never executed is the worst outcome
 // (LEARNED.md 2026-08-15). Assert the check COUNT so a silently skipped
 // section fails loudly instead of reporting all-clear.
-const EXPECTED_CHECKS = 40;
+const EXPECTED_CHECKS = 44;
 if (ran !== EXPECTED_CHECKS) {
   console.error(`FAIL audit-shader-refine: ran ${ran} checks, expected ${EXPECTED_CHECKS} — a section was skipped or added without updating the count.`);
   process.exit(1);

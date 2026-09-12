@@ -14,7 +14,7 @@
  *   buildActivitySnapshot                  — pure state helpers
  */
 
-import { SOURCES } from '../controls/ParameterSystem.js';
+import { SOURCES, PARAM_TYPE } from '../controls/ParameterSystem.js';
 
 // ── Provider definitions ──────────────────────────────────────────────────────
 
@@ -219,6 +219,14 @@ async function callAnthropic(pcfg, system, user, maxTokens) {
   return {
     text: (data.content ?? []).find((b) => b.type === 'text')?.text ?? '',
     stop: _stop(data.stop_reason),
+    // Cache reads/writes are billed differently but are still input tokens —
+    // counting them keeps the total honest about what was sent.
+    usage: {
+      in:  (data.usage?.input_tokens ?? 0)
+         + (data.usage?.cache_read_input_tokens ?? 0)
+         + (data.usage?.cache_creation_input_tokens ?? 0),
+      out: data.usage?.output_tokens ?? 0,
+    },
   };
 }
 
@@ -245,6 +253,13 @@ async function callGemini(pcfg, system, user, maxTokens) {
     // that as 'unknown' rather than the refusal it is.
     stop: cand ? _stop(cand.finishReason)
                : (data.promptFeedback?.blockReason ? 'refusal' : 'unknown'),
+    usage: {
+      in:  data.usageMetadata?.promptTokenCount ?? 0,
+      // thoughtsTokenCount is billed as output on thinking models and is
+      // omitted elsewhere — the ?? 0 covers both.
+      out: (data.usageMetadata?.candidatesTokenCount ?? 0)
+         + (data.usageMetadata?.thoughtsTokenCount ?? 0),
+    },
   };
 }
 
@@ -291,8 +306,13 @@ async function callOpenAIShaped(providerId, pcfg, system, user, maxTokens) {
     const e = await res.json().catch(() => ({}));
     throw new Error(e.error?.message ?? `${ep.label} error ${res.status}`);
   }
-  const choice = (await res.json()).choices?.[0];
-  return { text: choice?.message?.content ?? '', stop: _stop(choice?.finish_reason) };
+  const body = await res.json();
+  const choice = body.choices?.[0];
+  return {
+    text: choice?.message?.content ?? '',
+    stop: _stop(choice?.finish_reason),
+    usage: { in: body.usage?.prompt_tokens ?? 0, out: body.usage?.completion_tokens ?? 0 },
+  };
 }
 
 async function callOllama(pcfg, system, user, _maxTokens) {
@@ -311,7 +331,11 @@ async function callOllama(pcfg, system, user, _maxTokens) {
   });
   if (!res.ok) throw new Error(`Ollama ${res.status} — is it running at ${base}?`);
   const data = await res.json();
-  return { text: data.message?.content ?? '', stop: _stop(data.done_reason) };
+  return {
+    text: data.message?.content ?? '',
+    stop: _stop(data.done_reason),
+    usage: { in: data.prompt_eval_count ?? 0, out: data.eval_count ?? 0 },
+  };
 }
 
 // ── Model list fetchers ─────────────────────────────────────────────────────
@@ -388,20 +412,107 @@ async function fetchModels(providerId) {
 
 // ── Module-level call router ──────────────────────────────────────────────────
 
-/** Full result: { text, stop }. Use when the stop reason matters. */
+// ── Token accounting ────────────────────────────────────────────────────────
+//
+// Tokens are REPORTED BY THE PROVIDER, never estimated here: every one of the
+// four request shapes returns a count, and a local guess (chars/4) would be
+// wrong in the direction that matters — it cannot see thinking tokens, which
+// are billed as output and are most of the spend on a refine.
+//
+// Cost is deliberately separate. A price table in source drifts silently and
+// is the exact hand-copied-list failure this file has already been bitten by
+// twice, so an unpriced model shows '—' rather than a confident wrong number.
+
+const USAGE_KEY = 'imweb-ai-usage';
+
+/**
+ * Published rates, USD per million tokens, [input, output].
+ * RATES VERIFIED 2026-09-12 — anything not listed prices as unknown, on
+ * purpose: a missing row costs a dash on screen, a stale row costs trust.
+ */
+const RATES = {
+  'claude-opus-5':      [5.00, 25.00],
+  'claude-opus-4-8':    [5.00, 25.00],
+  'claude-opus-4-7':    [5.00, 25.00],
+  'claude-opus-4-6':    [5.00, 25.00],
+  'claude-sonnet-5':    [2.00, 10.00],
+  'claude-sonnet-4-6':  [3.00, 15.00],
+  'claude-haiku-4-5':   [1.00,  5.00],
+  'claude-fable-5':     [10.00, 50.00],
+  'claude-fable-5-1':   [10.00, 50.00],
+  // Local inference is free — a real zero, not an unknown.
+  __ollama:             [0, 0],
+};
+
+function loadUsage() {
+  try { return JSON.parse(localStorage.getItem(USAGE_KEY)) ?? {}; }
+  catch { return {}; }
+}
+let _usage = null;
+const _usageAll = () => (_usage ??= loadUsage());
+// Session totals live in memory only — "since this page loaded" is a different
+// question from "ever", and both are worth having.
+const _session = { in: 0, out: 0, calls: 0 };
+
+/** Record one call's usage against provider/model, and persist the total. */
+function _recordUsage(providerId, model, usage) {
+  if (!usage) return;
+  const inTok = usage.in | 0, outTok = usage.out | 0;
+  if (!inTok && !outTok) return; // provider reported nothing — record nothing
+  _session.in += inTok; _session.out += outTok; _session.calls++;
+  const all = _usageAll();
+  const key = `${providerId}:${model}`;
+  const e = (all[key] ??= { in: 0, out: 0, calls: 0 });
+  e.in += inTok; e.out += outTok; e.calls++;
+  all.__last = { provider: providerId, model, in: inTok, out: outTok, ts: Date.now() };
+  try { localStorage.setItem(USAGE_KEY, JSON.stringify(all)); }
+  catch { /* quota — the in-memory session figures still work */ }
+}
+
+/** USD for a provider:model row, or null when the rate is not known. */
+export function usageCost(providerId, model, inTok, outTok) {
+  const r = providerId === 'ollama' ? RATES.__ollama : RATES[model];
+  if (!r) return null;
+  return (inTok / 1e6) * r[0] + (outTok / 1e6) * r[1];
+}
+
+/**
+ * { session, totals, last } — session is this page load, totals is per
+ * provider:model across every load on this origin.
+ */
+export function getUsage() {
+  const all = _usageAll();
+  const totals = {};
+  for (const [k, v] of Object.entries(all)) if (!k.startsWith('__')) totals[k] = v;
+  return { session: { ..._session }, totals, last: all.__last ?? null };
+}
+
+export function resetUsage() {
+  _usage = {};
+  _session.in = _session.out = _session.calls = 0;
+  try { localStorage.removeItem(USAGE_KEY); } catch { /* nothing to clear */ }
+}
+
+/** Full result: { text, stop, usage }. Use when the stop reason matters. */
 async function _callRaw(system, user, maxTokens = 512) {
   const cfg  = _config();
   const id   = cfg.activeProvider;
   const pcfg = cfg.providers[id];
   if (!pcfg) throw new Error('No provider configured');
   if (PROVIDERS[id]?.needsKey && !pcfg.apiKey) throw new Error('no-key');
-  if (id in OPENAI_SHAPED) return callOpenAIShaped(id, pcfg, system, user, maxTokens);
-  switch (id) {
-    case 'anthropic':  return callAnthropic(pcfg, system, user, maxTokens);
-    case 'gemini':     return callGemini   (pcfg, system, user, maxTokens);
-    case 'ollama':     return callOllama   (pcfg, system, user, maxTokens);
-    default:           throw new Error(`Unknown provider: ${id}`);
-  }
+  // ONE metering point. Every caller returns through here, so a new provider
+  // is counted the moment it is routed — the alternative, a _recordUsage call
+  // inside each of the four callers, is four places for the next one to be
+  // forgotten, and an uncounted provider reads as "free".
+  const res = (id in OPENAI_SHAPED)
+    ? await callOpenAIShaped(id, pcfg, system, user, maxTokens)
+    : id === 'anthropic' ? await callAnthropic(pcfg, system, user, maxTokens)
+    : id === 'gemini'    ? await callGemini   (pcfg, system, user, maxTokens)
+    : id === 'ollama'    ? await callOllama   (pcfg, system, user, maxTokens)
+    : null;
+  if (!res) throw new Error(`Unknown provider: ${id}`);
+  _recordUsage(id, pcfg.model ?? PROVIDERS[id]?.defaultModel ?? '?', res.usage);
+  return res;
 }
 
 /**
@@ -439,101 +550,267 @@ export function getCoachConfig() {
 
 // ── System prompts ────────────────────────────────────────────────────────────
 
-const PARAM_REFERENCE = `
-ImWeb parameter reference (id → range/options, description):
-SOURCES (for layer.fg, layer.bg, layer.ds):
-  0=Camera, 1=Movie, 2=Buffer, 3=Color, 4=Noise, 5=3D Scene, 6=Draw, 7=Output(feedback),
-  8=BG1, 9=BG2, 10=Color2, 11=Text, 12=Sound, 13=Delay, 14=Scope, 15=SlitScan,
-  16=Particles, 17=Seq1, 18=Seq2, 19=Seq3
+/**
+ * The parameter reference is DERIVED from the live ParameterSystem, never
+ * written out by hand.
+ *
+ * The block this replaces was a prose copy of the parameter set, and it had
+ * rotted exactly as CLAUDE.md's SOURCE_DEFS lesson predicts: of the 39 ids it
+ * advertised, 17 no longer existed (`keyer.soft` for `keyer.softness`,
+ * `feedback.x/y` for `feedback.hor/ver`, `transfermode.mode` for a blend
+ * system that replaced it, `color.*` for `color1.*`, `effect.kaleid` for
+ * `effect.kaleidoscope`, and so on), and its source table stopped at 20 of 33
+ * with every index from 4 up shifted by one. Nothing caught it: the apply loop
+ * skips an id it cannot resolve, so a wrong name is a no-op and a wrong index
+ * quietly routes to the neighbouring source. The model was designing for an
+ * instrument that had not existed for a year.
+ *
+ * Deriving it also fixes the half nobody would have noticed — the AI could
+ * only ever reach the params somebody remembered to type out.
+ *
+ * SUBJECTS ARE DERIVED, EXCEPTIONS ARE LISTED (LEARNED.md 2026-08-15): every
+ * registered parameter is included unless its prefix is excluded below, so a
+ * newly added parameter is exposed by default rather than silently missing.
+ */
+const NON_VISUAL_PREFIXES = [
+  // Audio engine internals — the Sound SOURCE is visual, its DSP guts are not.
+  'aspec', 'avoice', 'aplay', 'agrain', 'acorp', 'arec', 'audio',
+  'apart0', 'apart1', 'apart2', 'apart3',
+  // Hardware, input and plumbing: nothing here describes a look.
+  'midi', 'touch', 'canvas', 'screen', 'clip', 'projmap',
+  // Draw stroke loopers — transport state, not appearance.
+  'drawloop1', 'drawloop2', 'drawloop3', 'drawloop4',
+  // Index into a user-editable list; meaningless as a cross-machine value
+  // (the same reason glsl.preset is group 'global' — see CLAUDE.md).
+  'glsl',
+];
 
-LAYERS:
-  layer.fg [0..19]     — foreground source
-  layer.bg [0..19]     — background source
-  layer.ds [0..19]     — displacement/key source
+/** Type-specific range text, so the model knows what a legal value is. */
+function _paramRange(p) {
+  switch (p.type) {
+    case PARAM_TYPE.TOGGLE: return '0|1';
+    case PARAM_TYPE.SELECT:
+      // Options ARE the contract for a SELECT — an index with no legend is how
+      // "route to Noise" became "route to Color2".
+      return (p.options ?? []).map((o, i) => `${i}=${o}`).join(' ');
+    default: {
+      const r = `${p.min}..${p.max}`;
+      return p.unit ? `${r}${p.unit}` : r;
+    }
+  }
+}
 
-KEYER:
-  keyer.active [0/1]   — luma keyer on/off
-  keyer.white  [0..1]  — upper threshold (white key level)
-  keyer.black  [0..1]  — lower threshold (black key level)
-  keyer.soft   [0..1]  — edge softness
+/**
+ * Build the parameter reference for the preset prompt from `ps`.
+ * Grouped by prefix so related controls read together.
+ */
+export function buildParamReference(ps) {
+  const groups = new Map();
+  for (const [id, p] of ps.params) {
+    const prefix = id.split('.')[0];
+    if (NON_VISUAL_PREFIXES.includes(prefix)) continue;
+    // A TRIGGER fires an event and resets; it is an action, not a look.
+    if (p.type === PARAM_TYPE.TRIGGER) continue;
+    if (!groups.has(prefix)) groups.set(prefix, []);
+    groups.get(prefix).push(`  ${id} [${_paramRange(p)}]${p.label && p.label !== id ? ` — ${p.label}` : ''}`);
+  }
+  const out = ['ImWeb parameter reference — id [legal values] — label.',
+    'These are the ONLY valid ids. Do not invent or abbreviate one.', ''];
+  for (const [prefix, lines] of groups) out.push(`${prefix.toUpperCase()}:`, ...lines, '');
+  return out.join('\n');
+}
 
-DISPLACEMENT:
-  displace.amount  [0..1]   — displacement strength
-  displace.angle   [0..360] — displacement direction in degrees
-  displace.offset  [-1..1]  — grey-level offset
-  displace.rotateg [0/1]    — circular displacement (RotateGrey)
-  displace.warp    [0..9]   — 0=off, 1=H-Wave, 2=V-Wave, 3=Radial, 4=Spiral,
-                              5=Shear, 6=Pinch, 7=Turb, 8=Rings, 9=Custom
-  displace.warpamt [0..100] — warp strength %
+/**
+ * The set of ids the model may write, for validating its reply. Same
+ * derivation as the reference, so the two cannot disagree.
+ */
+export function allowedParamIds(ps) {
+  const ids = new Set();
+  for (const [id, p] of ps.params) {
+    if (NON_VISUAL_PREFIXES.includes(id.split('.')[0])) continue;
+    if (p.type === PARAM_TYPE.TRIGGER) continue;
+    ids.add(id);
+  }
+  return ids;
+}
 
-TRANSFERMODE:
-  transfermode.mode [0..22] — 0=Copy, 1=XOR, 2=OR, 3=AND, 4=Multiply, 5=Screen,
-    6=Add, 7=Difference, 8=Exclusion, 9=Overlay, 10=Hardlight, 11=Softlight,
-    12=Dodge, 13=Burn, 14=Subtract, 15=Divide, 16=PinLight, 17=VividLight,
-    18=Hue, 19=Saturation, 20=Color, 21=Luminosity
+function presetSystem(paramReference) {
+  return `You are an ImWeb parameter designer. ImWeb is a real-time video synthesis instrument.
 
-BLEND / FEEDBACK:
-  blend.active  [0/1]    — frame persistence on/off
-  blend.amount  [0..1]   — blend mix (0=no blend, 1=full persistence)
-  feedback.scale [-0.5..0.5] — feedback zoom
-  feedback.x    [-0.5..0.5] — horizontal feedback offset
-  feedback.y    [-0.5..0.5] — vertical feedback offset
-
-COLOR SHIFT:
-  colorshift.amount [0..1] — global hue rotation
-
-COLOR SOURCE:
-  color.hue  [0..360]  — BG color hue
-  color.sat  [0..100]  — saturation
-  color.val  [0..100]  — brightness
-
-SCENE 3D:
-  scene3d.spin.x/y/z [−180..180] — auto-spin speed °/s
-  scene3d.geo  [0..12] — geometry: 0=Sphere, 1=Torus, 2=Box, 3=Plane, 4=Cylinder,
-    5=Cone, 6=TorusKnot, 7=Ring, 8=Capsule, 9=Octahedron, 10=Icosahedron,
-    11=Tetrahedron, 12=Dodecahedron
-
-MOVIE:
-  movie.speed  [-1..3]  — playback speed (1=normal, 0=paused, negative=reverse)
-  movie.bpmsync [0/1]   — lock to BPM
-
-EFFECTS:
-  effect.fade      [0..1]   — fade to black
-  effect.interlace [0/1]    — scan-line interlace effect
-  effect.bloom     [0/1]    — bloom glow
-  effect.vignette  [0/1]    — vignette
-  effect.kaleid    [0/1]    — kaleidoscope
-  effect.mirror    [0/1]    — quad mirror
-  effect.grain     [0/1]    — film grain
-  effect.strobe    [0/1]    — stroboscope
-  effect.pixsort   [0/1]    — pixel sort glitch
-  effect.lut       [0/1]    — 3D LUT colour grading
-
-OUTPUT:
-  output.brightness [−1..1]
-  output.contrast   [0..2]
-`;
-
-// ── Feature 1: AI Preset Generator ───────────────────────────────────────────
-
-const PRESET_SYSTEM = `You are an ImWeb parameter designer. ImWeb is a real-time video synthesis instrument.
-${PARAM_REFERENCE}
-The user describes a visual look or mood. You respond with ONLY a JSON object (no markdown, no explanation before/after):
+${paramReference}
+The user describes a visual look or mood. Respond with ONLY a JSON object — no
+markdown fences, no prose before or after:
 {
   "params": { "param.id": value, ... },
   "explanation": "One sentence describing what you set and why."
 }
-Set only the parameters that matter for the described look. Use musically/visually expressive values.
-Important: layer.fg/bg/ds must be integers, all booleans are 0 or 1 (not true/false).`;
+Rules:
+- Use ONLY ids from the reference above, spelled exactly. An id that is not in
+  the list does nothing at all.
+- For a SELECT, write the INTEGER index, not the label ("layer.fg": 5, not "Noise").
+- Booleans are 0 or 1, never true/false.
+- Keep every value inside the stated range.
+- Set only the parameters that matter for the look — a focused patch reads
+  better than a hundred tweaks. Route the sources first (layer.fg / layer.bg /
+  layer.ds), then shape them.`;
+}
 
-export async function generatePreset(description) {
-  const text = await _call(PRESET_SYSTEM,
-    `Create ImWeb parameters for this look: "${description}"`, 600);
-  const match = text.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error('Bad response: no JSON found');
-  const data = JSON.parse(match[0]);
-  if (!data.params || typeof data.params !== 'object') throw new Error('Bad response: missing params');
-  return data; // { params: {...}, explanation: "..." }
+/**
+ * Pull a JSON object out of a model reply.
+ *
+ * The regex this replaces was `/\{[\s\S]*\}/` — greedy, fence-blind, and the
+ * direct cause of the reported "Bad response: no JSON found". Three real
+ * shapes defeated it: a ```json fence (the braces are there but so is prose
+ * the parse then chokes on), a reply that opens with a sentence and happens to
+ * contain a brace in it, and trailing commentary after the object. Greedy also
+ * means the LAST brace in the message closes the match, so any following text
+ * with a `}` in it swallowed the lot.
+ *
+ * It walks forward from a `{` tracking depth, string state and escapes, so it
+ * ends at the brace that actually closes that object — and it tries EVERY `{`
+ * in turn, returning the first candidate that both parses as JSON and carries
+ * a "params" key. Taking only the first `{` is not enough: prose like
+ * `I think {like this} you want: {...}` opens with a balanced brace pair that
+ * is not JSON at all, so a single-shot scan returns garbage and the parse
+ * fails on text the reply did contain a perfectly good object for.
+ * Exported for headless tests.
+ */
+export function extractJsonObject(text) {
+  if (!text) return null;
+  // A fence, if present, is the most reliable delimiter — take its contents.
+  const fence = text.match(/```(?:json)?[ \t]*\r?\n?([\s\S]*?)```/);
+  const hay = fence ? fence[1] : text;
+
+  // The span of the balanced object opening at `from`, or null if unbalanced.
+  const spanAt = (from) => {
+    let depth = 0, inStr = false, esc = false;
+    for (let i = from; i < hay.length; i++) {
+      const c = hay[i];
+      if (esc) { esc = false; continue; }
+      if (c === '\\') { esc = true; continue; }
+      if (c === '"') { inStr = !inStr; continue; }
+      if (inStr) continue;
+      if (c === '{') depth++;
+      else if (c === '}' && --depth === 0) return hay.slice(from, i + 1);
+    }
+    return null; // truncated mid-object
+  };
+
+  let firstParseable = null;
+  for (let i = hay.indexOf('{'); i !== -1; i = hay.indexOf('{', i + 1)) {
+    const span = spanAt(i);
+    if (!span) continue;
+    let parsed;
+    try { parsed = JSON.parse(span); } catch { continue; }
+    // Prefer the object that is actually the patch; fall back to the first
+    // thing that parsed so a differently-shaped reply still reaches the
+    // caller's own error message rather than dying here.
+    if (parsed && typeof parsed === 'object' && 'params' in parsed) return span;
+    firstParseable ??= span;
+  }
+  return firstParseable;
+}
+
+/**
+ * Coerce and validate one parameter value against its descriptor. Returns
+ * { ok, value } or { ok: false, why }.
+ *
+ * This is the half that made the old failure silent: main.js applied whatever
+ * came back with `if (p) ps.set(id, val)`, so a string where a number belonged,
+ * a true/false, or an out-of-range value was written straight into the
+ * instrument — and an id that did not resolve was skipped with no report at
+ * all, while the readout still said "(N params set)".
+ */
+function _coerceParamValue(p, raw) {
+  let v = raw;
+  if (typeof v === 'boolean') v = v ? 1 : 0;
+  if (typeof v === 'string') {
+    // A SELECT answered with its label rather than its index is worth
+    // recovering — it is the single most common deviation, and the label is
+    // unambiguous.
+    if (p.type === PARAM_TYPE.SELECT && p.options) {
+      const i = p.options.findIndex((o) => o.toLowerCase() === v.trim().toLowerCase());
+      if (i !== -1) return { ok: true, value: i };
+    }
+    const n = Number(v.trim());
+    if (!Number.isFinite(n)) return { ok: false, why: `not a number: ${JSON.stringify(raw)}` };
+    v = n;
+  }
+  if (typeof v !== 'number' || !Number.isFinite(v)) {
+    return { ok: false, why: `not a number: ${JSON.stringify(raw)}` };
+  }
+  switch (p.type) {
+    case PARAM_TYPE.TOGGLE:
+      return { ok: true, value: v ? 1 : 0 };
+    case PARAM_TYPE.SELECT: {
+      const i = Math.round(v);
+      if (!p.options || i < 0 || i >= p.options.length) {
+        return { ok: false, why: `index ${i} out of range 0..${(p.options?.length ?? 1) - 1}` };
+      }
+      return { ok: true, value: i };
+    }
+    default: {
+      // Clamped rather than rejected: a slightly hot value is a usable
+      // intention, where dropping it loses the whole look.
+      const clamped = Math.min(p.max, Math.max(p.min, v));
+      return { ok: true, value: clamped, clamped: clamped !== v };
+    }
+  }
+}
+
+/**
+ * Generate a parameter patch from a description.
+ *
+ * `ps` is required: the reference and the validation both derive from it, so
+ * the prompt can never advertise an id the instrument does not have.
+ * Returns { params, explanation, rejected, clamped } — `rejected` is REPORTED
+ * rather than swallowed, because an unresolvable id used to vanish silently.
+ */
+export async function generatePreset(description, ps) {
+  if (!ps) throw new Error('generatePreset needs the ParameterSystem');
+  const reference = buildParamReference(ps);
+  const allowed = allowedParamIds(ps);
+
+  const text = await _call(
+    presetSystem(reference),
+    `Create ImWeb parameters for this look: "${description}"`,
+    2000, // the old 600 could not hold a patch plus an explanation
+  );
+  if (!text?.trim()) {
+    throw new Error('Empty response from the AI provider — check the model name, quota, or content filters.');
+  }
+  const json = extractJsonObject(text);
+  if (!json) {
+    throw new Error(
+      `The reply contained no JSON object. First 200 characters:\n${text.trim().slice(0, 200)}`,
+    );
+  }
+  let data;
+  try {
+    data = JSON.parse(json);
+  } catch (e) {
+    throw new Error(`The reply was not valid JSON (${e.message}).`);
+  }
+  if (!data.params || typeof data.params !== 'object') {
+    throw new Error('The reply had no "params" object.');
+  }
+
+  const params = {};
+  const rejected = [];
+  const clamped = [];
+  for (const [id, raw] of Object.entries(data.params)) {
+    if (!allowed.has(id)) { rejected.push(`${id} (no such parameter)`); continue; }
+    const r = _coerceParamValue(ps.params.get(id), raw);
+    if (!r.ok) { rejected.push(`${id} (${r.why})`); continue; }
+    params[id] = r.value;
+    if (r.clamped) clamped.push(id);
+  }
+  if (!Object.keys(params).length) {
+    throw new Error(
+      `None of the ${Object.keys(data.params).length} parameters the model returned were usable: ${rejected.slice(0, 5).join(', ')}`,
+    );
+  }
+  return { params, explanation: data.explanation ?? '', rejected, clamped };
 }
 
 // ── Feature: Live GLSL shader generator ──────────────────────────────────────
@@ -923,8 +1200,13 @@ export class AIFeatures {
   // Fetch the live model list for a provider from its API
   async fetchModels(id) { return fetchModels(id); }
 
+  // Token accounting
+  getUsage()   { return getUsage(); }
+  resetUsage() { return resetUsage(); }
+  usageCost(provider, model, inTok, outTok) { return usageCost(provider, model, inTok, outTok); }
+
   // Feature methods (delegates to module-level functions)
-  async generatePreset(description)    { return generatePreset(description); }
+  async generatePreset(description)    { return generatePreset(description, this.ps); }
   async narrateState()                 { return narrateState(buildStateSnapshot(this.ps), _config().narrator?.length); }
   async coachSuggestion(recentChanges) { return coachSuggestion(buildActivitySnapshot(recentChanges, this.ps)); }
 }

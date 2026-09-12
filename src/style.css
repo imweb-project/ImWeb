@@ -3495,6 +3495,43 @@ body.fullscreen-output #app {
     color: var(--red);
 }
 
+/* Token usage readout (AI settings panel) */
+.ai-usage {
+    font-size: 11px;
+    color: var(--text-2);
+    font-variant-numeric: tabular-nums;
+}
+.ai-usage-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 2px 0;
+}
+/* The numbers are the point — keep them from wrapping mid-figure on narrow
+   panels; the label side is what gives way. */
+.ai-usage-row > span:last-child {
+    white-space: nowrap;
+}
+.ai-usage-row > span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ai-usage-row.dim {
+    opacity: 0.65;
+}
+.ai-usage-row.total {
+    border-top: 1px solid var(--border, #333);
+    margin-top: 3px;
+    padding-top: 4px;
+    color: var(--text-1, #ddd);
+}
+.ai-usage-note {
+    margin-top: 4px;
+    opacity: 0.55;
+    line-height: 1.35;
+}
+
 .ai-key-input {
     width: 100%;
     background: var(--bg-3);
