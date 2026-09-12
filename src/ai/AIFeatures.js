@@ -134,7 +134,7 @@ function buildDefaultConfig() {
     // Vision is OFF by default. It is a real cost step — an image is worth
     // roughly a thousand input tokens — and the narrator fires on a timer, so
     // defaulting it on would quietly spend money on an idle patch.
-    vision:   { narrator: false, coach: false },
+    vision:   { narrator: false, coach: false, shader: false },
   };
 }
 
@@ -589,6 +589,11 @@ export function getCoachConfig() {
 export function getVisionConfig() {
   return _config().vision;
 }
+export function setVisionShader(on) {
+  const cfg = _config();
+  cfg.vision = { ...cfg.vision, shader: !!on };
+  saveConfig(cfg);
+}
 
 // ── System prompts ────────────────────────────────────────────────────────────
 
@@ -808,23 +813,52 @@ function _coerceParamValue(p, raw) {
  * Returns { params, explanation, rejected, clamped } — `rejected` is REPORTED
  * rather than swallowed, because an unresolvable id used to vanish silently.
  */
+/**
+ * Budget for a patch. Generous for the same reason the shader paths are: on a
+ * thinking model max_tokens covers thinking AND output, and the derived
+ * reference gives the model a great deal to think about. 2000 was not enough —
+ * a real request came back cut off mid-string, and a ceiling costs nothing
+ * unless it is hit.
+ */
+const PRESET_TOKENS = 8000;
+
 export async function generatePreset(description, ps) {
   if (!ps) throw new Error('generatePreset needs the ParameterSystem');
   const reference = buildParamReference(ps);
   const allowed = allowedParamIds(ps);
 
-  const text = await _call(
+  // _callRaw, not _call: the stop reason is the difference between "the model
+  // wrote nonsense" and "the model was cut off mid-patch", and those need
+  // opposite responses from the user. Reported live — a truncated reply whose
+  // visible text was perfectly good JSON was blamed on "no JSON object",
+  // exactly the misdiagnosis already fixed on the shader path and missed here.
+  const { text, stop } = await _callRaw(
     presetSystem(reference),
     `Create ImWeb parameters for this look: "${description}"`,
-    2000, // the old 600 could not hold a patch plus an explanation
+    PRESET_TOKENS,
   );
+  if (stop === 'max_tokens') {
+    throw new Error(
+      `The model ran out of room at ${PRESET_TOKENS} tokens and the patch came back unfinished. ` +
+      'This is not a quota or key problem. Ask for a simpler look, or try a model with a larger budget.',
+    );
+  }
+  if (stop === 'refusal') {
+    throw new Error('The provider declined this request (safety or content filter) — rephrase the description.');
+  }
   if (!text?.trim()) {
-    throw new Error('Empty response from the AI provider — check the model name, quota, or content filters.');
+    throw new Error(`Empty response from the AI provider (stop reason: ${stop}) — check the model name, quota, or content filters.`);
   }
   const json = extractJsonObject(text);
   if (!json) {
+    // An unbalanced object means the reply was cut off even if the provider
+    // did not say so — some report 'stop' on a response the model simply
+    // stopped writing. Say which it looks like rather than "no JSON".
+    const looksCut = text.includes('"params"') && !text.trim().endsWith('}');
     throw new Error(
-      `The reply contained no JSON object. First 200 characters:\n${text.trim().slice(0, 200)}`,
+      looksCut
+        ? `The patch came back unfinished — the JSON is cut off mid-object. Ask for a simpler look, or use a model with more room.\nFirst 200 characters:\n${text.trim().slice(0, 200)}`
+        : `The reply contained no JSON object. First 200 characters:\n${text.trim().slice(0, 200)}`,
     );
   }
   let data;
@@ -993,8 +1027,8 @@ export function extractGlsl(text) {
  * (CLAUDE.md, Live GLSL & AI Subsystem) and a second copy is a second place for
  * it to be dropped.
  */
-async function _shaderCall(system, user, maxTokens, tag) {
-  const { text: raw, stop } = await _callRaw(system, user, maxTokens);
+async function _shaderCall(system, user, maxTokens, tag, image = null) {
+  const { text: raw, stop } = await _callRaw(system, user, maxTokens, image);
   // DEV-only ground truth for diagnosing extraction/model misbehaviour —
   // filter the console with [glsl-ai]
   if (import.meta.env?.DEV) {
@@ -1037,6 +1071,25 @@ async function _shaderCall(system, user, maxTokens, tag) {
 }
 
 /**
+ * Refine with the frame attached. The rules are the refine rules plus the one
+ * thing an image changes: the model can now check its own premise. Without
+ * this the picture is decoration — the model reads the code, ignores what it
+ * shows, and rewrites from the instruction alone at vision prices.
+ */
+const REFINE_SEEING_SYSTEM = `${REFINE_SYSTEM}
+
+YOU CAN SEE THE OUTPUT:
+- The attached image is the CURRENT output of the shader you are editing.
+- Read the image before the code. It tells you what the code actually does,
+  which is often not what the code appears to do — a term that looks dominant
+  may be invisible, and a subtle one may be all you can see.
+- If the image already shows what was asked for, say so by making a SMALL
+  adjustment rather than a rewrite.
+- If the image is black, blown out, or flat, treat that as the first thing to
+  fix — those are bugs in the look, whatever the instruction said.
+- Do not describe the image. Return only the shader.`;
+
+/**
  * Token ceilings for the two shader paths.
  *
  * Refine gets a much larger one than generate and it is not arbitrary: a
@@ -1073,12 +1126,24 @@ export async function generateShader(description, priorCode = null, priorError =
  * is now DETECTED rather than injected: _shaderCall throws on a max_tokens
  * stop, so a half-written shader can never replace the working one.
  */
-export async function refineShader(instruction, currentCode, priorCode = null, priorError = null) {
+export async function refineShader(instruction, currentCode, priorCode = null, priorError = null, image = null) {
   if (!currentCode?.trim()) throw new Error('Nothing to refine — the editor is empty.');
+  // On the compile-recovery retry the frame is dropped deliberately: the
+  // question there is "why did this not compile", which the compiler error
+  // answers exactly. Paying for an image to re-ask it is waste, and the last
+  // frame is of the shader that FAILED — misleading evidence for the fix.
+  const seeing = !!image && !priorError;
   const user = priorError
     ? `Your previous edit failed to compile.\nCompiler error:\n${priorError}\n\nBroken code:\n${priorCode}\n\nThe shader you were asked to edit:\n${currentCode}\n\nThe requested change was: "${instruction}"\n\nOutput ONLY the corrected COMPLETE shader (same rules). Do not explain the fix — code only.`
-    : `Here is the shader currently running. Keep it, and apply ONE change.\n\nCURRENT SHADER:\n${currentCode}\n\nCHANGE TO APPLY: "${instruction}"\n\nReturn the complete edited shader.`;
-  return _shaderCall(REFINE_SYSTEM, user, REFINE_TOKENS, priorError ? 'refine retry' : 'refine');
+    : seeing
+      ? `The attached image is what this shader is CURRENTLY putting on screen. Look at it, then apply ONE change.\n\nCURRENT SHADER:\n${currentCode}\n\nCHANGE TO APPLY: "${instruction}"\n\nJudge the change against what you can see — if the image already shows what was asked for, make the smallest adjustment that improves it rather than rewriting. Return the complete edited shader.`
+      : `Here is the shader currently running. Keep it, and apply ONE change.\n\nCURRENT SHADER:\n${currentCode}\n\nCHANGE TO APPLY: "${instruction}"\n\nReturn the complete edited shader.`;
+  return _shaderCall(
+    seeing ? REFINE_SEEING_SYSTEM : REFINE_SYSTEM,
+    user, REFINE_TOKENS,
+    priorError ? 'refine retry' : (seeing ? 'refine+vision' : 'refine'),
+    seeing ? image : null,
+  );
 }
 
 // ── Feature 2: Parameter Narrator ────────────────────────────────────────────

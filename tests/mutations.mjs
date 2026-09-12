@@ -952,8 +952,16 @@ export const MUTATIONS = [
     audit: 'audit-shader-refine.mjs',
     file: 'src/ai/AIFeatures.js',
     why: 'extractGlsl slices to the last closing brace and a half-written shader has plenty, so a max_tokens truncation passes as valid code and replaces the working shader on screen with a broken one — silently, mid-performance',
-    find: "  if (stop === 'max_tokens') {",
-    replace: "  if (false && stop === 'max_tokens') {",
+    find: [
+      "  if (stop === 'max_tokens') {",
+      '    throw new Error(',
+      '      `The model ran out of room at ${maxTokens} tokens, so the shader came back unfinished.\\n` +',
+    ].join('\n'),
+    replace: [
+      "  if (false && stop === 'max_tokens') {",
+      '    throw new Error(',
+      '      `The model ran out of room at ${maxTokens} tokens, so the shader came back unfinished.\\n` +',
+    ].join('\n'),
   },
   {
     name: 'refine stops sending the editor source',
@@ -991,5 +999,29 @@ export const MUTATIONS = [
     why: 'the narrator fires on a timer, so an ungated capture sends an image on every tick — the toggle reads as off while every narration is billed at vision rates',
     find: '      const frame = getVisionConfig().narrator ? captureVisionFrame() : null;',
     replace: '      const frame = captureVisionFrame();',
+  },
+  {
+    name: 'the compile-recovery retry keeps paying for the frame',
+    audit: 'audit-ai-vision.mjs',
+    file: 'src/ai/AIFeatures.js',
+    why: 'on the retry the question is "why did this not compile", which the compiler error answers exactly — and the attached frame is of the shader that FAILED, so it is misleading evidence bought at vision prices',
+    find: '  const seeing = !!image && !priorError;',
+    replace: '  const seeing = !!image;',
+  },
+  {
+    name: 'the seeing refine keeps the blind refine prompt',
+    audit: 'audit-ai-vision.mjs',
+    file: 'src/ai/AIFeatures.js',
+    why: 'with the image attached but the prompt unchanged the model reads the code and ignores what it shows — the picture becomes decoration, billed per call, and the refine is no better than the blind one',
+    find: '    seeing ? REFINE_SEEING_SYSTEM : REFINE_SYSTEM,',
+    replace: '    REFINE_SYSTEM,',
+  },
+  {
+    name: 'a truncated preset reply is reported as missing JSON',
+    audit: 'audit-ai-param-reference.mjs',
+    file: 'src/ai/AIFeatures.js',
+    why: 'the reply IS valid JSON, just cut off mid-object; calling that "no JSON object" sends the user hunting for a model or prompt fault when the real answer is that the patch needed more room — reported live from a real Generate State run',
+    find: "  if (stop === 'max_tokens') {\n    throw new Error(\n      `The model ran out of room at ${PRESET_TOKENS} tokens",
+    replace: "  if (false) {\n    throw new Error(\n      `The model ran out of room at ${PRESET_TOKENS} tokens",
   },
 ];

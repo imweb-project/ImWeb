@@ -5242,6 +5242,29 @@ body.fullscreen-output #app {
     background: rgba(232, 179, 58, 0.08);
 }
 
+/* "Let it see the canvas" — refine only. */
+#glsl-ai-see {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin: -2px 0 8px;
+    font-size: 12px;
+    color: var(--dim, #888);
+    cursor: pointer;
+}
+#glsl-ai-see.hidden {
+    display: none;
+}
+#glsl-ai-see input {
+    margin: 0;
+    width: 16px;
+    height: 16px;
+    flex: none;
+}
+#glsl-ai-see:hover {
+    color: var(--fg, #ddd);
+}
+
 #glsl-ai-actions {
     display: flex;
     gap: 8px;

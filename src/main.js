@@ -136,6 +136,7 @@ import {
   getNarratorConfig,
   getCoachConfig,
   getVisionConfig,
+  setVisionShader,
 } from "./ai/AIFeatures.js";
 import {
   initTabs,
@@ -6770,6 +6771,9 @@ void main() {
           <button id="glsl-ai-mode-refine" class="glsl-ai-mode-btn">Refine this shader</button>
           <button id="glsl-ai-mode-new" class="glsl-ai-mode-btn">Start new</button>
         </div>
+        <label id="glsl-ai-see" class="hidden" title="Send the current frame so the AI can judge the change against what is actually on screen. Costs roughly 1k extra input tokens.">
+          <input type="checkbox" id="glsl-ai-see-cb"> <span>Let it see the canvas</span>
+        </label>
         <textarea id="glsl-ai-prompt" placeholder="Describe the effect… e.g. 'kaleidoscope that pulses with the bass, trails on the beat'"></textarea>
         <div id="glsl-ai-status" class="hidden"></div>
         <div id="glsl-ai-actions">
@@ -6787,6 +6791,8 @@ void main() {
     const aiModeRow = aiModal.querySelector("#glsl-ai-mode");
     const aiModeRefineBtn = aiModal.querySelector("#glsl-ai-mode-refine");
     const aiModeNewBtn = aiModal.querySelector("#glsl-ai-mode-new");
+    const aiSeeRow = aiModal.querySelector("#glsl-ai-see");
+    const aiSeeCb = aiModal.querySelector("#glsl-ai-see-cb");
 
     // Refine mode is only offered when there is something to refine. BOTH stock
     // docs count as nothing — GLSL_DEFAULT_DOC (the boot doc: uniform reference
@@ -6811,10 +6817,16 @@ void main() {
       _aiRefine = refine;
       aiModeRefineBtn.classList.toggle("active", refine);
       aiModeNewBtn.classList.toggle("active", !refine);
+      // Only meaningful on a refine: "Start new" has no current output to
+      // judge, and the frame would show the shader being replaced.
+      aiSeeRow.classList.toggle("hidden", !refine);
       aiPromptEl.placeholder = PROMPT_PLACEHOLDERS[refine ? "refine" : "new"];
       aiGenBtn.textContent = refine ? "Refine" : "Generate";
     }
     aiModeRefineBtn.addEventListener("click", () => _aiSetMode(true));
+    // Remembered across sessions: whether you want the AI looking at the canvas
+    // is a working preference, not a per-prompt decision.
+    aiSeeCb.addEventListener("change", () => setVisionShader(aiSeeCb.checked));
     aiModeNewBtn.addEventListener("click", () => _aiSetMode(false));
 
     // Read the four knob labels back off the DOM — the same elements
@@ -6947,6 +6959,7 @@ void main() {
       aiStatusEl.className = "hidden";
       const canRefine = _aiCanRefine();
       aiModeRow.classList.toggle("hidden", !canRefine);
+      aiSeeCb.checked = !!getVisionConfig().shader;
       // Default to Refine whenever there is a shader on screen: reopening the
       // prompt mid-patch almost always means "change this", not "throw it away".
       _aiSetMode(canRefine);
@@ -6976,12 +6989,12 @@ void main() {
     // both modes share one validate/retry path. DEV hook __glslAIGenerate lets
     // headless tests stub the provider call; it receives baseCode as a 4th arg
     // so a test can assert the editor's source actually reached the model.
-    async function _runAiGeneration(promptText, baseCode = null) {
+    async function _runAiGeneration(promptText, baseCode = null, image = null) {
       const stub = import.meta.env.DEV ? window.__glslAIGenerate : null;
       const gen = stub
         ? (p, pc, pe) => stub(p, pc, pe, baseCode)
         : baseCode
-          ? (p, pc, pe) => refineShader(p, baseCode, pc, pe)
+          ? (p, pc, pe) => refineShader(p, baseCode, pc, pe, image)
           : (p, pc, pe) => generateShader(p, pc, pe);
       let code = await gen(promptText);
       let hdr = buildGlslHeader(code);
@@ -7005,12 +7018,17 @@ void main() {
       _micStop(); // committing the prompt ends dictation
       const refining = _aiRefine && _aiCanRefine();
       const baseCode = refining ? getGlslSource() : null;
+      // Captured BEFORE the editor is touched, so it is the frame the
+      // performer is actually looking at when they ask for the change.
+      const seeFrame = refining && aiSeeCb.checked ? captureVisionFrame() : null;
       // Captured BEFORE the call, so a refine that never returns leaves the
       // editor untouched and no stale undo armed.
       const undoSnapshot = { source: getGlslSource(), labels: _readGlslParamLabels() };
-      _aiSetBusy(true, refining ? "Refining shader…" : "Generating shader…");
+      _aiSetBusy(true, refining
+        ? (seeFrame ? "Refining shader (looking at the canvas)…" : "Refining shader…")
+        : "Generating shader…");
       try {
-        const { code } = await _runAiGeneration(promptText, baseCode);
+        const { code } = await _runAiGeneration(promptText, baseCode, seeFrame);
         _aiUndo = undoSnapshot;
         aiUndoBtn.classList.remove("hidden");
         // Inject even if the retry still errors — the editor error panel

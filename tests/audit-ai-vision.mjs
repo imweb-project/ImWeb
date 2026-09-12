@@ -184,7 +184,70 @@ check('narrator capture is gated on the vision setting',
 check('coach capture is gated on the vision setting',
   /getVisionConfig\(\)\.coach \? captureVisionFrame\(\) : null/.test(main));
 
-const EXPECTED_CHECKS = 38;
+// ── Refine with vision ───────────────────────────────────────────────────────
+// The frame must reach the refine request, the prompt must tell the model to
+// READ it, and the compile-recovery retry must deliberately NOT carry it.
+useProvider('anthropic', 'claude-sonnet-5'); reply(OK_REPLY);
+{
+  const m = await fresh('refvis');
+  const SHADER = 'void main(){ gl_FragColor = texture2D(uTexture, vUv); }';
+
+  await m.refineShader('more contrast', SHADER, null, null, IMAGE);
+  const seeingSys = sent.system;
+  const content = sent.messages[0].content;
+  check('refine+vision: the frame reaches the request', Array.isArray(content)
+    && content.some((b) => b.type === 'image' && b.source?.data === B64));
+  check('refine+vision: the shader is still sent', JSON.stringify(content).includes('gl_FragColor'));
+  check('refine+vision: prompt tells the model the image IS the current output',
+    /CURRENT output of the shader/i.test(seeingSys));
+  check('refine+vision: prompt says read the image before the code',
+    /Read the image before the code/i.test(seeingSys));
+  check('refine+vision: prompt forbids describing the image',
+    /Do not describe the image/i.test(seeingSys));
+  check('refine+vision: the base refine rules are still in force',
+    /NEVER start over/.test(seeingSys) && /COMPLETE shader/.test(seeingSys));
+  check('refine+vision: the uniform contract survives',
+    seeingSys.includes('uniform sampler2D tAudio'));
+
+  // Without an image the prompt must revert — otherwise every text-only refine
+  // is told to look at a picture it was never given.
+  sent = null;
+  await m.refineShader('more contrast', SHADER);
+  check('refine without an image uses the plain refine prompt',
+    !/CURRENT output of the shader/i.test(sent.system));
+  check('refine without an image sends no image block',
+    typeof sent.messages[0].content === 'string');
+
+  // The compile retry must drop the frame: the compiler error answers the
+  // question, and the last frame is of the shader that FAILED.
+  sent = null;
+  await m.refineShader('more contrast', SHADER, 'broken', 'ERROR: undefined x', IMAGE);
+  check('the compile-recovery retry drops the image',
+    typeof sent.messages[0].content === 'string'
+    || !sent.messages[0].content.some?.((b) => b.type === 'image'));
+  check('the compile-recovery retry still carries the compiler error',
+    JSON.stringify(sent.messages[0].content).includes('undefined x'));
+}
+
+// Shader vision is a remembered preference, off by default.
+{
+  store.clear();
+  const m = await fresh('shadercfg');
+  check('shader vision defaults to off', m.getVisionConfig().shader === false);
+  m.setVisionShader(true);
+  check('setVisionShader persists', m.getVisionConfig().shader === true);
+}
+
+// Gating in the modal: the frame is captured only when the box is ticked, and
+// only on a refine — a new shader has no current output to judge.
+check('the shader frame is gated on the checkbox AND refine mode',
+  /refining && aiSeeCb\.checked \? captureVisionFrame\(\) : null/.test(main));
+check('the captured frame is passed into the generation runner',
+  /_runAiGeneration\(promptText, baseCode, seeFrame\)/.test(main));
+check('a non-null image routes to refineShader with it',
+  /refineShader\(p, baseCode, pc, pe, image\)/.test(main));
+
+const EXPECTED_CHECKS = 54;
 if (ran !== EXPECTED_CHECKS) {
   console.error(`FAIL audit-ai-vision: ran ${ran} checks, expected ${EXPECTED_CHECKS} — a section was skipped or added without updating the count.`);
   process.exit(1);

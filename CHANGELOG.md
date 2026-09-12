@@ -9,6 +9,38 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Refine with vision.** A `Let it see the canvas` checkbox in the AI Shader
+  modal, shown only in Refine mode — "Start new" has no current output to judge.
+  The frame is captured before the editor is touched, so it is the picture you
+  were looking at when you asked. The prompt tells the model to read the image
+  BEFORE the code, because the image says what the code actually does, which is
+  often not what the code appears to do — a term that looks dominant may be
+  invisible, and a subtle one may be all you can see. A black, blown-out or flat
+  frame is treated as the first thing to fix whatever the instruction said.
+  The choice is remembered.
+
+  The compile-recovery retry deliberately drops the frame: the question there is
+  "why did this not compile", which the compiler error answers exactly, and the
+  last frame is of the shader that FAILED — misleading evidence bought at vision
+  prices.
+- **`tools/osc-relay.mjs`** — a dependency-free OSC→WebSocket relay. A browser
+  cannot open a UDP socket, so ImWeb could not receive OSC from a Flic button,
+  TouchOSC or Max without something in the middle, and nothing shipped. Run
+  `node tools/osc-relay.mjs`, then click the OSC badge in the status bar. A bare
+  button press carries no OSC argument, which ImWeb's dispatcher parses as NaN
+  and drops — so the relay defaults a missing argument to 1, which is what makes
+  a plain Flic click toggle anything at all.
+
+### Fixed
+- **A truncated State Generator patch is reported as truncated.** Reported from
+  a real run: the reply was valid JSON cut off mid-string, and the error said
+  "The reply contained no JSON object" — the same misdiagnosis already fixed on
+  the shader path, missed here because `generatePreset` went through the
+  text-only call that discards the stop reason. It now reads the stop reason,
+  and independently detects a cut-off object for providers that report a clean
+  stop on a reply the model simply stopped writing. Budget 2000 → 8000.
+
+### Added
 - **Canvas vision — the AI can look at the output.** Two toggles in the AI
   settings panel (`Canvas vision`): *Narrator sees canvas* and *Coach sees
   canvas*. With vision on, the Narrator describes **the picture** rather than
