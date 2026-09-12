@@ -6772,6 +6772,7 @@ void main() {
         <textarea id="glsl-ai-prompt" placeholder="Describe the effect… e.g. 'kaleidoscope that pulses with the bass, trails on the beat'"></textarea>
         <div id="glsl-ai-status" class="hidden"></div>
         <div id="glsl-ai-actions">
+          <button id="glsl-ai-mic" class="import-btn hidden" title="Dictate the prompt">🎤</button>
           <button id="glsl-ai-cancel" class="import-btn">Cancel</button>
           <button id="glsl-ai-generate" class="import-btn">Generate</button>
         </div>
@@ -6825,6 +6826,84 @@ void main() {
           )?.textContent || def,
       );
     }
+    // ── Dictation (Web Speech API) ──────────────────────────────────────────
+    // The button is rendered ONLY if the constructor exists, and the first
+    // start() failure reports itself in the status line. Both matter: the API
+    // object existing does not mean a browser's speech backend will answer
+    // (Brave has shipped the interface with the service disabled), and a mic
+    // button that looks live and returns nothing is worse than no button.
+    const aiMicBtn = aiModal.querySelector("#glsl-ai-mic");
+    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let _rec = null;
+    let _recOn = false;
+    let _recBase = ""; // prompt text as it stood when dictation started
+
+    function _micStop() {
+      _recOn = false;
+      aiMicBtn.classList.remove("active");
+      try { _rec?.stop(); } catch { /* already stopped */ }
+      if (aiStatusEl.classList.contains("listening")) {
+        aiStatusEl.className = "hidden";
+        aiStatusEl.textContent = "";
+      }
+    }
+
+    if (SpeechRec) {
+      aiMicBtn.classList.remove("hidden");
+      aiMicBtn.addEventListener("click", () => {
+        if (_recOn) return _micStop();
+        _rec = new SpeechRec();
+        // en-US rather than navigator.language: the prompt vocabulary is
+        // English shader jargon ("kaleidoscope", "luminance", "uParam"), and
+        // the model wants English anyway.
+        _rec.lang = "en-US";
+        _rec.continuous = true;      // a prompt is several phrases with pauses
+        _rec.interimResults = true;  // show it forming, so a misheard word is caught early
+        _recBase = aiPromptEl.value.trim();
+
+        _rec.onresult = (ev) => {
+          let finalTxt = "";
+          let interim = "";
+          for (let i = ev.resultIndex; i < ev.results.length; i++) {
+            const r = ev.results[i];
+            if (r.isFinal) finalTxt += r[0].transcript;
+            else interim += r[0].transcript;
+          }
+          if (finalTxt) _recBase = `${_recBase} ${finalTxt.trim()}`.trim();
+          aiPromptEl.value = `${_recBase} ${interim.trim()}`.trim();
+        };
+        _rec.onerror = (ev) => {
+          _recOn = false;
+          aiMicBtn.classList.remove("active");
+          const why =
+            {
+              "not-allowed": "Microphone permission denied — allow it for this page.",
+              "service-not-allowed":
+                "This browser's speech service is unavailable (Brave disables it by default). Type the prompt instead.",
+              network:
+                "Speech recognition needs network access and got none. Type the prompt instead.",
+              "no-speech": "Didn't catch anything — try again, closer to the mic.",
+              "audio-capture": "No microphone found.",
+            }[ev.error] ?? `Dictation failed (${ev.error}). Type the prompt instead.`;
+          aiStatusEl.className = "error";
+          aiStatusEl.textContent = why;
+        };
+        // Fires on its own after a long silence as well as on stop()
+        _rec.onend = () => { if (_recOn) _micStop(); };
+
+        try {
+          _rec.start();
+          _recOn = true;
+          aiMicBtn.classList.add("active");
+          aiStatusEl.className = "listening";
+          aiStatusEl.textContent = "🎤 Listening — click the mic again when done.";
+        } catch (e) {
+          aiStatusEl.className = "error";
+          aiStatusEl.textContent = `Could not start dictation: ${e.message}`;
+        }
+      });
+    }
+
     aiUndoBtn.addEventListener("click", () => {
       if (!_aiUndo) return;
       setGlslSource(_aiUndo.source);
@@ -6858,6 +6937,9 @@ void main() {
       aiPromptEl.focus();
     }
     function closeAiModal() {
+      // A live mic must never outlive the panel that started it — there is no
+      // other indication it is still on once the modal is gone.
+      _micStop();
       aiModal.classList.add("hidden");
     }
     // '// uParams: A | B | C | D' metadata line → knob labels
@@ -6899,6 +6981,7 @@ void main() {
     aiGenBtn.addEventListener("click", async () => {
       const promptText = aiPromptEl.value.trim();
       if (!promptText) return;
+      _micStop(); // committing the prompt ends dictation
       const refining = _aiRefine && _aiCanRefine();
       const baseCode = refining ? getGlslSource() : null;
       // Captured BEFORE the call, so a refine that never returns leaves the
