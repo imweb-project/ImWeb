@@ -179,8 +179,18 @@ check('capture strips the data: prefix before sending', /indexOf\("?,"?\)|slice\
 check('a tainted canvas degrades to text instead of throwing', /catch\s*\{/.test(cap));
 // The gate: capture must be conditional on the vision config, or every
 // narration pays for an image whether or not it was asked for.
-check('narrator capture is gated on the vision setting',
-  /getVisionConfig\(\)\.narrator \? captureVisionFrame\(\) : null/.test(main));
+// Read the narrator body rather than pinning one spelling: the gate moved
+// into a `seeing` local when the dirty-check landed, and an audit that fails
+// on correct code teaches people to edit the audit.
+{
+  const nStart = main.indexOf('async function _runNarrator()');
+  check('the narrator loop is still present', nStart !== -1);
+  const nBody = nStart === -1 ? '' : main.slice(nStart, nStart + 2600);
+  check('the narrator reads the vision setting', /getVisionConfig\(\)\.narrator/.test(nBody));
+  check('narrator capture is gated on it, never unconditional',
+    /seeing \? captureVisionFrame\(\) : null/.test(nBody)
+    && !/^\s*const frame = captureVisionFrame\(\);/m.test(nBody));
+}
 check('coach capture is gated on the vision setting',
   /getVisionConfig\(\)\.coach \? captureVisionFrame\(\) : null/.test(main));
 
@@ -247,7 +257,55 @@ check('the captured frame is passed into the generation runner',
 check('a non-null image routes to refineShader with it',
   /refineShader\(p, baseCode, pc, pe, image\)/.test(main));
 
-const EXPECTED_CHECKS = 54;
+// ── The narrator dirty-check ─────────────────────────────────────────────────
+//
+// The narrator fires on a timer forever, so an unchanged patch used to be
+// re-described every interval for the life of the session — the same sentence,
+// billed each time, for as long as the button stayed lit.
+//
+// The subtlety is that a params-only check is WRONG once vision is on: a live
+// camera, a playing movie, a feedback loop and any running LFO all move the
+// picture while every parameter sits still. A params-only skip would fall
+// silent over exactly the most visually active patches — the ones most worth
+// narrating. Hence the frame hash.
+{
+  const nStart = main.indexOf('async function _runNarrator()');
+  const nBody = nStart === -1 ? '' : main.slice(nStart, nStart + 2600);
+  check('the narrator compares against the last narrated snapshot',
+    /_lastNarratedSnapshot/.test(nBody));
+  check('it also compares the FRAME when vision is on (params alone are not enough)',
+    /_lastNarratedHash/.test(nBody) && /hammingFrac/.test(nBody));
+  check('an unchanged patch returns without calling the provider',
+    /paramsSame && frameSame/.test(nBody) && /return;/.test(nBody));
+  check('a skipped tick still re-arms the timer (the narrator must not stop)',
+    (nBody.match(/setTimeout\(_runNarrator/g) ?? []).length >= 2);
+  // Both ends guarded: an unguarded `a > b` is TRUE when b is absent (-1), so
+  // it would pass on a narrator with no provider call at all.
+  const iRecord = nBody.indexOf('_lastNarratedSnapshot = snapshot');
+  const iCall = nBody.indexOf('await narrateState');
+  check('the narrator still calls the provider', iCall !== -1);
+  check('and still records what it narrated', iRecord !== -1);
+  check('state is recorded only AFTER a successful call — a failed one must not mark it narrated',
+    iRecord !== -1 && iCall !== -1 && iRecord > iCall);
+  check('the first run is never skipped (null sentinel, not an empty string)',
+    /_lastNarratedSnapshot !== null/.test(nBody));
+
+  // The hash itself must be able to tell two pictures apart, and must treat an
+  // unreadable canvas as "changed" rather than silently skipping forever.
+  const hStart = main.indexOf('function frameHash()');
+  check('frameHash exists', hStart !== -1);
+  const hBody = hStart === -1 ? '' : main.slice(hStart, hStart + 1200);
+  check('the hash is computed from luminance, not one channel', /0\.299/.test(hBody));
+  check('the hash thresholds against the frame mean (an average hash)', /mean/.test(hBody));
+  check('a tainted canvas returns null rather than a hash of nothing',
+    /catch\s*\{[\s\S]{0,80}return null/.test(hBody));
+  check('an unknown hash counts as CHANGED, so a failure cannot silence it',
+    /if \(!a \|\| !b \|\| a\.length !== b\.length\) return 1;/.test(main));
+  check('the change threshold is a named constant, not a magic number',
+    /FRAME_CHANGE_THRESHOLD/.test(main));
+}
+
+const EXPECTED_CHECKS = 70;
 if (ran !== EXPECTED_CHECKS) {
   console.error(`FAIL audit-ai-vision: ran ${ran} checks, expected ${EXPECTED_CHECKS} — a section was skipped or added without updating the count.`);
   process.exit(1);

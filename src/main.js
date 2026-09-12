@@ -9707,17 +9707,89 @@ void main() {
     }
   }
 
+  /**
+   * Cheap perceptual fingerprint of the current frame — 8×8 average hash.
+   *
+   * Needed because the parameter snapshot alone cannot answer "has anything
+   * changed?" once the narrator can see. A live camera, a playing movie, a
+   * feedback loop and any running LFO all move the picture while every
+   * parameter stays exactly where it was, so a params-only dirty check would
+   * fall silent over the most visually active patches there are — the ones
+   * most worth narrating.
+   *
+   * Returns a 64-char '0'/'1' string, or null when the canvas cannot be read.
+   * Deliberately coarse: it must ignore sensor noise and JPEG shimmer while
+   * catching a real change of image.
+   */
+  const HASH_N = 8;
+  let _hashCanvas = null;
+  function frameHash() {
+    if (!canvas?.width || !canvas?.height) return null;
+    if (!_hashCanvas) {
+      _hashCanvas = document.createElement("canvas");
+      _hashCanvas.width = HASH_N;
+      _hashCanvas.height = HASH_N;
+    }
+    const ctx = _hashCanvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return null;
+    try {
+      ctx.drawImage(canvas, 0, 0, HASH_N, HASH_N);
+      const d = ctx.getImageData(0, 0, HASH_N, HASH_N).data;
+      const luma = [];
+      for (let i = 0; i < d.length; i += 4) {
+        luma.push(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
+      }
+      const mean = luma.reduce((a, b) => a + b, 0) / luma.length;
+      return luma.map((l) => (l >= mean ? "1" : "0")).join("");
+    } catch {
+      return null; // tainted canvas — treated as "cannot tell", i.e. not clean
+    }
+  }
+  const hammingFrac = (a, b) => {
+    if (!a || !b || a.length !== b.length) return 1; // unknown ⇒ assume changed
+    let n = 0;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) n++;
+    return n / a.length;
+  };
+
   // ── Feature 2: Parameter Narrator ─────────────────────────────────────────
   let _narratorActive = false;
   let _narratorTimer = null;
   const _narratorOverlay = document.getElementById("ai-narrator-overlay");
+  let _lastNarratedSnapshot = null;
+  let _lastNarratedHash = null;
+  // Frames differing by less than this fraction of hash bits count as the same
+  // picture. 8/64 bits — below that is noise on a live camera; above it is a
+  // change you can see.
+  const FRAME_CHANGE_THRESHOLD = 0.125;
 
   async function _runNarrator() {
     if (!_narratorActive) return;
     try {
       const snapshot = buildStateSnapshot(ps);
-      const frame = getVisionConfig().narrator ? captureVisionFrame() : null;
+      const seeing = getVisionConfig().narrator;
+      // Skip the call when nothing has changed. The narrator fires on a timer
+      // forever, so an unchanged patch used to be re-described every interval
+      // for the life of the session — the same sentence, billed each time.
+      // With vision on, "unchanged" must ALSO mean the picture held still.
+      const hash = seeing ? frameHash() : null;
+      const paramsSame = snapshot === _lastNarratedSnapshot;
+      const frameSame = !seeing
+        || (_lastNarratedHash !== null && hammingFrac(hash, _lastNarratedHash) < FRAME_CHANGE_THRESHOLD);
+      if (_lastNarratedSnapshot !== null && paramsSame && frameSame) {
+        // Nothing to say. Re-arm and spend nothing.
+        if (_narratorActive) {
+          _narratorTimer = setTimeout(_runNarrator, getNarratorConfig().interval);
+        }
+        return;
+      }
+      const frame = seeing ? captureVisionFrame() : null;
       const text = await narrateState(snapshot, getNarratorConfig().length, frame);
+      // Recorded only on success: a failed call must not mark the state as
+      // narrated, or one network blip silences the narrator until you happen
+      // to touch a parameter.
+      _lastNarratedSnapshot = snapshot;
+      _lastNarratedHash = hash;
       if (_narratorOverlay && _narratorActive) {
         _narratorOverlay.textContent = text;
       }

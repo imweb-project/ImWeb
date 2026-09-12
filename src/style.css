@@ -3495,6 +3495,22 @@ body.fullscreen-output #app {
     color: var(--red);
 }
 
+/* Narrator / Coach run buttons (AI settings panel) */
+.ai-run-row {
+    display: flex;
+    gap: 6px;
+}
+.ai-run-btn {
+    flex: 1;
+    min-height: 32px;
+    font-size: 11px;
+}
+.ai-run-btn.active {
+    color: var(--accent, #e8b33a);
+    border-color: var(--accent, #e8b33a);
+    background: rgba(232, 179, 58, 0.10);
+}
+
 /* Canvas-vision toggles (AI settings panel) */
 .ai-vision-row {
     display: flex;
