@@ -377,6 +377,268 @@ async function callOllama(pcfg, system, user, _maxTokens, image) {
   };
 }
 
+// ── Streaming ────────────────────────────────────────────────────────────────
+//
+// Streaming exists for ONE reason: a shader refine can take 20s+ on a thinking
+// model, and a dead modal for 20 seconds is indistinguishable from a hung one.
+// Watching the code arrive also suits the instrument — it is a performance tool.
+//
+// Only the shader paths stream. The Narrator, Coach, preset generator and
+// connection test all consume a whole answer and have nothing to show in
+// pieces, so they keep the simpler non-streaming path.
+//
+// Every provider frames its stream differently, and a wrong parser fails the
+// same silent way a wrong image envelope does — no text, no error. The four
+// framings, and what each one carries:
+//
+//   Anthropic   SSE. `content_block_delta` → delta.text; `message_start`
+//               carries input usage, `message_delta` the stop reason and
+//               output usage.
+//   Gemini      SSE via :streamGenerateContent?alt=sse. Each `data:` is a whole
+//               GenerateContentResponse; the LAST one carries usageMetadata.
+//   OpenAI-ish  SSE. choices[0].delta.content, terminated by `data: [DONE]`.
+//               Usage only arrives if stream_options.include_usage is asked for.
+//   Ollama      NOT SSE — newline-delimited JSON. Final object has done:true
+//               plus the eval counts.
+
+/** Read an SSE body and hand each `data:` payload to `onEvent`. */
+async function pumpSSE(res, onEvent) {
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    // Events are separated by a blank line; a chunk can split one anywhere, so
+    // only complete events are consumed and the remainder stays buffered.
+    let i;
+    while ((i = buf.search(/\r?\n\r?\n/)) !== -1) {
+      const raw = buf.slice(0, i);
+      buf = buf.slice(i + (buf[i] === '\r' ? 4 : 2));
+      for (const line of raw.split(/\r?\n/)) {
+        if (!line.startsWith('data:')) continue;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === '[DONE]') continue;
+        try { onEvent(JSON.parse(payload)); } catch { /* keep-alive or partial */ }
+      }
+    }
+  }
+}
+
+/** Read a newline-delimited-JSON body (Ollama). */
+async function pumpNDJSON(res, onObject) {
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf('\n')) !== -1) {
+      const line = buf.slice(0, i).trim();
+      buf = buf.slice(i + 1);
+      if (!line) continue;
+      try { onObject(JSON.parse(line)); } catch { /* partial */ }
+    }
+  }
+  const tail = buf.trim();
+  if (tail) { try { onObject(JSON.parse(tail)); } catch { /* ignore */ } }
+}
+
+/** Shared failure path — an error body is JSON, not a stream. */
+async function streamError(res, label) {
+  const e = await res.json().catch(() => ({}));
+  return new Error(e.error?.message ?? `${label} error ${res.status}`);
+}
+
+async function streamAnthropic(pcfg, system, user, maxTokens, image, onDelta) {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': pcfg.apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: pcfg.model, max_tokens: maxTokens, system, stream: true,
+      messages: [{
+        role: 'user',
+        content: image
+          ? [{ type: 'image', source: { type: 'base64', media_type: image.mime, data: image.b64 } },
+             { type: 'text', text: user }]
+          : user,
+      }],
+    }),
+  });
+  if (!res.ok) throw await streamError(res, 'Anthropic');
+  let text = '', stop = 'unknown', inTok = 0, outTok = 0;
+  await pumpSSE(res, (ev) => {
+    if (ev.type === 'message_start') {
+      const u = ev.message?.usage ?? {};
+      inTok = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0)
+            + (u.cache_creation_input_tokens ?? 0);
+      outTok = u.output_tokens ?? 0;
+    } else if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') {
+      // Thinking deltas arrive as thinking_delta and are deliberately ignored:
+      // the editor shows CODE, and a thinking stream would fill it with prose
+      // that is then replaced.
+      text += ev.delta.text;
+      onDelta?.(text);
+    } else if (ev.type === 'message_delta') {
+      if (ev.delta?.stop_reason) stop = _stop(ev.delta.stop_reason);
+      if (ev.usage?.output_tokens != null) outTok = ev.usage.output_tokens;
+    }
+  });
+  return { text, stop, usage: { in: inTok, out: outTok } };
+}
+
+async function streamGemini(pcfg, system, user, maxTokens, image, onDelta) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(pcfg.model)}:streamGenerateContent?alt=sse&key=${pcfg.apiKey}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{
+        role: 'user',
+        parts: image
+          ? [{ inline_data: { mime_type: image.mime, data: image.b64 } }, { text: `${system}\n\n${user}` }]
+          : [{ text: `${system}\n\n${user}` }],
+      }],
+      generationConfig: { maxOutputTokens: maxTokens },
+    }),
+  });
+  if (!res.ok) throw await streamError(res, 'Gemini');
+  let text = '', stop = 'unknown', inTok = 0, outTok = 0;
+  await pumpSSE(res, (d) => {
+    const cand = d.candidates?.[0];
+    for (const part of cand?.content?.parts ?? []) {
+      if (typeof part.text === 'string') { text += part.text; onDelta?.(text); }
+    }
+    if (cand?.finishReason) stop = _stop(cand.finishReason);
+    else if (d.promptFeedback?.blockReason) stop = 'refusal';
+    if (d.usageMetadata) {
+      inTok = d.usageMetadata.promptTokenCount ?? inTok;
+      outTok = (d.usageMetadata.candidatesTokenCount ?? 0)
+             + (d.usageMetadata.thoughtsTokenCount ?? 0);
+    }
+  });
+  return { text, stop, usage: { in: inTok, out: outTok } };
+}
+
+async function streamOpenAIShaped(providerId, pcfg, system, user, maxTokens, image, onDelta) {
+  const ep = OPENAI_SHAPED[providerId];
+  const res = await fetch(ep.url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${pcfg.apiKey}`,
+      ...(ep.headers ?? {}),
+    },
+    body: JSON.stringify({
+      model: pcfg.model, max_tokens: maxTokens, stream: true,
+      // Usage is omitted from a stream unless asked for. Without this the
+      // token counter would silently under-report every streamed call.
+      stream_options: { include_usage: true },
+      messages: [
+        { role: 'system', content: system },
+        {
+          role: 'user',
+          content: image
+            ? [{ type: 'text', text: user },
+               { type: 'image_url', image_url: { url: `data:${image.mime};base64,${image.b64}` } }]
+            : user,
+        },
+      ],
+    }),
+  });
+  if (!res.ok) throw await streamError(res, ep.label);
+  let text = '', stop = 'unknown', inTok = 0, outTok = 0;
+  await pumpSSE(res, (d) => {
+    const ch = d.choices?.[0];
+    const piece = ch?.delta?.content;
+    if (typeof piece === 'string' && piece) { text += piece; onDelta?.(text); }
+    if (ch?.finish_reason) stop = _stop(ch.finish_reason);
+    // The usage-only chunk arrives last and carries an empty choices array.
+    if (d.usage) {
+      inTok = d.usage.prompt_tokens ?? inTok;
+      outTok = d.usage.completion_tokens ?? outTok;
+    }
+  });
+  return { text, stop, usage: { in: inTok, out: outTok } };
+}
+
+async function streamOllama(pcfg, system, user, _maxTokens, image, onDelta) {
+  const base = (pcfg.apiKey || 'http://localhost:11434').replace(/\/$/, '');
+  const res = await fetch(`${base}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: pcfg.model, stream: true,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user, ...(image ? { images: [image.b64] } : {}) },
+      ],
+    }),
+  });
+  if (!res.ok) throw new Error(`Ollama ${res.status} — is it running at ${base}?`);
+  let text = '', stop = 'unknown', inTok = 0, outTok = 0;
+  await pumpNDJSON(res, (o) => {
+    const piece = o.message?.content;
+    if (typeof piece === 'string' && piece) { text += piece; onDelta?.(text); }
+    if (o.done) {
+      stop = _stop(o.done_reason);
+      inTok = o.prompt_eval_count ?? inTok;
+      outTok = o.eval_count ?? outTok;
+    }
+  });
+  return { text, stop, usage: { in: inTok, out: outTok } };
+}
+
+/**
+ * Streaming sibling of _callRaw. Same { text, stop, usage } contract, plus
+ * `onDelta(textSoFar)` as each piece arrives.
+ *
+ * Falls back to the non-streaming path on ANY streaming failure, because a
+ * cosmetic feature must never be the reason a shader cannot be generated:
+ * a proxy that buffers SSE, a runtime without ReadableStream, or a provider
+ * that refuses `stream: true` should cost the live typing, not the shader.
+ */
+async function _callStream(system, user, maxTokens, image, onDelta) {
+  const cfg = _config();
+  const id = cfg.activeProvider;
+  const pcfg = cfg.providers[id];
+  if (!pcfg) throw new Error('No provider configured');
+  if (PROVIDERS[id]?.needsKey && !pcfg.apiKey) throw new Error('no-key');
+
+  const canStream = typeof ReadableStream !== 'undefined'
+    && typeof TextDecoder !== 'undefined';
+  if (canStream) {
+    try {
+      const res = (id in OPENAI_SHAPED)
+        ? await streamOpenAIShaped(id, pcfg, system, user, maxTokens, image, onDelta)
+        : id === 'anthropic' ? await streamAnthropic(pcfg, system, user, maxTokens, image, onDelta)
+        : id === 'gemini'    ? await streamGemini   (pcfg, system, user, maxTokens, image, onDelta)
+        : id === 'ollama'    ? await streamOllama   (pcfg, system, user, maxTokens, image, onDelta)
+        : null;
+      if (res) {
+        _recordUsage(id, pcfg.model ?? PROVIDERS[id]?.defaultModel ?? '?', res.usage);
+        return res;
+      }
+    } catch (e) {
+      // A 'no-key' or an HTTP error from the provider is a REAL failure and must
+      // surface — retrying it unstreamed just spends a second request to fail
+      // the same way. Only a transport-shaped failure is worth falling back on.
+      if (e?.message === 'no-key') throw e;
+      if (import.meta.env?.DEV) console.warn('[glsl-ai] stream failed, falling back:', e?.message);
+      if (/error \d{3}|^Ollama \d{3}/.test(e?.message ?? '')) throw e;
+    }
+  }
+  return _callRaw(system, user, maxTokens, image);
+}
+
 // ── Model list fetchers ─────────────────────────────────────────────────────
 
 async function fetchModels(providerId) {
@@ -1027,8 +1289,12 @@ export function extractGlsl(text) {
  * (CLAUDE.md, Live GLSL & AI Subsystem) and a second copy is a second place for
  * it to be dropped.
  */
-async function _shaderCall(system, user, maxTokens, tag, image = null) {
-  const { text: raw, stop } = await _callRaw(system, user, maxTokens, image);
+async function _shaderCall(system, user, maxTokens, tag, image = null, onDelta = null) {
+  // Stream only when someone is watching. Without an onDelta there is nothing
+  // to show mid-flight, and the simpler path has fewer ways to go wrong.
+  const { text: raw, stop } = onDelta
+    ? await _callStream(system, user, maxTokens, image, onDelta)
+    : await _callRaw(system, user, maxTokens, image);
   // DEV-only ground truth for diagnosing extraction/model misbehaviour —
   // filter the console with [glsl-ai]
   if (import.meta.env?.DEV) {
@@ -1106,7 +1372,7 @@ const REFINE_TOKENS   = 16000;
  * Generate a Live GLSL shader from a natural-language description.
  * Pass priorCode + priorError for the single automatic recovery retry.
  */
-export async function generateShader(description, priorCode = null, priorError = null) {
+export async function generateShader(description, priorCode = null, priorError = null, onDelta = null) {
   const user = priorError
     ? `Your previous shader failed to compile.\nCompiler error:\n${priorError}\n\nBroken code:\n${priorCode}\n\nOutput ONLY the corrected COMPLETE shader (same rules) for the original request: "${description}". Do not explain the fix, do not quote the broken lines — code only.`
     : `Write a shader: "${description}"`;
@@ -1114,7 +1380,8 @@ export async function generateShader(description, priorCode = null, priorError =
   // headroom costs nothing and truncation costs the whole request. On
   // adaptive-thinking models this budget covers thinking AND code, and a
   // complex shader thinks a lot before it writes a line.
-  return _shaderCall(SHADER_SYSTEM, user, GENERATE_TOKENS, priorError ? 'generate retry' : 'generate');
+  return _shaderCall(SHADER_SYSTEM, user, GENERATE_TOKENS,
+    priorError ? 'generate retry' : 'generate', null, onDelta);
 }
 
 /**
@@ -1126,7 +1393,7 @@ export async function generateShader(description, priorCode = null, priorError =
  * is now DETECTED rather than injected: _shaderCall throws on a max_tokens
  * stop, so a half-written shader can never replace the working one.
  */
-export async function refineShader(instruction, currentCode, priorCode = null, priorError = null, image = null) {
+export async function refineShader(instruction, currentCode, priorCode = null, priorError = null, image = null, onDelta = null) {
   if (!currentCode?.trim()) throw new Error('Nothing to refine — the editor is empty.');
   // On the compile-recovery retry the frame is dropped deliberately: the
   // question there is "why did this not compile", which the compiler error
@@ -1143,6 +1410,7 @@ export async function refineShader(instruction, currentCode, priorCode = null, p
     user, REFINE_TOKENS,
     priorError ? 'refine retry' : (seeing ? 'refine+vision' : 'refine'),
     seeing ? image : null,
+    onDelta,
   );
 }
 

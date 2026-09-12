@@ -9,6 +9,41 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Shader generation streams.** The code now appears in the editor as the model
+  writes it, and the modal closes on the first characters instead of sitting
+  dead for 20+ seconds. Measured in a browser against a real chunked SSE
+  response, the editor fills progressively (24 → 47 → 59 → 83 → 95 → 120 chars)
+  rather than appearing at once.
+
+  All four framings are handled, because they genuinely differ and a wrong
+  parser yields no text with no error: Anthropic SSE (text in
+  `content_block_delta`, stop reason in `message_delta`, and usage SPLIT across
+  `message_start` and `message_delta`); Gemini SSE via `:streamGenerateContent
+  ?alt=sse` where each event is a whole response and only the last carries
+  usage; the OpenAI shape with its `[DONE]` sentinel and a usage-only final
+  chunk whose `choices` array is empty — which arrives only because
+  `stream_options.include_usage` is now requested; and Ollama, which is **not
+  SSE at all** but newline-delimited JSON. Events split across network chunks
+  are reassembled, which is tested by splitting one deliberately.
+
+  Three properties are preserved through streaming, each with its own failure
+  mode: the **stop reason** (it is what catches truncation — losing it would
+  re-open the bug where a half-written shader passes as valid code), **usage**
+  (streaming is the path the expensive calls take, so an unmetered stream would
+  make the counter most wrong exactly where it matters), and **thinking deltas
+  are ignored** (they are not code, and would fill the editor with prose that is
+  then replaced).
+
+  Streaming **falls back** to the non-streaming path on any transport failure —
+  a buffering proxy, a runtime without `ReadableStream` — because a cosmetic
+  feature must never be why a shader cannot be generated. A real provider error
+  (401, a refusal) surfaces instead of being retried unstreamed, which would
+  only spend a second request to fail identically. A stream that fails after
+  writing partial text restores the shader it overwrote.
+- `tests/audit-ai-streaming.mjs` (34 checks) and four more mutations.
+  `npm run mutate`: **106/106**.
+
+### Added
 - **A home for the Narrator and Coach.** Both were reachable only as unlabelled
   glyphs in the status bar (`𝔸` and `⬡`) while everything that configures them
   lived in the AI panel. There are now labelled Run buttons beside those

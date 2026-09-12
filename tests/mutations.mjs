@@ -976,7 +976,14 @@ export const MUTATIONS = [
     audit: 'audit-ai-vision.mjs',
     file: 'src/ai/AIFeatures.js',
     why: 'Ollama keeps content a string and wants raw base64 in a sibling images[] array; given the OpenAI image_url shape it ignores the picture entirely and answers from the text — no error, a plausible narration, billed as vision, describing the patch instead of the frame. THIS ONE SHIPPED: the OpenAI patch matched Ollama\'s identical message block and the audit caught it',
-    find: "        { role: 'user', content: user, ...(image ? { images: [image.b64] } : {}) },",
+    // Disambiguated: streamOllama carries an identical line, so the anchor
+    // includes the comment that only precedes the non-streaming caller.
+    find: [
+      '        // sibling `images` array. It does NOT take the OpenAI image_url shape',
+      '        // — handed that, it ignores the picture and answers from the text,',
+      '        // with no error and a plausible reply.',
+      "        { role: 'user', content: user, ...(image ? { images: [image.b64] } : {}) },",
+    ].join('\n'),
     replace: [
       "        { role: 'user', content: image",
       "            ? [{ type: 'text', text: user },",
@@ -1023,5 +1030,46 @@ export const MUTATIONS = [
     why: 'the reply IS valid JSON, just cut off mid-object; calling that "no JSON object" sends the user hunting for a model or prompt fault when the real answer is that the patch needed more room — reported live from a real Generate State run',
     find: "  if (stop === 'max_tokens') {\n    throw new Error(\n      `The model ran out of room at ${PRESET_TOKENS} tokens",
     replace: "  if (false) {\n    throw new Error(\n      `The model ran out of room at ${PRESET_TOKENS} tokens",
+  },
+  // ═════════════════════════════════════════════════════════════════════════
+  // Streaming shader generation (#113)
+  //
+  // Four providers, four stream framings. A wrong parser does not error — it
+  // yields no text, and the failure reads as "the model returned nothing".
+  // ═════════════════════════════════════════════════════════════════════════
+  {
+    name: 'the streamed Anthropic usage drops cache tokens',
+    audit: 'audit-ai-streaming.mjs',
+    file: 'src/ai/AIFeatures.js',
+    why: 'cache reads and writes are input tokens too; counting only input_tokens under-reports every cached streamed call, and streaming is the path the EXPENSIVE calls take — so the counter would be most wrong exactly where it matters most',
+    find: [
+      '      inTok = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0)',
+      '            + (u.cache_creation_input_tokens ?? 0);',
+    ].join('\n'),
+    replace: '      inTok = u.input_tokens ?? 0;',
+  },
+  {
+    name: 'the OpenAI-shaped stream stops asking for usage',
+    audit: 'audit-ai-streaming.mjs',
+    file: 'src/ai/AIFeatures.js',
+    why: 'that shape omits usage from a stream unless stream_options.include_usage is set, so every streamed call through OpenAI/OpenRouter/DeepSeek/Kimi would silently record zero tokens — a provider that looks free',
+    find: '      stream_options: { include_usage: true },',
+    replace: '',
+  },
+  {
+    name: 'the streamed stop reason is dropped',
+    audit: 'audit-ai-streaming.mjs',
+    file: 'src/ai/AIFeatures.js',
+    why: 'the stop reason is what catches truncation; losing it on the streaming path re-opens the exact bug the non-streaming path was fixed for — a half-written shader passing as valid code because extractGlsl slices to the last closing brace',
+    find: '      if (ev.delta?.stop_reason) stop = _stop(ev.delta.stop_reason);',
+    replace: '',
+  },
+  {
+    name: 'the Ollama stream is parsed as SSE',
+    audit: 'audit-ai-streaming.mjs',
+    file: 'src/ai/AIFeatures.js',
+    why: 'Ollama streams newline-delimited JSON, not SSE — an SSE reader finds no "data:" prefix, yields nothing, and the generation fails as an empty response with no hint that the framing was the problem',
+    find: '  await pumpNDJSON(res, (o) => {',
+    replace: '  await pumpSSE(res, (o) => {',
   },
 ];
