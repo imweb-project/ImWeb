@@ -1004,8 +1004,16 @@ export const MUTATIONS = [
     audit: 'audit-ai-vision.mjs',
     file: 'src/main.js',
     why: 'the narrator fires on a timer, so an ungated capture sends an image on every tick — the toggle reads as off while every narration is billed at vision rates',
-    find: '      const frame = seeing ? captureVisionFrame() : null;',
-    replace: '      const frame = captureVisionFrame();',
+    // The Narrator and Coach now share this line verbatim, so the anchor
+    // carries the call that follows it to name exactly one.
+    find: [
+      '      const frame = seeing ? captureVisionFrame() : null;',
+      '      const text = await narrateState(snapshot, getNarratorConfig().length, frame);',
+    ].join('\n'),
+    replace: [
+      '      const frame = captureVisionFrame();',
+      '      const text = await narrateState(snapshot, getNarratorConfig().length, frame);',
+    ].join('\n'),
   },
   {
     name: 'the compile-recovery retry keeps paying for the frame',
@@ -1071,5 +1079,44 @@ export const MUTATIONS = [
     why: 'Ollama streams newline-delimited JSON, not SSE — an SSE reader finds no "data:" prefix, yields nothing, and the generation fails as an empty response with no hint that the framing was the problem',
     find: '  await pumpNDJSON(res, (o) => {',
     replace: '  await pumpSSE(res, (o) => {',
+  },
+  {
+    name: 'the Coach loses its change gate',
+    audit: 'audit-ai-vision.mjs',
+    file: 'src/main.js',
+    why: 'the Coach fires every 45s for as long as the button is lit, so without the gate an untouched patch is advised over and over with the same sentence — a call every 45 seconds, forever, saying nothing new',
+    find: [
+      '      const gate = _coachGate(snapshot, seeing);',
+      '      if (gate.clean) {',
+      '        if (_coachActive) {',
+      '          _coachTimer = setTimeout(_runCoach, getCoachConfig().interval);',
+      '        }',
+      '        return;',
+      '      }',
+      '      const frame',
+    ].join('\n'),
+    replace: '      const gate = _coachGate(snapshot, seeing);\n      const frame',
+  },
+  {
+    name: 'the Coach commits its gate before the call, not after',
+    audit: 'audit-ai-vision.mjs',
+    file: 'src/main.js',
+    why: 'committing first marks the state handled even when the call THREW, so a single network blip or a bad key silences the Coach until something happens to change the activity snapshot — the failure is a feature that quietly stops working',
+    find: [
+      '      const text = await coachSuggestion(snapshot, frame);',
+      '      gate.commit();',
+    ].join('\n'),
+    replace: [
+      '      gate.commit();',
+      '      const text = await coachSuggestion(snapshot, frame);',
+    ].join('\n'),
+  },
+  {
+    name: 'the activity snapshot goes back to the raw event log',
+    audit: 'audit-ai-vision.mjs',
+    file: 'src/ai/AIFeatures.js',
+    why: 'every controlled param fires onChange on every frame, so one running LFO puts its id in the list hundreds of times in an order that shifts as entries age out — the snapshot never equals the previous one, the Coach gate can never fire, and the model is handed the same id 300 times instead of a summary. MEASURED: 6 calls over 7 ticks on an idle patch, versus 1 with the dedup',
+    find: '  const ids = [...new Set(recentChanges.map(r => r.id))].sort();',
+    replace: '  const ids = recentChanges.map(r => r.id);',
   },
 ];

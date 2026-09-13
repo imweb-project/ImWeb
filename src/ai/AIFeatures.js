@@ -1560,9 +1560,22 @@ export async function coachSuggestion(activitySnapshot, image = null) {
 }
 
 export function buildActivitySnapshot(recentChanges, ps) {
-  const changed   = recentChanges.map(r => r.id).join(', ') || 'nothing';
+  // DEDUPED AND SORTED, not the raw event log.
+  //
+  // `recentChanges` is one entry per onChange, and every param carrying a
+  // controller fires on every frame — so a single LFO put its id in this list
+  // hundreds of times, in an order that shifted as entries aged out of the 30s
+  // window. Two consequences, both bad: the model was handed
+  // "displace.amount, displace.amount, …" ×300 instead of a legible summary,
+  // and the Coach's change gate could never see two ticks as equal, so the
+  // gate suppressed nothing on any patch with a controller running.
+  //
+  // Sorted so the same set of touched params always renders the same string —
+  // an unsorted set still varies with insertion order.
+  const ids = [...new Set(recentChanges.map(r => r.id))].sort();
+  const changed   = ids.join(', ') || 'nothing';
   const unchanged = ['keyer.active','displace.amount','blend.active','effect.bloom','effect.kaleid','effect.mirror']
-    .filter(id => !recentChanges.find(r => r.id === id))
+    .filter(id => !ids.includes(id))
     .join(', ');
   const fg = SOURCE_NAMES[ps.get('layer.fg').value] ?? '?';
   const bg = SOURCE_NAMES[ps.get('layer.bg').value] ?? '?';

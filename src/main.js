@@ -9777,31 +9777,57 @@ void main() {
     return n / a.length;
   };
 
-  // ── Feature 2: Parameter Narrator ─────────────────────────────────────────
-  let _narratorActive = false;
-  let _narratorTimer = null;
-  const _narratorOverlay = document.getElementById("ai-narrator-overlay");
-  let _lastNarratedSnapshot = null;
-  let _lastNarratedHash = null;
   // Frames differing by less than this fraction of hash bits count as the same
   // picture. 8/64 bits — below that is noise on a live camera; above it is a
   // change you can see.
   const FRAME_CHANGE_THRESHOLD = 0.125;
+
+  /**
+   * The change gate shared by the Narrator and the Coach.
+   *
+   * Both fire on a timer forever, and both used to spend a call every interval
+   * whether or not anything had moved. The rule is the same for both, so it is
+   * written once: a copy per feature is how CLAUDE.md's seven near-duplicates
+   * accrued, and the two would drift the first time the threshold is tuned.
+   *
+   * `text` is whatever the feature would send — the state snapshot for the
+   * Narrator, the activity snapshot for the Coach. When `seeing` is true the
+   * frame must ALSO have held still, because a live camera, a playing movie, a
+   * feedback loop and any running LFO all move the picture while every
+   * parameter sits still.
+   *
+   * Returns { clean, commit }. `commit` is called only after a SUCCESSFUL call,
+   * so a failed one cannot mark the state as handled and mute the feature until
+   * something happens to change.
+   */
+  function makeChangeGate() {
+    let lastText = null;
+    let lastHash = null;
+    return (text, seeing) => {
+      const hash = seeing ? frameHash() : null;
+      const clean =
+        lastText !== null &&
+        text === lastText &&
+        // An unknown hash scores 1 and so reads as changed — a readback failure
+        // must never silence the feature permanently.
+        (!seeing || (lastHash !== null && hammingFrac(hash, lastHash) < FRAME_CHANGE_THRESHOLD));
+      return { clean, commit: () => { lastText = text; lastHash = hash; } };
+    };
+  }
+
+  // ── Feature 2: Parameter Narrator ─────────────────────────────────────────
+  let _narratorActive = false;
+  let _narratorTimer = null;
+  const _narratorOverlay = document.getElementById("ai-narrator-overlay");
+  const _narratorGate = makeChangeGate();
 
   async function _runNarrator() {
     if (!_narratorActive) return;
     try {
       const snapshot = buildStateSnapshot(ps);
       const seeing = getVisionConfig().narrator;
-      // Skip the call when nothing has changed. The narrator fires on a timer
-      // forever, so an unchanged patch used to be re-described every interval
-      // for the life of the session — the same sentence, billed each time.
-      // With vision on, "unchanged" must ALSO mean the picture held still.
-      const hash = seeing ? frameHash() : null;
-      const paramsSame = snapshot === _lastNarratedSnapshot;
-      const frameSame = !seeing
-        || (_lastNarratedHash !== null && hammingFrac(hash, _lastNarratedHash) < FRAME_CHANGE_THRESHOLD);
-      if (_lastNarratedSnapshot !== null && paramsSame && frameSame) {
+      const gate = _narratorGate(snapshot, seeing);
+      if (gate.clean) {
         // Nothing to say. Re-arm and spend nothing.
         if (_narratorActive) {
           _narratorTimer = setTimeout(_runNarrator, getNarratorConfig().interval);
@@ -9810,11 +9836,7 @@ void main() {
       }
       const frame = seeing ? captureVisionFrame() : null;
       const text = await narrateState(snapshot, getNarratorConfig().length, frame);
-      // Recorded only on success: a failed call must not mark the state as
-      // narrated, or one network blip silences the narrator until you happen
-      // to touch a parameter.
-      _lastNarratedSnapshot = snapshot;
-      _lastNarratedHash = hash;
+      gate.commit();
       if (_narratorOverlay && _narratorActive) {
         _narratorOverlay.textContent = text;
       }
@@ -9853,6 +9875,7 @@ void main() {
   let _coachTimer = null;
   const _recentChanges = []; // { id, t } — last 30 seconds of param changes
   let _coachNotif = null;
+  const _coachGate = makeChangeGate();
 
   // Track parameter changes for coach — register per-param listeners on all params
   {
@@ -9890,8 +9913,22 @@ void main() {
     if (!_coachActive) return;
     try {
       const snapshot = buildActivitySnapshot(_recentChanges, ps);
-      const frame = getVisionConfig().coach ? captureVisionFrame() : null;
+      const seeing = getVisionConfig().coach;
+      // Same gate as the Narrator. Note what this does NOT suppress: when you
+      // go idle the activity snapshot CHANGES (its "recently changed" list
+      // empties), so the Coach still gets one chance to say "you have gone
+      // static, try X". It is the endless repetition of that same advice —
+      // every 45s for as long as the button is lit — that stops.
+      const gate = _coachGate(snapshot, seeing);
+      if (gate.clean) {
+        if (_coachActive) {
+          _coachTimer = setTimeout(_runCoach, getCoachConfig().interval);
+        }
+        return;
+      }
+      const frame = seeing ? captureVisionFrame() : null;
       const text = await coachSuggestion(snapshot, frame);
+      gate.commit();
       if (_coachActive) {
         _showCoachNotif(text || '⚠ Coach: empty response from AI — try a different model');
       }
