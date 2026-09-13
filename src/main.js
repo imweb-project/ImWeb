@@ -137,6 +137,7 @@ import {
   getCoachConfig,
   getVisionConfig,
   setVisionShader,
+  logCoachSuggestion,
 } from "./ai/AIFeatures.js";
 import {
   initTabs,
@@ -9930,7 +9931,13 @@ void main() {
       const text = await coachSuggestion(snapshot, frame);
       gate.commit();
       if (_coachActive) {
-        _showCoachNotif(text || '⚠ Coach: empty response from AI — try a different model');
+        const msg = text || '⚠ Coach: empty response from AI — try a different model';
+        _showCoachNotif(msg);
+        // Kept so a suggestion you glanced away from can be read back — the
+        // toast is deliberately transient, the text should not be.
+        logCoachSuggestion(msg);
+        // Lets the AI panel refresh without main.js knowing it exists.
+        document.dispatchEvent(new CustomEvent('imweb-coach'));
       }
     } catch (err) {
       console.error('[Coach] error:', err);
