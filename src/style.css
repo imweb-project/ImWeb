@@ -3495,6 +3495,44 @@ body.fullscreen-output #app {
     color: var(--red);
 }
 
+/* Coach suggestion log (AI settings panel) */
+.ai-coach-log {
+    font-size: 11px;
+    color: var(--text-2);
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    max-height: 150px;
+    overflow-y: auto;
+}
+.ai-coach-log.empty {
+    opacity: 0.55;
+}
+.ai-coach-log-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 3px 0;
+    border-bottom: 1px solid var(--border, #2a2a32);
+}
+.ai-coach-log-row:last-child {
+    border-bottom: none;
+}
+.ai-coach-log-text {
+    flex: 1;
+    /* The suggestions are short, but a long one must wrap rather than clip —
+       an unreadable half-sentence defeats the point of keeping it. */
+    white-space: normal;
+    line-height: 1.35;
+    color: var(--accent, #e8b33a);
+}
+.ai-coach-log-when {
+    flex: none;
+    opacity: 0.6;
+    font-size: 10px;
+    white-space: nowrap;
+}
+
 /* Narrator / Coach run buttons (AI settings panel) */
 .ai-run-row {
     display: flex;

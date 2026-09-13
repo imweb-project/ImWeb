@@ -788,6 +788,48 @@ export function getUsage() {
   return { session: { ..._session }, totals, last: all.__last ?? null };
 }
 
+// ── Coach log ───────────────────────────────────────────────────────────────
+//
+// The toast flashes for 2.5s and fades. That is right for a performance — it
+// must not sit over the canvas — but it means a suggestion you glanced away
+// from is gone for good, and there was no way to read it back. The log is the
+// retrievable half: the toast stays transient, the text is kept.
+//
+// Capped and per-origin, like the token totals. Eight is enough to cover a
+// couple of coaching cycles without turning the panel into a scrollback.
+
+const COACH_LOG_KEY = 'imweb-ai-coach-log';
+const COACH_LOG_MAX = 8;
+
+/** Newest first. [{ text, ts }] */
+export function getCoachLog() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(COACH_LOG_KEY));
+    return Array.isArray(raw) ? raw : [];
+  } catch { return []; }
+}
+
+/**
+ * Record a suggestion. Errors are NOT logged — the log is for advice worth
+ * re-reading, and filling it with "⚠ Coach error: …" would bury the thing it
+ * exists to keep.
+ */
+export function logCoachSuggestion(text) {
+  const t = (text ?? '').trim();
+  if (!t || t.startsWith('⚠')) return;
+  const log = getCoachLog();
+  // A repeat says nothing new; refresh its timestamp instead of stacking it.
+  const dup = log.findIndex((e) => e.text === t);
+  if (dup !== -1) log.splice(dup, 1);
+  log.unshift({ text: t, ts: Date.now() });
+  try { localStorage.setItem(COACH_LOG_KEY, JSON.stringify(log.slice(0, COACH_LOG_MAX))); }
+  catch { /* quota — the toast still showed */ }
+}
+
+export function clearCoachLog() {
+  try { localStorage.removeItem(COACH_LOG_KEY); } catch { /* nothing to clear */ }
+}
+
 export function resetUsage() {
   _usage = {};
   _session.in = _session.out = _session.calls = 0;
@@ -1628,6 +1670,8 @@ export class AIFeatures {
   async fetchModels(id) { return fetchModels(id); }
 
   // Token accounting
+  getCoachLog()   { return getCoachLog(); }
+  clearCoachLog() { return clearCoachLog(); }
   getUsage()   { return getUsage(); }
   resetUsage() { return resetUsage(); }
   usageCost(provider, model, inTok, outTok) { return usageCost(provider, model, inTok, outTok); }

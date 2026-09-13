@@ -8,6 +8,20 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Added
+- **Coach suggestions are kept.** A `COACH SUGGESTIONS` list in the AI settings
+  panel holds the last 8, newest first, each with a relative time, plus a Clear
+  button. The toast over the canvas stays exactly as it was — 2.5 seconds,
+  click-through, then fades — because it must not sit over the picture during a
+  performance; that is precisely why a retrievable copy was needed, since a
+  suggestion you glanced away from was otherwise gone for good.
+
+  It updates live while the panel is open (the Coach fires a DOM event rather
+  than main.js knowing the panel exists), persists per origin, and drops
+  duplicates to the top rather than stacking them. Error toasts are **not**
+  logged — filling the list with "⚠ Coach error" would bury the advice it exists
+  to keep. Suggestion text is rendered with `textContent`, never `innerHTML`.
+
 ### Changed
 - **The Coach only speaks when something has changed, too** — the same gate the
   Narrator got, now shared rather than copied. Measured in a browser: **1 call

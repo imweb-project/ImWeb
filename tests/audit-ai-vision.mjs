@@ -356,7 +356,65 @@ check('a non-null image routes to refineShader in the image position',
   check('a touched param leaves the untouched list', !/Untouched:[^.]*keyer\.active/.test(touched));
 }
 
-const EXPECTED_CHECKS = 88;
+// ── The Coach log ────────────────────────────────────────────────────────────
+// The toast is deliberately transient (2.5s, then fades, click-through) so it
+// cannot sit over the canvas during a performance. That makes a retrievable
+// copy necessary rather than optional: a suggestion glanced away from was
+// otherwise gone for good.
+{
+  store.clear();
+  const m = await fresh('coachlog');
+  check('an empty log reads as an empty array, not null', Array.isArray(m.getCoachLog()) && m.getCoachLog().length === 0);
+
+  m.logCoachSuggestion('Try routing Noise to FG');
+  m.logCoachSuggestion('Increase feedback.hor to drift');
+  check('suggestions are kept', m.getCoachLog().length === 2);
+  check('newest is first', m.getCoachLog()[0].text === 'Increase feedback.hor to drift');
+  check('each entry carries a timestamp', typeof m.getCoachLog()[0].ts === 'number');
+
+  // Errors must not be kept — filling the log with "⚠ Coach error" would bury
+  // the advice it exists to preserve.
+  m.logCoachSuggestion('⚠ Coach error: 401');
+  m.logCoachSuggestion('⚠ Coach: empty response from AI — try a different model');
+  check('error toasts are NOT logged', m.getCoachLog().length === 2);
+  m.logCoachSuggestion('   ');
+  check('blank suggestions are not logged', m.getCoachLog().length === 2);
+
+  // A repeat says nothing new; it should move rather than stack.
+  m.logCoachSuggestion('Try routing Noise to FG');
+  check('a repeated suggestion is not duplicated', m.getCoachLog().length === 2);
+  check('and it moves to the top rather than staying put',
+    m.getCoachLog()[0].text === 'Try routing Noise to FG');
+
+  // Capped, or the panel becomes a scrollback.
+  for (let i = 0; i < 20; i++) m.logCoachSuggestion(`suggestion number ${i}`);
+  check('the log is capped', m.getCoachLog().length <= 8);
+  check('the cap keeps the NEWEST, not the oldest', m.getCoachLog()[0].text === 'suggestion number 19');
+
+  m.clearCoachLog();
+  check('clear empties it', m.getCoachLog().length === 0);
+}
+
+// The log must be written where the toast is shown, and rendered safely.
+check('the coach loop logs what it shows', /logCoachSuggestion\(msg\)/.test(main));
+check('and tells the panel so it can refresh while open',
+  /dispatchEvent\(new CustomEvent\('imweb-coach'\)\)/.test(main));
+{
+  const ui = readFileSync(resolve(root, 'src/ui/UI.js'), 'utf8');
+  check('the panel listens for it', /addEventListener\('imweb-coach'/.test(ui));
+  // Model output must never be interpolated as markup.
+  // Comments stripped FIRST (LEARNED.md 2026-08-15): the line that sets this
+  // safely is commented "textContent, never innerHTML", and that comment made
+  // the check fail against perfectly correct code.
+  const uiCode = ui.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const i = uiCode.indexOf('ai-coach-log-text');
+  check('the coach log render is present', i !== -1);
+  const near = i === -1 ? '' : uiCode.slice(i, i + 320);
+  check('suggestion text is set with textContent, never innerHTML',
+    /textContent = e\.text/.test(near) && !/innerHTML/.test(near));
+}
+
+const EXPECTED_CHECKS = 104;
 if (ran !== EXPECTED_CHECKS) {
   console.error(`FAIL audit-ai-vision: ran ${ran} checks, expected ${EXPECTED_CHECKS} — a section was skipped or added without updating the count.`);
   process.exit(1);

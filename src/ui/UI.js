@@ -4083,8 +4083,56 @@ export function buildAISettingsPanel(ai, panelEl) {
   const runNote = document.createElement('div');
   runNote.className = 'ai-settings-note';
   runNote.textContent =
-    'The Narrator only speaks when the patch or the picture has actually changed.';
+    'Both only speak when the patch or the picture has actually changed.';
   panelEl.appendChild(runNote);
+
+  // ── Coach log ─────────────────────────────────────────────────────────────
+  // The toast over the canvas flashes for 2.5s and fades — right for a
+  // performance, but a suggestion you glanced away from was gone for good.
+  // This is where it is kept.
+  const coachHdr = document.createElement('div');
+  coachHdr.className = 'ai-settings-hdr';
+  coachHdr.style.marginTop = '10px';
+  coachHdr.textContent = 'COACH SUGGESTIONS';
+  panelEl.appendChild(coachHdr);
+
+  const coachLogEl = document.createElement('div');
+  coachLogEl.className = 'ai-coach-log';
+  panelEl.appendChild(coachLogEl);
+
+  function refreshCoachLog() {
+    const log = ai.getCoachLog();
+    if (!log.length) {
+      coachLogEl.textContent = 'Nothing yet — start the Coach above.';
+      coachLogEl.classList.add('empty');
+      return;
+    }
+    coachLogEl.classList.remove('empty');
+    coachLogEl.replaceChildren(...log.map((e) => {
+      const row = document.createElement('div');
+      row.className = 'ai-coach-log-row';
+      const txt = document.createElement('span');
+      txt.className = 'ai-coach-log-text';
+      // textContent, never innerHTML: this string came from a model.
+      txt.textContent = e.text;
+      const when = document.createElement('span');
+      when.className = 'ai-coach-log-when';
+      when.textContent = relTime(e.ts);
+      row.append(txt, when);
+      return row;
+    }));
+  }
+  refreshCoachLog();
+  // The panel is rebuilt on open, but a suggestion can land while it is
+  // already open — main.js fires this without needing to know the panel exists.
+  document.addEventListener('imweb-coach', refreshCoachLog);
+
+  const coachClearBtn = document.createElement('button');
+  coachClearBtn.className = 'import-btn';
+  coachClearBtn.textContent = 'Clear suggestions';
+  coachClearBtn.style.cssText = 'margin-top:6px;width:100%;';
+  coachClearBtn.addEventListener('click', () => { ai.clearCoachLog(); refreshCoachLog(); });
+  panelEl.appendChild(coachClearBtn);
 
   panelEl.appendChild(row('Narrator interval', makeSelect(
     [5000, 10000, 15000, 30000, 60000].map(v => ({ value: String(v), label: `${v / 1000}s` })),
