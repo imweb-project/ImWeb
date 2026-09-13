@@ -177,22 +177,12 @@ check('capture downscales rather than sending the full canvas', /VISION_W/.test(
 check('capture encodes JPEG, not PNG', /image\/jpeg/.test(cap));
 check('capture strips the data: prefix before sending', /indexOf\("?,"?\)|slice\(comma \+ 1\)/.test(cap));
 check('a tainted canvas degrades to text instead of throwing', /catch\s*\{/.test(cap));
-// The gate: capture must be conditional on the vision config, or every
-// narration pays for an image whether or not it was asked for.
-// Read the narrator body rather than pinning one spelling: the gate moved
-// into a `seeing` local when the dirty-check landed, and an audit that fails
-// on correct code teaches people to edit the audit.
-{
-  const nStart = main.indexOf('async function _runNarrator()');
-  check('the narrator loop is still present', nStart !== -1);
-  const nBody = nStart === -1 ? '' : main.slice(nStart, nStart + 2600);
-  check('the narrator reads the vision setting', /getVisionConfig\(\)\.narrator/.test(nBody));
-  check('narrator capture is gated on it, never unconditional',
-    /seeing \? captureVisionFrame\(\) : null/.test(nBody)
-    && !/^\s*const frame = captureVisionFrame\(\);/m.test(nBody));
-}
-check('coach capture is gated on the vision setting',
-  /getVisionConfig\(\)\.coach \? captureVisionFrame\(\) : null/.test(main));
+// Capture must be conditional on the vision config, or every narration pays
+// for an image whether or not it was asked for. Both consumers are checked in
+// the change-gate section below, per feature — asserting it here as well would
+// be a second copy of the same rule, pinned to one spelling.
+check('no unconditional frame capture on a timer path',
+  !/^\s*const frame = captureVisionFrame\(\);/m.test(main));
 
 // ── Refine with vision ───────────────────────────────────────────────────────
 // The frame must reach the refine request, the prompt must tell the model to
@@ -261,41 +251,66 @@ check('the captured frame is passed into the generation runner as its 3rd argume
 check('a non-null image routes to refineShader in the image position',
   /refineShader\(p,\s*baseCode,\s*pc,\s*pe,\s*image\b/.test(main));
 
-// ── The narrator dirty-check ─────────────────────────────────────────────────
+// ── The change gate (Narrator AND Coach) ────────────────────────────────────
 //
-// The narrator fires on a timer forever, so an unchanged patch used to be
-// re-described every interval for the life of the session — the same sentence,
-// billed each time, for as long as the button stayed lit.
+// Both fire on a timer forever. Untouched, each spent a call every interval
+// whether or not anything had moved — the Narrator re-describing an unchanged
+// patch, the Coach repeating the same advice for as long as the button stayed
+// lit.
 //
-// The subtlety is that a params-only check is WRONG once vision is on: a live
-// camera, a playing movie, a feedback loop and any running LFO all move the
-// picture while every parameter sits still. A params-only skip would fall
-// silent over exactly the most visually active patches — the ones most worth
-// narrating. Hence the frame hash.
+// The subtlety that makes this more than a string compare: once vision is on, a
+// params-only check is WRONG. A live camera, a playing movie, a feedback loop
+// and any running LFO all move the picture while every parameter sits still, so
+// a params-only skip would fall silent over precisely the most visually active
+// patches — the ones most worth describing. Hence the frame hash.
+//
+// ONE gate serves both. A copy per feature is how CLAUDE.md's near-duplicates
+// accrue, and the two would drift the first time the threshold is tuned.
 {
-  const nStart = main.indexOf('async function _runNarrator()');
-  const nBody = nStart === -1 ? '' : main.slice(nStart, nStart + 2600);
-  check('the narrator compares against the last narrated snapshot',
-    /_lastNarratedSnapshot/.test(nBody));
-  check('it also compares the FRAME when vision is on (params alone are not enough)',
-    /_lastNarratedHash/.test(nBody) && /hammingFrac/.test(nBody));
-  check('an unchanged patch returns without calling the provider',
-    /paramsSame && frameSame/.test(nBody) && /return;/.test(nBody));
-  check('a skipped tick still re-arms the timer (the narrator must not stop)',
-    (nBody.match(/setTimeout\(_runNarrator/g) ?? []).length >= 2);
-  // Both ends guarded: an unguarded `a > b` is TRUE when b is absent (-1), so
-  // it would pass on a narrator with no provider call at all.
-  const iRecord = nBody.indexOf('_lastNarratedSnapshot = snapshot');
-  const iCall = nBody.indexOf('await narrateState');
-  check('the narrator still calls the provider', iCall !== -1);
-  check('and still records what it narrated', iRecord !== -1);
-  check('state is recorded only AFTER a successful call — a failed one must not mark it narrated',
-    iRecord !== -1 && iCall !== -1 && iRecord > iCall);
-  check('the first run is never skipped (null sentinel, not an empty string)',
-    /_lastNarratedSnapshot !== null/.test(nBody));
+  check('the gate is written once, not once per feature',
+    (main.match(/function makeChangeGate\(\)/g) ?? []).length === 1);
+  check('both features take one', (main.match(/makeChangeGate\(\)/g) ?? []).length === 3); // 1 def + 2 uses
+  check('the narrator has a gate', /_narratorGate = makeChangeGate\(\)/.test(main));
+  check('the coach has one too', /_coachGate = makeChangeGate\(\)/.test(main));
 
-  // The hash itself must be able to tell two pictures apart, and must treat an
-  // unreadable canvas as "changed" rather than silently skipping forever.
+  const gStart = main.indexOf('function makeChangeGate()');
+  check('the gate body is readable', gStart !== -1);
+  const gBody = gStart === -1 ? '' : main.slice(gStart, gStart + 1200);
+  check('it compares the text the feature would send', /text === lastText/.test(gBody));
+  check('it compares the FRAME as well when vision is on',
+    /hammingFrac\(hash, lastHash\)/.test(gBody) && /seeing \? frameHash\(\) : null/.test(gBody));
+  check('the frame comparison uses the named threshold, not a magic number',
+    /FRAME_CHANGE_THRESHOLD/.test(gBody));
+  check('the first run is never skipped (null sentinel, not an empty string)',
+    /lastText !== null/.test(gBody));
+  check('committing is a separate step from checking',
+    /commit: \(\) => \{ lastText = text; lastHash = hash; \}/.test(gBody));
+
+  // Each consumer must skip, re-arm, and commit only after a successful call.
+  for (const [name, fn, cfg] of [
+    ['narrator', 'async function _runNarrator()', 'getNarratorConfig'],
+    ['coach', 'async function _runCoach()', 'getCoachConfig'],
+  ]) {
+    const i = main.indexOf(fn);
+    check(`${name}: the loop is present`, i !== -1);
+    const body = i === -1 ? '' : main.slice(i, i + 1800);
+    check(`${name}: consults the gate`, /const gate = _\w+Gate\(snapshot, seeing\)/.test(body));
+    check(`${name}: returns without calling the provider when clean`,
+      /if \(gate\.clean\) \{/.test(body));
+    check(`${name}: a skipped tick still re-arms the timer (it must not stop)`,
+      (body.match(new RegExp(`${cfg}\\(\\)\\.interval`, 'g')) ?? []).length >= 2);
+    const iCommit = body.indexOf('gate.commit()');
+    const iCall = body.search(/await (narrateState|coachSuggestion)\(/);
+    check(`${name}: still calls the provider`, iCall !== -1);
+    check(`${name}: commits only AFTER a successful call — a failure must not mark it handled`,
+      iCommit !== -1 && iCall !== -1 && iCommit > iCall);
+    check(`${name}: captures the frame only when its own vision flag is set`,
+      /const seeing = getVisionConfig\(\)\.\w+;/.test(body)
+      && /seeing \? captureVisionFrame\(\) : null/.test(body));
+  }
+
+  // The hash must tell two pictures apart, and an unreadable canvas must count
+  // as CHANGED rather than silencing the feature forever.
   const hStart = main.indexOf('function frameHash()');
   check('frameHash exists', hStart !== -1);
   const hBody = hStart === -1 ? '' : main.slice(hStart, hStart + 1200);
@@ -305,11 +320,43 @@ check('a non-null image routes to refineShader in the image position',
     /catch\s*\{[\s\S]{0,80}return null/.test(hBody));
   check('an unknown hash counts as CHANGED, so a failure cannot silence it',
     /if \(!a \|\| !b \|\| a\.length !== b\.length\) return 1;/.test(main));
-  check('the change threshold is a named constant, not a magic number',
-    /FRAME_CHANGE_THRESHOLD/.test(main));
 }
 
-const EXPECTED_CHECKS = 70;
+// ── The activity snapshot must be STABLE for an unchanged patch ─────────────
+//
+// Found by measuring: the Coach's gate suppressed nothing on any patch with a
+// controller running. `recentChanges` is one entry per onChange and every
+// controlled param fires every frame, so a single LFO put its id in the list
+// hundreds of times in an order that shifted as entries aged out — the snapshot
+// string could never equal the previous one, and the gate could never fire.
+// It also meant the model was handed "displace.amount" ×300 instead of a
+// legible summary.
+{
+  const m = await fresh('activity');
+  const psm = await import('../src/controls/ParameterSystem.js');
+  const ps = new psm.ParameterSystem();
+  psm.registerCoreParameters(ps);
+
+  const flood = (id, n) => Array.from({ length: n }, (_, i) => ({ id, t: i }));
+  const a = m.buildActivitySnapshot(flood('displace.amount', 300), ps);
+  const b = m.buildActivitySnapshot(flood('displace.amount', 120), ps);
+  check('a repeated id appears once, not once per event', !/displace\.amount.*displace\.amount/.test(a));
+  check('the same touched SET renders identically however many events it produced', a === b);
+
+  // Insertion order must not matter either — entries age out of the front.
+  const x = m.buildActivitySnapshot([{ id: 'keyer.white', t: 1 }, { id: 'blend.amount', t: 2 }], ps);
+  const y = m.buildActivitySnapshot([{ id: 'blend.amount', t: 1 }, { id: 'keyer.white', t: 2 }], ps);
+  check('order of arrival does not change the snapshot', x === y);
+
+  // And it must still be a live signal, not a constant.
+  const touched = m.buildActivitySnapshot([{ id: 'keyer.active', t: 1 }], ps);
+  const idle = m.buildActivitySnapshot([], ps);
+  check('a touched patch still differs from an idle one', touched !== idle);
+  check('an idle patch says so', /Recently changed: nothing/.test(idle));
+  check('a touched param leaves the untouched list', !/Untouched:[^.]*keyer\.active/.test(touched));
+}
+
+const EXPECTED_CHECKS = 88;
 if (ran !== EXPECTED_CHECKS) {
   console.error(`FAIL audit-ai-vision: ran ${ran} checks, expected ${EXPECTED_CHECKS} — a section was skipped or added without updating the count.`);
   process.exit(1);

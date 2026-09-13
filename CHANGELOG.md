@@ -8,6 +8,28 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Changed
+- **The Coach only speaks when something has changed, too** — the same gate the
+  Narrator got, now shared rather than copied. Measured in a browser: **1 call
+  over ~7 ticks on an idle patch, where it was 6.** Going idle still earns one
+  suggestion (the activity snapshot changes when the "recently changed" list
+  empties, so it can still say "you've gone static, try X"); what stops is
+  repeating that same advice every 45 seconds for as long as the button is lit.
+
+  `makeChangeGate()` is written once and used by both features. Two copies of
+  the same ten lines is how CLAUDE.md's near-duplicates accrue, and they would
+  drift the first time the threshold is tuned.
+
+### Fixed
+- **The activity snapshot is deduped and sorted.** `recentChanges` holds one
+  entry per `onChange`, and every parameter carrying a controller fires on every
+  frame — so a single running LFO put its id in the list hundreds of times, in
+  an order that shifted as entries aged out of the 30-second window. Two
+  consequences: the model was handed `displace.amount, displace.amount, …` ×300
+  instead of a legible summary, and the Coach's gate could **never** see two
+  ticks as equal, so it suppressed nothing on any patch with a controller
+  running. Found by measuring the gate rather than trusting it.
+
 ### Added
 - **Shader generation streams.** The code now appears in the editor as the model
   writes it, and the modal closes on the first characters instead of sitting
