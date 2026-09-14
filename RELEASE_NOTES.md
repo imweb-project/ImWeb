@@ -18,8 +18,9 @@ The AI Shader modal gains **Let it see the canvas** in Refine mode. The model
 reads the frame *before* the code, because the picture says what a shader
 actually does, which is often not what it appears to do.
 
-Vision is **off by default**, and the panel says what it costs. It works on every
-provider, including local Ollama.
+Vision is **off by default**, and the panel says what it costs. Every provider's
+image format is supported, including local Ollama — the model you choose must
+be one that accepts images.
 
 ## Shaders stream, and Refine edits what is there
 
