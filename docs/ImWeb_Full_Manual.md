@@ -2367,25 +2367,39 @@ Write GLSL ES 1.00 (`texture2D()`, `gl_FragColor`). Pasted ShaderToy-style decla
 
 ### AI Narrator (𝔸)
 
-Live text description of the current signal path and active effects. Updates every ~2 seconds. Requires an API key (set via ⚙).
+Live text description of the performance, shown as an overlay. Requires a provider (set via ⚙ → AI). It runs on the interval you set, but **only speaks when something has changed** — an untouched patch is not re-described every interval.
 
-Toggle with `N` key or the 𝔸 button.
+With **Narrator sees canvas** on (AI settings → Canvas vision), it describes the picture — colour, movement, texture — rather than the patch. Vision is off by default and costs roughly 1k extra input tokens per call.
+
+Toggle with `N` key, the 𝔸 button, or the labelled Run button in the AI settings panel.
 
 ---
 
 ### AI Coach (⬡)
 
-30-second performance analysis with suggestions for next moves. Analyses recent parameter changes and audio input.
+Periodic suggestions for the next move, based on recent parameter changes — and, with **Coach sees canvas** on, on the picture itself ("too dark", "gone static"). Like the Narrator, it only calls the provider when something has changed.
 
-Toggle with `P` key or the ⬡ button.
+The suggestion toast fades after 2.5 seconds so it never sits over the output; the last 8 suggestions are kept in the **COACH SUGGESTIONS** list in the AI settings panel.
+
+Toggle with `P` key, the ⬡ button, or the labelled Run button in the AI settings panel.
+
+---
+
+### AI Token Meter
+
+The AI settings panel counts tokens for this session, the last call, per provider:model, and all time — read from each provider's own usage report, never estimated. Cost is shown where a published rate is on file; local Ollama is a real `$0.00`.
 
 ---
 
 ### OSC (Open Sound Control)
 
-Connect external tools (Max/MSP, Pure Data, TouchOSC) via a WebSocket OSC bridge.
+Connect external tools (Max/MSP, Pure Data, TouchOSC, a Flic button) via a WebSocket OSC bridge. A browser cannot open a UDP socket, so run the bundled relay first:
 
-- **Address format:** `/param/{paramId}` with a float or int value
+```bash
+node tools/osc-relay.mjs            # UDP 9000 → WebSocket 8080
+```
+
+- **Address format:** `/param/{paramId}` with a float or int value (a bare button press with no argument is sent as 1)
 - **Status:** OSC dot in status bar (click to toggle/connect)
 
 ---

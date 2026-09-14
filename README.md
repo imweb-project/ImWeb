@@ -3,7 +3,9 @@
 ![ImWeb Preview](assets/preview.png)
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/version-v0.23.0-brightgreen)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-v0.24.0-brightgreen)](CHANGELOG.md)
+[![Tests](https://github.com/imweb-project/ImWeb/actions/workflows/test.yml/badge.svg)](https://github.com/imweb-project/ImWeb/actions/workflows/test.yml)
+[![Open Collective](https://img.shields.io/badge/Open%20Collective-support-7FADF2?logo=opencollective&logoColor=white)](https://opencollective.com/imweb)
 [![Live Demo](https://img.shields.io/badge/demo-live-orange)](https://imweb.image-ine.org)
 
 **ImWeb is Image/ine — reimagined** — The legendary real-time video synthesis instrument created by Tom Demeyer and Steina Vasulka at STEIM Amsterdam, rebuilt for the modern browser and pointed toward what comes next. Free, open source, no installation required.
@@ -15,7 +17,7 @@
 
 ## Contents
 
-[What This Is](#what-this-is) · [Quick Start](#quick-start) · [Features](#features-v0230) · [Keyboard Reference](#keyboard-reference) · [Architecture](#architecture) · [Roadmap](#roadmap) · [Contributing](#contributing) · [Credits](#credits) · [License](#license) · [Support](#support)
+[What This Is](#what-this-is) · [Quick Start](#quick-start) · [Features](#features-v0240) · [Keyboard Reference](#keyboard-reference) · [Architecture](#architecture) · [Roadmap](#roadmap) · [Contributing](#contributing) · [Credits](#credits) · [License](#license) · [Support](#support)
 
 ---
 
@@ -61,7 +63,7 @@ Firefox and Safari supported in WebGL mode with minor limitations.
 
 ---
 
-## Features (v0.23.0)
+## Features (v0.24.0)
 
 ### Input Sources
 
@@ -156,12 +158,15 @@ Right-click any parameter to assign:
 
 ### AI
 
-- Multi-provider system — Anthropic, Google Gemini, OpenAI, Ollama (local), OpenRouter; switchable, API keys stored locally
-- AI State Generator — LLM-driven parameter patching ("make a slow organic ocean")
-- AI shader generation — describe an effect in natural language and the provider writes the GLSL; compile-checked before it reaches the editor, with one automatic repair attempt on compiler errors
-- AI Narrator — periodic AI-generated description of the current parameter state, shown as an overlay
-- AI Coach — periodic AI-generated performance suggestions
-- AI Settings panel — per-provider live model lists, connection status, configurable Narrator/Coach interval & response length
+Built into the instrument, not beside it — and with no backend: API keys stay in your browser.
+
+- **Seven providers** — Anthropic, Google Gemini, OpenAI, OpenRouter, DeepSeek, Kimi, and **Ollama running fully local**; switchable in one place
+- **AI State Generator** — "make a slow organic ocean" becomes a patch. The parameter vocabulary is derived live from the instrument, so 594 of 731 parameters are reachable; every value is validated and the panel reports what was set, clamped or ignored
+- **AI shader generation** — describe an effect and the GLSL **streams** into the editor as it is written. **Start new** or **Refine** the shader already there; compile-checked, one automatic repair round, last-good fallback; truncated or refused replies are caught rather than injected; one-click undo; dictate the prompt with the mic
+- **Canvas vision** — optionally let the model *see* the output: Refine judges the picture before the code, the Narrator describes the image instead of the patch, the Coach can tell you it has gone too dark or static. Off by default
+- **AI Narrator & Coach** — a description of the performance and suggestions for the next move; both speak only when the patch or the picture has actually changed, and the last Coach suggestions are kept
+- **Token & cost meter** — per provider and model, from each provider's own reported usage; local models show a real $0.00
+- **OSC relay** — `node tools/osc-relay.mjs` bridges UDP OSC (TouchOSC, Max, a Flic button) into the browser
 
 ### UI
 
@@ -237,6 +242,10 @@ src/
   scene3d/
     SceneManager.js       Three.js 3D scene → RenderTarget; auto-spin, model import
     GeometryFactory.js    All procedural geometry generators
+  audio/                  AudioWorklet engine — tape, spectral writer, corpus, granular
+  ai/
+    AIFeatures.js         Seven providers behind two routers (plain + streaming);
+                          State Generator, shaders, vision, Narrator/Coach, metering
   state/
     Preset.js             Banks + States, persisted to IndexedDB
   ui/
@@ -270,8 +279,12 @@ ffmpeg -i old.mp4 -c copy -movflags +faststart new.mp4
 
 ## Roadmap
 
-Phases 1–26 complete, through v0.19.0. Recently shipped:
+Recently shipped:
 
+- [x] AI that can see — canvas vision, streaming shader generation, Refine mode, whole-instrument State Generator, token meter (v0.24)
+- [x] Text layer, playable 3D orbit camera, MIDI mapping pages with soft takeover (v0.23)
+- [x] Depth of field and bokeh (v0.22)
+- [x] Audio engine — tape, spectral writer, corpus navigation, granular playback (v0.20)
 - [x] Touch instrument — gesture arbitration, responsive layout, iPad-sized targets (v0.10–v0.11)
 - [x] Dual-deck video and mix buses (v0.12–v0.13)
 - [x] Live GLSL editor — CodeMirror, AI shader generation, last-good compile fallback (v0.13)
@@ -286,8 +299,11 @@ Phases 1–26 complete, through v0.19.0. Recently shipped:
 - [x] Seven slew curves in two declared families, and 0.001 Hz modulation (v0.19)
 - [x] Controller menus reachable by Ctrl+click, on any trackpad (v0.19)
 
-Still open:
+Next:
 
+- [ ] **The model as a co-performer** — a controller type, alongside LFO and MIDI, that writes goals the slew system turns into motion; adjustable temperament; instant hand-back to the performer
+- [ ] Semantic search across your own banks and states
+- [ ] Controller profiles — mappings portable between MIDI desks
 - [ ] Hypercube instancer texture switching (live source change without reset)
 - [ ] Performance profiling / GPU display
 - [ ] Multi-quad projection mapping (independent sources per quad)
