@@ -442,6 +442,122 @@ console.log('\nWindow anchors are unambiguous in their target');
 // check keeps the next one honest: if you write a negated source assertion, the
 // suite requires a mutation proving the rearrangement is caught, because
 // reading the regex is exactly what failed to find these.
+// ── A negated source assertion must not match the target's OWN COMMENTS ────
+//
+// The mirror of the "literals matched against comments" check above, and the
+// promotion named in the 2026-08-14 LEARNED entry after that lesson was paid
+// for a SIXTH time. The positive direction is covered: an audit's anchor must
+// be real code. This is the negative one.
+//
+// A check of the shape `!/innerHTML/.test(uiSource)` asserts a construct is
+// absent — but the construct an audit forbids is exactly the construct its own
+// documentation must name, so the guarded line is very often commented with the
+// forbidden word:
+//
+//   // textContent, never innerHTML: this string came from a model.
+//   txt.textContent = e.text;
+//
+// The code is correct. The audit goes RED. That is the expensive direction to
+// fail in: it trains people to reword the prose or loosen the check, leaving a
+// tripwire armed for the next person.
+//
+// So: if the forbidden pattern occurs in the target file's COMMENTS but not in
+// its CODE, the assertion is reading the argument rather than the source.
+//
+// WHAT THIS DOES NOT CATCH, stated plainly because a check whose reach is
+// assumed is worse than one whose reach is known: the test is WHOLE-FILE. When
+// the assertion runs over a sliced window and the forbidden word appears in
+// real code ELSEWHERE in the same file, the collision is local to the window
+// and this cannot see it — the file-wide answer is "present in code", which is
+// true and useless. That is exactly the shape of the incident that prompted
+// this check (`!/innerHTML/.test(near)` over a window of UI.js, which uses
+// innerHTML legitimately elsewhere), so the promotion is partial: it closes the
+// direct case and leaves the windowed one to the reviewer. Closing that too
+// means resolving slice bounds statically, which is a different piece of work.
+// Verified non-vacuous: planting `const PARAM_REFERENCE =` in a comment in
+// AIFeatures.js makes audit-ai-param-reference fail here immediately.
+console.log('\nNegated source assertions read code, not the argument for it');
+{
+  for (const f of auditFiles) {
+    if (f === 'audit-audit-hygiene.mjs') continue;
+    const code = stripComments(readFileSync(join(ROOT, 'tests', f), 'utf8'));
+    const bind = bindSourceVarsShared(code);
+    if (!bind.size) continue;
+
+    // A variable holding SANITIZED source is already doing the right thing, and
+    // flagging it would be this very check committing the fault it polices.
+    // Caught on the first run: audit-recorder binds `main` through
+    // sanitizeSource() and then asserts `!/VP8 is deliberately absent/` as its
+    // own calibration proof that comments are blanked — exemplary code, and the
+    // naive version of this check called it broken.
+    const SANITIZES = /sanitizeSource|stripComments|stripped|\.replace\s*\(\s*\/\\\/[^\n]*\/[gm]*\s*,/;
+    // One level of indirection is resolved, because the tidy way to write this
+    // is a helper: `const readCode = rel => sanitizeSource(readFileSync(...))`,
+    // and audit-recorder does exactly that. Stopping at the declaration would
+    // flag the best-written audit in the suite.
+    const sanitizingHelpers = new Set();
+    for (const m of code.matchAll(
+      /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>\s*([\s\S]{0,300}?)(?=\n\s*(?:const|let|var|function|check|console)|$)/g)) {
+      if (SANITIZES.test(m[2])) sanitizingHelpers.add(m[1]);
+    }
+    const sanitized = new Set();
+    for (const m of code.matchAll(
+      /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*([^;]*?)(?=;|\n\s*(?:const|let|var|function|check|console))/g)) {
+      const init = m[2];
+      const viaHelper = [...sanitizingHelpers].some((h) => new RegExp(`\\b${h}\\s*\\(`).test(init));
+      if (SANITIZES.test(init) || viaHelper) sanitized.add(m[1]);
+    }
+
+    // Follow WINDOWS. The mistake this check exists for was made on a slice —
+    // `const near = uiCode.slice(i, i + 320)` — and a binder that only resolves
+    // direct file variables would have missed the very incident that prompted
+    // it. A window inherits both its parent's file and its sanitized-ness.
+    // Three derivations carry a file forward: a slice (a window), a bare alias
+    // (`const uiCode = ui`), and the ternary form `i === -1 ? '' : src.slice(…)`
+    // that guards an absent anchor. Iterated, because they chain.
+    for (let pass = 0; pass < 3; pass++) {
+      const derive = (child, parent) => {
+        if (bind.has(parent) && !bind.has(child)) bind.set(child, bind.get(parent));
+        if (sanitized.has(parent)) sanitized.add(child);
+      };
+      for (const m of code.matchAll(
+        /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:[^;\n]*?\?\s*[^;:\n]*:\s*)?([A-Za-z_$][\w$]*)\s*\.\s*slice\s*\(/g)) {
+        derive(m[1], m[2]);
+      }
+      for (const m of code.matchAll(
+        /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*([A-Za-z_$][\w$]*)\s*(?=;|\n)/g)) {
+        derive(m[1], m[2]);
+      }
+    }
+
+    const srcLines = code.split('\n');
+    srcLines.forEach((line, i) => {
+      const ctx = srcLines.slice(Math.max(0, i - 2), i + 1).join('\n');
+      if (!/\b(check|ok|assert)\s*\(/.test(ctx)) return;
+      // Only literal patterns can be resolved statically; a built regex is out
+      // of scope and says so by being skipped rather than silently passing.
+      const m = /!\s*\/([^\n/]+)\/\w*\s*\.test\s*\(\s*([A-Za-z_$][\w$]*)/.exec(line);
+      if (!m) return;
+      const [, pattern, v] = m;
+      if (sanitized.has(v)) return; // already reading code, not prose
+      const rel = bind.get(v);
+      if (!rel) return;
+      let re;
+      try { re = new RegExp(pattern); } catch { return; }
+
+      const raw = readFileSync(join(ROOT, rel), 'utf8');
+      const stripped = stripComments(raw);
+      const inComments = re.test(raw) && !re.test(stripped);
+      check(`${f}:${i + 1} negated assertion is not matching ${rel}'s own comments`,
+        !inComments,
+        `/${pattern}/ occurs in ${rel} ONLY inside comments, so this check reads ` +
+        `the explanation rather than the code and will fail against a CORRECT ` +
+        `file. Strip comments from the text before matching (tests/lib/source.mjs ` +
+        `exports stripComments), or assert the positive form instead`);
+    });
+  }
+}
+
 console.log('\nNegated source assertions are backed by a mutation');
 {
   const mutations = readFileSync(join(ROOT, 'tests/mutations.mjs'), 'utf8');
