@@ -8,6 +8,10 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+---
+
+## [0.24.0] — 2026-09-14 — Eyes on the Output
+
 ### Added
 - **Coach suggestions are kept.** A `COACH SUGGESTIONS` list in the AI settings
   panel holds the last 8, newest first, each with a relative time, plus a Clear
