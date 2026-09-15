@@ -49,6 +49,11 @@ const check = (label, cond, detail = '') => {
   else { console.error(`  FAIL ${label}${detail ? ` — ${detail}` : ''}`); failures++; }
 };
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+/** Arm with a window short enough to test, and wait for it to close. */
+const arm = (bridge, id) => { bridge.learnWindowMs = 30; bridge.startLearn(id); };
+const settled = () => sleep(80);
+
 function rig() {
   const ps = new ParameterSystem();
   ps.register({ id: 't.tog',  label: 'T', group: 'g', type: PARAM_TYPE.TOGGLE, value: 0 });
@@ -114,9 +119,45 @@ console.log('\na continuous param still follows the value');
   check('0.25 lands at 25', Math.abs(ps.get('t.cont').value - 25) < 1e-9, String(ps.get('t.cont').value));
 }
 
+console.log('\nfeedback goes ONLY to what the remote talks to');
+{
+  const { ps, bridge, msg, flush } = rig();
+  ps.set('t.cont', 42);
+  check('a param the remote has never addressed is silent', flush().length === 0,
+    'sent feedback nobody asked for — this measured 70-90 msg/s at a Flic');
+
+  // Learned: feedback goes to the control's OWN address, which is what a
+  // TouchOSC fader listens on.
+  arm(bridge, 't.cont');
+  msg('/1/fader1', [0.2]);
+  await settled();
+  flush();
+  ps.set('t.cont', 60);
+  const learned = flush();
+  check('a learned param reports to its learned address',
+    learned.some(o => o.address === '/1/fader1' && Math.abs(o.args[0] - 0.6) < 1e-9),
+    JSON.stringify(learned));
+  check('and NOT to /imweb/<id>', !learned.some(o => o.address === '/imweb/t.cont'),
+    JSON.stringify(learned));
+
+  // Addressed by id: feedback comes back as /imweb/<id>.
+  const { ps: ps2, msg: msg2, flush: flush2 } = rig();
+  msg2('/imweb/t.cont', [0.1]);
+  flush2();
+  ps2.set('t.cont', 90);
+  check('a param the remote drove by id does get /imweb/<id> back',
+    flush2().some(o => o.address === '/imweb/t.cont' && Math.abs(o.args[0] - 0.9) < 1e-9));
+  ps2.set('t.tog', 1);
+  check('…while an untouched neighbour stays silent',
+    !flush2().some(o => o.address === '/imweb/t.tog'), 'sent an unasked-for param');
+}
+
 console.log('\nfeedback: a change made in ImWeb reaches the remote');
 {
-  const { ps, flush } = rig();
+  const { ps, msg, flush } = rig();
+  msg('/imweb/t.cont', [0]);   // the remote asks about this param
+  msg('/imweb/t.tog', [0]);
+  flush();
   ps.set('t.cont', 70);
   const out = flush();
   const m = out.find(o => o.address === '/imweb/t.cont');
@@ -137,6 +178,10 @@ console.log('\nfeedback: a change made in ImWeb reaches the remote');
   const tog = flush().find(o => o.address === '/imweb/t.tog');
   check('a toggle is sent as 1', tog?.args[0] === 1, JSON.stringify(tog));
 
+  // Address the trigger by id FIRST, or narrowing alone keeps it quiet and this
+  // check passes without testing the type rule at all (a mutation proved that).
+  msg('/imweb/t.trig', [0]);   // 0 is a release, so it does not fire
+  flush();
   ps.get('t.trig').trigger();
   check('a trigger is NOT sent — it has no state to show', flush().length === 0, 'sent a trigger');
 }
@@ -151,11 +196,6 @@ console.log('\nfeedback is not echoed to the remote that set the value');
   check('but a LATER local change to the same param is', Math.abs(m?.args[0] - 0.9) < 1e-9,
     JSON.stringify(m));
 }
-
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-/** Arm with a window short enough to test, and wait for it to close. */
-const arm = (bridge, id) => { bridge.learnWindowMs = 30; bridge.startLearn(id); };
-const settled = () => sleep(80);
 
 console.log('\nOSC learn binds the control that MOVED, not the first to speak');
 {
@@ -256,13 +296,18 @@ console.log('\nlearn can be cancelled, and a learned value is not echoed');
   await settled();
   flush();                                  // clear anything the bind queued
   msg('/flic/6', [0.4]);
+  // Assert on the LEARNED address: feedback for a learned param goes there, so
+  // looking for /imweb/t.cont was checking an address that can no longer appear.
+  const back = flush();
   check('a value arriving through a learned binding is not sent back',
-    !flush().some(o => o.address === '/imweb/t.cont'), 'echoed');
+    back.length === 0, JSON.stringify(back));
 }
 
 console.log('\nfeedback respects the connection');
 {
-  const { ps, bridge, ws, flush } = rig();
+  const { ps, bridge, ws, msg, flush } = rig();
+  msg('/imweb/t.cont', [0]);  // addressed, so silence below is about the connection
+  flush();
   bridge.disconnect();
   ps.set('t.cont', 55);
   bridge._flush?.();
@@ -277,6 +322,11 @@ console.log('\nfeedback respects the connection');
   const ws2 = sockets.at(-1);
   ws2.readyState = FakeWS.OPEN;
   ws2.onopen?.();
+  ws2.onmessage({ data: JSON.stringify({ address: '/imweb/t.late', args: [0] }) });
+  // Flush BETWEEN: a value the remote just set is held in _heard until the next
+  // flush, so without this the echo guard (correctly) swallows the change below.
+  // In life the two land in different 50 ms windows.
+  bridge._flush?.();
   ps.set('t.late', 0.5);
   const before = ws2.sent.length;
   bridge._flush?.();

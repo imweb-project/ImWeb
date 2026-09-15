@@ -55,6 +55,11 @@ export class OSCBridge {
     this._dirty      = new Set();
     this._heard      = new Set();
     this._sentVal    = new Map();
+    /**
+     * Param ids the remote has addressed by id this session. Feedback goes to
+     * what the remote actually talks to — see _feedbackAddress.
+     */
+    this._addressedById = new Set();
     this._watched    = new WeakSet();
     this._flushTimer = null;
     // Learn: the next address to arrive binds to this param. Held here rather
@@ -171,6 +176,31 @@ export class OSCBridge {
   }
 
   /**
+   * Where a parameter's feedback goes, or null for silence.
+   *
+   * Feedback used to be every changing parameter, sent as `/imweb/<id>`. On a
+   * patch with LFOs running that measured **70–90 messages a second** at a Flic,
+   * which has nothing to display and never asked. So: only what the remote
+   * actually talks to.
+   *
+   *  - a learned binding gets ITS OWN address, because that is what the control
+   *    listens on — a TouchOSC fader at /1/fader1 tracks /1/fader1, not
+   *    /imweb/blend.amount;
+   *  - a param the remote has driven by id gets `/imweb/<id>` back;
+   *  - anything else is silent.
+   *
+   * The consequence worth knowing: a display-only widget that never sends
+   * anything is never heard from, so it gets nothing. Touch it once, or learn
+   * it, and it starts tracking.
+   */
+  _feedbackAddress(p) {
+    const c = p.controller;
+    if (c?.type === 'osc' && c.address) return c.address;
+    if (this._addressedById.has(p.id)) return `/imweb/${p.id}`;
+    return null;
+  }
+
+  /**
    * Subscribe to every parameter not yet watched. Runs on each connect, not
    * once in the constructor, so params registered after boot are covered. The
    * listener only records WHICH param changed; the value is read at flush.
@@ -203,11 +233,13 @@ export class OSCBridge {
       return;
     }
     for (const p of this._dirty) {
+      const address = this._feedbackAddress(p);
+      if (!address) continue;
       const n = p.normalized;
       if (this._heard.has(p.id)) { this._sentVal.set(p.id, n); continue; }
       if (this._sentVal.get(p.id) === n) continue;
       this._sentVal.set(p.id, n);
-      this.send(`/imweb/${p.id}`, n);
+      this.send(address, n);
     }
     this._dirty.clear();
     this._heard.clear();
@@ -303,14 +335,17 @@ export class OSCBridge {
     // useless for a button that sends the same "pressed" every time: a Flic
     // could turn a toggle on and never off.
     if (rest.startsWith('toggle/')) {
-      if (isPress) this.ps.get(rest.slice(7))?.toggle();
+      const id = rest.slice(7);
+      if (isPress) this.ps.get(id)?.toggle();
+      this._addressedById.add(id); // it asked about this param — it may want the state back
       return;
     }
 
     // /imweb/<paramId>  [value]
     const p = this.ps.get(rest);
     if (!p) return;
-    this._heard.add(p.id); // not echoed back this flush — see _flush
+    this._heard.add(p.id);         // not echoed back this flush — see _flush
+    this._addressedById.add(p.id); // but it does get LATER changes — _feedbackAddress
 
     const val = typeof args[0] === 'number' ? args[0] : parseFloat(args[0]);
     if (!isNaN(val)) {
@@ -371,6 +406,10 @@ export class OSCBridge {
     if (this._ctrl) this._ctrl.assign(paramId, cfg);
     else { const p = this.ps.get(paramId); if (p) p.controller = cfg; }
     this._ctrl?._repaintCtrlBadge?.(paramId);
+    // Send the current value once, so a fader that just bound jumps to where
+    // the parameter actually is instead of showing whatever it last displayed.
+    const p = this.ps.get(paramId);
+    if (p && p.type !== 'trigger') this._dirty.add(p);
     console.info(`[OSC] Learned ${address} → ${paramId}`);
     this.cancelLearn();
     onLearned?.(address);

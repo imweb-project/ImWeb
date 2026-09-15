@@ -51,6 +51,18 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   device echoing our own feedback would otherwise compete. The badge names the
   address (`OSC:/flic/1`), the arm expires after 10 s, and traffic during the
   window does not drive the parameter being learned.
+
+### Changed
+- **OSC feedback goes only to what the controller talks to.** It used to be
+  every changing parameter, sent as `/imweb/<id>` — measured at **70–90
+  messages a second** to a Flic, which has nothing to display and never asked.
+  Now a learned binding reports to **its own address**, which is what the
+  control listens on (a TouchOSC fader at `/1/fader1` tracks `/1/fader1`, not
+  `/imweb/blend.amount`), a parameter the remote has driven by id still reports
+  as `/imweb/<id>`, and everything else is silent. A freshly learned control is
+  sent its parameter's current value once, so it jumps to where the parameter
+  actually is. The trade-off: a display-only widget that never sends anything is
+  never heard from, so it receives nothing until it is touched or learned.
   Learned bindings go through `ControllerManager.assign()`, so they persist
   through mapping autosave, banks and project files with no new plumbing, and
   a learned control obeys the same button rules as MIDI and the gamepad.
