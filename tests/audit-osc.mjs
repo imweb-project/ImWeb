@@ -34,6 +34,12 @@ class FakeWS {
 }
 globalThis.WebSocket = FakeWS;
 globalThis.document ??= { getElementById: () => null };
+const store = new Map();
+globalThis.localStorage ??= {
+  getItem: k => (store.has(k) ? store.get(k) : null),
+  setItem: (k, v) => store.set(k, String(v)),
+  removeItem: k => store.delete(k),
+};
 
 const { OSCBridge } = await import('../src/io/OSCBridge.js');
 
@@ -146,6 +152,114 @@ console.log('\nfeedback is not echoed to the remote that set the value');
     JSON.stringify(m));
 }
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+/** Arm with a window short enough to test, and wait for it to close. */
+const arm = (bridge, id) => { bridge.learnWindowMs = 30; bridge.startLearn(id); };
+const settled = () => sleep(80);
+
+console.log('\nOSC learn binds the control that MOVED, not the first to speak');
+{
+  const { ps, bridge, msg } = rig();
+  const p = ps.get('t.cont');
+  arm(bridge, 't.cont');
+  check('arming reports as learning', bridge.learning === true);
+
+  // A rig is rarely quiet: an accelerometer or a Max patch streams the whole
+  // time. First-address-wins would bind THIS, which is the bug this rule exists
+  // for — it arrives first and keeps arriving.
+  for (let i = 0; i < 40; i++) msg('/accel/x', [0.50 + (i % 2) * 0.01]);
+  msg('/flic/1', [1]);                      // the button actually pressed
+  for (let i = 0; i < 40; i++) msg('/accel/x', [0.50 + (i % 2) * 0.01]);
+  await settled();
+
+  check('the pressed button wins over a jittering stream',
+    p.controller?.address === '/flic/1', JSON.stringify(p.controller));
+  check('and disarms', bridge.learning === false);
+  check('the binding traffic did not drive the param', p.value === 0,
+    `${p.value} — learning also moved what it landed on`);
+  check('the badge names the address', p.controllerLabel === 'OSC:/flic/1', p.controllerLabel);
+
+  msg('/flic/1', [0.5]);
+  check('afterwards that address drives the param', Math.abs(p.value - 50) < 1e-9, String(p.value));
+  msg('/flic/9', [1]);
+  check('an unbound address does nothing', Math.abs(p.value - 50) < 1e-9, String(p.value));
+}
+
+console.log('\na swept fader beats a stream that is merely noisy');
+{
+  const { ps, bridge, msg } = rig();
+  arm(bridge, 't.cont');
+  // Same number of messages from each, so only MOVEMENT can separate them.
+  for (let i = 0; i < 40; i++) {
+    msg('/accel/x', [0.50 + (i % 2) * 0.01]);   // jitter in place
+    msg('/fader/1', [i / 39]);                  // a real sweep
+  }
+  await settled();
+  check('the fader that swept is the one bound',
+    ps.get('t.cont').controller?.address === '/fader/1',
+    JSON.stringify(ps.get('t.cont').controller));
+}
+
+console.log("\nImWeb's own feedback vocabulary is never learnable");
+{
+  const { ps, bridge, msg } = rig();
+  arm(bridge, 't.cont');
+  msg('/imweb/t.tog', [1]);                 // e.g. a device echoing our feedback
+  msg('/flic/7', [1]);
+  await settled();
+  check('an /imweb/ address is not a learn candidate',
+    ps.get('t.cont').controller?.address === '/flic/7',
+    JSON.stringify(ps.get('t.cont').controller));
+}
+
+console.log('\na learned button obeys the same press rules');
+{
+  const { ps, bridge, msg, fires } = rig();
+  const t = ps.get('t.tog');
+  arm(bridge, 't.tog');
+  msg('/flic/2', []);                    // a Flic sends no argument
+  await settled();
+  check('a bare message can be learned', t.controller?.address === '/flic/2', JSON.stringify(t.controller));
+  msg('/flic/2', []);
+  check('press flips the toggle on', t.value === 1, String(t.value));
+  msg('/flic/2', []);
+  check('the next press flips it off', t.value === 0, String(t.value));
+
+  const r = ps.get('t.trig');
+  const n = fires(r);
+  arm(bridge, 't.trig');
+  msg('/flic/3', [1]);
+  await settled();
+  msg('/flic/3', [1]);
+  msg('/flic/3', [0]);
+  check('a learned trigger fires on the press only', n() === 1, `${n()} fires`);
+
+  const c = ps.get('t.cont');
+  arm(bridge, 't.cont');
+  msg('/flic/4', []);
+  await settled();
+  msg('/flic/4', []);
+  check('a bare press on a continuous param reads as full scale', c.value === 100, String(c.value));
+}
+
+console.log('\nlearn can be cancelled, and a learned value is not echoed');
+{
+  const { ps, bridge, msg, flush } = rig();
+  arm(bridge, 't.cont');
+  bridge.cancelLearn();
+  msg('/flic/5', [1]);
+  await settled();
+  check('a cancelled arm binds nothing', !ps.get('t.cont').controller, JSON.stringify(ps.get('t.cont').controller));
+
+  arm(bridge, 't.cont');
+  msg('/flic/6', [1]);
+  await settled();
+  flush();                                  // clear anything the bind queued
+  msg('/flic/6', [0.4]);
+  check('a value arriving through a learned binding is not sent back',
+    !flush().some(o => o.address === '/imweb/t.cont'), 'echoed');
+}
+
 console.log('\nfeedback respects the connection');
 {
   const { ps, bridge, ws, flush } = rig();
@@ -172,6 +286,40 @@ console.log('\nfeedback respects the connection');
   check('a change made while disconnected is not replayed on reconnect',
     !ws2.sent.some(o => o.address === '/imweb/t.cont'), JSON.stringify(ws2.sent));
   bridge.disconnect();
+}
+
+console.log('\nthe relay URL is remembered, so OSC comes back by itself');
+{
+  store.clear();
+  const ps = new ParameterSystem();
+  const bridge = new OSCBridge(ps, { loadPreset() {} });
+  check('nothing is dialled before OSC has ever been used', bridge.autoConnect() === null,
+    String(bridge.savedUrl));
+  const before = sockets.length;
+  check('and no socket was opened', sockets.length === before);
+
+  bridge.connect('ws://relay:9999');
+  const ws = sockets.at(-1);
+  check('a URL is NOT remembered until the socket opens', bridge.savedUrl === null,
+    String(bridge.savedUrl));
+  ws.readyState = FakeWS.OPEN;
+  ws.onopen();
+  check('a connection that opened is remembered', bridge.savedUrl === 'ws://relay:9999',
+    String(bridge.savedUrl));
+
+  ws.onclose();  // the relay was restarted — not a decision to stop using OSC
+  check('a dropped connection does NOT forget it', bridge.savedUrl === 'ws://relay:9999',
+    String(bridge.savedUrl));
+
+  const bridge2 = new OSCBridge(ps, { loadPreset() {} });
+  const n2 = sockets.length;
+  check('a later launch dials it without being asked', bridge2.autoConnect() === 'ws://relay:9999');
+  check('and really opens a socket to it', sockets.length === n2 + 1 && sockets.at(-1).url === 'ws://relay:9999',
+    sockets.at(-1)?.url);
+
+  bridge2.disconnect(); // deliberate: OSC off stays off
+  check('turning OSC off forgets the relay', bridge2.savedUrl === null, String(bridge2.savedUrl));
+  check('so the next launch dials nothing', bridge2.autoConnect() === null);
 }
 
 console.log(failures ? `\n${failures} failure(s)` : '\nall OSC checks pass');

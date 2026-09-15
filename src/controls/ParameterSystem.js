@@ -745,6 +745,9 @@ export class Parameter {
       "monty-confidence": "MC",
       "monty-pe": "MP",
     };
+    // A learned OSC binding names the address it answers to: "OSC" alone says
+    // nothing about WHICH button, and a rig has several.
+    if (c.type === 'osc') return c.address ? `OSC:${c.address}` : 'OSC';
     // Standard-mapping names. Without this every gamepad badge fell through
     // to the generic slice below and read "GAME", so twenty bindings looked
     // identical.

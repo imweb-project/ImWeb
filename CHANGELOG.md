@@ -39,6 +39,21 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   callers, and the relay only logged what ImWeb sent. The relay now encodes OSC
   and sends it over UDP, to a `host:port` third argument or back to the last
   device that sent.
+- **OSC Learn.** Right-click a parameter → **OSC Learn**, press the button, and
+  its address binds to that parameter — the OSC counterpart of MIDI Learn, and
+  the end of typing parameter ids into a controller app. It binds **the control
+  that moved**, not the first address to arrive: learn listens for 1.2 s and
+  ranks candidates by movement, because an OSC rig is rarely quiet and
+  first-wins would bind a streaming accelerometer instead of the fader you just
+  swept. Where nothing moved — a button sends the same value every press — the
+  tie goes to the address that spoke least, so one press beats a 60 Hz stream.
+  `/imweb/...` addresses are excluded, since they already work by id and a
+  device echoing our own feedback would otherwise compete. The badge names the
+  address (`OSC:/flic/1`), the arm expires after 10 s, and traffic during the
+  window does not drive the parameter being learned.
+  Learned bindings go through `ControllerManager.assign()`, so they persist
+  through mapping autosave, banks and project files with no new plumbing, and
+  a learned control obeys the same button rules as MIDI and the gamepad.
 
 ---
 

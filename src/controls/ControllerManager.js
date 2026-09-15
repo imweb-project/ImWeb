@@ -989,6 +989,25 @@ export class ControllerManager {
     this._paintMapTarget();
   }
 
+  /**
+   * The OSC bridge, so the context menu has ONE door per input: the UI calls
+   * ctrl.startOSCLearn() exactly as it calls ctrl.startMIDILearn(), and does
+   * not need to know the bridge exists.
+   */
+  setOSCBridge(bridge) {
+    this.oscBridge = bridge;
+    bridge?.setControllerManager?.(this);
+  }
+
+  /** Arm OSC learn: the next incoming address binds to this param. */
+  startOSCLearn(paramId, onLearned = null) {
+    if (!this.oscBridge) { console.warn('[OSC] no bridge wired'); return; }
+    if (!this.oscBridge.active) {
+      console.warn('[OSC] not connected — click the OSC chip first');
+    }
+    this.oscBridge.startLearn(paramId, onLearned);
+  }
+
   // ── Mapping pages ─────────────────────────────────────────────────────────
 
   /**

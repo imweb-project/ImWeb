@@ -21,6 +21,25 @@
 
 const DEFAULT_URL = 'ws://localhost:8080';
 const FLUSH_MS    = 50;
+/**
+ * Where the last working relay URL is remembered, so the next launch connects
+ * by itself. Per origin, like every other localStorage key here: a URL learned
+ * on :5173 is invisible on :4173 (the standing trap in CLAUDE.md).
+ */
+const URL_KEY     = 'imweb.oscUrl';
+/**
+ * Learn listens for this long after the first message, then binds the address
+ * that MOVED — not the first one to arrive.
+ *
+ * A rig is rarely quiet: a TouchOSC layout streams its accelerometer, a Max
+ * patch sends continuously, and "first address wins" would bind whichever
+ * stream landed first instead of the control the performer just touched. MIDI
+ * learn can get away with first-wins because a MIDI controller says nothing
+ * until it is moved.
+ */
+const LEARN_WINDOW_MS = 1200;
+/** Below this, a value is jittering rather than moving. */
+const LEARN_MOVE_EPS  = 0.05;
 
 export class OSCBridge {
   constructor(ps, presetMgr) {
@@ -38,7 +57,46 @@ export class OSCBridge {
     this._sentVal    = new Map();
     this._watched    = new WeakSet();
     this._flushTimer = null;
+    // Learn: the next address to arrive binds to this param. Held here rather
+    // than in ControllerManager because this is where addresses are seen;
+    // ctrl.startOSCLearn() is the entry point, so the UI has one door per
+    // input the way it does for MIDI.
+    this._learn      = null;   // { paramId, onLearned, cands, settleTimer }
+    this._learnTimer = null;
+    /**
+     * How long to listen before deciding WHICH address was meant. Overridable
+     * so audits can settle in milliseconds instead of waiting.
+     */
+    this.learnWindowMs = LEARN_WINDOW_MS;
+    this._ctrl       = null;   // ControllerManager, for assign() + badge repaint
   }
+
+  /** Wired in main.js so a learned binding goes through the sanctioned writer. */
+  setControllerManager(ctrl) { this._ctrl = ctrl; }
+
+  /**
+   * Arm: the next incoming address binds to `paramId`.
+   *
+   * The message that binds is CONSUMED — it does not also drive the parameter.
+   * Pressing a button to learn it should not fire whatever it just landed on.
+   */
+  startLearn(paramId, onLearned = null) {
+    this._learn = { paramId, onLearned, cands: new Map(), settleTimer: null };
+    document.getElementById('status-osc')?.classList.add('learning');
+    clearTimeout(this._learnTimer);
+    // Same 10 s as the one-shot MIDI learn: long enough to reach the button,
+    // short enough that a forgotten arm does not silently eat the next message.
+    this._learnTimer = setTimeout(() => this.cancelLearn(), 10000);
+  }
+
+  cancelLearn() {
+    clearTimeout(this._learn?.settleTimer);
+    this._learn = null;
+    clearTimeout(this._learnTimer);
+    document.getElementById('status-osc')?.classList.remove('learning');
+  }
+
+  get learning() { return !!this._learn; }
 
   get active() { return this._active; }
 
@@ -49,10 +107,47 @@ export class OSCBridge {
     this._open();
   }
 
+  /** The last URL that actually connected, or null. Also the prompt's default. */
+  get savedUrl() {
+    try { return localStorage.getItem(URL_KEY); } catch { return null; }
+  }
+
+  /**
+   * Reconnect to the last working relay, if there was one.
+   *
+   * Why this exists: "I forgot to turn on OSC" is the most likely way the whole
+   * chain fails, and it looks exactly like a broken button — the relay logs the
+   * press, the app never hears it. Nothing is dialled until a connection has
+   * succeeded once, so a rig that never uses OSC opens no sockets.
+   *
+   * A relay that is not up yet is fine: `_scheduleRetry` keeps trying every 3 s,
+   * so starting ImWeb first and the relay second also works.
+   */
+  autoConnect() {
+    const url = this.savedUrl;
+    if (!url) return null;
+    console.info(`[OSC] Reconnecting to remembered relay ${url}`);
+    this.connect(url);
+    return url;
+  }
+
+  _remember(url) {
+    try { localStorage.setItem(URL_KEY, url); } catch { /* private mode */ }
+  }
+
+  _forget() {
+    try { localStorage.removeItem(URL_KEY); } catch { /* private mode */ }
+  }
+
   disconnect() {
     clearTimeout(this._retryTimer);
     clearInterval(this._flushTimer);
     this._dirty.clear();
+    // Deliberate: turning OSC off should STAY off across launches. A dropped
+    // connection is not this path and must not forget — the relay being
+    // restarted is the common case, and forgetting there would quietly undo
+    // auto-connect for good.
+    this._forget();
     if (this._ws) {
       this._ws.onclose = null; // suppress auto-reconnect
       this._ws.close();
@@ -135,6 +230,9 @@ export class OSCBridge {
       console.info(`[OSC] Connected to ${this._url}`);
       this._active = true;
       this._updateIndicator(true);
+      // Remembered only once it actually OPENED: a typo in the prompt must not
+      // become the address every future launch dials.
+      this._remember(this._url);
       // A new connection may be a different device: assume it shows nothing.
       this._sentVal.clear();
       this._watchParams();
@@ -166,6 +264,21 @@ export class OSCBridge {
   }
 
   _dispatch(address, args) {
+    // A button is not a fader. A momentary button sends 1 then 0, and acting
+    // on both fired a trigger twice per press — the same bug audit-midi-buttons
+    // pins for MIDI CC. No value at all (a bare Flic click) is a press.
+    const isPress = !args.length || Number(args[0]) > 0.5;
+
+    // Learn WATCHES rather than grabbing: it notes each address and decides at
+    // the end of the window. Dispatch continues underneath, so arming learn
+    // does not freeze controls that are already mapped.
+    if (this._learn) this._observeLearn(address, args);
+
+    // Learned bindings answer to ANY address, so a Flic can keep whatever it
+    // already sends. Checked before the /imweb/ paths below, and independently
+    // of them: an address is matched by value, not parsed.
+    this._driveLearned(address, args, isPress);
+
     // /imweb/<paramId>  [value 0-1]
     const m = address.match(/^\/imweb\/(.+)$/);
     if (!m) return;
@@ -178,11 +291,6 @@ export class OSCBridge {
       if (!isNaN(n)) this.presets?.loadPreset(n);
       return;
     }
-
-    // A button is not a fader. A momentary button sends 1 then 0, and acting
-    // on both fired a trigger twice per press — the same bug audit-midi-buttons
-    // pins for MIDI CC. No value at all (a bare Flic click) is a press.
-    const isPress = !args.length || Number(args[0]) > 0.5;
 
     // /imweb/trigger/<id>
     if (rest.startsWith('trigger/')) {
@@ -210,6 +318,85 @@ export class OSCBridge {
       else if (p.type === 'trigger') { if (isPress) p.trigger(); }
       else p.setNormalized(Math.max(0, Math.min(1, val)));
     }
+  }
+
+  /**
+   * Note one address seen while learning. Never binds — `_settleLearn` does,
+   * once the window closes.
+   */
+  _observeLearn(address, args) {
+    // ImWeb's own feedback vocabulary is not learnable: those addresses already
+    // work by id, and a device echoing our feedback would otherwise compete.
+    if (address.startsWith('/imweb/')) return;
+    const c = this._learn.cands.get(address)
+      ?? { min: Infinity, max: -Infinity, count: 0 };
+    const v = args.length ? Number(args[0]) : 1;
+    if (Number.isFinite(v)) { c.min = Math.min(c.min, v); c.max = Math.max(c.max, v); }
+    c.count++;
+    this._learn.cands.set(address, c);
+    this._learn.settleTimer ??= setTimeout(() => this._settleLearn(), this.learnWindowMs);
+  }
+
+  /**
+   * Decide which address was meant, and bind it.
+   *
+   * Movement first: a fader swept across its range beats anything jittering in
+   * place. When nothing moved — which is the normal case for a button, since a
+   * Flic sends the same value every press — the tie goes to the address that
+   * spoke LEAST, so one press beats a stream running at 60 a second.
+   */
+  _settleLearn() {
+    if (!this._learn) return;
+    let best = null;
+    for (const [address, c] of this._learn.cands) {
+      const move  = c.max > c.min ? c.max - c.min : 0;
+      const score = move >= LEARN_MOVE_EPS ? move : 0;
+      if (!best
+        || score > best.score
+        || (score === best.score && c.count < best.count)) {
+        best = { address, score, count: c.count };
+      }
+    }
+    if (best) this._bindLearned(best.address);
+    else this.cancelLearn();
+  }
+
+  /** Bind the armed param to `address`, through ControllerManager when wired. */
+  _bindLearned(address) {
+    const { paramId, onLearned } = this._learn;
+    clearTimeout(this._learn.settleTimer);
+    const cfg = { type: 'osc', address };
+    // assign() is the sanctioned writer: it clears any previous controller and
+    // refuses setup acts. Without a manager (audits, headless) write directly.
+    if (this._ctrl) this._ctrl.assign(paramId, cfg);
+    else { const p = this.ps.get(paramId); if (p) p.controller = cfg; }
+    this._ctrl?._repaintCtrlBadge?.(paramId);
+    console.info(`[OSC] Learned ${address} → ${paramId}`);
+    this.cancelLearn();
+    onLearned?.(address);
+  }
+
+  /**
+   * Drive every parameter bound to this address.
+   *
+   * Same button rules as everywhere else: a toggle flips on the press, a
+   * trigger fires on the press, and anything continuous follows the value —
+   * so a Flic, which sends no argument at all, reads as a press each time.
+   */
+  _driveLearned(address, args, isPress) {
+    this.ps.getAll().forEach(p => {
+      const c = p.controller;
+      if (c?.type !== 'osc' || c.address !== address) return;
+      this._heard.add(p.id); // not echoed back this flush — see _flush
+      if (p.type === 'toggle') { if (isPress) p.toggle(); }
+      else if (p.type === 'trigger') { if (isPress) p.trigger(); }
+      else {
+        const val = typeof args[0] === 'number' ? args[0] : parseFloat(args[0]);
+        // A bare press carries no value: read it as full scale, which is what
+        // makes a button usable on a continuous param at all.
+        p.setNormalized(isNaN(val) ? 1 : Math.max(0, Math.min(1, val)));
+      }
+    });
   }
 
   _updateIndicator(on) {

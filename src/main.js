@@ -2844,6 +2844,10 @@ async function main() {
 
   // ── OSC bridge ────────────────────────────────────────────────────────────
   const oscBridge   = new OSCBridge(ps, presetMgr);
+  ctrl.setOSCBridge(oscBridge); // so the context menu's OSC Learn can arm it
+  // Reconnect to the relay that worked last time. Silent when OSC has never
+  // been used: autoConnect() dials nothing unless a connection once succeeded.
+  oscBridge.autoConnect();
   const montyBridge = new MontyBridge(ps, stillsBuffer);
   ctrl.setMontySignal(montyBridge._signal);
   const projectFile = new ProjectFile(ps, presetMgr, tableManager, {
@@ -3063,7 +3067,10 @@ async function main() {
     if (oscBridge.active) {
       oscBridge.disconnect();
     } else {
-      const url = prompt("OSC relay WebSocket URL:", "ws://localhost:8080");
+      const url = prompt(
+        "OSC relay WebSocket URL:",
+        oscBridge.savedUrl ?? "ws://localhost:8080",
+      );
       if (url) oscBridge.connect(url);
     }
   });
