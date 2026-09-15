@@ -11,7 +11,7 @@
  *
  * What makes it worth an audit rather than a fix: **the other two button paths
  * were already right.** `midi-note` guards with `if (data2 > 0)` and the
- * gamepad tracks `_gamepadBtnPrev` for a rising edge. MIDI CC was the only
+ * gamepad compares against last frame's reading for a rising edge. MIDI CC was the only
  * input that never got one, and nothing compared them — so the next input path
  * can be added with the same hole and no test will notice. These assertions are
  * about the RULE (a button is not a fader), not about one controller.

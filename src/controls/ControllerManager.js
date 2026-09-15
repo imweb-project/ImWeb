@@ -111,7 +111,7 @@ export class ControllerManager {
     this._motionPermission = 'unknown'; // 'unknown' | 'granted' | 'denied'
     this.modifiers = { capsLock: false, shift: false, ctrl: false, alt: false, meta: false };
 
-    this._gamepadBtnPrev = []; // tracks button press edges for toggle/trigger params
+    this._gamepadPrev = null; // last frame's pad reading — see _tickGamepad
     /**
      * Last value seen per `channel:cc`, for rising-edge detection.
      *
@@ -1458,44 +1458,77 @@ export class ControllerManager {
     });
     window.addEventListener('gamepaddisconnected', e => {
       console.info(`[Gamepad] Disconnected: ${e.gamepad.id}`);
+      this._gamepadPrev = null;
     });
   }
 
+  /**
+   * Poll the first connected pad and write only what CHANGED since last frame.
+   *
+   * A MIDI knob speaks only when turned; a polled pad has to be taught the same
+   * manners. This used to write every bound parameter every frame from the
+   * pad's current state, so a resting stick pinned its parameter at 0.5 — a
+   * state recall or a slider drag was overwritten within one frame.
+   *
+   * Readings are quantised to 1/1024 and compared exactly. Comparing against
+   * last frame with an epsilon instead would swallow a slow sweep entirely,
+   * since every per-frame step would fall under it.
+   *
+   * The first frame of a pad (and the first after a disconnect) is a READING,
+   * not a move: a stick held over a reconnect must not jump the parameter, and
+   * a held button must not fire. The snapshot is taken BEFORE the loop so every
+   * parameter bound to one button sees the same edge — storing it per
+   * parameter let the first binding consume the press. See audit-gamepad.
+   */
   _tickGamepad() {
     const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
     // Use the first connected gamepad
     let gp = null;
     for (const g of gamepads) { if (g) { gp = g; break; } }
-    if (!gp) return;
+    if (!gp) { this._gamepadPrev = null; return; }
+
+    const q = v => Math.round(v * 1024) / 1024;
+    // Standard mapping: axes 0–3 are the two sticks, centred at 0, and a
+    // centred stick is never exactly 0. Rescale past the deadzone so motion
+    // starts from centre instead of jumping. Other mappings may put a trigger
+    // resting at -1 on these axes, where a dead band mid-travel would be wrong.
+    const DZ = 0.12;
+    const axes = Array.from(gp.axes, (raw, i) => {
+      let v = raw;
+      if (gp.mapping === 'standard' && i < 4) {
+        const m = Math.abs(v);
+        v = m < DZ ? 0 : Math.sign(v) * (m - DZ) / (1 - DZ);
+      }
+      return q((v + 1) / 2); // -1..1  →  0..1
+    });
+    const btnVal  = Array.from(gp.buttons, b => q(b.value));
+    const btnDown = Array.from(gp.buttons, b => b.pressed);
+
+    const prev = this._gamepadPrev;
+    this._gamepadPrev = { id: gp.id, index: gp.index, axes, btnVal, btnDown };
+    if (!prev || prev.id !== gp.id || prev.index !== gp.index) return;
 
     this.ps.getAll().forEach(p => {
-      if (!p.controller) return;
-      const c = p.controller;
-      const t = c.type;
+      const t = p.controller?.type;
+      if (!t?.startsWith('gamepad-')) return;
 
-      if (t?.startsWith('gamepad-axis-')) {
-        const idx  = parseInt(t.replace('gamepad-axis-', ''));
-        const raw  = gp.axes[idx] ?? 0;
-        const norm = (raw + 1) / 2; // -1..1  →  0..1
-        p.setNormalized(norm);
+      if (t.startsWith('gamepad-axis-')) {
+        const idx = parseInt(t.slice(13));
+        if (axes[idx] === undefined || axes[idx] === prev.axes[idx]) return;
+        p.setNormalized(axes[idx]);
 
-      } else if (t?.startsWith('gamepad-btn-')) {
-        const idx = parseInt(t.replace('gamepad-btn-', ''));
-        const btn = gp.buttons[idx];
-        if (!btn) return;
+      } else if (t.startsWith('gamepad-btn-')) {
+        const idx = parseInt(t.slice(12));
+        if (btnDown[idx] === undefined) return;
+        const rise = btnDown[idx] && !prev.btnDown[idx];
 
-        const prev    = this._gamepadBtnPrev[idx] ?? false;
-        const pressed = btn.pressed;
-
-        if (p.type === 'toggle') {
-          if (pressed && !prev) p.toggle();     // rising edge only
-        } else if (p.type === 'trigger') {
-          if (pressed && !prev) p.trigger();    // rising edge only
-        } else {
-          p.setNormalized(btn.value);           // analog (0 or 1 for digital)
+        if (p.type === PARAM_TYPE.TOGGLE) {
+          if (rise) p.toggle();
+        } else if (p.type === PARAM_TYPE.TRIGGER) {
+          if (rise) p.trigger();
+        } else if (btnVal[idx] !== prev.btnVal[idx]) {
+          p.setNormalized(btnVal[idx]);         // analog (0 or 1 for digital)
         }
-
-        this._gamepadBtnPrev[idx] = pressed;
       }
     });
   }

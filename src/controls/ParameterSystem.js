@@ -745,6 +745,16 @@ export class Parameter {
       "monty-confidence": "MC",
       "monty-pe": "MP",
     };
+    // Standard-mapping names. Without this every gamepad badge fell through
+    // to the generic slice below and read "GAME", so twenty bindings looked
+    // identical.
+    if (c.type.startsWith('gamepad-')) {
+      const [, kind, n] = c.type.split('-');
+      const names = kind === 'axis'
+        ? ['LX', 'LY', 'RX', 'RY']
+        : ['A', 'B', 'X', 'Y', 'LB', 'RB', 'LT', 'RT', 'SEL', 'STA', 'L3', 'R3', '↑', '↓', '←', '→', 'HOME'];
+      return `G:${names[Number(n)] ?? n}`;
+    }
     if (c.type.startsWith('stroke-')) {
       const parts = c.type.split('-');
       return `S${parts[1] ?? '?'}${(parts[2] ?? 'x').toUpperCase()}`;

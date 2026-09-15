@@ -1869,8 +1869,14 @@ Assign any key. Toggle parameters flip on key press. Trigger parameters fire onc
 
 | Type | Description |
 |------|-------------|
-| gamepad-axis-0/1/2/3 | Analogue sticks (LX/LY/RX/RY), normalised to 0–1 |
-| gamepad-btn-0/1/2/3+ | Digital and analogue buttons |
+| gamepad-axis-0/1/2/3 | Analogue sticks (LX/LY/RX/RY), normalised to 0–1, with a small deadzone at centre |
+| gamepad-btn-0–15 | A/B/X/Y, LB/RB, LT/RT (analog), Back, Start, L3/R3, D-pad Up/Down/Left/Right |
+
+A pad only writes when something **moves**. A resting stick does not hold its
+parameter, so state recalls, slider drags and other controllers keep their value
+until you touch the stick again. Toggles flip and triggers fire on the press;
+holding and releasing do nothing. Only the first connected pad is read. The
+Home/PS button is not offered: the browser or OS usually claims it.
 
 ---
 

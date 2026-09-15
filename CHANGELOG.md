@@ -8,6 +8,23 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Fixed
+- **A gamepad no longer pins the parameters bound to it.** The pad was polled
+  every frame and wrote every binding from its current state whether or not
+  anything had moved, so a resting stick held its parameter at 0.5 and a state
+  recall or slider drag was overwritten within one frame (measured: 33 writes
+  in 33 frames with the stick untouched). It now writes only on change, with a
+  deadzone at stick centre, and a pad's first frame after connecting is read,
+  not acted on.
+- **Two parameters bound to one gamepad button both respond.** The press edge
+  was recorded inside the per-parameter loop, so the first binding consumed it
+  and the second never fired.
+
+### Added
+- **Every standard gamepad button is assignable**: LB/RB, the analog triggers
+  LT/RT, Back, Start, both stick clicks and the D-pad join A/B/X/Y. Gamepad
+  badges name the control (`G:LX`, `G:RT`, `G:↑`) instead of all reading `GAME`.
+
 ---
 
 ## [0.24.0] — 2026-09-14 — Eyes on the Output
