@@ -2405,7 +2405,13 @@ Connect external tools (Max/MSP, Pure Data, TouchOSC, a Flic button) via a WebSo
 node tools/osc-relay.mjs            # UDP 9000 → WebSocket 8080
 ```
 
-- **Address format:** `/param/{paramId}` with a float or int value (a bare button press with no argument is sent as 1)
+- **Addresses** (values are normalised 0–1, not raw units):
+  - `/imweb/<paramId> <value>`: set a parameter. A toggle takes >0.5 as on, which suits a widget that sends the state it shows.
+  - `/imweb/toggle/<paramId>`: flip a toggle on the press and ignore the release. Use this for a Flic or any momentary button.
+  - `/imweb/trigger/<paramId>`: fire a trigger on the press and ignore the release.
+  - `/imweb/preset/<n>`: recall preset n.
+  - A message with no argument counts as a press.
+- **Feedback:** while connected, ImWeb sends `/imweb/<paramId> <value>` whenever a parameter changes, batched every 50 ms with one message per parameter. A value the remote has just set is not sent straight back to it, and triggers are not sent. The relay sends feedback to its third argument, which should be the port your app receives on (`node tools/osc-relay.mjs 9000 8080 192.168.1.20:9001`). Without that argument it replies to the last device that sent OSC, at the port it sent from.
 - **Status:** OSC dot in status bar (click to toggle/connect)
 
 ---

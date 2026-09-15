@@ -19,11 +19,26 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 - **Two parameters bound to one gamepad button both respond.** The press edge
   was recorded inside the per-parameter loop, so the first binding consumed it
   and the second never fired.
+- **OSC can turn a toggle off.** `/imweb/<id>` is absolute, so a button that
+  sends the same "pressed" every time (a Flic) could turn a toggle on and never
+  off. The new `/imweb/toggle/<id>` flips on the press.
+- **An OSC button fires a trigger once.** A momentary button sends 1, then 0 on
+  release, and both fired. The release is now ignored on `/imweb/<id>` and
+  `/imweb/trigger/<id>`.
+- **The manual's OSC address was wrong.** It documented `/param/{paramId}`; the
+  bridge has always listened on `/imweb/<paramId>`.
 
 ### Added
 - **Every standard gamepad button is assignable**: LB/RB, the analog triggers
   LT/RT, Back, Start, both stick clicks and the D-pad join A/B/X/Y. Gamepad
   badges name the control (`G:LX`, `G:RT`, `G:↑`) instead of all reading `GAME`.
+- **OSC feedback.** While connected, ImWeb sends each changed parameter as
+  `/imweb/<id> <0..1>`, batched every 50 ms and not echoed back to the remote
+  that set it, so a TouchOSC layout follows state recalls, LFOs and the mouse.
+  This was documented in `OSCBridge.js` and never wired up: `sendParam` had no
+  callers, and the relay only logged what ImWeb sent. The relay now encodes OSC
+  and sends it over UDP, to a `host:port` third argument or back to the last
+  device that sent.
 
 ---
 
