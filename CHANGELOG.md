@@ -9,6 +9,12 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Fixed
+- **The two page-step rows can be told apart.** "Map Page −" and "Map Page +"
+  truncate from the end in the I/O panel, so both rendered as "Map Page..." —
+  the one character that differed was the one cut off. They are now **Prev
+  Page** and **Next Page**, which differ from the first letter at any panel
+  width. Labels only: files, MIDI/OSC bindings and the tour store ids, so
+  nothing saved changes. 1 mutation, 1/1 caught.
 - **Settings made in the badge popover now stay on their mapping page.** A
   page keeps its own copy of each binding and a page switch projects that copy,
   but the popover wrote only the live binding — so Latch ticked on a page-2 OSC

@@ -743,7 +743,7 @@ console.log('\nthe page controls stay unpageable, so the desk cannot be bricked'
   const { ps, cm } = rig();
   cm.setPageBinding('midi.pageNext', { type: 'osc', address: '/flic/next' });
   const p = ps.get('midi.pageNext');
-  check('an OSC binding on Map Page + is not written into a page',
+  check('an OSC binding on Next Page is not written into a page',
     !p.midiPages?.some(Boolean), JSON.stringify(p.midiPages));
   check('but it IS assigned', p.controller?.address === '/flic/next');
   cm.setMapPage(2);
@@ -804,6 +804,13 @@ console.log('\nthe page params this file mirrors still exist as declared');
   for (const id of ['midi.page', 'midi.pagePrev', 'midi.pageNext', 'midi.pickup']) {
     check(`${id} is page-exempt`, ControllerManager.PAGE_EXEMPT.has(id));
   }
+  // The I/O panel shows these rows together and a label truncates from the END,
+  // so two labels sharing a long prefix render identically ("Map Page..." ×2).
+  // Four characters is narrower than the label column at any panel width.
+  const heads = ['midi.page', 'midi.pagePrev', 'midi.pageNext']
+    .map((id) => real.get(id)?.label.slice(0, 4));
+  check('the page rows are told apart within their first four characters',
+    new Set(heads).size === heads.length, JSON.stringify(heads));
 }
 
 console.log(failures

@@ -5360,15 +5360,21 @@ export function registerCoreParameters(ps) {
     value: 0,
     options: Array.from({ length: MIDI_PAGES }, (_, i) => `${i + 1}`),
   });
+  /**
+   * Labels differ from the FIRST letter. A row label truncates from the end, so
+   * "Map Page −" and "Map Page +" both rendered as "Map Page..." in the I/O
+   * panel — the one character that told them apart was the one cut off. Ids are
+   * what files, bindings and the tour store, so a label can change freely.
+   */
   ps.register({
     id: "midi.pagePrev",
-    label: "Map Page −",
+    label: "Prev Page",
     group: "global",
     type: PARAM_TYPE.TRIGGER,
   });
   ps.register({
     id: "midi.pageNext",
-    label: "Map Page +",
+    label: "Next Page",
     group: "global",
     type: PARAM_TYPE.TRIGGER,
   });

@@ -1396,6 +1396,15 @@ export const MUTATIONS = [
     replace: '    this.assign(paramId, { type });',
   },
 
+  {
+    name: 'the page triggers share a label prefix again',
+    audit: 'audit-mapping-pages.mjs',
+    file: 'src/controls/ParameterSystem.js',
+    why: 'THE REPORTED BUG: a row label truncates from the end, so "Map Page −" and "Map Page +" both render as "Map Page..." and the two buttons cannot be told apart in the I/O panel',
+    find: '    label: "Prev Page",',
+    replace: '    label: "Map Page −",',
+  },
+
   // ── Relative sticks ────────────────────────────────────────────────────────
   {
     name: 'a relative stick runs behind the change gate',

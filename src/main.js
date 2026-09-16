@@ -3864,7 +3864,7 @@ async function main() {
     _selectClipFromParam("movieB", movieInputB, () => refreshClipBStatus()));
 
   // ── Mapping pages ─────────────────────────────────────────────────────────
-  // Switchable from hardware (bind Map Page −/+ to the nanoKONTROL2's TRACK
+  // Switchable from hardware (bind Prev/Next Page to the nanoKONTROL2's TRACK
   // buttons, or to a Flic over OSC) and from the app (the row below). Both
   // drive the same param, so neither can disagree with the other.
   //
