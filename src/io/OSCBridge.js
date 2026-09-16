@@ -403,9 +403,14 @@ export class OSCBridge {
     const { paramId, onLearned } = this._learn;
     clearTimeout(this._learn.settleTimer);
     const cfg = { type: 'osc', address };
-    // assign() is the sanctioned writer: it clears any previous controller and
-    // refuses setup acts. Without a manager (audits, headless) write directly.
-    if (this._ctrl) this._ctrl.assign(paramId, cfg);
+    // setPageBinding() is the sanctioned writer: it puts the binding in the
+    // CURRENT mapping page and projects it live through assign(), which clears
+    // any previous controller and refuses setup acts. Learning through assign()
+    // alone would bind the remote to the page you are on and to every other
+    // page at once — and the next page switch would then erase it, because the
+    // projection would find no entry to project.
+    // Without a manager (audits, headless) write directly.
+    if (this._ctrl) this._ctrl.setPageBinding(paramId, cfg);
     else { const p = this.ps.get(paramId); if (p) p.controller = cfg; }
     this._ctrl?._repaintCtrlBadge?.(paramId);
     // Send the current value once, so a fader that just bound jumps to where
@@ -430,6 +435,16 @@ export class OSCBridge {
       if (c?.type !== 'osc' || c.address !== address) return;
       this._heard.add(p.id); // not echoed back this flush — see _flush
       const val = typeof args[0] === 'number' ? args[0] : parseFloat(args[0]);
+      /**
+       * No pickup here, deliberately — `setMapPage` never arms an OSC binding,
+       * so a gate on this path would be inert, and an inert gate reads as
+       * coverage it does not have.
+       *
+       * The reason is in `setMapPage`: an address cannot say whether the far
+       * end is a fader or a button, and a press-only remote armed for soft
+       * takeover can never cross the parameter's value, so it goes silently
+       * dead. That was measured on the owner's rig before this comment existed.
+       */
       // A bare press carries no value: read it as full scale, which is what
       // makes a button usable on a continuous param at all. The press rule
       // itself is shared with MIDI, the keyboard and the gamepad.

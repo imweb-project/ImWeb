@@ -17,6 +17,10 @@
 // the SOURCE_DEFS lesson (CLAUDE.md) applied before there is a second copy to
 // regret. `spectral-image.js` imports nothing itself, so this adds no weight.
 import { SCALE_NAMES, PAN_MODES } from '../audio/spectral-image.js';
+// Which controller types live in a mapping page. The saved-file migration below
+// has to agree with the page writer and the page projection, so it reads the
+// same predicate rather than re-deriving one. `controlInput.js` imports nothing.
+import { isPagedBinding } from './controlInput.js';
 // Same rule, same reason: a SELECT stores an INDEX, so the axis menus must be
 // built from the one list the index itself reads, never retyped beside it.
 import { DESCRIPTOR_LABELS } from '../audio/corpus-index.js';
@@ -854,7 +858,7 @@ export class Parameter {
      */
     if (data.midiPages !== undefined) {
       this.midiPages = (data.midiPages ?? []).map((c) => (c ? { ...c } : null));
-    } else if (data.controller && String(data.controller.type).startsWith("midi")) {
+    } else if (data.controller && isPagedBinding(data.controller.type)) {
       this.midiPages = [{ ...data.controller }];
     }
     if (data.xControllers !== undefined) {

@@ -21,10 +21,10 @@
  * same scenarios and demands the same answers.
  *
  * Deliberately NOT here:
- *  - **pickup** (soft takeover), which is armed only by a MIDI mapping-page
- *    switch, so a gamepad or OSC binding never has an entry to gate against.
- *    Passing an inert gate through this function would read as coverage it does
- *    not have. The caller that can arm it passes `pickupBlocked`.
+ *  - **pickup** (soft takeover), which is armed by a mapping-page switch and
+ *    therefore belongs to whoever owns the page state. Every input path that
+ *    reports a POSITION now passes `pickupBlocked` — a button never does, since
+ *    it has no position to pick up.
  *  - **response tables and slew**, which belong to `Parameter.setNormalized`
  *    and must stay there: both write paths resolve tables in one place, and
  *    re-resolving per call site is the bug tests/audit-table-write-paths.mjs
@@ -90,6 +90,32 @@ export function applyControlInput(param, { norm = 0, isPress = false, pickupBloc
   if (pickupBlocked) return false;
   param.setNormalized(Math.max(0, Math.min(1, norm)));
   return true;
+}
+
+/**
+ * Which controller types live in a MAPPING PAGE.
+ *
+ * Pages exist because a physical desk has fewer controls than the instrument
+ * has parameters: a nanoKONTROL2 has eight faders, a Flic has one button, a pad
+ * has four axes. Anything with that scarcity earns pages. The field is still
+ * called `midiPages` — saved states, banks, .imweb files and MIDI mappings all
+ * carry the name, and renaming it buys nothing but a migration.
+ *
+ * NOT paged, and each for its own reason:
+ *  - `key` — a computer keyboard has a hundred keys and is always attached, so
+ *    it has none of the scarcity pages exist to relieve. Paging it would only
+ *    make a performance key stop working with no visible cause.
+ *  - every GENERATED controller (lfo-*, random, fixed, expr, sound, tilt,
+ *    mouse, stroke) — these are not a control surface at all, and having an LFO
+ *    disappear on a page switch would read as data loss, not as paging.
+ *
+ * One predicate, used by the page writer, the page projection, the saved-file
+ * migration and the bulk clear. Those four disagreeing is exactly how a binding
+ * ends up in a page that nothing will ever project back out of it.
+ */
+export function isPagedBinding(type) {
+  const t = String(type ?? '');
+  return t.startsWith('midi') || t === 'osc' || t.startsWith('gamepad-');
 }
 
 /**

@@ -227,6 +227,38 @@ export class PresetManager extends EventTarget {
     this._restorePins = null; // (pins[]) => void
   }
 
+  /**
+   * Swap the whole controller bag: clear what is live, restore what the bank or
+   * state carries, and repaint the rows whose binding changed.
+   *
+   * **Both halves repaint, and neither does it here.** `clearAllAssignments()`
+   * repaints what it blanks — it has to, because it writes `p.controller = null`
+   * directly while a row's badge rides on the param's `onChange`, which fires
+   * on a VALUE change. This function owns the other half: a binding RESTORED
+   * from the bag needs its row painted back, and `assign()` does not do it
+   * either. The owner met the missing half as a Flic that "say it is asigned,
+   * but not responding" — states are self-contained by design and dropping the
+   * binding was correct, showing it afterwards was not.
+   *
+   * Only restored ids are repainted, not every parameter: the repaint is a
+   * `document.querySelector` per id, and a state recall is a live performance
+   * act, not a settings dialog. Mapped rows are a handful; params are hundreds.
+   *
+   * Two call sites — a bank load and a state recall — had this as three loose
+   * steps each, which is how one of them could have been fixed and not the other.
+   */
+  _applyControllerBag(bag) {
+    this.ctrl.clearAllAssignments();
+    if (bag && Object.keys(bag).length) {
+      this.ps.deserializeControllers(bag);
+      Object.entries(bag).forEach(([paramId, cfg]) => {
+        if (cfg.controller) this.ctrl.assign(paramId, cfg.controller);
+      });
+      this.ctrl.rebuildXControllers();
+      Object.keys(bag).forEach((id) => this.ctrl._repaintCtrlBadge?.(id));
+    }
+  }
+
   setMediaRef(key, filename) { this._mediaRefs[key] = filename; }
 
   // Register extra-state callback (captures non-param state like text content)
@@ -269,18 +301,8 @@ export class PresetManager extends EventTarget {
     this._morphOnComplete = null;
 
     // Clear all assignments so leftover controllers from the previous bank
-    // don't leak into the new one
-    this.ctrl.clearAllAssignments();
-
-    // Restore controller assignments
-    if (p.controllers) {
-      this.ps.deserializeControllers(p.controllers);
-      Object.entries(p.controllers).forEach(([paramId, config]) => {
-        if (config.controller) this.ctrl.assign(paramId, config.controller);
-      });
-      // Rebuild xController LFO instances from deserialized xControllers
-      this.ctrl.rebuildXControllers();
-    }
+    // don't leak into the new one, then restore this bank's own.
+    this._applyControllerBag(p.controllers);
 
     // Get target state values
     const stateIdx = p.activeState ?? 0;
@@ -408,21 +430,13 @@ export class PresetManager extends EventTarget {
 
     // Clear all controller assignments — states are self-contained;
     // leftover LFOs/randoms/exprs from the previous state would keep writing
-    // to params and corrupt the restored values on the very next frame.
-    this.ctrl.clearAllAssignments();
+    // to params and corrupt the restored values on the very next frame. Then
+    // restore this state's own, so Fixed controllers are wired up (they write
+    // their value once in ctrl.assign), and repaint what changed.
+    this._applyControllerBag(ds.controllers);
 
     // Restore fx chain order
     if (ds.fxOrder && this.pipeline) this.pipeline.setFxOrder(ds.fxOrder);
-
-    // Restore controller assignments so Fixed controllers are wired up.
-    // (Fixed controllers write their value once in ctrl.assign.)
-    if (ds.controllers && Object.keys(ds.controllers).length) {
-      this.ps.deserializeControllers(ds.controllers);
-      Object.entries(ds.controllers).forEach(([paramId, cfg]) => {
-        if (cfg.controller) this.ctrl.assign(paramId, cfg.controller);
-      });
-      this.ctrl.rebuildXControllers();
-    }
 
     // Pins snap immediately regardless of morph (can't lerp positions).
     // Only restore when the state actually contains pins — never wipe existing

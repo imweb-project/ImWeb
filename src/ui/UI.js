@@ -2103,14 +2103,22 @@ export class ContextMenu {
         const type = btn.dataset.ctrl;
 
         if (type === 'none') {
-          this.ctrl.assign(this._currentParam.id, null);
+          // Clear the PAGE, not just the projection. Nulling `controller` alone
+          // leaves the page entry holding the binding, so "None" would undo
+          // itself the moment the desk changed page — the same trap
+          // `unmapMIDI` was written to avoid.
+          this.ctrl.setPageBinding(this._currentParam.id, null);
         } else if (type === 'midi-cc') {
           const raw = prompt('MIDI CC — enter CC number, or "ch:cc" to filter by channel\n(e.g. "7" or "1:7")', '7');
           if (raw !== null) {
             const parts = raw.split(':');
             const cc = parseInt(parts.length > 1 ? parts[1] : parts[0]);
             const ch = parts.length > 1 ? parseInt(parts[0]) : 0; // 0 = any channel
-            if (!isNaN(cc)) this.ctrl.assign(this._currentParam.id, { type: 'midi-cc', cc, ...(ch > 0 && { channel: ch }) });
+            // Typed by hand or learned from the desk, it is the same act and it
+            // lands in the same place — the current mapping page. Two doors to
+            // one binding that disagreed about where it lives is how a mapping
+            // survives a page switch on one route and vanishes on the other.
+            if (!isNaN(cc)) this.ctrl.setPageBinding(this._currentParam.id, { type: 'midi-cc', cc, ...(ch > 0 && { channel: ch }) });
           }
         } else if (type === 'midi-note') {
           const raw = prompt('MIDI Note — enter note number, or "ch:note"\n(e.g. "60" or "1:60")', '60');
@@ -2118,7 +2126,7 @@ export class ContextMenu {
             const parts = raw.split(':');
             const note = parseInt(parts.length > 1 ? parts[1] : parts[0]);
             const ch   = parts.length > 1 ? parseInt(parts[0]) : 0;
-            if (!isNaN(note)) this.ctrl.assign(this._currentParam.id, { type: 'midi-note', note, ...(ch > 0 && { channel: ch }) });
+            if (!isNaN(note)) this.ctrl.setPageBinding(this._currentParam.id, { type: 'midi-note', note, ...(ch > 0 && { channel: ch }) });
           }
         } else if (type.startsWith('lfo-')) {
           const prev = this._currentParam.controller;
@@ -2185,7 +2193,11 @@ export class ContextMenu {
           );
           if (src !== null) this.ctrl.assign(p.id, { type: 'expr', expr: src.trim() });
         } else {
-          this.ctrl.assign(this._currentParam.id, { type });
+          // The catch-all: sound, sensors, mouse — and the gamepad, which is a
+          // physical binding and so belongs in the current mapping page.
+          // `setPageBinding` sorts that out by type; everything else it hands
+          // straight to assign(), so one call serves the whole branch.
+          this.ctrl.setPageBinding(this._currentParam.id, { type });
         }
         this._currentParam?.notify(); // refresh badge label immediately
         this.hide();

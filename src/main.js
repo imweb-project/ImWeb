@@ -2312,7 +2312,10 @@ async function main() {
       list.querySelectorAll(".cm-remove").forEach((b) => {
         b.addEventListener("click", (e) => {
           e.stopPropagation();
-          ctrl.assign(b.dataset.id, null);
+          // Through the page writer: a binding removed here must leave the
+          // current page too, or it returns on the next page switch and the
+          // row the user just cleared starts moving again.
+          ctrl.setPageBinding(b.dataset.id, null);
           _render();
         });
       });
@@ -3860,10 +3863,14 @@ async function main() {
   ps.get("movieB.clip")?.onChange(
     _selectClipFromParam("movieB", movieInputB, () => refreshClipBStatus()));
 
-  // ── MIDI mapping pages ────────────────────────────────────────────────────
+  // ── Mapping pages ─────────────────────────────────────────────────────────
   // Switchable from hardware (bind Map Page −/+ to the nanoKONTROL2's TRACK
-  // buttons) and from the app (the row below). Both drive the same param, so
-  // neither can disagree with the other.
+  // buttons, or to a Flic over OSC) and from the app (the row below). Both
+  // drive the same param, so neither can disagree with the other.
+  //
+  // Pages hold every PHYSICAL binding — MIDI, OSC and gamepad alike. The
+  // storage field is still `midiPages` because saved states, banks, .imweb
+  // files and MIDI mappings all carry the name.
   ps.get("midi.pagePrev")?.onTrigger(() => ctrl.prevMapPage());
   ps.get("midi.pageNext")?.onTrigger(() => ctrl.nextMapPage());
   ps.get("midi.page")?.onChange((v) => ctrl.setMapPage(v | 0));
@@ -3900,13 +3907,19 @@ async function main() {
   const clearBtn = document.createElement("button");
   clearBtn.className = "param-opt-btn";
   clearBtn.textContent = "Clear All MIDI";
-  clearBtn.title = "Remove every MIDI binding, on every page. LFO, mouse and audio controllers are kept.";
+  clearBtn.title = "Remove every MIDI binding, on every page. OSC and gamepad bindings share the pages and are kept, as are LFO, mouse and audio controllers.";
   clearBtn.addEventListener("click", () => {
-    const total = ps.getAll().reduce((n, p) =>
-      n + (p.midiPages?.filter(Boolean).length ?? 0) +
-      (p.controller?.type?.startsWith("midi") && !p.midiPages?.some(Boolean) ? 1 : 0), 0);
+    // Count MIDI ENTRIES, exactly as clearAllMIDI clears them. Pages hold OSC
+    // and gamepad bindings too, so counting every page entry would promise to
+    // remove an OSC layout this button does not touch — and the confirmation
+    // dialog is the only description of the act the user ever sees.
+    const isMidi = (c) => String(c?.type ?? "").startsWith("midi");
+    const total = ps.getAll().reduce((n, p) => {
+      const pages = p.midiPages?.filter(isMidi).length ?? 0;
+      return n + pages + (isMidi(p.controller) && !pages ? 1 : 0);
+    }, 0);
     if (!total) { clearBtn.textContent = "Nothing to clear"; setTimeout(() => { clearBtn.textContent = "Clear All MIDI"; }, 1200); return; }
-    if (!confirm(`Remove ${total} MIDI binding${total === 1 ? "" : "s"} across all ${MIDI_PAGES} pages?\n\nLFO, mouse and audio controllers are kept. This cannot be undone.`)) return;
+    if (!confirm(`Remove ${total} MIDI binding${total === 1 ? "" : "s"} across all ${MIDI_PAGES} pages?\n\nOSC and gamepad bindings share the pages and are kept, as are LFO, mouse and audio controllers. This cannot be undone.`)) return;
     const n = ctrl.clearAllMIDI();
     // Repaint every badge: the rows are built once and nothing else tells them
     // their controller vanished.

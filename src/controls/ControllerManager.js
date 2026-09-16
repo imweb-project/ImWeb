@@ -12,7 +12,7 @@ import { PARAM_TYPE, MIDI_PAGES } from './ParameterSystem.js';
 import { LFOController } from './LFO.js';
 import { BeatDetector }  from './BeatDetector.js';
 import { compileExpression } from './ExprCompiler.js';
-import { applyControlInput } from './controlInput.js';
+import { applyControlInput, isPagedBinding, isLatched } from './controlInput.js';
 
 /**
  * Default sweep range for an X-map targeting an LFO's rate.
@@ -165,6 +165,11 @@ export class ControllerManager {
      * SOURCE OF TRUTH; `param.controller` is the live projection of the current
      * page. One writer (`setPageBinding`) keeps them from drifting — two writers
      * is how the six copies of the source list happened.
+     *
+     * Pages hold every PHYSICAL binding, not only MIDI: OSC and gamepad live
+     * here too, decided by `isPagedBinding`. The field keeps the `midiPages`
+     * name because saved states, banks, .imweb files and MIDI mappings all
+     * carry it, and a rename buys a migration and nothing else.
      */
     this._mapPage = 0;
     /**
@@ -669,9 +674,23 @@ export class ControllerManager {
     this.strokes.delete(paramId);
   }
 
-  /** Remove every controller assignment from every parameter. Called on reset. */
+  /**
+   * Remove every controller assignment from every parameter. Called on reset.
+   *
+   * **Repaints what it blanks.** This writes `p.controller = null` directly and
+   * notifies nothing, while a row's badge is refreshed by `updateDisplay()` off
+   * the param's `onChange` — which fires on a VALUE change. So a caller that
+   * clears bindings without moving values repaints nothing, and every row goes
+   * on advertising a controller that is gone. Four callers had that shape (a
+   * state recall, a bank load, Reset All Parameters, and the controller map's
+   * Clear All) and not one of them repainted; the owner met it as a Flic that
+   * "say it is asigned, but not responding". The repaint belongs HERE rather
+   * than at the call sites for the same reason `setPageBinding` is one writer —
+   * a fifth caller must not be able to reintroduce it.
+   */
   clearAllAssignments() {
     this.ps.getAll().forEach(p => {
+      const had = !!p.controller;
       this._removeController(p.id);
       // Clear xLFOs for this param
       (p.xControllers ?? []).forEach((_, i) => this._xLFOs.delete(`${p.id}:${i}`));
@@ -686,6 +705,9 @@ export class ControllerManager {
        * page array would silently defeat.
        */
       p.midiPages = [];
+      // Only rows that actually lost something — the repaint is a
+      // `document.querySelector` per id, and this runs on every state recall.
+      if (had) this._repaintCtrlBadge(p.id);
     });
   }
 
@@ -1025,10 +1047,11 @@ export class ControllerManager {
   get mapPage() { return this._mapPage; }
 
   /**
-   * Write a MIDI binding into the CURRENT page and project it live. The single
-   * writer for paged bindings: learn, unmap and any future path must come
-   * through here, or `midiPages` and `controller` drift apart and the drift is
-   * invisible until a page switch reveals it.
+   * Write a physical binding into the CURRENT page and project it live. The
+   * single writer for paged bindings — MIDI learn, the OSC learn, the gamepad
+   * menu, unmap and any future path must come through here, or `midiPages` and
+   * `controller` drift apart and the drift is invisible until a page switch
+   * reveals it.
    */
   setPageBinding(paramId, cfg) {
     const p = this.ps.get(paramId);
@@ -1037,6 +1060,14 @@ export class ControllerManager {
       this.assign(paramId, cfg);          // unpaged: lives only in `controller`
       return;
     }
+    /**
+     * A controller that is not a physical binding never enters a page: an LFO
+     * that vanished on a page switch would read as data loss, not as paging.
+     * `null` IS allowed through — clearing the current page is exactly what the
+     * ✕ in the controller map and `unmapMIDI` mean, and routing that past the
+     * page array is the bug the single-writer rule exists to prevent.
+     */
+    if (cfg && !isPagedBinding(cfg.type)) { this.assign(paramId, cfg); return; }
     if (!Array.isArray(p.midiPages)) p.midiPages = [];
     p.midiPages.length = Math.max(p.midiPages.length, MIDI_PAGES);
     p.midiPages[this._mapPage] = cfg ? { ...cfg } : null;
@@ -1088,10 +1119,32 @@ export class ControllerManager {
       const cfg = p.midiPages?.[n] ?? null;
       this.assign(p.id, cfg);
       this._repaintCtrlBadge(p.id);
-      // Arm pickup for anything continuous that now has a binding: the fader is
-      // wherever the last page left it, which is not where this parameter is.
+      /**
+       * Arm pickup for anything continuous that now has a binding: the fader is
+       * wherever the last page left it, which is not where this parameter is.
+       *
+       * Only for a control that HAS a position to be picked up from. Arming one
+       * that does not is not a smoother binding, it is a dead one — the control
+       * can never cross the parameter's value, so every message is swallowed
+       * for as long as the page is live. Three kinds are excluded:
+       *
+       *  - a gamepad BUTTON (its axis sibling is a position and is armed);
+       *  - a latched row, which travels to an end on the press rather than
+       *    passing through anything on the way;
+       *  - **every OSC binding.** An address gives no clue whether the far end
+       *    is a TouchOSC fader or a Flic, and the two need opposite treatment.
+       *    Guessing from the message — "no argument means a button" — was
+       *    measured wrong on the owner's own rig: their relay forwards `1`, so
+       *    the guess never fired and the button went permanently dead after a
+       *    page switch while still reporting as assigned. A remote is also the
+       *    one control surface that CAN be told where to be, which is the
+       *    better answer than pickup and is tracked separately in TASKS.
+       */
+      const cannotPickUp = String(cfg?.type ?? '').startsWith('gamepad-btn-')
+        || cfg?.type === 'osc'
+        || isLatched(p);
       if (cfg && p.type !== PARAM_TYPE.TOGGLE && p.type !== PARAM_TYPE.TRIGGER
-              && p.type !== PARAM_TYPE.SELECT) {
+              && p.type !== PARAM_TYPE.SELECT && !cannotPickUp) {
         this._pickup.set(p.id, { prev: null });
       }
     }
@@ -1233,18 +1286,25 @@ export class ControllerManager {
        * be counted while page 1 is live, so the confirmation would under-report
        * what it left behind.
        */
-      // Read BEFORE clearing: emptying the array first destroys the very fact
-      // the second branch needs, and a param holding both pages and a live
-      // binding then counts twice.
-      const hadPages = Array.isArray(p.midiPages) && p.midiPages.some(Boolean);
+      /**
+       * Clear MIDI ENTRIES, not the whole array. Pages hold OSC and gamepad
+       * bindings too now, and emptying the array would silently take a rig's
+       * whole OSC layout with the MIDI the button names. Slots are positional,
+       * so a cleared entry becomes null in place rather than being spliced out.
+       */
+      let hadMidiPage = false;
       if (Array.isArray(p.midiPages)) {
-        n += p.midiPages.filter(Boolean).length;
-        p.midiPages = [];
+        for (let i = 0; i < p.midiPages.length; i++) {
+          if (!String(p.midiPages[i]?.type ?? '').startsWith('midi')) continue;
+          p.midiPages[i] = null;
+          n++;
+          hadMidiPage = true;
+        }
       }
       if (p.controller?.type?.startsWith('midi')) {
         // Only page-EXEMPT params reach this without having been counted above;
         // their binding lives in `controller` alone and is still one binding.
-        if (!hadPages) n++;
+        if (!hadMidiPage) n++;
         this.assign(p.id, null);
       }
     }
@@ -1540,6 +1600,13 @@ export class ControllerManager {
         // An axis is a POSITION, not a button, so it does not go through the
         // press rule: a toggle bound to a stick is meant to follow the stick
         // across half scale, and `isPress` would freeze it forever.
+        //
+        // Being a position is also what makes pickup mean something here: after
+        // a page switch the stick is wherever the hand left it, which is not
+        // where this parameter is. `_pickupBlocks` records state, so it is
+        // asked only about params it could have armed — never a toggle.
+        const isBtn = p.type === PARAM_TYPE.TOGGLE || p.type === PARAM_TYPE.TRIGGER;
+        if (!isBtn && this._pickupBlocks(p, axes[idx])) return;
         p.setNormalized(axes[idx]);
 
       } else if (t.startsWith('gamepad-btn-')) {

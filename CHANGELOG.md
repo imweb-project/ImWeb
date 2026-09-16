@@ -9,6 +9,23 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Fixed
+- **A cleared controller stops advertising itself on the row.**
+  `clearAllAssignments()` writes `param.controller = null` directly and notifies
+  nothing, while a row's badge is refreshed off the parameter's `onChange` —
+  which fires on a *value* change. So clearing a binding repainted the badge
+  only when the same act happened to move that parameter, and a Display State
+  recall that restored the value already on screen repainted nothing at all:
+  the row went on showing `OSC:/flic/1` over a null controller. States are
+  self-contained by design, so dropping a mapping that was assigned but never
+  saved into the state is correct — showing it afterwards is not, and it turns
+  a forgotten save into what looks like dead hardware. All four callers had the
+  hole (state recall, bank load, Reset All Parameters, the controller map's
+  Clear All), so the repaint lives in the function that does the blanking; the
+  restore half lives in `PresetManager._applyControllerBag`, which is now one
+  function instead of three loose steps copied into two call sites.
+  `tests/audit-state-recall-badges.mjs` drives a real badge element and reads
+  the text back — the parameter model is correct throughout, so a check that
+  reads the model passes while the instrument lies. 4 mutations, 4/4 caught.
 - **A gamepad no longer pins the parameters bound to it.** The pad was polled
   every frame and wrote every binding from its current state whether or not
   anything had moved, so a resting stick held its parameter at 0.5 and a state
@@ -80,6 +97,37 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   max to X", and momentary already works for devices that send 1 then 0.
 
 ### Changed
+- **Mapping pages hold every physical binding, not just MIDI.** The four pages
+  were built for a desk — eight faders against hundreds of parameters — and OSC
+  and gamepad bindings were written straight into `param.controller`, entering
+  no page at all. On a rig with no MIDI on it the page controls moved, the
+  indicator repainted, and nothing changed: pages read as unimplemented rather
+  than broken. A learned OSC address and a gamepad assignment now land in the
+  current page, project away and back with it, and are restored from a saved
+  file the same way. **Soft takeover comes with them** — after a page switch a
+  stick or fader does not move its parameter until it passes through the
+  current value — for the controls that have a position to take up. A gamepad
+  button, a latched row and **every OSC binding** are exempt: a control that
+  cannot cross the parameter's value is not made smoother by pickup, it is made
+  dead, and an address cannot say whether the far end is a TouchOSC fader or a
+  Flic. A remote is also the one surface that can be *told* where to be, which
+  is a better answer than pickup and is tracked separately.
+  - The storage field keeps the name `midiPages`: saved states, banks, .imweb
+    files and MIDI mappings all carry it.
+  - **Clear All MIDI now clears MIDI entries, not the page array.** It would
+    otherwise have taken a whole OSC layout with it, and counted those bindings
+    as MIDI in the confirmation that promised to spare them.
+  - Assigning a controller from the row menu — including "None" — goes through
+    the same single writer as learning does. Typing a CC by hand used to bind
+    it outside the pages, so the same mapping behaved differently depending on
+    which door it came in by, and "None" left the page entry holding the
+    binding for the next page switch to restore.
+  - A generated controller (LFO, Random, Fixed, expression, audio, mouse, tilt)
+    never enters a page, and neither does a keyboard binding: a keyboard has a
+    hundred keys and is always attached, so it has none of the scarcity pages
+    exist to relieve. `tests/audit-mapping-pages.mjs` pins all of it, calibrated
+    against ten mutations, 10/10 caught — including the pickup regression above,
+    which reached the owner's rig before the exemption was right.
 - **One button rule for every input.** "Press acts, release does not" existed
   five times over — MIDI CC, MIDI note, the computer keyboard, the gamepad and
   a learned OSC address — and the copies did not agree: MIDI CC shipped without
