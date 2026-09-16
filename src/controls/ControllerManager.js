@@ -1079,6 +1079,33 @@ export class ControllerManager {
   }
 
   /**
+   * Commit an in-place edit of a param's LIVE binding — Latch, CC#, Note#,
+   * channel — to the projection AND to the page it lives on.
+   *
+   * A page holds its own copy of each binding (`midiPages[page]`), and a page
+   * switch projects that copy back through `assign()`. The badge popover used
+   * to edit only `param.controller`, so every setting made there was silently
+   * undone by the next switch: the owner ticked Latch on a page-2 OSC binding,
+   * went to page 1 and back, and Latch was gone. It was also absent from saved
+   * files, which serialize the pages.
+   *
+   * Deliberately NOT `setPageBinding`: that one is for a NEW binding, and it
+   * re-runs `assign()` and the learn slew. An edit keeps everything else —
+   * pickup state, slew the user set — exactly as it is.
+   */
+  commitBindingEdit(paramId, cfg) {
+    const p = this.ps.get(paramId);
+    if (!p || !cfg) return;
+    p.controller = { ...cfg };
+    if (!ControllerManager.PAGE_EXEMPT.has(paramId) && isPagedBinding(cfg.type)) {
+      if (!Array.isArray(p.midiPages)) p.midiPages = [];
+      p.midiPages.length = Math.max(p.midiPages.length, MIDI_PAGES);
+      p.midiPages[this._mapPage] = { ...cfg };
+    }
+    this._repaintCtrlBadge(paramId);
+  }
+
+  /**
    * Give a freshly-learned CONTINUOUS parameter a default slew.
    *
    * Both learn paths reach this through `setPageBinding`, which is the single

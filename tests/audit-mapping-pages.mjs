@@ -576,6 +576,135 @@ console.log('\na page switch tells the remote where its controls now are');
     JSON.stringify(ws.sent.slice(n)));
 }
 
+/**
+ * A setting made in the badge popover must live on the PAGE, not only on the
+ * projection — a page switch projects the page's copy, so an edit that stops
+ * at `param.controller` is undone by switching away and back. Reported by the
+ * owner: Latch ticked on a page-2 OSC binding was gone after visiting page 1.
+ *
+ * Drives the REAL popover over a fake DOM and ticks the real checkbox: the
+ * model was correct at every step of the failing sequence except the one
+ * write the popover never made, so a check that calls the manager directly
+ * would have passed on the shipped bug.
+ */
+console.log('\na popover edit survives a page switch');
+{
+  const { openCtrlPopover } = await import('../src/ui/components/CtrlPopover.js');
+  const fakeEl = (tag) => {
+    const e = {
+      tagName: tag.toUpperCase(), children: [], style: {}, _on: {},
+      className: '', textContent: '', innerHTML: '',
+      appendChild(ch) { this.children.push(ch); return ch; },
+      addEventListener(t, f) { (this._on[t] ??= []).push(f); },
+      removeEventListener() {}, remove() {}, contains: () => false,
+      getBoundingClientRect: () => ({ left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 }),
+      focus() {}, select() {}, setPointerCapture() {}, hasPointerCapture: () => false,
+      fire(t, ev = {}) {
+        for (const f of this._on[t] ?? []) {
+          f({ preventDefault() {}, stopPropagation() {}, target: this, ...ev });
+        }
+      },
+    };
+    return e;
+  };
+  const opened = [];
+  Object.assign(globalThis.document, {
+    createElement: fakeEl,
+    body: { ...globalThis.document.body, appendChild: (p) => opened.push(p) },
+    removeEventListener: () => {},
+  });
+  globalThis.getComputedStyle ??= () => ({ zoom: '1' });
+  globalThis.requestAnimationFrame ??= () => 0;
+  const walk = (n, pred, out = []) => {
+    if (pred(n)) out.push(n);
+    for (const ch of n.children ?? []) walk(ch, pred, out);
+    return out;
+  };
+  const valueOfRow = (pop, label) =>
+    walk(pop, (n) => n.children?.[0]?.textContent === label)[0]?.children[1];
+  const typeInto = (span, v) => {
+    span.fire('dblclick');
+    const input = span.children.at(-1);
+    input.value = String(v);
+    input.fire('keydown', { key: 'Enter' });
+  };
+  const open = (ps, cm, id) => {
+    openCtrlPopover(ps.get(id), fakeEl('span'), cm, null);
+    return opened.at(-1);
+  };
+
+  {
+    const { ps, cm } = rig();
+    cm.setMapPage(1);
+    cm.setPageBinding('t.a', { type: 'osc', address: '/flic/1' });
+    const box = walk(open(ps, cm, 't.a'), (n) => n.type === 'checkbox')[0];
+    check('the popover offers Latch on a continuous OSC row', !!box);
+    box.checked = true;
+    box.fire('change');
+    check('ticking it latches the live binding', ps.get('t.a').controller?.latch === true,
+      JSON.stringify(ps.get('t.a').controller));
+    cm.setMapPage(0);
+    cm.setMapPage(1);
+    check('THE REPORTED BUG: Latch is still on after page 1 and back',
+      ps.get('t.a').controller?.latch === true, JSON.stringify(ps.get('t.a').controller));
+    check('and it is on the page itself, which is what a saved file carries',
+      ps.get('t.a').midiPages[1]?.latch === true, JSON.stringify(ps.get('t.a').midiPages));
+    check('page 1 was not given the page-2 binding', !ps.get('t.a').midiPages[0],
+      JSON.stringify(ps.get('t.a').midiPages));
+  }
+  {
+    // A field edited AFTER Latch replaced the controller object must still land.
+    const { ps, cm } = rig();
+    cm.setPageBinding('t.b', { type: 'midi-cc', cc: 7, channel: 0 });
+    const pop = open(ps, cm, 't.b');
+    const box = walk(pop, (n) => n.type === 'checkbox')[0];
+    box.checked = true;
+    box.fire('change');
+    // The edit under test must be the LAST one: a later field's commit carries
+    // every earlier field along with it, and would hide a setter that forgot.
+    typeInto(valueOfRow(pop, 'CC#'), 21);
+    cm.setMapPage(2);
+    cm.setMapPage(0);
+    const c = ps.get('t.b').controller;
+    check('a CC# typed in the popover survives a page switch', c?.cc === 21, JSON.stringify(c));
+    check('and a Latch ticked before it is not lost to the later edit',
+      c?.latch === true, JSON.stringify(c));
+  }
+  {
+    const { ps, cm } = rig();
+    cm.setPageBinding('t.b', { type: 'midi-cc', cc: 7, channel: 0 });
+    typeInto(valueOfRow(open(ps, cm, 't.b'), 'Chan (0=any)'), 3);
+    cm.setMapPage(2);
+    cm.setMapPage(0);
+    check('a channel typed in the popover survives a page switch',
+      ps.get('t.b').controller?.channel === 3, JSON.stringify(ps.get('t.b').controller));
+  }
+  {
+    const { ps, cm } = rig();
+    cm.setPageBinding('t.b', { type: 'midi-note', note: 60, channel: 0 });
+    typeInto(valueOfRow(open(ps, cm, 't.b'), 'Note#'), 64);
+    cm.setMapPage(3);
+    cm.setMapPage(0);
+    check('a Note# typed in the popover survives a page switch',
+      ps.get('t.b').controller?.note === 64, JSON.stringify(ps.get('t.b').controller));
+  }
+  {
+    // A key binding is not paged: an edit must not smuggle it into one, or it
+    // would vanish from every other page.
+    const { ps, cm } = rig();
+    cm.assign('t.a', { type: 'key', key: 'q' });
+    const box = walk(open(ps, cm, 't.a'), (n) => n.type === 'checkbox')[0];
+    box.checked = true;
+    box.fire('change');
+    check('Latch on a key binding still latches', ps.get('t.a').controller?.latch === true);
+    check('and does not put the key binding into a page',
+      !ps.get('t.a').midiPages?.some(Boolean), JSON.stringify(ps.get('t.a').midiPages));
+    cm.setMapPage(1);
+    check('so it is still there on another page', ps.get('t.a').controller?.type === 'key',
+      JSON.stringify(ps.get('t.a').controller));
+  }
+}
+
 console.log('\nthe page controls stay unpageable, so the desk cannot be bricked');
 {
   const { ps, cm } = rig();

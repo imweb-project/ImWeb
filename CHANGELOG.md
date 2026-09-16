@@ -9,6 +9,19 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Fixed
+- **Settings made in the badge popover now stay on their mapping page.** A
+  page keeps its own copy of each binding and a page switch projects that copy,
+  but the popover wrote only the live binding — so Latch ticked on a page-2 OSC
+  binding was gone after visiting page 1 and coming back, and it was missing
+  from saved files, which store the pages. The MIDI CC#, Note# and channel
+  fields had the same hole. Every field edit now goes through
+  `ControllerManager.commitBindingEdit()`, which writes the live binding and the
+  current page together; a keyboard binding stays unpaged. Ticking Latch also
+  used to replace the controller object the popover was editing, so a CC# typed
+  afterwards reached neither. `tests/audit-mapping-pages.mjs` opens the real
+  popover over a fake DOM and ticks the real checkbox. 4 mutations, 4/4 caught —
+  one survived at first because a later field's commit carried the earlier
+  field along, which is why each field is now checked last and alone.
 - **A cleared controller stops advertising itself on the row.**
   `clearAllAssignments()` writes `param.controller = null` directly and notifies
   nothing, while a row's badge is refreshed off the parameter's `onChange` —

@@ -18,6 +18,19 @@ export function openCtrlPopover(param, anchorEl, ctrl, tables) {
   const c = param.controller;
   if (!c) return;
 
+  /**
+   * Every edit of a binding's own fields goes through here. `c` is the draft;
+   * the manager writes it to the live projection AND the mapping page it
+   * belongs to — editing `param.controller` alone was undone by the next page
+   * switch, which projects the page's copy. It also keeps `c` authoritative:
+   * a setter that REPLACED `param.controller` used to strand every later
+   * field edit on the old object.
+   */
+  const commitBinding = () => {
+    if (ctrl?.commitBindingEdit) ctrl.commitBindingEdit(param.id, c);
+    else param.controller = { ...c };
+  };
+
   const popover = document.createElement('div');
   popover.className = 'ctrl-popover';
   popover.style.cssText = [
@@ -65,8 +78,7 @@ export function openCtrlPopover(param, anchorEl, ctrl, tables) {
       () => c.latch,
       (v) => {
         c.latch = v;
-        param.controller = { ...c };      // same reassign the LFO rows use
-        ctrl?._repaintCtrlBadge?.(param.id); // the ⇄ marker is the only tell
+        commitBinding();                  // repaints too — the ⇄ marker is the only tell
       },
     )));
   };
@@ -298,24 +310,24 @@ export function openCtrlPopover(param, anchorEl, ctrl, tables) {
   } else if (t === 'midi-cc') {
     popover.appendChild(makeRow('CC#', makeDragNum(
       () => c.cc ?? 0,
-      v  => { c.cc = Math.round(Math.max(0, Math.min(127, v))); },
+      v  => { c.cc = Math.round(Math.max(0, Math.min(127, v))); commitBinding(); },
       { decimals: 0, fineStep: 1, coarseStep: 10 }
     )));
     popover.appendChild(makeRow('Chan (0=any)', makeDragNum(
       () => c.channel ?? 0,
-      v  => { c.channel = Math.round(Math.max(0, Math.min(16, v))); },
+      v  => { c.channel = Math.round(Math.max(0, Math.min(16, v))); commitBinding(); },
       { decimals: 0, fineStep: 1, coarseStep: 1 }
     )));
 
   } else if (t === 'midi-note') {
     popover.appendChild(makeRow('Note#', makeDragNum(
       () => c.note ?? 60,
-      v  => { c.note = Math.round(Math.max(0, Math.min(127, v))); },
+      v  => { c.note = Math.round(Math.max(0, Math.min(127, v))); commitBinding(); },
       { decimals: 0, fineStep: 1, coarseStep: 12 }
     )));
     popover.appendChild(makeRow('Chan (0=any)', makeDragNum(
       () => c.channel ?? 0,
-      v  => { c.channel = Math.round(Math.max(0, Math.min(16, v))); },
+      v  => { c.channel = Math.round(Math.max(0, Math.min(16, v))); commitBinding(); },
       { decimals: 0, fineStep: 1, coarseStep: 1 }
     )));
 

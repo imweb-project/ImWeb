@@ -1321,6 +1321,38 @@ export const MUTATIONS = [
     find: '    this._sentVal.delete(address);\n',
     replace: '',
   },
+  {
+    name: 'Latch edits only the live binding again',
+    audit: 'audit-mapping-pages.mjs',
+    file: 'src/ui/components/CtrlPopover.js',
+    why: 'THE SHIPPED BUG: the owner ticked Latch on a page-2 OSC binding, visited page 1, came back, and Latch was gone — a page switch projects the page\'s own copy, which the popover never wrote',
+    find: '        commitBinding();                  // repaints too — the ⇄ marker is the only tell',
+    replace: '        param.controller = { ...c };',
+  },
+  {
+    name: 'a binding edit updates the projection but not the page',
+    audit: 'audit-mapping-pages.mjs',
+    file: 'src/controls/ControllerManager.js',
+    why: 'the one-line version of the fix that looks complete: every edit shows on the badge and works until the next page switch, and is missing from every saved file',
+    find: '      p.midiPages[this._mapPage] = { ...cfg };\n    }\n    this._repaintCtrlBadge(paramId);',
+    replace: '    }\n    this._repaintCtrlBadge(paramId);',
+  },
+  {
+    name: 'the CC# field forgets to commit',
+    audit: 'audit-mapping-pages.mjs',
+    file: 'src/ui/components/CtrlPopover.js',
+    why: 'a sibling field left on the old path: a hand-typed CC reverts on a page switch, and after Latch has replaced the controller object it does not even reach the live binding',
+    find: '      v  => { c.cc = Math.round(Math.max(0, Math.min(127, v))); commitBinding(); },',
+    replace: '      v  => { c.cc = Math.round(Math.max(0, Math.min(127, v))); },',
+  },
+  {
+    name: 'a binding edit pages every controller type',
+    audit: 'audit-mapping-pages.mjs',
+    file: 'src/controls/ControllerManager.js',
+    why: 'ticking Latch on a KEY binding would move it into the current page, so it silently disappears on every other page — a keyboard binding is deliberately unpaged',
+    find: "    if (!ControllerManager.PAGE_EXEMPT.has(paramId) && isPagedBinding(cfg.type)) {",
+    replace: "    if (!ControllerManager.PAGE_EXEMPT.has(paramId)) {",
+  },
 
   // ── A cleared binding must stop advertising itself ─────────────────────────
   {
