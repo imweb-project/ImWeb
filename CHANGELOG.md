@@ -71,6 +71,16 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   stash is drained before the import lands, which is silent by nature.
 
 ### Added
+- **PAD IN monitor** in the I/O panel, under MIDI In: press or move anything on
+  the pad and it shows what that control is called (`G:↑`, `G:LX 0.73`, `G:RT
+  0.40`) and what it already drives on the live page. A pad printed 1–10 gives
+  no hint which button is `G:A` and which is `G:LB`; this answers it before
+  mapping. The name comes from `gamepadControlName()`, now the badge's own
+  naming too, so the monitor says exactly what the row will say once mapped.
+  Reports against the last value SHOWN with a 0.02 step, so a stick resting
+  off-centre and 1/1024 jitter stay silent, and one control's movements
+  coalesce into one row as in MIDI In. Painted from the render loop only when
+  something changed. 4 mutations, 4/4 caught.
 - **Gamepad Learn.** Right-click a row → *Gamepad Learn*, then move a stick or
   press a button. The menu's gamepad items name the standard layout (A/Cross,
   LB/L1…), which means nothing on a pad printed 1–10 such as a Logitech

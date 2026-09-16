@@ -82,6 +82,21 @@ function _resolveTable(param) {
  * shrinking this drops bindings off the end of every file that has them. */
 export const MIDI_PAGES = 4;
 
+/**
+ * The display name of a gamepad control, e.g. `G:LX`, `G:A`, `G:↑`.
+ *
+ * ONE naming source for the badge and the PAD IN monitor: the monitor exists so
+ * you can find out what a control is called before mapping it, which is only
+ * true if it says exactly what the badge will say afterwards.
+ */
+export function gamepadControlName(type) {
+  const [, kind, n] = String(type).split('-');
+  const names = kind === 'axis'
+    ? ['LX', 'LY', 'RX', 'RY']
+    : ['A', 'B', 'X', 'Y', 'LB', 'RB', 'LT', 'RT', 'SEL', 'STA', 'L3', 'R3', '↑', '↓', '←', '→', 'HOME'];
+  return `G:${names[Number(n)] ?? n}`;
+}
+
 export const PARAM_TYPE = {
   CONTINUOUS: "continuous", // floating point in [min, max]
   TOGGLE: "toggle", // 0 | 1
@@ -759,13 +774,7 @@ export class Parameter {
     // Standard-mapping names. Without this every gamepad badge fell through
     // to the generic slice below and read "GAME", so twenty bindings looked
     // identical.
-    if (c.type.startsWith('gamepad-')) {
-      const [, kind, n] = c.type.split('-');
-      const names = kind === 'axis'
-        ? ['LX', 'LY', 'RX', 'RY']
-        : ['A', 'B', 'X', 'Y', 'LB', 'RB', 'LT', 'RT', 'SEL', 'STA', 'L3', 'R3', '↑', '↓', '←', '→', 'HOME'];
-      return `G:${names[Number(n)] ?? n}` + mark;
-    }
+    if (c.type.startsWith('gamepad-')) return gamepadControlName(c.type) + mark;
     if (c.type.startsWith('stroke-')) {
       const parts = c.type.split('-');
       return `S${parts[1] ?? '?'}${(parts[2] ?? 'x').toUpperCase()}`;

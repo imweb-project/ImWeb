@@ -364,5 +364,75 @@ console.log('\ngamepad learn binds what the hand moved, not what the menu calls 
   }
 }
 
+// ── PAD IN ───────────────────────────────────────────────────────────────────
+// The monitor exists to answer "what is this control called?" before mapping,
+// so the name it shows must be the name the badge shows afterwards — asserted
+// by binding each reported control and reading the badge back, not by
+// comparing two copies of a name table.
+console.log('\nPAD IN names each control exactly as its badge will');
+{
+  const { ps, cm, pad, tick } = rig();
+  tick(2);                                       // first frame is a reading
+  check('the first reading reports nothing', cm.padLog.length === 0,
+    JSON.stringify(cm.padLog));
+
+  pad.buttons[12] = { pressed: true, value: 1 };   // D-pad up
+  tick();
+  let e = cm.padLog[0];
+  check('a press is reported, newest first', e?.type === 'gamepad-btn-12' && e.val === 'on',
+    JSON.stringify(e));
+  const p = ps.get('t.tog');
+  p.controller = { type: e.type };
+  check('its name is the badge the row shows once mapped', e.name === p.controllerLabel,
+    `${e.name} vs ${p.controllerLabel}`);
+  check('and the bound column names that row', cm.padBindingsFor(e.type).includes('T'),
+    JSON.stringify(cm.padBindingsFor(e.type)));
+
+  pad.buttons[12] = { pressed: false, value: 0 };
+  tick();
+  check('the release updates the SAME row', cm.padLog.length === 1 && cm.padLog[0].val === 'off'
+    && cm.padLog[0].count === 2, JSON.stringify(cm.padLog));
+
+  pad.axes[0] = 0.8;
+  tick();
+  e = cm.padLog[0];
+  const q = ps.get('t.cont');
+  q.controller = { type: e?.type };
+  check('a stick move is reported under the badge name too',
+    e?.type === 'gamepad-axis-0' && e.name === q.controllerLabel, JSON.stringify(e));
+  check('consumePadDirty is true once, then false', cm.consumePadDirty() && !cm.consumePadDirty());
+}
+{
+  // The owner's RumblePad 2 rests at 0.18 on a stick axis, past the deadzone,
+  // and a real stick jitters by a few 1/1024 steps. Neither is movement.
+  const { cm, pad, tick } = rig();
+  pad.axes = [0.18, 0.5, 0.08, 0.46];
+  tick(2);
+  for (let i = 0; i < 20; i++) {
+    pad.axes[0] = 0.18 + ((i % 3) - 1) * 0.004;
+    tick();
+  }
+  check('a stick resting off-centre with jitter reports nothing', cm.padLog.length === 0,
+    JSON.stringify(cm.padLog));
+  for (let i = 1; i <= 10; i++) { pad.axes[0] = 0.18 + i * 0.03; tick(); }
+  check('a slow sweep still reports, as one coalesced row',
+    cm.padLog.length === 1 && cm.padLog[0].count > 1, JSON.stringify(cm.padLog));
+}
+{
+  const { cm, pad, tick } = rig();
+  tick(2);
+  pad.buttons[7] = { pressed: true, value: 0.4 };  // RT half pulled
+  tick();
+  check('an analog trigger reports its travel', cm.padLog[0]?.val === '0.40',
+    JSON.stringify(cm.padLog[0]));
+}
+{
+  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  check('the render loop paints PAD IN', /_paintMidiMonitor\(\);\s*_paintPadMonitor\(\);/.test(main));
+  check('PAD IN takes its names from the monitor entry, not a table of its own',
+    /midi-mon-id">\$\{e\.name\}/.test(main) && !/'LX',\s*'LY'/.test(main));
+}
+
 console.log(failures ? `\n${failures} failure(s)` : '\nall gamepad checks pass');
 process.exit(failures ? 1 : 0);

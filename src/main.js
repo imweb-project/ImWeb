@@ -3946,6 +3946,40 @@ async function main() {
   midiMonRow.append(midiMonLbl, midiMonList);
   ioBlock.appendChild(midiMonRow);
 
+  // ── Incoming gamepad monitor (PAD IN) ─────────────────────────────────────
+  // The gamepad half of the same question: what is this control called? A pad
+  // printed 1–10 gives no hint which is `G:A` and which is `G:LB`. The name
+  // comes from gamepadControlName, the badge's own naming, so what PAD IN says
+  // is what the row will say once mapped. Same classes as MIDI In, no channel.
+  const padMonRow = document.createElement("div");
+  padMonRow.style.cssText = "padding:3px 10px 6px;";
+  const padMonLbl = document.createElement("div");
+  padMonLbl.style.cssText = midiMonLbl.style.cssText;
+  padMonLbl.textContent = "Pad In";
+  const padMonList = document.createElement("div");
+  padMonList.id = "pad-monitor";
+  padMonList.className = "midi-monitor";
+  padMonList.innerHTML = '<div class="midi-monitor-empty">press a pad button…</div>';
+  padMonRow.append(padMonLbl, padMonList);
+  ioBlock.appendChild(padMonRow);
+
+  /** As _paintMidiMonitor: from the render loop, and only when something moved. */
+  function _paintPadMonitor() {
+    if (!ctrl.consumePadDirty()) return;
+    if (!padMonList.isConnected || padMonList.offsetParent === null) return;
+    const rows = ctrl.padLog;
+    if (!rows.length) return;
+    padMonList.innerHTML = rows.map((e) => {
+      const bound = ctrl.padBindingsFor(e.type);
+      const to = bound.length
+        ? `<span class="midi-mon-bound">${bound.slice(0, 2).join(", ")}${bound.length > 2 ? ` +${bound.length - 2}` : ""}</span>`
+        : '<span class="midi-mon-free">—</span>';
+      const n = e.count > 1 ? `<span class="midi-mon-count">x${e.count}</span>` : "";
+      return `<div class="midi-mon-row"><span class="midi-mon-id">${e.name}</span>` +
+             `<span class="midi-mon-val">${e.val}</span>${n}${to}</div>`;
+    }).join("");
+  }
+
   /**
    * Paint both MIDI views from the render loop rather than from the message
    * handler. A swept fader sends dozens of messages a second and a DOM write
@@ -8627,6 +8661,7 @@ void main() {
     // message actually arrived. See _paintMidiMonitor for why not in the
     // message handler.
     _paintMidiMonitor();
+    _paintPadMonitor();
 
     const dt = Math.min((now - lastTime) / 1000, 0.1); // cap at 100ms
     lastTime = now;

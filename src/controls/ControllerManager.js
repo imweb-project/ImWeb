@@ -8,7 +8,7 @@
  * Planned:   OSC (WebSocket), HID (Gamepad), Wacom (PointerEvents pressure)
  */
 
-import { PARAM_TYPE, MIDI_PAGES } from './ParameterSystem.js';
+import { PARAM_TYPE, MIDI_PAGES, gamepadControlName } from './ParameterSystem.js';
 import { LFOController } from './LFO.js';
 import { BeatDetector }  from './BeatDetector.js';
 import { compileExpression } from './ExprCompiler.js';
@@ -137,6 +137,12 @@ export class ControllerManager {
     /** Clock for learn windows, replaceable so audits do not wait in real time. */
     this._now = () => performance.now();
     this._padShown = false;
+    // PAD IN monitor — see _recordPad. `_padSeen*`: the last reading SHOWN per
+    // control, so a resting stick's jitter is not reported as movement.
+    this._padLog = [];
+    this._padLogDirty = false;
+    this._padSeenAxes = null;
+    this._padSeenBtn = null;
     this._midiLearnParam = null; // paramId waiting for MIDI learn
     this._midiLearnTimer = null;
     this._midiLearnSeq = false;
@@ -229,6 +235,40 @@ export class ControllerManager {
 
   /** The monitor buffer, newest FIRST for display. */
   get midiLog() { return this._midiLog.slice().reverse(); }
+
+  /** The PAD IN buffer, newest FIRST for display. */
+  get padLog() { return this._padLog.slice().reverse(); }
+
+  /** As consumeMidiDirty, for PAD IN. */
+  consumePadDirty() {
+    const d = this._padLogDirty;
+    this._padLogDirty = false;
+    return d;
+  }
+
+  /** Labels of the params a gamepad control drives on the live page. */
+  padBindingsFor(type) {
+    const out = [];
+    for (const p of this.ps.getAll()) if (p.controller?.type === type) out.push(p.label);
+    return out;
+  }
+
+  /**
+   * Record one gamepad control for PAD IN. Same shape and the same coalescing
+   * as the MIDI monitor: a stick swept back and forth is ONE row whose value
+   * updates, not a flood that evicts every button you pressed before it.
+   */
+  _recordPad(type, val) {
+    const tail = this._padLog[this._padLog.length - 1];
+    if (tail && tail.type === type) {
+      tail.val = val;
+      tail.count++;
+    } else {
+      this._padLog.push({ type, name: gamepadControlName(type), val, count: 1 });
+      if (this._padLog.length > MIDI_LOG_MAX) this._padLog.shift();
+    }
+    this._padLogDirty = true;
+  }
 
   /** True at most once per change — lets a per-frame painter skip idle frames. */
   consumeMidiDirty() {
@@ -1712,7 +1752,31 @@ export class ControllerManager {
     // Learn watches underneath rather than freezing the pad, as OSC learn does:
     // arming it must not stop controls that are already mapped.
     if (this._gpLearn) this._observeGamepadLearn(axes, btnDown);
-    if (!prev || prev.id !== gp.id || prev.index !== gp.index) return;
+    if (!prev || prev.id !== gp.id || prev.index !== gp.index) {
+      this._padSeenAxes = axes.slice();
+      this._padSeenBtn = btnVal.slice();
+      return;
+    }
+
+    /**
+     * PAD IN: what the pad calls each control, before you map it. Reported
+     * against the last value SHOWN rather than last frame, with a 0.02 step, so
+     * a stick resting off-centre (the owner's RumblePad 2 reads 0.18 at rest)
+     * and 1/1024 jitter stay silent while a slow sweep still reports.
+     */
+    axes.forEach((v, i) => {
+      if (Math.abs(v - (this._padSeenAxes[i] ?? v)) < 0.02) return;
+      this._padSeenAxes[i] = v;
+      this._recordPad(`gamepad-axis-${i}`, v.toFixed(2));
+    });
+    btnDown.forEach((d, i) => {
+      const edge = d !== prev.btnDown[i];
+      if (!edge && Math.abs(btnVal[i] - (this._padSeenBtn[i] ?? 0)) < 0.02) return;
+      this._padSeenBtn[i] = btnVal[i];
+      // An analog trigger reports its travel; everything else, the edge.
+      const analog = btnVal[i] > 0 && btnVal[i] < 1;
+      this._recordPad(`gamepad-btn-${i}`, analog ? btnVal[i].toFixed(2) : (d ? 'on' : 'off'));
+    });
 
     this.ps.getAll().forEach(p => {
       const t = p.controller?.type;

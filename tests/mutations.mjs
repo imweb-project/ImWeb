@@ -1396,6 +1396,40 @@ export const MUTATIONS = [
     replace: '    this.assign(paramId, { type });',
   },
 
+  // ── PAD IN ─────────────────────────────────────────────────────────────────
+  {
+    name: 'PAD IN names a control by its raw type, not its badge name',
+    audit: 'audit-gamepad.mjs',
+    file: 'src/controls/ControllerManager.js',
+    why: 'the monitor would say gamepad-btn-12 while the row says G:↑ — the one question it exists to answer, answered in a different language from the badge',
+    find: '      this._padLog.push({ type, name: gamepadControlName(type), val, count: 1 });',
+    replace: '      this._padLog.push({ type, name: type, val, count: 1 });',
+  },
+  {
+    name: 'PAD IN reports every axis wobble',
+    audit: 'audit-gamepad.mjs',
+    file: 'src/controls/ControllerManager.js',
+    why: 'the owner\'s RumblePad 2 rests off-centre and every stick jitters, so the monitor would scroll forever with the pad on the table and never show the button just pressed',
+    find: '      if (Math.abs(v - (this._padSeenAxes[i] ?? v)) < 0.02) return;',
+    replace: '      if (v === (this._padSeenAxes[i] ?? v)) return;',
+  },
+  {
+    name: 'PAD IN does not coalesce one control',
+    audit: 'audit-gamepad.mjs',
+    file: 'src/controls/ControllerManager.js',
+    why: 'one stick sweep evicts every other row from a 16-row buffer, exactly when you are looking to see what else you touched',
+    find: '    if (tail && tail.type === type) {',
+    replace: '    if (false) {',
+  },
+  {
+    name: 'the render loop never paints PAD IN',
+    audit: 'audit-gamepad.mjs',
+    file: 'src/main.js',
+    why: 'every manager-side check passes and the panel says "press a pad button…" forever',
+    find: '    _paintMidiMonitor();\n    _paintPadMonitor();\n',
+    replace: '    _paintMidiMonitor();\n',
+  },
+
   // ── A cleared binding must stop advertising itself ─────────────────────────
   {
     name: 'clearing assignments repaints nothing',
