@@ -53,7 +53,10 @@ export class OSCBridge {
     this._retryTimer = null;
     // Feedback. `_dirty`: params changed since the last flush. `_heard`: ids the
     // remote set in that same window. `_sentVal`: the value the remote is
-    // believed to show, per id. `_watched`: params already subscribed.
+    // believed to show, per ADDRESS — not per id, because a page switch or a
+    // recall can put a different param behind the same fader, and the param's
+    // own last-sent value says nothing about what that fader shows.
+    // `_watched`: params already subscribed.
     this._dirty      = new Set();
     this._heard      = new Set();
     this._sentVal    = new Map();
@@ -203,6 +206,21 @@ export class OSCBridge {
   }
 
   /**
+   * Queue a param for feedback although its VALUE has not changed.
+   *
+   * Feedback rides on `onChange`, and a binding can move without the value
+   * moving: a page switch puts another param behind a fader, a recall restores
+   * an address. The remote then shows the last page's position until something
+   * happens to change. Called from `ControllerManager.assign()` for every OSC
+   * binding it projects, so every door that rebinds — page switch, learn, state
+   * recall, bank load — tells the remote where to be. Unchanged addresses are
+   * still suppressed at flush, so this costs nothing where nothing moved.
+   */
+  markDirty(p) {
+    if (this._active && p && p.type !== 'trigger') this._dirty.add(p);
+  }
+
+  /**
    * Subscribe to every parameter not yet watched. Runs on each connect, not
    * once in the constructor, so params registered after boot are covered. The
    * listener only records WHICH param changed; the value is read at flush.
@@ -238,9 +256,9 @@ export class OSCBridge {
       const address = this._feedbackAddress(p);
       if (!address) continue;
       const n = p.normalized;
-      if (this._heard.has(p.id)) { this._sentVal.set(p.id, n); continue; }
-      if (this._sentVal.get(p.id) === n) continue;
-      this._sentVal.set(p.id, n);
+      if (this._heard.has(p.id)) { this._sentVal.set(address, n); continue; }
+      if (this._sentVal.get(address) === n) continue;
+      this._sentVal.set(address, n);
       this.send(address, n);
     }
     this._dirty.clear();
@@ -302,6 +320,13 @@ export class OSCBridge {
     // on both fired a trigger twice per press — the same bug audit-midi-buttons
     // pins for MIDI CC. No value at all (a bare Flic click) is a press.
     const isPress = !args.length || Number(args[0]) > 0.5;
+
+    // Whatever this address showed, the control has moved since: forget it, so
+    // the next flush tells it where to be. This matters when NOTHING is bound
+    // here — a fader moved on a page where it drives nothing is otherwise
+    // believed to still show the value sent before, and the send on switching
+    // back is suppressed as a repeat.
+    this._sentVal.delete(address);
 
     // Learn WATCHES rather than grabbing: it notes each address and decides at
     // the end of the window. Dispatch continues underneath, so arming learn

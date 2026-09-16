@@ -126,7 +126,10 @@ function rig() {
 
   const cm = new ControllerManager(ps);
   const bridge = new OSCBridge(ps, { loadPreset() {} });
-  bridge.setControllerManager(cm);
+  // The door main.js uses: it wires BOTH directions. Calling only
+  // bridge.setControllerManager() leaves cm.oscBridge unset, so anything the
+  // manager pushes to the remote would silently go nowhere in this rig.
+  cm.setOSCBridge(bridge);
   bridge.connect('ws://relay');
   const ws = sockets.at(-1);
   ws.readyState = FakeWS.OPEN;
@@ -470,6 +473,107 @@ console.log('\na latched row never picks up — the press IS the travel');
     String(p.value));
   msg('/flic/2', [1]);
   check('the next press comes back', p.value === 0, String(p.value));
+}
+
+/**
+ * A page switch changes which param is behind an address without changing any
+ * VALUE, and feedback rides on onChange — so without a push the remote keeps
+ * showing the previous page. Every check reads the socket, which is what the
+ * remote would receive; the model being right is not the question.
+ */
+console.log('\na page switch tells the remote where its controls now are');
+{
+  const { ps, cm, bridge, ws } = rig();
+  const flush = () => { const n = ws.sent.length; bridge._flush(); return ws.sent.slice(n); };
+  const to = (out, address) => out.filter(o => o.address === address);
+  ps.set('t.a', 30);
+  ps.set('t.b', 70);
+  cm.setPageBinding('t.a', { type: 'osc', address: '/1/f' });
+  cm.setMapPage(1);
+  cm.setPageBinding('t.b', { type: 'osc', address: '/1/f' });
+  cm.setMapPage(0);
+  flush();
+
+  cm.setMapPage(1);
+  let out = flush();
+  check('switching to page 2 sends the page-2 value to the fader',
+    to(out, '/1/f').length === 1 && Math.abs(to(out, '/1/f')[0].args[0] - 0.7) < 1e-9,
+    JSON.stringify(out));
+  check('and nothing else — only what the remote talks to', out.length === 1,
+    JSON.stringify(out));
+  check('it is one burst, not a stream', flush().length === 0);
+
+  cm.setMapPage(0);
+  out = flush();
+  check('switching back sends the page-1 value again',
+    Math.abs(to(out, '/1/f')[0]?.args[0] - 0.3) < 1e-9, JSON.stringify(out));
+}
+{
+  // Same value on both pages: the fader already shows it, so say nothing.
+  const { ps, cm, bridge, ws } = rig();
+  ps.set('t.a', 40);
+  ps.set('t.b', 40);
+  cm.setPageBinding('t.a', { type: 'osc', address: '/1/f' });
+  cm.setMapPage(1);
+  cm.setPageBinding('t.b', { type: 'osc', address: '/1/f' });
+  bridge._flush();
+  const n = ws.sent.length;
+  cm.setMapPage(0);
+  bridge._flush();
+  check('an unchanged position is not resent', ws.sent.length === n,
+    JSON.stringify(ws.sent.slice(n)));
+}
+{
+  // The fader moved on a page where it drives nothing. Believing it still
+  // shows the old value would suppress the send on the way back.
+  const { ps, cm, bridge, ws, msg } = rig();
+  ps.set('t.a', 30);
+  cm.setPageBinding('t.a', { type: 'osc', address: '/1/f' });
+  bridge._flush();
+  cm.setMapPage(1);
+  msg('/1/f', [0.9]);
+  bridge._flush();
+  check('an unbound fader drives nothing', ps.get('t.a').value === 30);
+  const n = ws.sent.length;
+  cm.setMapPage(0);
+  bridge._flush();
+  const back = ws.sent.slice(n).filter(o => o.address === '/1/f');
+  check('a fader moved on another page is put back on returning',
+    back.length === 1 && Math.abs(back[0].args[0] - 0.3) < 1e-9,
+    JSON.stringify(ws.sent.slice(n)));
+}
+{
+  // A value already sent under /imweb/<id> says nothing about a fader that has
+  // just been bound to that param at a different address.
+  const { ps, cm, bridge, ws, msg } = rig();
+  ps.set('t.a', 30);
+  msg('/imweb/t.a', [0.5]);   // the remote asks about t.a by id
+  bridge._flush();
+  ps.set('t.a', 60);
+  bridge._flush();            // /imweb/t.a 0.6 goes out
+  const n = ws.sent.length;
+  cm.setPageBinding('t.a', { type: 'osc', address: '/2/f' });
+  bridge._flush();
+  const got = ws.sent.slice(n).filter(o => o.address === '/2/f');
+  check('binding to a new address sends there even though the value is unchanged',
+    got.length === 1 && Math.abs(got[0].args[0] - 0.6) < 1e-9,
+    JSON.stringify(ws.sent.slice(n)));
+}
+{
+  // A recall / bank load re-projects through assign() after clearing, with the
+  // value often already in place.
+  const { ps, cm, bridge, ws } = rig();
+  ps.set('t.a', 30);
+  cm.assign('t.b', { type: 'osc', address: '/1/f' });
+  bridge._flush();
+  cm.clearAllAssignments();
+  const n = ws.sent.length;
+  cm.assign('t.a', { type: 'osc', address: '/1/f' });
+  bridge._flush();
+  const got = ws.sent.slice(n).filter(o => o.address === '/1/f');
+  check('a rebind through assign() (recall, bank load) tells the remote',
+    got.length === 1 && Math.abs(got[0].args[0] - 0.3) < 1e-9,
+    JSON.stringify(ws.sent.slice(n)));
 }
 
 console.log('\nthe page controls stay unpageable, so the desk cannot be bricked');

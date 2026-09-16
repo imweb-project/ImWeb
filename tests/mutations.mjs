@@ -1291,6 +1291,36 @@ export const MUTATIONS = [
       '        pickupBlocked: this._ctrl?._pickupBlocks?.(p, val) ?? false });',
     ].join('\n'),
   },
+  {
+    name: 'a page switch no longer tells the remote',
+    audit: 'audit-mapping-pages.mjs',
+    file: 'src/controls/ControllerManager.js',
+    why: 'feedback rides on onChange and a page switch changes no value, so a TouchOSC layout keeps showing page 1 while page 2 is live — the first touch jumps the parameter to wherever the stale fader sits',
+    find: "    if (t === 'osc') this.oscBridge?.markDirty?.(p);",
+    replace: '',
+  },
+  {
+    name: 'feedback remembers what it sent per param, not per address',
+    audit: 'audit-mapping-pages.mjs',
+    file: 'src/io/OSCBridge.js',
+    why: 'a param\'s last-sent value says nothing about the fader it has just been put behind, so the push is suppressed as a repeat whenever the value happens not to have moved — which after a page switch is always',
+    find: [
+      '      if (this._sentVal.get(address) === n) continue;',
+      '      this._sentVal.set(address, n);',
+    ].join('\n'),
+    replace: [
+      '      if (this._sentVal.get(p.id) === n) continue;',
+      '      this._sentVal.set(p.id, n);',
+    ].join('\n'),
+  },
+  {
+    name: 'an incoming message does not invalidate what the address shows',
+    audit: 'audit-mapping-pages.mjs',
+    file: 'src/io/OSCBridge.js',
+    why: 'a fader moved on a page where it drives nothing is still believed to show the old value, so returning to its page sends nothing and the fader sits where the hand left it',
+    find: '    this._sentVal.delete(address);\n',
+    replace: '',
+  },
 
   // ── A cleared binding must stop advertising itself ─────────────────────────
   {

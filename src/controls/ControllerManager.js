@@ -605,6 +605,9 @@ export class ControllerManager {
 
     p.controller = { ...controllerConfig };
     const t = controllerConfig.type;
+    // An OSC remote can be TOLD where to be, and a rebind does not change the
+    // value, so nothing else would tell it — see OSCBridge.markDirty.
+    if (t === 'osc') this.oscBridge?.markDirty?.(p);
 
     // Motion assignment happens inside a user gesture (menu click), which
     // is exactly when iOS allows requestPermission — ask inline, then arm

@@ -58,6 +58,27 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   stash is drained before the import lands, which is silent by nature.
 
 ### Added
+- **A page switch tells an OSC remote where its controls now are.** Feedback
+  rides on a parameter's `onChange`, and switching mapping pages changes which
+  parameter is behind an address without changing any value, so a TouchOSC
+  layout kept showing the previous page until something happened to move.
+  `ControllerManager.assign()` now queues every OSC binding it projects, which
+  covers every door that rebinds — page switch, learn, Display State recall and
+  bank load — and the remote is sent each control's new position once. What the
+  remote is believed to show is now remembered per ADDRESS rather than per
+  parameter: a param's last-sent value says nothing about the fader it has just
+  been put behind, and keyed by id the push was suppressed whenever the value
+  happened not to have moved (which also left a freshly learned fader
+  unpositioned if that param had been addressed by id before). Any incoming
+  message forgets its address's remembered value, so a fader moved on a page
+  where it drives nothing is put back on returning. Measured at the receiver on
+  a real build through `tools/osc-relay.mjs`: one message per switch, 0 in 3 s
+  idle; the unmodified build sends nothing on any switch. A Flic bound by
+  address receives one message per page switch, which it ignores.
+  `tests/audit-mapping-pages.mjs` reads the socket, and its rig now wires the
+  bridge through `ctrl.setOSCBridge()` as main.js does — the old one-way wiring
+  left `cm.oscBridge` unset, so a manager-side push went nowhere in the test
+  while working in the app. 3 mutations, 3/3 caught.
 - **Every standard gamepad button is assignable**: LB/RB, the analog triggers
   LT/RT, Back, Start, both stick clicks and the D-pad join A/B/X/Y. Gamepad
   badges name the control (`G:LX`, `G:RT`, `G:↑`) instead of all reading `GAME`.
