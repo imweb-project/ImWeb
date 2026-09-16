@@ -40,6 +40,37 @@ export function openCtrlPopover(param, anchorEl, ctrl, tables) {
     return row;
   };
 
+  /** Checkbox row. The popover had no boolean control before Latch. */
+  const makeCheck = (get, set) => {
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = !!get();
+    box.style.cssText = 'accent-color:var(--accent);margin:0;cursor:pointer;';
+    box.addEventListener('change', () => set(box.checked));
+    return box;
+  };
+
+  /**
+   * Latch — offered only where it means something: a button driving a
+   * CONTINUOUS parameter. A toggle already alternates on the press, and an
+   * axis is a position rather than a button, so neither gets the row.
+   */
+  const PRESS_DRIVEN = (t) =>
+    t === 'key' || t === 'midi-cc' || t === 'midi-note' || t === 'osc'
+    || t.startsWith('gamepad-btn-');
+
+  const addLatchRow = () => {
+    if (param.type !== 'continuous' || !PRESS_DRIVEN(c.type)) return;
+    popover.appendChild(makeRow('Latch (press alternates)', makeCheck(
+      () => c.latch,
+      (v) => {
+        c.latch = v;
+        param.controller = { ...c };      // same reassign the LFO rows use
+        ctrl?._repaintCtrlBadge?.(param.id); // the ⇄ marker is the only tell
+      },
+    )));
+  };
+
   /** Draggable + double-click-to-type number span. */
   const makeDragNum = (get, set, { decimals = 2, fineStep = 0.1, coarseStep = 1 } = {}) => {
     const span = document.createElement('span');
@@ -386,6 +417,7 @@ export function openCtrlPopover(param, anchorEl, ctrl, tables) {
   }
 
   // ── Shared rows (all controller types) ───────────────────────────────────
+  addLatchRow();
   addSlewRow();
   addTableRow();
 

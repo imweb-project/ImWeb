@@ -200,6 +200,103 @@ for (const path of PATHS) {
   drv.cleanup?.();
 }
 
+console.log('\nLATCH: a press alternates between the row\'s two ends');
+for (const path of PATHS) {
+  const r = rig();
+  const drv = path.make(r);
+  drv.bind('t.cont');
+  const p = r.ps.get('t.cont');
+  p.controller.latch = true;
+
+  // A full CLICK is press THEN release. CC and the gamepad detect an edge, so
+  // two presses with no release between them are one press to them — and that
+  // is a property of the hardware, not of latch. Getting this wrong made six
+  // checks fail against correct code.
+  const click = () => { drv.press(); drv.release(); };
+
+  drv.press();
+  check(`${path.name}: the first press goes to max`, p.value === 100, String(p.value));
+  drv.release();
+  check(`${path.name}: the release does NOT flip it back`, p.value === 100,
+    `${p.value} — a momentary device would flicker`);
+  click();
+  check(`${path.name}: the next click goes to min`, p.value === 0, String(p.value));
+  click();
+  check(`${path.name}: and the next goes to max again`, p.value === 100, String(p.value));
+  drv.cleanup?.();
+}
+
+console.log('\nLATCH after a state recall: the press travels to the far end');
+{
+  // The case a remembered side would get wrong: something else moved the value
+  // while the button was not looking.
+  const r = rig();
+  const drv = PATHS[0].make(r);
+  drv.bind('t.cont');
+  const p = r.ps.get('t.cont');
+  p.controller.latch = true;
+
+  const click = () => { drv.press(); drv.release(); };
+
+  click();                           // now at max
+  p.value = 90;                      // a recall lands it near the top
+  click();
+  check('a press from the top half goes to min', p.value === 0, String(p.value));
+  p.value = 10;                      // a recall lands it near the bottom
+  click();
+  check('a press from the bottom half goes to max', p.value === 100, String(p.value));
+}
+
+console.log('\nLATCH respects the row\'s min/max fields, and invert');
+{
+  const r = rig();
+  const drv = PATHS[0].make(r);
+  drv.bind('t.cont');
+  const p = r.ps.get('t.cont');
+  p.controller.latch = true;
+  p.ctrlMin = 20; p.ctrlMax = 60;    // the ends are the row's fields
+  const click = () => { drv.press(); drv.release(); };
+
+  click();
+  check('the high end is the row\'s max field, not the ceiling', p.value === 60, String(p.value));
+  click();
+  check('the low end is the row\'s min field, not zero', p.value === 20, String(p.value));
+
+  const r2 = rig();
+  const drv2 = PATHS[0].make(r2);
+  drv2.bind('t.cont');
+  const q = r2.ps.get('t.cont');
+  q.controller.latch = true;
+  q.invert = true;
+  const click2 = () => { drv2.press(); drv2.release(); };
+  click2();
+  const first = q.value;
+  click2();
+  check('under invert it still alternates rather than sticking', q.value !== first,
+    `stuck at ${q.value} — setNormalized applies invert before mapping`);
+}
+
+console.log('\nLATCH is offered nowhere it would be redundant');
+{
+  const r = rig();
+  const drv = PATHS[0].make(r);
+  drv.bind('t.tog');
+  const t = r.ps.get('t.tog');
+  t.controller.latch = true;         // meaningless on a toggle; must be inert
+  drv.press();
+  check('a toggle still flips once per press', t.value === 1, String(t.value));
+  drv.release();
+  drv.press();
+  check('and back on the next press', t.value === 0, String(t.value));
+
+  const r2 = rig();
+  const drv2 = PATHS[0].make(r2);
+  drv2.bind('t.cont');
+  const p = r2.ps.get('t.cont');
+  check('an unlatched binding is unchanged: a press still sends its value',
+    (drv2.value(0.5), Math.abs(p.value - 50) < 1.5), String(p.value));
+}
+
 console.log('\nthe keyboard holds its own shape: 1 while held, 0 on release');
 {
   const r = rig();

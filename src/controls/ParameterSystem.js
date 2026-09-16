@@ -697,6 +697,10 @@ export class Parameter {
   get controllerLabel() {
     if (!this.controller) return "—";
     const c = this.controller;
+    // Latch is invisible state otherwise: one button alternating while another
+    // does not, with nothing on screen saying which. The marker is the whole
+    // reason the option is not confusing.
+    const mark = c.latch && this.type === PARAM_TYPE.CONTINUOUS ? " ⇄" : "";
     const labels = {
       "mouse-x": "MX",
       "mouse-y": "MY",
@@ -747,7 +751,7 @@ export class Parameter {
     };
     // A learned OSC binding names the address it answers to: "OSC" alone says
     // nothing about WHICH button, and a rig has several.
-    if (c.type === 'osc') return c.address ? `OSC:${c.address}` : 'OSC';
+    if (c.type === 'osc') return (c.address ? `OSC:${c.address}` : 'OSC') + mark;
     // Standard-mapping names. Without this every gamepad badge fell through
     // to the generic slice below and read "GAME", so twenty bindings looked
     // identical.
@@ -756,13 +760,13 @@ export class Parameter {
       const names = kind === 'axis'
         ? ['LX', 'LY', 'RX', 'RY']
         : ['A', 'B', 'X', 'Y', 'LB', 'RB', 'LT', 'RT', 'SEL', 'STA', 'L3', 'R3', '↑', '↓', '←', '→', 'HOME'];
-      return `G:${names[Number(n)] ?? n}`;
+      return `G:${names[Number(n)] ?? n}` + mark;
     }
     if (c.type.startsWith('stroke-')) {
       const parts = c.type.split('-');
       return `S${parts[1] ?? '?'}${(parts[2] ?? 'x').toUpperCase()}`;
     }
-    return labels[c.type] ?? c.type.toUpperCase().slice(0, 4);
+    return (labels[c.type] ?? c.type.toUpperCase().slice(0, 4)) + mark;
   }
 
   get controllerClass() {

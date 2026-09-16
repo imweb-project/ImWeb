@@ -64,6 +64,21 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   address (`OSC:/flic/1`), the arm expires after 10 s, and traffic during the
   window does not drive the parameter being learned.
 
+- **Latch: a button can drive a continuous parameter both ways.** A press-only
+  device sends the same message every click, so a Flic could push a value up
+  and never back. Latched, each press alternates between the row's **min and
+  max fields** — the same fields that already bound every controller write, so
+  the two ends are whatever you set them to. It lives in the shared input rule,
+  so a Flic, a MIDI pad, a gamepad button and a key behave identically; it is
+  off by default, offered only on continuous parameters (a toggle already flips
+  on the press) and never on a stick axis (a position, not a button). The
+  destination is chosen from where the value IS — the press travels to the end
+  it is further from — so a state recall cannot leave the button out of step,
+  which a remembered side would. The badge shows `⇄`, without which it would be
+  invisible state; the checkbox is in the badge popover. Deliberately one
+  option rather than a family of modes: "set to X" is already "set the row's
+  max to X", and momentary already works for devices that send 1 then 0.
+
 ### Changed
 - **One button rule for every input.** "Press acts, release does not" existed
   five times over — MIDI CC, MIDI note, the computer keyboard, the gamepad and

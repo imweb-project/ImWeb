@@ -40,6 +40,22 @@ export const MUTATIONS = [
     replace: '    param.toggle();',
   },
   {
+    name: 'input: a latched button acts on the release too',
+    audit: 'audit-control-input.mjs',
+    file: 'src/controls/controlInput.js',
+    why: 'a momentary device sends 1 then 0, so acting on the release flips the value straight back — the parameter visibly flickers to the far end and returns, and the button reads as doing nothing at all',
+    find: '    if (!isPress) return false;   // the release never acts, exactly as a toggle',
+    replace: '    if (false) return false;',
+  },
+  {
+    name: 'input: latch always travels to the same end',
+    audit: 'audit-control-input.mjs',
+    file: 'src/controls/controlInput.js',
+    why: 'choosing the destination from where the value IS is what survives a state recall: pin it to one end and the first press after a recall does nothing visible, which reads as a dropped press on stage',
+    find: '    const n = param.value < (lo + hi) / 2 ? 1 : 0;',
+    replace: '    const n = 1;',
+  },
+  {
     name: 'input: a trigger fires twice per press',
     audit: 'audit-control-input.mjs',
     file: 'src/controls/controlInput.js',

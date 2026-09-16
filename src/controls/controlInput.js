@@ -62,7 +62,44 @@ export function applyControlInput(param, { norm = 0, isPress = false, pickupBloc
     return isPress;
   }
 
+  // ── Latch ─────────────────────────────────────────────────────────────────
+  // A press-only device — a Flic sends the same message every click — can
+  // otherwise drive a continuous parameter one way and never back. Latched, a
+  // press ALTERNATES between the row's two ends.
+  //
+  // Which end is decided by where the value IS, not by a remembered side: the
+  // press travels to whichever end it is further from. That is what makes a
+  // state recall harmless — a recall that moves the value also moves the next
+  // press's destination, where a stored "side" would desynchronise and read as
+  // a skipped press.
+  //
+  // The ends are the row's own min/max fields (`ctrlMin`/`ctrlMax`), which
+  // already bound every controller write, so "max" means whatever that field
+  // says rather than the parameter's absolute ceiling.
+  if (isLatched(param)) {
+    if (!isPress) return false;   // the release never acts, exactly as a toggle
+    const lo = param.ctrlMin ?? param.min;
+    const hi = param.ctrlMax ?? param.max;
+    const n = param.value < (lo + hi) / 2 ? 1 : 0;
+    // `setNormalized` applies `invert` before mapping, so without this flip a
+    // latched press under invert lands on the end it started from and sticks.
+    param.setNormalized(param.invert ? 1 - n : n);
+    return true;
+  }
+
   if (pickupBlocked) return false;
   param.setNormalized(Math.max(0, Math.min(1, norm)));
   return true;
+}
+
+/**
+ * Latch applies to a CONTINUOUS parameter driven by a button, and nowhere else.
+ *
+ * A toggle already alternates on the press, so the option would be redundant
+ * there; a trigger has nothing to alternate between. Read from the controller
+ * rather than passed in by each call site: five callers that must all remember
+ * to forward a flag is the duplication this module exists to remove.
+ */
+export function isLatched(param) {
+  return !!param?.controller?.latch && param.type === 'continuous';
 }

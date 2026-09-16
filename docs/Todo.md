@@ -48,7 +48,7 @@ All current banks, states, and tables will be permanently replaced with the fact
 
 **Controller mapping — decided 2026-09-16, not yet built:**
 
-- [ ] **Latch: ONE option, not a family.** A press on a CONTINUOUS param
+- [x] **Latch: ONE option, not a family.** BUILT 2026-09-16. A press on a CONTINUOUS param
       alternates between the row's **min and max fields** — those already
       bound every controller write (`ctrlMin ?? min` / `ctrlMax ?? max`,
       ParameterSystem ~464), so the two ends are configurable today and
