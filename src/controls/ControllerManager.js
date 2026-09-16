@@ -130,6 +130,13 @@ export class ControllerManager {
      * already edge-guarded; MIDI CC was the one input path that never was.
      */
     this._ccPrev = new Map();
+    this._gpLearn = null;        // armed gamepad learn — see startGamepadLearn
+    this._gpLearnTimer = null;
+    /** How long learn keeps watching after the first qualifying move. Audits shorten it. */
+    this.gamepadLearnWindowMs = 400;
+    /** Clock for learn windows, replaceable so audits do not wait in real time. */
+    this._now = () => performance.now();
+    this._padShown = false;
     this._midiLearnParam = null; // paramId waiting for MIDI learn
     this._midiLearnTimer = null;
     this._midiLearnSeq = false;
@@ -1026,6 +1033,83 @@ export class ControllerManager {
     bridge?.setControllerManager?.(this);
   }
 
+  /**
+   * Arm gamepad learn: the next control MOVED on the pad binds to this param.
+   *
+   * The menu names the standard layout (A/Cross, LB/L1…), which means nothing
+   * on a pad printed 1–10 — the owner's Logitech RumblePad 2 — and nothing at
+   * all on a pad the browser does not map as standard. Learning asks the pad
+   * instead of the label.
+   *
+   * Decided by `_observeGamepadLearn` from a baseline, not by the first change:
+   * a resting stick is never exactly still, and a diagonal push crosses one
+   * axis a frame before the other. See there for the ranking.
+   */
+  startGamepadLearn(paramId, onLearned = null) {
+    this._gpLearn = { paramId, onLearned, base: null, cands: new Map(), settleAt: null };
+    document.getElementById('status-pad')?.classList.add('learning');
+    if (!navigator.getGamepads?.()?.some?.(Boolean)) {
+      // Browsers expose a pad only after a button press on it, so the first
+      // press may be spent making it visible. Say so rather than look broken.
+      console.warn('[Gamepad] no pad visible yet — press a pad button, then the control to learn');
+    }
+    clearTimeout(this._gpLearnTimer);
+    this._gpLearnTimer = setTimeout(() => this.cancelGamepadLearn(), 10000);
+  }
+
+  cancelGamepadLearn() {
+    this._gpLearn = null;
+    clearTimeout(this._gpLearnTimer);
+    document.getElementById('status-pad')?.classList.remove('learning');
+  }
+
+  /**
+   * One frame of an armed gamepad learn. Never binds before the window closes.
+   *
+   * Every control is scored in the same unit — how far it travelled from where
+   * it was when learn saw the pad first, where a press scores 1 and a stick
+   * pushed from centre to its end also scores 1 (axes count double, since the
+   * 0..1 reading puts centre at 0.5). A control qualifies at half travel, so a
+   * resting stick's drift and the wobble of a stick click cannot win. The best
+   * score when the window closes binds; a tie goes to the control that moved
+   * FIRST, so a diagonal push binds the axis you meant only if it went further.
+   *
+   * Axes are measured from the baseline; buttons by a rise against the LAST
+   * frame. A button already held when learn arms therefore has no rise until it
+   * is let go and pressed again — comparing it to the baseline instead would
+   * make that button unlearnable for as long as learn stays armed.
+   */
+  _observeGamepadLearn(axes, btnDown) {
+    const L = this._gpLearn;
+    if (!L.base) { L.base = { axes: axes.slice() }; L.lastBtn = btnDown.slice(); return; }
+    const now = this._now();
+    const note = (key, score) => {
+      if (score < 0.5) return;
+      const c = L.cands.get(key);
+      if (c) c.score = Math.max(c.score, score);
+      else L.cands.set(key, { score, first: now });
+      L.settleAt ??= now + this.gamepadLearnWindowMs;
+    };
+    axes.forEach((v, i) => note(`axis-${i}`, Math.abs(v - (L.base.axes[i] ?? v)) * 2));
+    btnDown.forEach((d, i) => { if (d && !L.lastBtn[i]) note(`btn-${i}`, 1); });
+    L.lastBtn = btnDown.slice();
+    if (L.settleAt === null || now < L.settleAt) return;
+
+    let best = null;
+    for (const [key, c] of L.cands) {
+      if (!best || c.score > best.c.score || (c.score === best.c.score && c.first < best.c.first)) {
+        best = { key, c };
+      }
+    }
+    const { paramId, onLearned } = L;
+    const type = `gamepad-${best.key}`;
+    this.cancelGamepadLearn();
+    this.setPageBinding(paramId, { type });
+    this._repaintCtrlBadge(paramId);
+    console.info(`[Gamepad] Learned ${type} → ${paramId}`);
+    onLearned?.(type);
+  }
+
   /** Arm OSC learn: the next incoming address binds to this param. */
   startOSCLearn(paramId, onLearned = null) {
     if (!this.oscBridge) { console.warn('[OSC] no bridge wired'); return; }
@@ -1597,6 +1681,13 @@ export class ControllerManager {
     // Use the first connected gamepad
     let gp = null;
     for (const g of gamepads) { if (g) { gp = g; break; } }
+    // The PAD chip lights while the browser can see a pad — which it will not
+    // until a button has been pressed on it. Written on change only: this runs
+    // every frame.
+    if (!!gp !== this._padShown) {
+      this._padShown = !!gp;
+      document.getElementById('status-pad')?.classList.toggle('active', this._padShown);
+    }
     if (!gp) { this._gamepadPrev = null; return; }
 
     const q = v => Math.round(v * 1024) / 1024;
@@ -1618,6 +1709,9 @@ export class ControllerManager {
 
     const prev = this._gamepadPrev;
     this._gamepadPrev = { id: gp.id, index: gp.index, axes, btnVal, btnDown };
+    // Learn watches underneath rather than freezing the pad, as OSC learn does:
+    // arming it must not stop controls that are already mapped.
+    if (this._gpLearn) this._observeGamepadLearn(axes, btnDown);
     if (!prev || prev.id !== gp.id || prev.index !== gp.index) return;
 
     this.ps.getAll().forEach(p => {

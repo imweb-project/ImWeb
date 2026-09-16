@@ -2239,6 +2239,11 @@ export class ContextMenu {
           this.hide();
           this.ctrl.startOSCLearn?.(paramId);
         }
+        if (action === 'gamepad-learn') {
+          const paramId = this._currentParam.id;
+          this.hide();
+          this.ctrl.startGamepadLearn?.(paramId);
+        }
         if (action === 'slew') {
           const p   = this._currentParam;
           const cur = `${p.slew?.toFixed(3) ?? '0'}${p.slewShape === 'ease' ? ' ease' : ''}`;

@@ -1354,6 +1354,48 @@ export const MUTATIONS = [
     replace: "    if (!ControllerManager.PAGE_EXEMPT.has(paramId)) {",
   },
 
+  // ── Gamepad Learn ──────────────────────────────────────────────────────────
+  {
+    name: 'gamepad learn binds the first thing that changes',
+    audit: 'audit-gamepad.mjs',
+    file: 'src/controls/ControllerManager.js',
+    why: 'the obvious first version: a resting stick is never exactly still, so learn binds a drifting axis before the hand reaches the pad',
+    find: '      if (score < 0.5) return;',
+    replace: '      if (score <= 0) return;',
+  },
+  {
+    name: 'gamepad learn compares buttons to the baseline',
+    audit: 'audit-gamepad.mjs',
+    file: 'src/controls/ControllerManager.js',
+    why: 'caught while writing this: a button held when learn arms can never rise against the baseline, so it is unlearnable until learn times out — and nothing on screen says why',
+    find: '    btnDown.forEach((d, i) => { if (d && !L.lastBtn[i]) note(`btn-${i}`, 1); });\n    L.lastBtn = btnDown.slice();',
+    replace: '    btnDown.forEach((d, i) => { if (d && !L.lastBtn[i]) note(`btn-${i}`, 1); });',
+  },
+  {
+    name: 'gamepad learn binds on the first frame instead of after the window',
+    audit: 'audit-gamepad.mjs',
+    file: 'src/controls/ControllerManager.js',
+    why: 'a diagonal push binds whichever axis crossed half travel a frame earlier, even when the hand was pushing the other way',
+    find: '    if (L.settleAt === null || now < L.settleAt) return;',
+    replace: '    if (L.settleAt === null) return;',
+  },
+  {
+    name: 'gamepad learn freezes the pad while armed',
+    audit: 'audit-gamepad.mjs',
+    file: 'src/controls/ControllerManager.js',
+    why: 'arming learn mid-set would silently stop every control already mapped on the pad for up to ten seconds',
+    find: '    if (this._gpLearn) this._observeGamepadLearn(axes, btnDown);',
+    replace: '    if (this._gpLearn) { this._observeGamepadLearn(axes, btnDown); return; }',
+  },
+  {
+    name: 'gamepad learn bypasses the page writer',
+    audit: 'audit-gamepad.mjs',
+    file: 'src/controls/ControllerManager.js',
+    why: 'the OSC learn defect, on the pad: bound live but not in the page, so the next page switch erases a binding the user just made',
+    find: '    this.setPageBinding(paramId, { type });',
+    replace: '    this.assign(paramId, { type });',
+  },
+
   // ── A cleared binding must stop advertising itself ─────────────────────────
   {
     name: 'clearing assignments repaints nothing',

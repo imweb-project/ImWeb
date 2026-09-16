@@ -71,6 +71,21 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   stash is drained before the import lands, which is silent by nature.
 
 ### Added
+- **Gamepad Learn.** Right-click a row → *Gamepad Learn*, then move a stick or
+  press a button. The menu's gamepad items name the standard layout (A/Cross,
+  LB/L1…), which means nothing on a pad printed 1–10 such as a Logitech
+  RumblePad 2, and nothing at all when the browser does not map a pad as
+  standard; learn asks the pad instead. Controls are scored by how far they
+  travelled from where learn first saw them — a press scores the same as a
+  stick pushed to its end, and nothing under half travel qualifies, so stick
+  drift cannot bind — and the best one after a short window wins, which is what
+  makes a diagonal push bind the axis you meant. It binds into the current
+  mapping page, and controls already mapped keep working while it is armed. A
+  **PAD** chip in the status bar lights once the browser can see a pad (only
+  after a button press on it) and pulses while learn waits.
+  `tests/audit-gamepad.mjs` drives a non-standard ten-button pad with a hat
+  D-pad. 5 mutations, 5/5 caught; one real defect found while writing it — a
+  button held when learn armed could never be learned.
 - **A page switch tells an OSC remote where its controls now are.** Feedback
   rides on a parameter's `onChange`, and switching mapping pages changes which
   parameter is behind an address without changing any value, so a TouchOSC

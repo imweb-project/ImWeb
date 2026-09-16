@@ -223,5 +223,146 @@ console.log('\nthe menu and the badge cover the standard mapping');
     labels.join(' '));
 }
 
+// ── Gamepad Learn ────────────────────────────────────────────────────────────
+// The menu names the standard layout, which means nothing on a pad printed
+// 1–10 (the owner's Logitech RumblePad 2) or one the browser does not map as
+// standard. Learn asks the pad. Every scenario reads what got BOUND, and the
+// last one drives the learned binding, because a bind that names the right
+// index and then does nothing is the failure a user would actually meet.
+console.log('\ngamepad learn binds what the hand moved, not what the menu calls it');
+{
+  // A DirectInput pad as a browser may report it: no standard mapping, ten
+  // buttons, and a D-pad reported as one HAT axis resting far outside -1..1.
+  const HAT_REST = 1.2857;
+  const oddPad = () => ({
+    id: 'Logitech Cordless RumblePad 2', index: 0, mapping: '',
+    axes: [0, 0, 0, 0, 0, 0, 0, 0, 0, HAT_REST],
+    buttons: Array.from({ length: 10 }, () => ({ pressed: false, value: 0 })),
+  });
+  const learnRig = (padFactory = oddPad) => {
+    const r = rig();
+    pads[0] = r.pad = padFactory();
+    let t = 0;
+    r.cm._now = () => t;
+    r.cm.gamepadLearnWindowMs = 100;
+    r.advance = (ms, frames = 1) => {
+      for (let i = 0; i < frames; i++) { t += ms / frames; r.cm._tickGamepad(); }
+    };
+    r.press = (i, down = true) => { r.pad.buttons[i] = { pressed: down, value: down ? 1 : 0 }; };
+    r.tick(2);                                   // pad seen; first frame is a reading
+    return r;
+  };
+  const bound = (ps, id) => ps.get(id).controller?.type;
+
+  {
+    const { ps, cm, advance, press } = learnRig();
+    cm.startGamepadLearn('t.tog');
+    advance(16);                                 // baseline
+    press(3);
+    advance(16);
+    check('nothing binds before the window closes', !bound(ps, 't.tog'), bound(ps, 't.tog'));
+    press(3, false);
+    advance(200, 10);
+    check('button "4" on a non-standard pad binds gamepad-btn-3',
+      bound(ps, 't.tog') === 'gamepad-btn-3', bound(ps, 't.tog'));
+    check('and learn disarms after binding', cm._gpLearn === null);
+  }
+  {
+    const { ps, cm, pad, advance } = learnRig();
+    cm.startGamepadLearn('t.cont');
+    advance(16);
+    pad.axes[0] = 1;                             // full push right
+    advance(200, 10);
+    check('a full stick push binds that axis', bound(ps, 't.cont') === 'gamepad-axis-0',
+      bound(ps, 't.cont'));
+  }
+  {
+    // A diagonal crosses Y first but travels further on X: X was meant.
+    const { ps, cm, pad, advance } = learnRig();
+    cm.startGamepadLearn('t.cont');
+    advance(16);
+    pad.axes[1] = 0.6;
+    advance(16);
+    pad.axes[0] = 1;
+    advance(200, 10);
+    check('a diagonal binds the axis that went FURTHER, not the one that crossed first',
+      bound(ps, 't.cont') === 'gamepad-axis-0', bound(ps, 't.cont'));
+  }
+  {
+    const { ps, cm, pad, advance } = learnRig();
+    cm.startGamepadLearn('t.cont');
+    advance(16);
+    pad.axes[2] = 0.3; pad.axes[3] = -0.35;      // a worn stick at rest
+    advance(500, 30);
+    check('stick drift under half travel binds nothing', !bound(ps, 't.cont'),
+      bound(ps, 't.cont'));
+    check('and learn is still armed, waiting for a real move', cm._gpLearn !== null);
+  }
+  {
+    const { ps, cm, pad, advance } = learnRig();
+    cm.startGamepadLearn('t.tog');
+    advance(16);
+    pad.axes[9] = -1;                            // D-pad up on the hat
+    advance(200, 10);
+    check('a D-pad reported as a hat axis binds that axis',
+      bound(ps, 't.tog') === 'gamepad-axis-9', bound(ps, 't.tog'));
+  }
+  {
+    const { ps, cm, advance, press } = learnRig();
+    press(5);                                    // already held when learn arms
+    advance(16);
+    cm.startGamepadLearn('t.tog');
+    advance(200, 10);
+    check('a button held when learn arms does not bind', !bound(ps, 't.tog'),
+      bound(ps, 't.tog'));
+    press(5, false); advance(16);
+    press(5); advance(200, 10);
+    check('pressing it again does', bound(ps, 't.tog') === 'gamepad-btn-5',
+      bound(ps, 't.tog'));
+  }
+  {
+    const { ps, cm, advance, press } = learnRig();
+    ps.get('t.tog2').controller = { type: 'gamepad-btn-0' };
+    cm.startGamepadLearn('t.tog');
+    advance(16);
+    press(0); advance(16);
+    check('a control already mapped still works while learn is armed',
+      ps.get('t.tog2').value === 1, String(ps.get('t.tog2').value));
+  }
+  {
+    const { ps, cm, advance, press } = learnRig();
+    cm._mapPage = 1;                             // learning on page 2
+    cm.startGamepadLearn('t.tog');
+    advance(16);
+    press(2); advance(16); press(2, false);
+    advance(200, 10);
+    const pages = ps.get('t.tog').midiPages ?? [];
+    check('learn lands in the CURRENT page', pages[1]?.type === 'gamepad-btn-2',
+      JSON.stringify(pages));
+    check('and not in page 1', !pages[0], JSON.stringify(pages));
+  }
+  {
+    // End to end: the learned button must then actually drive the row.
+    const { ps, cm, advance, press } = learnRig();
+    cm.startGamepadLearn('t.tog');
+    advance(16);
+    press(7); advance(16); press(7, false);
+    advance(200, 10);
+    const before = ps.get('t.tog').value;
+    press(7); advance(16);
+    check('the learned button then toggles the row', ps.get('t.tog').value !== before,
+      `${before} -> ${ps.get('t.tog').value}`);
+  }
+  {
+    const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+    const ui = readFileSync(new URL('../src/ui/UI.js', import.meta.url), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    check('the row menu offers Gamepad Learn', /data-action="gamepad-learn"/.test(html));
+    check('and the menu action arms it',
+      /action === 'gamepad-learn'[\s\S]{0,200}?startGamepadLearn/.test(ui));
+    check('the status bar has the PAD chip learn lights up', /id="status-pad"/.test(html));
+  }
+}
+
 console.log(failures ? `\n${failures} failure(s)` : '\nall gamepad checks pass');
 process.exit(failures ? 1 : 0);

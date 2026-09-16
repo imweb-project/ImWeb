@@ -57,6 +57,9 @@
                 hidden
             ></span>
             <span id="status-osc" class="indicator" title="OSC">OSC</span>
+            <!-- Lit while the browser can see a gamepad (only after a button
+                 press on it); pulses while Gamepad Learn is armed. -->
+            <span id="status-pad" class="indicator" title="Gamepad — press a pad button to connect">PAD</span>
             <canvas
                 id="status-vu"
                 width="40"
@@ -1342,6 +1345,9 @@ ImWeb</textarea
             </button>
             <button class="menu-item" data-action="osc-learn">
                 OSC Learn
+            </button>
+            <button class="menu-item" data-action="gamepad-learn">
+                Gamepad Learn
             </button>
             <button class="menu-item" data-ctrl="midi-note">
                 MIDI Note...
