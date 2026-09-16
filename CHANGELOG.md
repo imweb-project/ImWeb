@@ -8,6 +8,10 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+---
+
+## [0.25.0] — 2026-09-16 — Hands On
+
 ### Fixed
 - **The two page-step rows can be told apart.** "Map Page −" and "Map Page +"
   truncate from the end in the I/O panel, so both rendered as "Map Page..." —
@@ -218,9 +222,9 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   and every path calls it, with `tests/audit-control-input.mjs` driving all five
   through one scenario table. Two asymmetries are kept deliberately: a gamepad
   **axis** is a position rather than a button, so a toggle bound to a stick
-  still follows it across half scale; and soft takeover is still consulted only
-  for MIDI, because it is armed by a mapping-page switch and a gamepad or OSC
-  binding has nothing to pick up. Mapping pages remain MIDI-only.
+  still follows it across half scale. (When this landed, mapping pages and soft
+  takeover were still MIDI-only; both reached every physical input later in
+  this release — see *Mapping pages hold every physical binding* above.)
 - **OSC feedback goes only to what the controller talks to.** It used to be
   every changing parameter, sent as `/imweb/<id>` — measured at **70–90
   messages a second** to a Flic, which has nothing to display and never asked.
@@ -231,9 +235,10 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   sent its parameter's current value once, so it jumps to where the parameter
   actually is. The trade-off: a display-only widget that never sends anything is
   never heard from, so it receives nothing until it is touched or learned.
-  Learned bindings go through `ControllerManager.assign()`, so they persist
-  through mapping autosave, banks and project files with no new plumbing, and
-  a learned control obeys the same button rules as MIDI and the gamepad.
+  Learned bindings go through the mapping-page writer (`setPageBinding`), so
+  they persist through mapping autosave, banks and project files with no new
+  plumbing, and a learned control obeys the same button rules as MIDI and the
+  gamepad.
 
 ---
 

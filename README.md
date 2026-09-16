@@ -3,7 +3,7 @@
 ![ImWeb Preview](assets/preview.png)
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/version-v0.24.0-brightgreen)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-v0.25.0-brightgreen)](CHANGELOG.md)
 [![Tests](https://github.com/imweb-project/ImWeb/actions/workflows/test.yml/badge.svg)](https://github.com/imweb-project/ImWeb/actions/workflows/test.yml)
 [![Open Collective](https://img.shields.io/badge/Open%20Collective-support-7FADF2?logo=opencollective&logoColor=white)](https://opencollective.com/imweb)
 [![Live Demo](https://img.shields.io/badge/demo-live-orange)](https://imweb.image-ine.org)
@@ -17,7 +17,7 @@
 
 ## Contents
 
-[What This Is](#what-this-is) · [Quick Start](#quick-start) · [Features](#features-v0240) · [Keyboard Reference](#keyboard-reference) · [Architecture](#architecture) · [Roadmap](#roadmap) · [Contributing](#contributing) · [Credits](#credits) · [License](#license) · [Support](#support)
+[What This Is](#what-this-is) · [Quick Start](#quick-start) · [Features](#features-v0250) · [Keyboard Reference](#keyboard-reference) · [Architecture](#architecture) · [Roadmap](#roadmap) · [Contributing](#contributing) · [Credits](#credits) · [License](#license) · [Support](#support)
 
 ---
 
@@ -63,7 +63,7 @@ Firefox and Safari supported in WebGL mode with minor limitations.
 
 ---
 
-## Features (v0.24.0)
+## Features (v0.25.0)
 
 ### Input Sources
 
@@ -120,6 +120,11 @@ Right-click any parameter to assign:
 - Fixed value
 - Key (keyboard trigger)
 - Expression (math formula)
+- OSC address (TouchOSC, Max, a Flic button) — or just **OSC Learn**: press the control and it binds
+- Gamepad stick or button — or **Gamepad Learn**: move the control and it binds, whatever the pad calls it
+- **Latch** — a button alternates a continuous parameter between the row's min and max
+- **Relative sticks** — a stick pushes the value and lets go of it, instead of springing back
+- **Four mapping pages** for every physical input (MIDI, OSC, gamepad), with soft takeover where a control has a position to take up
 - Parameter lock
 - Slew/smoothing (configurable lag time)
 
@@ -136,6 +141,13 @@ Right-click any parameter to assign:
 - MIDI Program Change → preset recall
 - MIDI Clock sync (BPM lock)
 - MIDI output feedback (motorized faders)
+- MIDI In and PAD IN monitors — the last controls touched, what they are called, and what they already drive
+
+### OSC & Gamepad
+
+- OSC over a bundled relay (`node tools/osc-relay.mjs`) — the browser cannot open a UDP socket
+- OSC feedback to exactly what the remote talks to, including a push to the new page's positions on a page switch
+- Any standard gamepad; a PAD chip shows when the browser can see it
 
 ### Output
 
@@ -281,6 +293,7 @@ ffmpeg -i old.mp4 -c copy -movflags +faststart new.mp4
 
 Recently shipped:
 
+- [x] Hands on — OSC and Gamepad Learn, Latch, relative sticks, mapping pages for every physical input, PAD IN (v0.25)
 - [x] AI that can see — canvas vision, streaming shader generation, Refine mode, whole-instrument State Generator, token meter (v0.24)
 - [x] Text layer, playable 3D orbit camera, MIDI mapping pages with soft takeover (v0.23)
 - [x] Depth of field and bokeh (v0.22)

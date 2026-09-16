@@ -1878,6 +1878,46 @@ until you touch the stick again. Toggles flip and triggers fire on the press;
 holding and releasing do nothing. Only the first connected pad is read. The
 Home/PS button is not offered: the browser or OS usually claims it.
 
+**The PAD chip** in the status bar lights once the browser can see a pad. A
+browser hides every gamepad until a button has been pressed on it, so press one
+first.
+
+**Gamepad Learn** (easiest route): right-click a parameter row → **Gamepad
+Learn**, then press the button or push the stick you want. The menu names the
+standard layout (A/Cross, LB/L1…), which says nothing on a pad whose buttons are
+printed 1–10; learn asks the pad instead. The control that travelled furthest
+in about half a second binds — a press counts the same as a stick pushed to its
+end, and anything under half travel is ignored, so a stick resting slightly
+off-centre cannot steal the binding. The PAD chip pulses while learn waits (10
+seconds), and controls already mapped keep working meanwhile.
+
+**PAD IN** sits under MIDI In in the I/O panel (Sources → Live In → I / O).
+Press or move anything and it shows the control's name — exactly what the badge
+will say once mapped (`G:↑`, `G:LX 0.73`, `G:RT 0.40`) — and, on the right, what
+it already drives on the current page. Repeated use of one control stays on one
+line with a count.
+
+Badge names follow the standard layout: `G:A` `G:B` `G:X` `G:Y` are the four face
+buttons, `G:LB` `G:RB` `G:LT` `G:RT` the shoulders, `G:SEL` `G:STA` the two middle
+buttons, `G:L3` `G:R3` the stick clicks, `G:↑ ↓ ← →` the D-pad, and `G:LX` `G:LY`
+`G:RX` `G:RY` the left and right sticks, side to side and up and down. On a stick,
+**up reads low**: that is how every browser reports it, so use Invert if a row
+should rise when you push up.
+
+**Relative (push, stays)** — a stick springs back to centre, so as a position it
+holds a value only while you hold the stick. On a continuous row bound to a
+stick, right-click the badge and tick **Relative**: pushing now *moves* the
+value, faster the further you push, and letting go leaves it where it got to.
+A full push crosses the row's min…max in **Full range (s)** (default 2 s).
+Pushing up raises the value; Invert reverses it. The badge shows `↕`. Relative
+uses a much wider dead zone than a position, because a stick that does not
+return exactly to centre would otherwise creep the value by itself — a worn or
+dirty stick that rests far off-centre can still creep, and is better cleaned.
+
+**Older pads with a MODE button** (Logitech RumblePad and similar): with the MODE
+light on, the D-pad and left stick swap roles, so the D-pad arrives on the stick
+axes. Keep MODE off.
+
 ---
 
 #### Wacom / Stylus Pressure
@@ -2029,6 +2069,34 @@ Putting an S-curve table on an S&H changes which random values come out, not how
 abruptly the picture arrives at them — that is what the Slew curve is for.
 
 ---
+
+### Mapping Pages
+
+A controller has far fewer controls than ImWeb has parameters, so bindings live
+on **four mapping pages**. Switching page swaps every physical binding at once —
+the same fader, button or stick drives something different on each page.
+
+- **Switch pages** in the I/O panel (Sources → Live In → I / O): **Map Page**
+  selects 1–4 directly; **Prev Page** and **Next Page** step through them and are
+  the rows to bind to hardware buttons (a desk's TRACK ◀ ▶, a pad button, a
+  Flic). The page rows themselves are never paged, so you cannot strand yourself
+  on a page with no way back.
+- **What is paged:** every physical input — MIDI CC and notes, learned OSC
+  addresses, gamepad sticks and buttons. A binding lands on the page that was
+  current when you made it. **Not paged:** keyboard keys (always attached, a
+  hundred of them) and generated controllers — LFO, Random, Fixed, expression,
+  audio, mouse, tilt — which stay put across page switches.
+- **Settings stay with the page.** Latch, Relative, MIDI channel and the other
+  badge-popover settings belong to the binding on that page, and pages are saved
+  in banks, `.imweb` files and the mapping autosave.
+- **Soft takeover** (the **Pickup** row, on by default): after a page switch a
+  MIDI fader or gamepad stick does not move its parameter until it passes
+  through the current value, so nothing jumps. Controls with no position to take
+  up are exempt and act on the first touch: buttons, latched rows, relative
+  sticks, and every OSC binding (an OSC remote is told the new positions
+  instead).
+- **Clear All MIDI** removes MIDI bindings on every page and keeps OSC and
+  gamepad bindings.
 
 ### External Mapping (X-Map)
 
@@ -2411,9 +2479,9 @@ node tools/osc-relay.mjs            # UDP 9000 → WebSocket 8080
   - `/imweb/trigger/<paramId>`: fire a trigger on the press and ignore the release.
   - `/imweb/preset/<n>`: recall preset n.
   - A message with no argument counts as a press.
-- **Feedback:** while connected, ImWeb reports changes back, batched every 50 ms with one message per parameter, so a layout follows state recalls, LFOs and the mouse. It reports **only the parameters your controller actually talks to**: a learned binding reports to its own address (a fader at `/1/fader1` tracks `/1/fader1`), and a parameter the controller has driven by id reports as `/imweb/<paramId>`. Everything else is silent — without that narrowing a patch with LFOs running measured 70–90 messages a second at a device with nothing to display. A value the remote has just set is not sent straight back to it, and triggers are not sent. A display-only widget that never sends anything is never heard from and so gets nothing; touch it once, or learn it, and it starts tracking. The relay sends feedback to its third argument, which should be the port your app receives on (`node tools/osc-relay.mjs 9000 8080 192.168.1.20:9001`). Without that argument it replies to the last device that sent OSC, at the port it sent from.
+- **Feedback:** while connected, ImWeb reports changes back, batched every 50 ms with one message per parameter, so a layout follows state recalls, LFOs and the mouse. It reports **only the parameters your controller actually talks to**: a learned binding reports to its own address (a fader at `/1/fader1` tracks `/1/fader1`), and a parameter the controller has driven by id reports as `/imweb/<paramId>`. Everything else is silent — without that narrowing a patch with LFOs running measured 70–90 messages a second at a device with nothing to display. A value the remote has just set is not sent straight back to it, and triggers are not sent. A display-only widget that never sends anything is never heard from and so gets nothing; touch it once, or learn it, and it starts tracking. On a **mapping-page switch** each learned control is sent the position of the parameter now behind it, so a TouchOSC layout repositions itself instead of showing the previous page — a remote can be told where to be, which is why OSC bindings skip soft takeover. The relay sends feedback to its third argument, which should be the port your app receives on (`node tools/osc-relay.mjs 9000 8080 192.168.1.20:9001`). Without that argument it replies to the last device that sent OSC, at the port it sent from.
 - **OSC Learn** (easiest route): right-click any parameter row → **OSC Learn**, then press the button or move the fader on your controller. The address it sends binds to that row, so you never type a parameter id into the controller app — point it at `/flic/1` or anything else you like. ImWeb listens for about a second and binds **the control that moved**, so a layout that streams an accelerometer or a Max patch sending continuously does not steal the binding: a swept fader beats anything jittering in place, and a button that speaks once beats a stream running at sixty a second. `/imweb/...` addresses are never learned (they already work by id). The badge then reads `OSC:/flic/1`, the arm lasts 10 seconds, and the traffic during the window does not drive the parameter being learned. Learned bindings survive a reload (mapping autosave) and are saved in banks and `.imweb` files. A learned button flips a toggle on the press, fires a trigger once, and drives a continuous parameter by value — a button that sends no value counts as full scale.
-- **Latch** (any button, not just OSC): right-click a parameter's badge → **Latch (press alternates)**. On a continuous parameter, each press then alternates between that row's **min and max fields** — which is what lets a press-only device like a Flic drive it both ways, instead of only upward. The badge shows `⇄` while it is on, the release never acts, and the press always travels to whichever end the value is further from, so a state recall cannot leave the button out of step. Off by default; not offered on a toggle (a press already flips one) or on a stick axis (that is a position, not a button).
+- **Latch** (any button, not just OSC): right-click a parameter's badge → **Latch (press alternates)**. On a continuous parameter, each press then alternates between that row's **min and max fields** — which is what lets a press-only device like a Flic drive it both ways, instead of only upward. The badge shows `⇄` while it is on, the release never acts, and the press always travels to whichever end the value is further from, so a state recall cannot leave the button out of step. Off by default; not offered on a toggle (a press already flips one) or on a stick axis (that is a position, not a button — for a stick, see **Relative** under Gamepad).
 - **Status:** OSC dot in status bar (click to toggle/connect)
 
 ---
