@@ -12,7 +12,7 @@ import { PARAM_TYPE, MIDI_PAGES, gamepadControlName } from './ParameterSystem.js
 import { LFOController } from './LFO.js';
 import { BeatDetector }  from './BeatDetector.js';
 import { compileExpression } from './ExprCompiler.js';
-import { applyControlInput, isPagedBinding, isLatched } from './controlInput.js';
+import { applyControlInput, isPagedBinding, isLatched, isRelative } from './controlInput.js';
 
 /**
  * Default sweep range for an X-map targeting an LFO's rate.
@@ -67,6 +67,9 @@ export const PICKUP_EPS = 0.004;
  *
  * Exported and pure so the mapping can be audited without a DOM.
  */
+/** A response table that changes nothing — see `_jog`. */
+const JOG_IDENTITY = { apply: (x) => x };
+
 export function xmapHz(norm, minHz = XMAP_HZ_MIN, maxHz = XMAP_HZ_MAX) {
   const lo = Math.max(1e-6, minHz);
   const hi = Math.max(lo, maxHz);
@@ -137,6 +140,8 @@ export class ControllerManager {
     /** Clock for learn windows, replaceable so audits do not wait in real time. */
     this._now = () => performance.now();
     this._padShown = false;
+    // Relative (jog) sticks: paramId → { n, wrote } — see _jog.
+    this._jogs = new Map();
     // PAD IN monitor — see _recordPad. `_padSeen*`: the last reading SHOWN per
     // control, so a resting stick's jitter is not reported as movement.
     this._padLog = [];
@@ -462,7 +467,7 @@ export class ControllerManager {
     if (this.sound) this.sound.tick();
 
     // Poll gamepads
-    this._tickGamepad();
+    this._tickGamepad(dt);
   }
 
   // ── External Mapping helpers ──────────────────────────────────────────────
@@ -1296,7 +1301,8 @@ export class ControllerManager {
        */
       const cannotPickUp = String(cfg?.type ?? '').startsWith('gamepad-btn-')
         || cfg?.type === 'osc'
-        || isLatched(p);
+        || isLatched(p)
+        || isRelative(p);
       if (cfg && p.type !== PARAM_TYPE.TOGGLE && p.type !== PARAM_TYPE.TRIGGER
               && p.type !== PARAM_TYPE.SELECT && !cannotPickUp) {
         this._pickup.set(p.id, { prev: null });
@@ -1716,7 +1722,7 @@ export class ControllerManager {
    * parameter bound to one button sees the same edge — storing it per
    * parameter let the first binding consume the press. See audit-gamepad.
    */
-  _tickGamepad() {
+  _tickGamepad(dt = 1 / 60) {
     const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
     // Use the first connected gamepad
     let gp = null;
@@ -1784,6 +1790,13 @@ export class ControllerManager {
 
       if (t.startsWith('gamepad-axis-')) {
         const idx = parseInt(t.slice(13));
+        // A jog acts every frame the stick is held, so it runs BEFORE the
+        // change gate below — a stick held still at full push must keep moving
+        // the value. At rest it writes nothing, so it pins nothing.
+        if (isRelative(p)) {
+          if (axes[idx] !== undefined) this._jog(p, axes[idx], idx, gp.mapping === 'standard', dt);
+          return;
+        }
         if (axes[idx] === undefined || axes[idx] === prev.axes[idx]) return;
         // An axis is a POSITION, not a button, so it does not go through the
         // press rule: a toggle bound to a stick is meant to follow the stick
@@ -1807,6 +1820,54 @@ export class ControllerManager {
         if (rise || moved) applyControlInput(p, { norm: btnVal[idx], isPress: rise });
       }
     });
+  }
+
+  /**
+   * One frame of a relative stick: deflection is a speed, release holds.
+   *
+   * `norm` is the axis reading (0..1, centre 0.5, standard deadzone already
+   * applied). A jog needs a much wider dead zone than a position does: a stick
+   * resting even slightly off-centre is not a small error here but a steady
+   * CREEP, which runs the value to its end while nobody is touching the pad.
+   *
+   * Speed: full deflection crosses the row's min..max in `jogTime` seconds
+   * (default 2), proportionally less for a partial push. Pushing UP raises the
+   * value — the browser reports up as low on a standard Y axis, which reads
+   * backwards for a jog — and `invert` reverses the direction.
+   *
+   * **The jog owns an unrounded position.** Reading the parameter back each
+   * frame would lose every sub-step increment on an integer-stepped row
+   * (Pixelate, line counts): a gentle push adds less than one unit per frame,
+   * `_modStep` rounds it straight back, and the value never moves. So the
+   * position is kept here and re-seeded from the parameter only when the
+   * parameter is no longer where the jog last put it — a recall, a drag, another
+   * controller — which is what lets a jog continue from wherever that left it.
+   * Clamped at the row's ends deliberately: a jog that wound up past max would
+   * ignore the first pull back.
+   *
+   * No response table: a table shapes a POSITION, and a jog has none.
+   */
+  _jog(p, norm, idx, standard, dt) {
+    const RDZ = 0.25;
+    let d = norm * 2 - 1;
+    const m = Math.abs(d);
+    if (m < RDZ) return;
+    d = Math.sign(d) * (m - RDZ) / (1 - RDZ);
+    if (standard && (idx === 1 || idx === 3)) d = -d;   // up raises
+    if (p.invert) d = -d;
+
+    const lo = p.ctrlMin ?? p.min;
+    const hi = p.ctrlMax ?? p.max;
+    const here = p._target ?? p.value;
+    const j = this._jogs.get(p.id);
+    let n = j && j.wrote === here ? j.n : Math.max(0, Math.min(1, p.toNorm(here, lo, hi)));
+    const secs = Math.max(0.05, p.controller.jogTime ?? 2);
+    n = Math.max(0, Math.min(1, n + d * dt / secs));
+    // Identity table: `setNormalized` would otherwise resolve the row's own.
+    // `invert` is undone here because setNormalized applies it, and the jog has
+    // already folded it into the direction.
+    p.setNormalized(p.invert ? 1 - n : n, JOG_IDENTITY);
+    this._jogs.set(p.id, { n, wrote: p._target ?? p.value });
   }
 
   // ── Sound ─────────────────────────────────────────────────────────────────

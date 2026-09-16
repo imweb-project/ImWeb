@@ -71,6 +71,23 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   stash is drained before the import lands, which is silent by nature.
 
 ### Added
+- **Relative sticks.** A stick springs back to centre, so as a position it holds
+  a value only while the hand holds the stick. Right-click the badge of a stick
+  binding on a continuous row → tick *Relative (push, stays)*: deflection
+  becomes a speed, and letting go leaves the value where it got to. A full push
+  crosses the row's min..max in *Full range (s)* (default 2), a partial push
+  proportionally slower; pushing up raises, and Invert reverses. The badge shows
+  `↕`. It has a much wider dead zone than a position, because a stick resting
+  off-centre would otherwise creep the value to its end with nobody touching the
+  pad. The jog keeps its own unrounded position — reading it back from the
+  parameter each frame rounds a gentle push to nothing on an integer-stepped row
+  such as Pixelate — and re-seeds only when something else moved the value, so
+  it continues from a recall or a drag. No response table (a table shapes a
+  position), no soft takeover after a page switch (there is no position to pick
+  up), and it stays on its mapping page. The unused `nudge` badge label (`NDG`),
+  which named a controller nothing dispatched, is removed.
+  `tests/audit-gamepad.mjs` and `tests/audit-mapping-pages.mjs`: 8 mutations,
+  8/8 caught.
 - **PAD IN monitor** in the I/O panel, under MIDI In: press or move anything on
   the pad and it shows what that control is called (`G:↑`, `G:LX 0.73`, `G:RT
   0.40`) and what it already drives on the live page. A pad printed 1–10 gives

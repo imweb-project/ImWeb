@@ -719,7 +719,12 @@ export class Parameter {
     // Latch is invisible state otherwise: one button alternating while another
     // does not, with nothing on screen saying which. The marker is the whole
     // reason the option is not confusing.
-    const mark = c.latch && this.type === PARAM_TYPE.CONTINUOUS ? " ⇄" : "";
+    const mark = this.type !== PARAM_TYPE.CONTINUOUS ? ""
+      : c.latch ? " ⇄"
+      // Relative is the same kind of invisible state as Latch: two sticks that
+      // look identical on the badge, one holding its value and one springing back.
+      : c.relative && String(c.type).startsWith("gamepad-axis-") ? " ↕"
+      : "";
     const labels = {
       "mouse-x": "MX",
       "mouse-y": "MY",
@@ -759,7 +764,6 @@ export class Parameter {
       random: "RND",
       fixed: "FXD",
       key: `KEY:${c.key ?? "?"}`,
-      nudge: "NDG",
       "movie-pos": "MVP",
       osc: "OSC",
       expr: `ƒ(t)`,

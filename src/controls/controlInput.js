@@ -129,3 +129,16 @@ export function isPagedBinding(type) {
 export function isLatched(param) {
   return !!param?.controller?.latch && param.type === 'continuous';
 }
+
+/**
+ * Relative applies to a CONTINUOUS parameter driven by a gamepad STICK axis.
+ *
+ * A stick springs back to centre, so as a position it can only hold a value
+ * while the hand holds the stick. Relative, it is a jog: deflection is a SPEED,
+ * and letting go leaves the value where it got to. Buttons and OSC have no
+ * deflection to read a speed from, so the flag means nothing there.
+ */
+export function isRelative(param) {
+  return !!param?.controller?.relative && param.type === 'continuous'
+    && String(param.controller.type).startsWith('gamepad-axis-');
+}

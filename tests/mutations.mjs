@@ -1396,6 +1396,72 @@ export const MUTATIONS = [
     replace: '    this.assign(paramId, { type });',
   },
 
+  // ── Relative sticks ────────────────────────────────────────────────────────
+  {
+    name: 'a relative stick runs behind the change gate',
+    audit: 'audit-gamepad.mjs',
+    file: 'src/controls/ControllerManager.js',
+    why: 'the natural place to add it: a stick held still at full push reads the same every frame, so the jog moves one step when the hand arrives and then stops dead while the stick is still pushed',
+    find: '          if (axes[idx] !== undefined) this._jog(p, axes[idx], idx, gp.mapping === \'standard\', dt);',
+    replace: '          if (axes[idx] !== undefined && axes[idx] !== prev.axes[idx]) this._jog(p, axes[idx], idx, gp.mapping === \'standard\', dt);',
+  },
+  {
+    name: 'the jog reads its position back from the parameter',
+    audit: 'audit-gamepad.mjs',
+    file: 'src/controls/ControllerManager.js',
+    why: 'LEARNED 2026-08-08 in a new shape: on an integer-stepped row a gentle push adds under one unit per frame, the read-back is rounded straight back, and the value never moves while the stick is visibly pushed',
+    find: '    let n = j && j.wrote === here ? j.n : Math.max(0, Math.min(1, p.toNorm(here, lo, hi)));',
+    replace: '    let n = Math.max(0, Math.min(1, p.toNorm(here, lo, hi)));',
+  },
+  {
+    name: 'a relative stick uses the position dead zone',
+    audit: 'audit-gamepad.mjs',
+    file: 'src/controls/ControllerManager.js',
+    why: 'a stick resting slightly off-centre becomes a steady creep: the value runs to its end with nobody touching the pad — the owner\'s RumblePad 2 rests at 0.18',
+    find: '    const RDZ = 0.25;',
+    replace: '    const RDZ = 0;',
+  },
+  {
+    name: 'a relative Y axis keeps the browser\'s up-is-low',
+    audit: 'audit-gamepad.mjs',
+    file: 'src/controls/ControllerManager.js',
+    why: 'pushing the stick up lowers the value — a jog that reads backwards on the axis a performer reaches for first',
+    find: '    if (standard && (idx === 1 || idx === 3)) d = -d;   // up raises\n',
+    replace: '',
+  },
+  {
+    name: 'the jog winds up past the end of the row',
+    audit: 'audit-gamepad.mjs',
+    file: 'src/controls/ControllerManager.js',
+    why: 'held at max for a few seconds, the first several seconds of pulling back do nothing — which reads as the stick being dead',
+    find: '    n = Math.max(0, Math.min(1, n + d * dt / secs));',
+    replace: '    n = n + d * dt / secs;',
+  },
+  {
+    name: 'the jog reads the slewed value instead of where it is headed',
+    audit: 'audit-gamepad.mjs',
+    file: 'src/controls/ControllerManager.js',
+    why: 'with slew on the row the jog re-seeds every frame from a value that lags behind its own last write, so the stick moves the value a fraction of the speed it says',
+    find: '    const here = p._target ?? p.value;',
+    replace: '    const here = p.value;',
+  },
+  {
+    name: 'invert does not reverse a relative stick',
+    audit: 'audit-gamepad.mjs',
+    file: 'src/controls/ControllerManager.js',
+    why: 'the one control a performer has for flipping direction silently does nothing on a jog',
+    find: '    if (p.invert) d = -d;\n',
+    replace: '',
+  },
+  {
+    name: 'soft takeover is armed for a relative stick',
+    audit: 'audit-mapping-pages.mjs',
+    file: 'src/controls/ControllerManager.js',
+    why: 'a jog has no position to cross, so after a page switch the stick would be swallowed until something happened to pass the value — a dead stick that reads as assigned',
+    find: '        || isLatched(p)\n        || isRelative(p);',
+    replace: '        || isLatched(p);',
+  },
+
   // ── PAD IN ─────────────────────────────────────────────────────────────────
   {
     name: 'PAD IN names a control by its raw type, not its badge name',

@@ -689,6 +689,39 @@ console.log('\na popover edit survives a page switch');
       ps.get('t.b').controller?.note === 64, JSON.stringify(ps.get('t.b').controller));
   }
   {
+    // Relative is a binding field like Latch, so it goes through the same
+    // commit — and a relative stick has no position, so pickup must not arm.
+    const { ps, cm } = rig();
+    const checkboxes = (pop) => walk(pop, (n) => n.type === 'checkbox');
+    const labelOf = (box, pop) =>
+      walk(pop, (n) => n.children?.[1] === box)[0]?.children[0]?.textContent;
+
+    cm.setMapPage(1);
+    cm.setPageBinding('t.a', { type: 'gamepad-axis-1' });
+    const pop = open(ps, cm, 't.a');
+    const rel = checkboxes(pop).find((b) => /^Relative/.test(labelOf(b, pop)));
+    check('the popover offers Relative on a continuous stick row', !!rel);
+    const speed = valueOfRow(pop, 'Full range (s)');
+    const speedRow = walk(pop, (n) => n.children?.[1] === speed)[0];
+    check('its speed row is hidden until Relative is on', speedRow?.style.display === 'none');
+    rel.checked = true;
+    rel.fire('change');
+    check('and shown once it is', speedRow?.style.display === '');
+    typeInto(speed, 4);
+    cm.setMapPage(0);
+    cm.setMapPage(1);
+    const c = ps.get('t.a').controller;
+    check('Relative and its speed survive a page switch', c?.relative === true && c?.jogTime === 4,
+      JSON.stringify(c));
+    check('a relative stick is not armed for soft takeover', !cm._pickup.has('t.a'),
+      JSON.stringify([...cm._pickup.keys()]));
+
+    cm.setPageBinding('t.b', { type: 'gamepad-btn-0' });
+    const pop2 = open(ps, cm, 't.b');
+    check('Relative is not offered on a button',
+      !checkboxes(pop2).some((b) => /^Relative/.test(labelOf(b, pop2))));
+  }
+  {
     // A key binding is not paged: an edit must not smuggle it into one, or it
     // would vanish from every other page.
     const { ps, cm } = rig();

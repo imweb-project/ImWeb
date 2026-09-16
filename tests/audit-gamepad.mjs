@@ -434,5 +434,149 @@ console.log('\nPAD IN names each control exactly as its badge will');
     /midi-mon-id">\$\{e\.name\}/.test(main) && !/'LX',\s*'LY'/.test(main));
 }
 
+// ── Relative sticks ──────────────────────────────────────────────────────────
+// A stick springs back, so as a position it holds a value only while held.
+// Relative, deflection is a speed and letting go leaves the value where it got
+// to. Every check reads the VALUE after the frames a performer would spend.
+console.log('\na relative stick pushes the value and lets go of it');
+{
+  const FRAME = 1 / 60;
+  const jogRig = (extra = {}) => {
+    const r = rig();
+    r.ps.register({ id: 't.int', label: 'I', group: 'g', min: 1, max: 200, value: 1, step: 1 });
+    r.run = (secs) => { for (let i = 0; i < Math.round(secs * 60); i++) r.cm._tickGamepad(FRAME); };
+    r.bind = (id, axis, cfg = {}) => {
+      r.ps.get(id).controller = { type: `gamepad-axis-${axis}`, relative: true, ...cfg, ...extra };
+    };
+    r.tick(2);
+    return r;
+  };
+  const near = (a, b, tol) => Math.abs(a - b) <= tol;
+
+  {
+    const { ps, pad, run, bind } = jogRig();
+    bind('t.cont', 0);
+    pad.axes[0] = 1;                             // full push right, held still
+    run(1);
+    const held = ps.get('t.cont').value;
+    check('a stick held still at full push keeps moving the value (half range in 1 s at 2 s)',
+      near(held, 50, 3), held.toFixed(2));
+    pad.axes[0] = 0;
+    run(1);
+    check('THE FEATURE: letting go leaves the value where it got to',
+      ps.get('t.cont').value === held, `${held} -> ${ps.get('t.cont').value}`);
+  }
+  {
+    const { ps, pad, run, bind, writes } = jogRig();
+    bind('t.cont', 0);
+    pad.axes[0] = 0.18;                          // the owner's LX at rest
+    const before = writes();
+    run(2);
+    check('a stick resting slightly off-centre does not creep', writes() === before
+      && ps.get('t.cont').value === 0, `${writes() - before} writes, value ${ps.get('t.cont').value}`);
+  }
+  {
+    const { ps, pad, run, bind } = jogRig();
+    ps.get('t.cont').value = 50;
+    bind('t.cont', 1);
+    pad.axes[1] = -1;                            // standard Y: up reads LOW
+    run(0.5);
+    const up = ps.get('t.cont').value;
+    check('pushing UP raises the value', up > 50, up.toFixed(2));
+    pad.axes[1] = 1;
+    run(0.5);
+    check('pushing down lowers it', ps.get('t.cont').value < up, ps.get('t.cont').value.toFixed(2));
+  }
+  {
+    // Integer-stepped row: at a gentle push each frame adds under one unit, and
+    // `_modStep` would round a read-back value straight back to where it was.
+    const { ps, pad, run, bind } = jogRig();
+    bind('t.int', 0);
+    pad.axes[0] = 0.45;                          // a gentle push
+    run(2);
+    const v = ps.get('t.int').value;
+    check('a gentle push still moves an integer-stepped row', v > 10, String(v));
+    check('and it lands on whole numbers', Number.isInteger(v), String(v));
+  }
+  {
+    const { ps, pad, run, bind } = jogRig();
+    bind('t.cont', 0);
+    pad.axes[0] = 1;
+    run(4);                                      // well past the end
+    check('it stops at max', ps.get('t.cont').value === 100, String(ps.get('t.cont').value));
+    pad.axes[0] = -1;
+    run(0.1);
+    check('and the first pull back moves it straight away — no wind-up past max',
+      ps.get('t.cont').value < 100, String(ps.get('t.cont').value));
+  }
+  {
+    const { ps, pad, run, bind } = jogRig();
+    bind('t.cont', 0);
+    pad.axes[0] = 1;
+    run(0.5);
+    pad.axes[0] = 0;
+    run(0.1);
+    ps.get('t.cont').value = 80;                 // a recall or a mouse drag
+    pad.axes[0] = 1;
+    run(0.1);
+    check('after something else moves the value, the jog continues from THERE',
+      ps.get('t.cont').value > 80, String(ps.get('t.cont').value));
+  }
+  {
+    const { ps, pad, run, bind } = jogRig();
+    ps.get('t.cont').ctrlMin = 20;
+    ps.get('t.cont').ctrlMax = 40;
+    ps.get('t.cont').value = 30;
+    bind('t.cont', 0, { jogTime: 1 });
+    pad.axes[0] = 1;
+    run(0.25);
+    const v = ps.get('t.cont').value;
+    check('speed is relative to the row\'s min/max fields (quarter of 20..40 in 0.25 s at 1 s)',
+      near(v, 35, 1), v.toFixed(2));
+    run(2);
+    check('and the row\'s max field is the ceiling', ps.get('t.cont').value === 40,
+      String(ps.get('t.cont').value));
+  }
+  {
+    const { ps, pad, run, bind } = jogRig();
+    ps.get('t.cont').value = 50;
+    ps.get('t.cont').invert = true;
+    bind('t.cont', 0);
+    pad.axes[0] = 1;
+    run(0.5);
+    check('invert reverses the direction', ps.get('t.cont').value < 50,
+      String(ps.get('t.cont').value));
+  }
+  {
+    // Slew must not slow a jog down: the jog reads where the value is HEADED.
+    const { ps, pad, run, bind } = jogRig();
+    ps.get('t.cont').slew = 0.5;
+    bind('t.cont', 0);
+    pad.axes[0] = 1;
+    for (let i = 0; i < 60; i++) { ps.get('t.cont').tickSlew(FRAME); run(FRAME); }
+    const target = ps.get('t.cont')._target;
+    check('slew on the row does not slow the jog down', near(target, 50, 3), target.toFixed(2));
+  }
+  {
+    const { ps, pad, run } = jogRig();
+    ps.get('t.cont').controller = { type: 'gamepad-axis-0' };   // NOT relative
+    pad.axes[0] = 1;
+    run(0.2);
+    pad.axes[0] = 0;
+    run(0.2);
+    check('without Relative a stick is still a position — it springs back',
+      near(ps.get('t.cont').value, 50, 1), String(ps.get('t.cont').value));
+  }
+  {
+    const { ps } = jogRig();
+    const p = ps.get('t.cont');
+    p.controller = { type: 'gamepad-axis-1', relative: true };
+    check('the badge marks a relative stick', p.controllerLabel === 'G:LY ↕', p.controllerLabel);
+    p.controller = { type: 'gamepad-btn-0', relative: true };
+    check('but not a button, where the flag means nothing', p.controllerLabel === 'G:A',
+      p.controllerLabel);
+  }
+}
+
 console.log(failures ? `\n${failures} failure(s)` : '\nall gamepad checks pass');
 process.exit(failures ? 1 : 0);

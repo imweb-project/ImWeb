@@ -83,6 +83,31 @@ export function openCtrlPopover(param, anchorEl, ctrl, tables) {
     )));
   };
 
+  /**
+   * Relative — a stick that pushes the value and lets go of it, rather than
+   * holding it only while held. Offered on a CONTINUOUS row bound to a gamepad
+   * axis; the speed row shows only while it is on.
+   */
+  const addRelativeRow = () => {
+    if (param.type !== 'continuous' || !String(c.type).startsWith('gamepad-axis-')) return;
+    let speedRow = null;
+    popover.appendChild(makeRow('Relative (push, stays)', makeCheck(
+      () => c.relative,
+      (v) => {
+        c.relative = v;
+        commitBinding();
+        if (speedRow) speedRow.style.display = v ? '' : 'none';
+      },
+    )));
+    speedRow = makeRow('Full range (s)', makeDragNum(
+      () => c.jogTime ?? 2,
+      (v) => { c.jogTime = Math.max(0.05, Math.min(60, v)); commitBinding(); },
+      { decimals: 1, fineStep: 0.05, coarseStep: 0.5 },
+    ));
+    speedRow.style.display = c.relative ? '' : 'none';
+    popover.appendChild(speedRow);
+  };
+
   /** Draggable + double-click-to-type number span. */
   const makeDragNum = (get, set, { decimals = 2, fineStep = 0.1, coarseStep = 1 } = {}) => {
     const span = document.createElement('span');
@@ -430,6 +455,7 @@ export function openCtrlPopover(param, anchorEl, ctrl, tables) {
 
   // ── Shared rows (all controller types) ───────────────────────────────────
   addLatchRow();
+  addRelativeRow();
   addSlewRow();
   addTableRow();
 
