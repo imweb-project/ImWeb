@@ -27,6 +27,18 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   `/imweb/trigger/<id>`.
 - **The manual's OSC address was wrong.** It documented `/param/{paramId}`; the
   bridge has always listened on `/imweb/<paramId>`.
+- **The status bar works on a first launch.** `await _loadMasterProject()` sat
+  in front of the remaining ~7400 lines of `main()`, so on a fresh profile the
+  panels were on screen while everything below that line — the OSC chip, the
+  MIDI map-mode click, the Monty row — had no handlers yet. Clicking the OSC
+  chip did nothing, which reads as a broken app. Measured headless:
+  MasterProject landed at +470 ms, the first click was ignored, the second at
+  ~2.2 s connected; a slow network makes that window arbitrarily long. Boot no
+  longer waits for it. The three things that genuinely need the imported
+  project — the mapping autosave's restore, and the GLSL and panel-layout
+  stashes `ProjectFile` fills when their hooks are not yet registered — chain
+  off it explicitly, and `tests/audit-boot-nonblocking.mjs` fails if a future
+  stash is drained before the import lands, which is silent by nature.
 
 ### Added
 - **Every standard gamepad button is assignable**: LB/RB, the analog triggers

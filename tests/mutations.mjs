@@ -25,6 +25,38 @@
 /** Ordinary quotes throughout: `${}` inside a single-quoted string is literal. */
 export const MUTATIONS = [
   // ═════════════════════════════════════════════════════════════════════════
+  // Non-blocking first-launch boot
+  //
+  // The defect these guard was shipped and reported: on a fresh profile the
+  // panels were on screen while the status bar below the awaited MasterProject
+  // import had no handlers, so clicking the OSC chip did nothing. Measured
+  // headless — import at +470 ms, first click ignored, second at ~2.2 s.
+  // ═════════════════════════════════════════════════════════════════════════
+  {
+    name: 'boot: the first-launch import blocks the rest of init again',
+    audit: 'audit-boot-nonblocking.mjs',
+    file: 'src/main.js',
+    why: 'awaiting here parks ~7400 lines of wiring behind a network fetch, so on a fresh profile the panels paint while the OSC chip, the MIDI map-mode click and the Monty row have no handlers — the app looks broken and the only tell is that a second click, seconds later, works',
+    find: 'bootProject = _loadMasterProject();',
+    replace: 'await _loadMasterProject();',
+  },
+  {
+    name: 'boot: the GLSL stash is drained before the import can fill it',
+    audit: 'audit-boot-nonblocking.mjs',
+    file: 'src/main.js',
+    why: 'ProjectFile stashes the file\'s shader because this hook does not exist yet; draining on an immediate promise finds nothing, the stash fills a moment later, and the project\'s GLSL is never applied — with no error anywhere, which is how this class of bug ships',
+    find: 'bootProject.then(() => {\n    if (!projectFile.pendingGlsl) return;',
+    replace: 'Promise.resolve().then(() => {\n    if (!projectFile.pendingGlsl) return;',
+  },
+  {
+    name: 'boot: learned mappings are restored before the project lands',
+    audit: 'audit-boot-nonblocking.mjs',
+    file: 'src/main.js',
+    why: 'both the autosave and the boot project write p.controller, and the autosave is only the more recent truth once the file is in — restoring first means an imported project silently overwrites the mappings the rig was last left with',
+    find: 'bootProject.then(() => {\n    mappingAutosave.restore();',
+    replace: 'Promise.resolve().then(() => {\n    mappingAutosave.restore();',
+  },
+  // ═════════════════════════════════════════════════════════════════════════
   // Pos Play and partition-relative cues (#84)
   //
   // The PR reported "Mutation-calibrated 4/4" and named these four, but ran

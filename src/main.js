@@ -2864,6 +2864,22 @@ async function main() {
   if (import.meta.env.DEV) window.__projectFile = projectFile;
 
   // ── First-ever launch: load MasterProject from server ─────────────────────
+  /**
+   * Resolves once first-launch boot content is in place.
+   *
+   * This used to be `await`ed here, and that await sat in front of EVERYTHING
+   * below it — roughly seven thousand lines of wiring, including the status
+   * bar. On a fresh profile the panels were already on screen while the OSC
+   * chip had no click handler yet, so clicking it did nothing and the app
+   * looked broken. Measured in a headless first launch: MasterProject landed
+   * at +470 ms, the first click was ignored, and only the second at ~2.2 s
+   * connected — and that is a fast local fetch, not a slow venue's wifi.
+   *
+   * So boot no longer blocks. Anything that must see the imported project
+   * chains off this promise instead; `tests/audit-boot-nonblocking.mjs` keeps
+   * that honest, because a stash whose drain runs too early is silent.
+   */
+  let bootProject = Promise.resolve();
   if (presetMgr._firstLaunch) {
     const _mpStatus = document.createElement('div');
     _mpStatus.style.cssText = 'font-size:11px;color:var(--text-2);margin-top:8px;transition:opacity .4s;';
@@ -2908,7 +2924,7 @@ async function main() {
         _mpStatus.appendChild(_mpRetry);
       }
     };
-    await _loadMasterProject();
+    bootProject = _loadMasterProject();
   }
 
   /**
@@ -2951,8 +2967,13 @@ async function main() {
       }, 100);
     },
   });
-  mappingAutosave.restore();
-  mappingAutosave.start();
+  // Chained, not called straight: the boot project no longer blocks init, and
+  // both it and the autosave write `p.controller`. The order below is the
+  // whole design and it survives only by waiting.
+  bootProject.then(() => {
+    mappingAutosave.restore();
+    mappingAutosave.start();
+  });
   if (import.meta.env.DEV) window.__mappings = mappingAutosave;
 
   // ── MIDI Map Mode ─────────────────────────────────────────────────────────
@@ -6208,11 +6229,15 @@ void main() {
       else if (!d.active) pipeline.disableCustomShader();
     },
   };
-  // First-launch MasterProject import runs before this hook registers
-  if (projectFile.pendingGlsl) {
+  // The first-launch import stashes GLSL because this hook does not exist yet.
+  // It is no longer awaited, so draining must WAIT for it: run this straight
+  // and it finds nothing, the stash is filled a moment later, and the file's
+  // shader is never applied — with nothing to see anywhere.
+  bootProject.then(() => {
+    if (!projectFile.pendingGlsl) return;
     projectFile.extras.glsl.restore(projectFile.pendingGlsl);
     projectFile.pendingGlsl = null;
-  }
+  });
 
   // Built-in GLSL shader presets
   // Per-preset parameter label metadata — 4 labels matching uParam1..4 slots.
@@ -8232,14 +8257,18 @@ void main() {
     capture: () => ({ v: 1, panels: _capturePanelLayout() }),
     restore: (d) => _applyPanelLayout(normalizeLayout(d)),
   };
-  {
+  // Chained for the same reason as the GLSL drain: the boot import fills this
+  // stash after init has run past here. The whole block waits, else-branch
+  // included, so a plain reload still applies its own saved layout — one tick
+  // later, which nobody can see.
+  bootProject.then(() => {
     // Precedence: a project imported before the hook existed wins (first
     // launch, where localStorage is empty anyway); otherwise the per-origin
     // autosave, which is what a plain reload is asking for.
     const pending = projectFile.pendingPanelLayout;
     projectFile.pendingPanelLayout = null;
     _applyPanelLayout(pending ? normalizeLayout(pending) : loadPanelLayout());
-  }
+  });
   // A window sized to one display is not necessarily on the next one. Re-clamp
   // on resize so unplugging a monitor cannot strand a window's title bar — the
   // only handle it has — outside the viewport.
