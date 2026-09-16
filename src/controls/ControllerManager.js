@@ -12,6 +12,7 @@ import { PARAM_TYPE, MIDI_PAGES } from './ParameterSystem.js';
 import { LFOController } from './LFO.js';
 import { BeatDetector }  from './BeatDetector.js';
 import { compileExpression } from './ExprCompiler.js';
+import { applyControlInput } from './controlInput.js';
 
 /**
  * Default sweep range for an X-map targeting an LFO's rate.
@@ -873,9 +874,8 @@ export class ControllerManager {
       this.ps.getAll().forEach(p => {
         if (p.controller?.type !== 'key') return;
         if (p.controller.key !== key) return;
-        if (p.type === 'toggle') p.toggle();
-        else if (p.type === 'trigger') p.trigger();
-        else p.setNormalized(1);
+        // A key is a button: the shared rule, not a fifth copy of it.
+        applyControlInput(p, { norm: 1, isPress: true });
       });
     });
 
@@ -884,7 +884,9 @@ export class ControllerManager {
       const key = e.key;
       this.ps.getAll().forEach(p => {
         if (p.controller?.type === 'key' && p.controller.key === key) {
-          if (p.type === 'continuous') p.setNormalized(0);
+          // Only a continuous param falls back to 0 on release; a toggle stays
+          // where the press put it, which `isPress: false` already guarantees.
+          if (p.type === 'continuous') applyControlInput(p, { norm: 0, isPress: false });
         }
       });
     });
@@ -1402,16 +1404,16 @@ export class ControllerManager {
         if (c.channel && c.channel !== channel) return;
 
         if (type === 0xB0 && c.type === 'midi-cc' && c.cc === data1) {
-          // A button is not a fader. Toggle and trigger take the PRESS and
-          // ignore the release, matching what midi-note and the gamepad have
-          // always done; anything continuous still follows the value, so a
-          // knob or slider is unaffected.
-          if (p.type === PARAM_TYPE.TOGGLE) { if (ccRise) p.toggle(); }
-          else if (p.type === PARAM_TYPE.TRIGGER) { if (ccRise) p.trigger(); }
-          // Buttons are deliberately ABOVE the pickup gate: a button has no
-          // position to pick up, and blocking one after a page switch would
-          // make it look dead until it had been pressed twice.
-          else if (!this._pickupBlocks(p, norm)) p.setNormalized(norm);
+          // A button is not a fader — the rule lives in controlInput.js, which
+          // every input path shares. Pickup is consulted ONLY for a position:
+          // `_pickupBlocks` records state, so asking it about a button would
+          // both mean nothing and change what the next fader move sees.
+          const isBtn = p.type === PARAM_TYPE.TOGGLE || p.type === PARAM_TYPE.TRIGGER;
+          applyControlInput(p, {
+            norm,
+            isPress: ccRise,
+            pickupBlocked: isBtn ? false : this._pickupBlocks(p, norm),
+          });
         } else if (type === 0xB0 && c.type === 'midi-cc-map' && Array.isArray(c.ccs)) {
           // One CC per option (§ SELECT banks). The index is chosen by WHICH
           // control spoke, not by its value — so four buttons pick four
@@ -1425,12 +1427,13 @@ export class ControllerManager {
           const idx = c.notes.indexOf(data1);
           if (idx >= 0 && data2 > 0) p.value = idx;
         } else if (type === 0x90 && c.type === 'midi-note' && c.note === data1) {
-          if (p.type === 'toggle') { if (data2 > 0) p.toggle(); }
-          else if (p.type === 'trigger') { if (data2 > 0) p.trigger(); }
-          else {
-            const nv = data2 > 0 ? data2 / 127 : 0;
-            if (!this._pickupBlocks(p, nv)) p.setNormalized(nv);
-          }
+          const nv = data2 > 0 ? data2 / 127 : 0;
+          const isBtn = p.type === PARAM_TYPE.TOGGLE || p.type === PARAM_TYPE.TRIGGER;
+          applyControlInput(p, {
+            norm: nv,
+            isPress: data2 > 0,
+            pickupBlocked: isBtn ? false : this._pickupBlocks(p, nv),
+          });
         } else if (type === 0xC0 && c.type === 'midi-pc') {
           if (this.onMIDIPC) this.onMIDIPC(data1); // global PC callback (preset recall)
           p.value = data1;
@@ -1534,20 +1537,19 @@ export class ControllerManager {
       if (t.startsWith('gamepad-axis-')) {
         const idx = parseInt(t.slice(13));
         if (axes[idx] === undefined || axes[idx] === prev.axes[idx]) return;
+        // An axis is a POSITION, not a button, so it does not go through the
+        // press rule: a toggle bound to a stick is meant to follow the stick
+        // across half scale, and `isPress` would freeze it forever.
         p.setNormalized(axes[idx]);
 
       } else if (t.startsWith('gamepad-btn-')) {
         const idx = parseInt(t.slice(12));
         if (btnDown[idx] === undefined) return;
-        const rise = btnDown[idx] && !prev.btnDown[idx];
-
-        if (p.type === PARAM_TYPE.TOGGLE) {
-          if (rise) p.toggle();
-        } else if (p.type === PARAM_TYPE.TRIGGER) {
-          if (rise) p.trigger();
-        } else if (btnVal[idx] !== prev.btnVal[idx]) {
-          p.setNormalized(btnVal[idx]);         // analog (0 or 1 for digital)
-        }
+        const rise  = btnDown[idx] && !prev.btnDown[idx];
+        const moved = btnVal[idx] !== prev.btnVal[idx];
+        // The change gate stays here: a held trigger must not rewrite its
+        // param every frame (see audit-gamepad). The button rule is shared.
+        if (rise || moved) applyControlInput(p, { norm: btnVal[idx], isPress: rise });
       }
     });
   }

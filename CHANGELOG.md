@@ -65,6 +65,17 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   window does not drive the parameter being learned.
 
 ### Changed
+- **One button rule for every input.** "Press acts, release does not" existed
+  five times over — MIDI CC, MIDI note, the computer keyboard, the gamepad and
+  a learned OSC address — and the copies did not agree: MIDI CC shipped without
+  it (#83) and OSC shipped without it again months later, each found by a
+  performer and fixed alone. The rule now lives in `src/controls/controlInput.js`
+  and every path calls it, with `tests/audit-control-input.mjs` driving all five
+  through one scenario table. Two asymmetries are kept deliberately: a gamepad
+  **axis** is a position rather than a button, so a toggle bound to a stick
+  still follows it across half scale; and soft takeover is still consulted only
+  for MIDI, because it is armed by a mapping-page switch and a gamepad or OSC
+  binding has nothing to pick up. Mapping pages remain MIDI-only.
 - **OSC feedback goes only to what the controller talks to.** It used to be
   every changing parameter, sent as `/imweb/<id>` — measured at **70–90
   messages a second** to a Flic, which has nothing to display and never asked.

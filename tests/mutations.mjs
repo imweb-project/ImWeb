@@ -25,6 +25,29 @@
 /** Ordinary quotes throughout: `${}` inside a single-quoted string is literal. */
 export const MUTATIONS = [
   // ═════════════════════════════════════════════════════════════════════════
+  // One button rule for every input (src/controls/controlInput.js)
+  //
+  // The defect these guard shipped twice: MIDI CC without the press rule (#83),
+  // then a learned OSC address without it months later. Five copies existed and
+  // nothing compared them, which is why the rule was moved into one file.
+  // ═════════════════════════════════════════════════════════════════════════
+  {
+    name: 'input: a toggle acts on the release as well as the press',
+    audit: 'audit-control-input.mjs',
+    file: 'src/controls/controlInput.js',
+    why: 'a momentary control sends twice per use, so acting on both makes a TOGGLE run only while the button is held — the owner reported exactly this as Run Rec recording only while pressed, and it would silently come back for every input at once now that they share this line',
+    find: '    if (isPress) param.toggle();',
+    replace: '    param.toggle();',
+  },
+  {
+    name: 'input: a trigger fires twice per press',
+    audit: 'audit-control-input.mjs',
+    file: 'src/controls/controlInput.js',
+    why: 'the release fires the trigger a second time — "it bangs, but bangs again when released" — and one shared line means every input path bangs twice, not just the one someone happens to test',
+    find: '    if (isPress) param.trigger();',
+    replace: '    param.trigger();',
+  },
+  // ═════════════════════════════════════════════════════════════════════════
   // Non-blocking first-launch boot
   //
   // The defect these guard was shipped and reported: on a fresh profile the

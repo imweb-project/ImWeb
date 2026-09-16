@@ -19,6 +19,8 @@
  *   { address: "/imweb/foo", args: [0.5] }
  */
 
+import { applyControlInput } from '../controls/controlInput.js';
+
 const DEFAULT_URL = 'ws://localhost:8080';
 const FLUSH_MS    = 50;
 /**
@@ -427,14 +429,11 @@ export class OSCBridge {
       const c = p.controller;
       if (c?.type !== 'osc' || c.address !== address) return;
       this._heard.add(p.id); // not echoed back this flush — see _flush
-      if (p.type === 'toggle') { if (isPress) p.toggle(); }
-      else if (p.type === 'trigger') { if (isPress) p.trigger(); }
-      else {
-        const val = typeof args[0] === 'number' ? args[0] : parseFloat(args[0]);
-        // A bare press carries no value: read it as full scale, which is what
-        // makes a button usable on a continuous param at all.
-        p.setNormalized(isNaN(val) ? 1 : Math.max(0, Math.min(1, val)));
-      }
+      const val = typeof args[0] === 'number' ? args[0] : parseFloat(args[0]);
+      // A bare press carries no value: read it as full scale, which is what
+      // makes a button usable on a continuous param at all. The press rule
+      // itself is shared with MIDI, the keyboard and the gamepad.
+      applyControlInput(p, { norm: isNaN(val) ? 1 : val, isPress });
     });
   }
 
