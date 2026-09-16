@@ -46,3 +46,46 @@ All current banks, states, and tables will be permanently replaced with the fact
   shader using object-space position (future enhancement)
 
 
+**Controller mapping — decided 2026-09-16, not yet built:**
+
+- [ ] **Latch: ONE option, not a family.** A press on a CONTINUOUS param
+      alternates between the row's **min and max fields** — those already
+      bound every controller write (`ctrlMin ?? min` / `ctrlMax ?? max`,
+      ParameterSystem ~464), so the two ends are configurable today and
+      only the alternation is missing. Why it is needed: a press-only
+      device (a Flic sends the same message every click) can currently
+      drive a continuous param one way and never back.
+      * Lives in the SHARED rule (`src/controls/controlInput.js`) so a
+        Flic, a MIDI pad, a gamepad button and a key behave identically —
+        an OSC-only setting would re-introduce the divergence that rule
+        was just created to remove.
+      * Off by default. Offered ONLY on continuous params: a toggle
+        already flips on the press, so the option never appears where it
+        would be redundant.
+      * **The badge must show it** (`OSC:/flic/1 ⇄`) — one button
+        alternating while another does not, with nothing on screen saying
+        which, is the entire confusion risk. The checkbox belongs in the
+        badge popover that already exists.
+      * Rejected: a family of modes (bang-to-max / bang-to-min / step /
+        set-to-X). Each multiplies UI, persistence and audit surface, and
+        most are already reachable — "set to X" is "set the row's max to
+        X", and momentary already works for devices that send 1 then 0.
+      * Fiddly part: after a state recall moves the value, the next press
+        must decide from the CURRENT value (nearest end, then travel to
+        the other) or it reads as a skipped press. Needs an audit case.
+
+- [ ] **Mapping pages for non-MIDI bindings** — the other half of the
+      shared-dispatch work. `param.midiPages[]` holds MIDI configs, so
+      letting gamepad and OSC bindings live in pages touches persistence;
+      keep the field NAME (saved states, banks and .imweb files carry it).
+      Soft takeover becomes reachable for those inputs at the same time,
+      and only then: it is armed solely by a mapping-page switch today,
+      which is why it was deliberately left out of the shared rule rather
+      than wired in as a gate that could never fire.
+
+- [ ] **Delete the dead `nudge` badge label** — ParameterSystem maps a
+      `nudge` controller type to the badge `NDG` and nothing anywhere
+      dispatches it (grepped 2026-09-16). Either implement it or remove
+      the entry; a label that can name a controller no code drives is rot.
+
+
