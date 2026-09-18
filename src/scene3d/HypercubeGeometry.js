@@ -192,14 +192,29 @@ export function generate2CellCentroids(dim) {
  * Generate all 2-cell faces of a dim-D hypercube.
  * Returns array of { corners: [i,i,i,i], axisA: number, axisB: number }
  * where corners are the 4 vertex indices from generateVertices().
+ *
+ * Corners come out ALREADY WOUND, in (axisA, axisB) order:
+ *   [ (-,-), (+,-), (-,+), (+,+) ]
+ * That is the contract — a consumer reads corners[0..3] directly and must NOT
+ * re-sort. HypercubeFaces.update() used to derive this winding itself with a
+ * `[...corners].sort()` per face per frame: 66 ms/frame at 12D, every bit of it
+ * recomputing a value that is constant for a given (dim, face).
+ *
+ * The indices follow from the bits, so no vertex scan is needed: a face IS the
+ * fixed-axis bit pattern plus the two free axis bits, and a set bit means the
+ * +1 side of that axis (see generateVertices). The scan this replaced was
+ * O(faces x 2^dim x dim) — building dims 2..12 through it blocked the main
+ * thread for 78-86 s at boot (measured, production build, Chrome). The same
+ * 114,687 faces take ~75 ms this way.
  */
 export function generate2CellFaces(dim) {
   if (dim < 2) return [];
-  const verts = generateVertices(dim);
   const faces = [];
 
   for (let a = 0; a < dim; a++) {
+    const bitA = 1 << a;
     for (let b = a + 1; b < dim; b++) {
+      const bitB = 1 << b;
       const fixedAxes = [];
       for (let d = 0; d < dim; d++) {
         if (d !== a && d !== b) fixedAxes.push(d);
@@ -207,19 +222,16 @@ export function generate2CellFaces(dim) {
       const fixedCount = 1 << fixedAxes.length;
 
       for (let fi = 0; fi < fixedCount; fi++) {
-        const corners = [];
-        for (let vi = 0; vi < verts.length; vi++) {
-          const v = verts[vi];
-          let match = true;
-          for (let k = 0; k < fixedAxes.length; k++) {
-            const expected = (fi >> k) & 1 ? 1 : -1;
-            if (v[fixedAxes[k]] !== expected) { match = false; break; }
-          }
-          if (match) corners.push(vi);
+        // Bit k of fi picks the side of fixedAxes[k] this face sits on.
+        let base = 0;
+        for (let k = 0; k < fixedAxes.length; k++) {
+          if ((fi >> k) & 1) base |= 1 << fixedAxes[k];
         }
-        if (corners.length === 4) {
-          faces.push({ corners, axisA: a, axisB: b });
-        }
+        faces.push({
+          corners: [base, base | bitA, base | bitB, base | bitA | bitB],
+          axisA: a,
+          axisB: b,
+        });
       }
     }
   }

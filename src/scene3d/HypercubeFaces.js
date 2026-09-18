@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import {
   generate2CellFaces,
-  generateVertices,
   faceCount,
   MAX_DIM,
 } from './HypercubeGeometry.js';
@@ -10,13 +9,12 @@ export class HypercubeFaces {
   constructor(scene) {
     this._scene    = scene;
     this._mesh     = null;
-    // Pre-generate faces and vertices per dimension — no per-frame culling needed
+    // Faces per dimension, generated on FIRST USE and memoised — no per-frame
+    // culling needed, and no cost for a dimension nobody visits. Building all
+    // of 2..MAX_DIM here blocked boot for 78-86 s (measured, production build)
+    // on every launch, whether or not the 3D tab was ever opened; a session
+    // that stays in 4D needs 24 faces, not 114,687.
     this._facesByDim = {};
-    this._vertsByDim = {};
-    for (let d = 2; d <= MAX_DIM; d++) {
-      this._facesByDim[d] = generate2CellFaces(d);
-      this._vertsByDim[d] = generateVertices(d);
-    }
     this._maxFaces = faceCount(MAX_DIM);
     this._visible  = false; // hidden until explicitly enabled
     this._opacity  = 0.5;   // matches ps default hypercube.faces.opacity
@@ -94,28 +92,35 @@ export class HypercubeFaces {
   }
 
   /**
+   * Faces for one dimension — generated on first use, then memoised.
+   * `dim` is floored and clamped before it reaches the cache: the eager loop
+   * this replaced only ever held integer keys 2..MAX_DIM, so a stray
+   * non-integer used to fall through to `?? []`. Generating from one would now
+   * both build a nonsense face set and grow the cache without bound.
+   */
+  _faces(dim) {
+    const d = Math.min(MAX_DIM, Math.floor(dim) || 0);
+    return this._facesByDim[d] ?? (this._facesByDim[d] = generate2CellFaces(d));
+  }
+
+  /**
    * Update instance matrices from the projected vertex buffer.
    * projBuf: Float32/64Array of [x,y,z, x,y,z, ...] for each vertex.
    * dim: current active dimension.
    * scale: current scale factor.
    */
   update(projBuf, dim, scale) {
-    const faces  = this._facesByDim[dim] ?? [];
-    const verts  = this._vertsByDim[dim] ?? [];
+    const faces  = this._faces(dim);
     let   drawn  = 0;
 
     for (let f = 0; f < faces.length; f++) {
-      const { corners, axisA, axisB } = faces[f];
+      const { corners } = faces[f];
 
-      // Sort corners by (axisA, axisB) N-D coords into consistent winding
-      const sorted = [...corners].sort((i, j) => {
-        const va = verts[i], vb = verts[j];
-        if (va[axisA] !== vb[axisA]) return va[axisA] - vb[axisA];
-        return va[axisB] - vb[axisB];
-      });
-      // sorted: [(-1,-1), (-1,+1), (+1,-1), (+1,+1)]
-      // Rearrange to winding order: c0=(-1,-1) c1=(+1,-1) c2=(-1,+1)
-      const c0 = sorted[0], c1 = sorted[2], c2 = sorted[1];
+      // corners arrive wound [(-,-), (+,-), (-,+), (+,+)] in (axisA, axisB) —
+      // see generate2CellFaces. c1 and c2 are the two edges adjacent to c0.
+      // Do not re-sort: that winding is a constant, and deriving it here cost
+      // a fresh array and a sort per face per frame.
+      const c0 = corners[0], c1 = corners[1], c2 = corners[2];
 
       const get = (ci) => {
         const pi = ci * 3;
@@ -124,7 +129,7 @@ export class HypercubeFaces {
       const v0 = get(c0), v1 = get(c1), v2 = get(c2);
 
       // Centroid of all 4 corners
-      const v3 = get(sorted[3]);
+      const v3 = get(corners[3]);
       const cx = (v0[0]+v1[0]+v2[0]+v3[0])/4;
       const cy = (v0[1]+v1[1]+v2[1]+v3[1])/4;
       const cz = (v0[2]+v1[2]+v2[2]+v3[2])/4;
