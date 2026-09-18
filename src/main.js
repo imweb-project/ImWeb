@@ -696,7 +696,7 @@ async function main() {
   const _textAudio = { freq: null, level: 0, bass: 0, mid: 0, high: 0 };
 
   const scene3d = new SceneManager(renderer, W, H);
-  await scene3d.createHypercube({ startDim: 4 });
+  await scene3d.createHypercube({ dim: 4 });   // the constructor reads `dim`; `startDim` was never read
 
   ps.get('hypercube.faces.active').onChange(v => {
     scene3d.getHypercube()?.setFacesVisible(!!v);
