@@ -45,6 +45,17 @@ const check = (label, cond, detail = '') => {
   else { console.error(`  FAIL ${label}${detail ? ` — ${detail}` : ''}`); failures++; }
 };
 const src = p => readFileSync(new URL(`../src/scene3d/${p}`, import.meta.url), 'utf8');
+// Text from `from` up to `to` (or `len` chars). A missing marker FAILS rather
+// than slicing from -1 — an absent needle must never make a check vacuous.
+const cut = (text, from, to, len) => {
+  const a = text.indexOf(from);
+  const b = to == null ? a + len : text.indexOf(to, a);
+  if (a === -1 || (to != null && b === -1)) {
+    check(`marker present: ${JSON.stringify(to != null && a !== -1 ? to : from)}`, false, 'the code this check reads has moved — update the marker');
+    return '';
+  }
+  return text.slice(a, b);
+};
 const mk = (opts = {}) => new HypercubeObject(new THREE.Scene(), { dim: 4, ...opts });
 
 // ── 1. Face enumeration ─────────────────────────────────────────────────────
@@ -96,7 +107,7 @@ console.log('\n2. Faces and Instancer answer to their own toggles');
     hc._hFaces._mesh.visible === false, 'HypercubeFaces.setVisible(false) must hide the mesh itself');
 
   const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
-  const fix = main.slice(main.indexOf('const _hcSrc = (id, gate)'), main.indexOf('const _hcSrc = (id, gate)') + 400);
+  const fix = cut(main, 'const _hcSrc = (id, gate)', null, 400);
   check('consumption fixpoint gates face/inst sources on their toggles, not renderMode',
     fix.length > 0 && !/renderMode/.test(fix) && !/_hcLive/.test(main),
     'a renderMode gate here stops SlitScan/Rutt-Etra rendering onto faces when Mode is none');
@@ -174,7 +185,7 @@ console.log('\n4. Instance uploads bounded to the live count');
       'mesh.count already stops the draw; zero-filling 67k matrices a frame is pure cost');
   }
   const ub = src('HypercubeObject.js');
-  const body = ub.slice(ub.indexOf('  _updateBuffers() {'), ub.indexOf('// ── Point buffer'));
+  const body = cut(ub, '  _updateBuffers() {', '// ── Point buffer');
   check('_updateBuffers edge loops stop at the live-edge ceiling',
     (body.match(/for \(let e = 0; e < ceiling; e\+\+\)/g) || []).length === 2 && !/e < edges\.length/.test(body),
     'walking every 12D edge at 4D is 768× the work');
@@ -209,11 +220,12 @@ console.log('\n6. HypercubeUI window listeners');
   check('every window.addEventListener has a matching removeEventListener',
     adds.length > 0 && unpaired.length === 0,
     unpaired.length ? `unpaired: ${unpaired.join(', ')} — rows are discarded on every dimension change` : 'no window listeners found — has the drag moved?');
-  const row = ui.slice(ui.indexOf('function _paramRow('), ui.indexOf("display.addEventListener('dblclick'"));
-  const md = row.slice(row.indexOf("display.addEventListener('mousedown'"));
+  const row = cut(ui, 'function _paramRow(', "display.addEventListener('dblclick'");
+  const pre = cut(row, 'function _paramRow(', "display.addEventListener('mousedown'");
+  const md  = row.slice(pre.length);
   check('_paramRow adds its window listeners inside mousedown, not at row creation',
-    (md.match(/window\.addEventListener/g) || []).length === 2 &&
-    (row.slice(0, row.indexOf("display.addEventListener('mousedown'")).match(/window\.addEventListener/g) || []).length === 0);
+    row.length > 0 && (md.match(/window\.addEventListener/g) || []).length === 2 &&
+    (pre.match(/window\.addEventListener/g) || []).length === 0);
 }
 
 console.log(failures ? `\n${failures} FAILURE(S)\n` : '\nAll hypercube checks passed.\n');
