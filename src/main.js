@@ -727,12 +727,8 @@ async function main() {
   const _RENDER_MODES = ['wireframe','points','both','none'];
   const _PROJ_MODES   = ['perspective','orthographic'];
   const _GEO_TYPES    = ['Sphere','Torus','Cube','Plane','Cylinder','Capsule','TorusKnot','Cone','Dodecahedron','Icosahedron','Octahedron','Tetrahedron','Ring'];
-  // Skip a dimension the cube is already at or heading to: under an LFO this
-  // fires every frame, and each call queued a same-dimension morph.
-  ps.get('hypercube.dim')?.onChange(v => {
-    const hc = scene3d.getHypercube(), d = Math.round(v);
-    if (hc && hc.targetDim !== d) hc.morphTo(d, { durationMs: 0 });
-  });
+  // hypercube.dim's handler is registered after presetMgr exists — it needs
+  // to know whether a state morph is running. See below the PresetManager.
   ps.get('hypercube.renderMode')?.onChange(i => scene3d.getHypercube()?.setRenderMode(_RENDER_MODES[i] ?? 'wireframe'));
   ps.get('hypercube.projMode')?.onChange(i   => scene3d.getHypercube()?.setProjectionMode(_PROJ_MODES[i] ?? 'perspective'));
   ps.get('hypercube.wDistance')?.onChange(v  => scene3d.getHypercube()?.setWDistance(v));
@@ -872,6 +868,20 @@ async function main() {
   // ── 6. Preset manager + Table manager ────────────────────────────────────
 
   const presetMgr = new PresetManager(ps, ctrl, pipeline);
+
+  // Dimension MORPHS over Morph Time when a hand or a controller moves it, and
+  // JUMPS when the patch is recalled (owner, 2026-09-18) — a Display State
+  // recall, a state-to-state morph or a project load must land exactly.
+  // morphToLatest drops waiting morphs, so an LFO sweeping the dimension is
+  // followed rather than queued seconds behind; a jump cuts a running morph.
+  ps.get('hypercube.dim')?.onChange(v => {
+    const hc = scene3d.getHypercube();
+    if (!hc) return;
+    const recalled = ps.restoring || presetMgr.morphing;
+    hc.morphToLatest(Math.round(v), {
+      durationMs: recalled ? 0 : (ps.get('hypercube.morphDuration')?.value ?? 2000),
+    });
+  });
   presetMgr.addEventListener('toast', e => showToast(e.detail.msg));
 
   // Wire pinned ghost node save/restore into the state system

@@ -9,6 +9,13 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Hypercube Dimension morphs when you play it.** Dragging Dimension, or
+  driving it from an LFO, MIDI, OSC or any other controller, now morphs
+  between dimensions over **Morph Time**, like the dimension buttons do. It
+  used to jump. Recalling a Display State, a state-to-state morph or loading a
+  project still jumps, so a recall lands exactly. A controller sweeping the
+  dimension is followed rather than queued behind: the cube goes to the latest
+  value once the running morph finishes.
 - **Every Hypercube parameter can take a controller.** A new collapsed
   **Parameters · controllers** subsection under Hypercube gives all 27 a
   standard row with a badge, so LFO, Random, MIDI, OSC and response tables

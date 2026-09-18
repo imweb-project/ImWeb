@@ -294,6 +294,9 @@ export class PresetManager extends EventTarget {
 
   get current() { return this.presets[this.currentIdx]; }
 
+  /** True while a state-to-state morph (global.morphspeed) is lerping values. */
+  get morphing() { return this._morphActive; }
+
   async activatePreset(index, { fade = true } = {}) {
     const p = this.presets[index];
     if (!p) return;

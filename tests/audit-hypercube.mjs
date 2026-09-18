@@ -34,6 +34,9 @@
  *      morph (the dim handler skips on it).
  *   8. An Inst Geo change keeps the instancer under SceneManager's rotation,
  *      spin and scale: adoption compares mesh identity, not on/off.
+ *  10. Dimension MORPHS over Morph Time when played (hand, LFO, MIDI) and
+ *      JUMPS when recalled (state, state morph, project) — owner's call. A
+ *      newer target replaces a waiting one; a jump cuts a running morph.
  *   9. While the instancer is adopted, Geometry / Back to Geometry / Cloner /
  *      material type / model import act on the scene's OWN object
  *      (_withOwnMesh), and it comes back intact when the instancer goes off.
@@ -336,6 +339,69 @@ console.log('\n9. With the instancer adopted, Geometry / import / material hit t
       'Material must follow the geometry once the instancer lets go');
     check(`${tag}: the model's pivot is gone from the scene`, !inScene(pivot));
   }
+}
+
+// ── 10. Dimension morphs on control, jumps on recall ───────────────────────
+console.log('\n10. Dimension: morph when played, jump when recalled');
+{
+  const { ParameterSystem } = await import('../src/controls/ParameterSystem.js');
+  // update() skips ALL work, morphs included, when nothing is visible — so
+  // these cubes must show something, or no morph ever advances.
+  const run = (hc, ms) => { for (let t = 0; t < ms; t += 16) hc.update(16); };
+  const live = o => { const h = mk(o); h.setRenderMode('wireframe'); return h; };
+  // _rebuild() sizes the rotation-plane arrays to the dimension; a downward
+  // morph defers it, so a cut morph that skips it keeps the OLD dimension's.
+  const planes = hc => hc._rotAngles.length;
+
+  // a controller moving the target mid-morph replaces what is waiting
+  let hc = live();
+  hc.morphToLatest(8, { durationMs: 400 }); run(hc, 160);
+  const mid = !!hc._morphState;
+  hc.morphToLatest(10, { durationMs: 400 });
+  hc.morphToLatest(6, { durationMs: 400 });
+  check('a controlled change MORPHS (a morph is running mid-way)', mid && hc._morphState?.toDim === 8);
+  check('a newer target replaces the waiting one, not queued behind it',
+    hc._morphQueue.length === 1 && hc.targetDim === 6, `queue ${hc._morphQueue.map(q => q.toDim)}`);
+  run(hc, 1200);
+  check('…and the cube settles on the LATEST target', hc.dim === 6 && !hc._morphState && hc._morphQueue.length === 0);
+
+  // a jump cuts a running morph, including a downward one (deferred rebuild)
+  hc = live({ dim: 9 });
+  hc.morphToLatest(5, { durationMs: 1000 }); run(hc, 300);
+  hc.morphToLatest(4, { durationMs: 0 }); hc.update(16);
+  check('a jump lands at once, even mid-morph', hc.dim === 4 && !hc._morphState,
+    'recall must not wait out an animation — morphToLatest ends a running morph when durationMs is 0');
+  const ref = mk({ dim: 4 });
+  check('…with the target dimension\'s rotation planes (downward rebuild not skipped)', planes(hc) === planes(ref),
+    `${planes(hc)} planes vs ${planes(ref)} — _rebuild() must run when a downward morph is cut`);
+  // the case that needs the explicit rebuild: jumping to the dimension the cut
+  // morph was ALREADY heading to starts no new morph, so nothing else rebuilds
+  hc = live({ dim: 9 });
+  hc.morphToLatest(5, { durationMs: 1000 }); run(hc, 300);
+  hc.morphToLatest(5, { durationMs: 0 }); hc.update(16);
+  check('a jump to the running morph\'s own target still rebuilds', hc.dim === 5 && !hc._morphState &&
+    planes(hc) === planes(mk({ dim: 5 })), `${planes(hc)} planes vs ${planes(mk({ dim: 5 }))}`);
+
+  // restoreState marks itself for onChange handlers
+  const ps = new ParameterSystem();
+  ps.register({ id: 'hypercube.dim', type: 'continuous', value: 4, min: 4, max: 12, step: 1, group: 'hypercube' });
+  const seen = [];
+  ps.get('hypercube.dim').onChange(() => seen.push(ps.restoring));
+  ps.restoreState({ 'hypercube.dim': 7 });
+  ps.set('hypercube.dim', 9);
+  check('ps.restoring is true inside onChange during restoreState, false for a set()',
+    seen.join() === 'true,false' && ps.restoring === false, `saw ${seen}`);
+
+  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  const h = cut(main, "ps.get('hypercube.dim')?.onChange(", '});');
+  check('the dim handler jumps on recall/state-morph and morphs over Morph Time otherwise',
+    /ps\.restoring \|\| presetMgr\.morphing/.test(h) && /morphToLatest\(/.test(h) &&
+    /recalled \? 0 : \(ps\.get\('hypercube\.morphDuration'\)/.test(h),
+    'owner decision 2026-09-18: controllers and hands morph, recall jumps');
+  check('…and is registered after presetMgr exists (it reads presetMgr.morphing)',
+    main.indexOf('const presetMgr = new PresetManager(') !== -1 &&
+    main.indexOf("ps.get('hypercube.dim')?.onChange(") > main.indexOf('const presetMgr = new PresetManager('),
+    'registered earlier, a dim change before line ~874 would hit presetMgr in its temporal dead zone');
 }
 
 console.log(failures ? `\n${failures} FAILURE(S)\n` : '\nAll hypercube checks passed.\n');

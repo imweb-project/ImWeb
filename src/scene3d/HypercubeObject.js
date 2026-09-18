@@ -554,6 +554,24 @@ export class HypercubeObject {
     if (!this._morphState) this._startNextMorph();
   }
 
+  /**
+   * Go to `toDim`, dropping any morph still waiting in the queue — a
+   * controller moves the target continuously, and queueing every step would
+   * leave the cube seconds behind it. A running morph finishes first, unless
+   * this is a jump (durationMs 0), which lands NOW: a recall must not wait
+   * out an animation.
+   */
+  morphToLatest(toDim, options = {}) {
+    toDim = Math.max(3, Math.min(MAX_DIM, toDim));
+    this._morphQueue.length = 0;
+    if (!options.durationMs && this._morphState) {
+      if (this._morphState.toDim < this._morphState.fromDim) this._rebuild();
+      this._morphState = null;
+    }
+    if (this.targetDim === toDim) return;
+    this.morphTo(toDim, options);
+  }
+
   _startNextMorph() {
     if (this._morphQueue.length === 0) return;
     const { toDim, durationMs, easing } = this._morphQueue.shift();

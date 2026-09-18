@@ -912,6 +912,11 @@ export class ParameterSystem extends EventTarget {
     this.groups = new Map(); // groupName → [paramId, ...]
     this._allParams = [];
     this._allParamsDirty = true;
+    // True only while restoreState() is writing — a recall, a project load.
+    // onChange handlers read it to tell "the patch was recalled" from "a hand
+    // or a controller moved this" (hypercube.dim jumps on the first, morphs on
+    // the second).
+    this.restoring = false;
   }
 
   /**
@@ -989,11 +994,16 @@ export class ParameterSystem extends EventTarget {
   }
 
   restoreState(state) {
-    Object.entries(state).forEach(([id, v]) => {
-      const p = this.params.get(id);
-      // Guard: skip global params even if present in old saved states
-      if (p && p.group !== 'global') this.set(id, v);
-    });
+    this.restoring = true;
+    try {
+      Object.entries(state).forEach(([id, v]) => {
+        const p = this.params.get(id);
+        // Guard: skip global params even if present in old saved states
+        if (p && p.group !== 'global') this.set(id, v);
+      });
+    } finally {
+      this.restoring = false;
+    }
     this.dispatchEvent(new CustomEvent("stateRestored", { detail: state }));
   }
 
