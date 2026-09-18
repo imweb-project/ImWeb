@@ -59,6 +59,13 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   names the same source.
 
 ### Fixed
+- **Hypercube instances map their texture like the geometry.** Instances
+  always used the model's own texture coordinates, so an imported model showed
+  the texture in patches and spheres pinched it at the poles. The geometry uses
+  **Seamless** for Noise. Instances now follow the same Material → **Mapping**
+  setting (Auto, UV or Seamless) with the same projection, so a texture spans
+  an instance the way it spans the geometry. Auto chooses Seamless when Inst
+  tex is Noise.
 - **Hypercube instances are lit like the geometry, and the stripes are
   gone.** Instances looked flat white next to the shaded geometry, with
   ragged horizontal stripes through the middle of the screen. The texture

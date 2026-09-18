@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { vertexCount, MAX_DIM } from './HypercubeGeometry.js';
 import { GeometryFactory } from './GeometryFactory.js';
+import { TRIPLANAR_GLSL, TRI_MAP_FRAGMENT, TRI_EMISSIVEMAP_FRAGMENT } from './Triplanar.js';
 
 const MAX_INSTANCES = 4096; // matches MAX_DIM vertex ceiling
 const _geoFactory   = new GeometryFactory();
@@ -9,14 +10,14 @@ const _geoFactory   = new GeometryFactory();
 const _GEO_PARAMS = { radius: 0.5, size: 1.0, w: 1.0, h: 1.0, rt: 0.5, rb: 0.5, height: 1.0,
                       radius1: 0.5, length: 1.0, outerR: 0.5, innerR: 0.15 };
 
-// A 'Model' shape can be any size, and every instance draws all of it: the
-// bundled 179k-vertex model at 12D is 733M vertices a frame, enough to hang a
-// GPU. Model instances are capped at what the DEFAULT shape, the sphere,
-// already costs at the full 4096 — measured from it, not a guessed constant.
 // Must equal SceneManager's EM_FLOOR: the instancer's texture glow matches the
 // 3D scene material's, so the two are lit alike.
 export const EM_FLOOR = 0.35;
 
+// A 'Model' shape can be any size, and every instance draws all of it: the
+// bundled 179k-vertex model at 12D is 733M vertices a frame, enough to hang a
+// GPU. Model instances are capped at what the DEFAULT shape, the sphere,
+// already costs at the full 4096 — measured from it, not a guessed constant.
 let _vertBudget = 0;
 const vertBudget = () => _vertBudget ||= MAX_INSTANCES *
   _geoFactory.create('Sphere', _GEO_PARAMS).attributes.position.count;
@@ -26,8 +27,6 @@ export class HypercubeInstancer {
     this._scene    = scene;
     this._mesh     = null;
     this._mat      = null;
-    this._matType  = -1;
-    this._liveTex  = null;
     this._instScale = 0.08;
     this._visible  = false;
     this._opacity  = 0.8;
@@ -69,7 +68,7 @@ export class HypercubeInstancer {
         depthWrite:  true,
         opacity:     this._opacity,
       });
-      this._matType = 0;
+      this._setupSeamless(this._mat);
     }
 
     this._mesh = new THREE.InstancedMesh(geo, this._mat, MAX_INSTANCES);
@@ -79,31 +78,39 @@ export class HypercubeInstancer {
     this._scene.add(this._mesh);
   }
 
-  _rebuildMat(type) {
-    if (this._matType === type) return;
-    this._matType = type;
-    const old      = this._mat;
-    const color    = old?.color?.clone()    ?? new THREE.Color(0xffffff);
-    const roughness = old?.roughness        ?? 0.5;
-    const metalness = old?.metalness        ?? 0.0;
-    const opacity   = old?.opacity          ?? this._opacity;
-    const emissive  = old?.emissive?.clone() ?? new THREE.Color(0x000000);
-    const emissiveMap = old?.emissiveMap    ?? null;
-    const map       = old?.map              ?? null;
+  /**
+   * The 3D scene material's Seamless (triplanar) projection, from the SAME
+   * chunks (Triplanar.js) — for the colour map AND the emissive map, or a
+   * UV-mapped copy glows over the seamless one. Without it the instancer used
+   * plain UVs: patches on a model's UV islands, pinched poles on spheres.
+   * Object space, so every instance carries the same pattern, as the geometry
+   * does; position ×2 because instance shapes are unit-sized where the scene's
+   * sphere has radius 1, so the texture spans an instance as it spans the
+   * geometry. On/off and sharpness come from setMapping().
+   */
+  _setupSeamless(mat) {
+    mat.defines ??= {};
+    this._triSharp ??= { value: 6 };
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uTriSharp = this._triSharp;
+      shader.vertexShader = `varying vec3 vObjPos;\nvarying vec3 vObjNormal;\n${shader.vertexShader}`
+        .replace('#include <begin_vertex>', `#include <begin_vertex>
+        vObjPos = position * 2.0;
+        vObjNormal = normal;`);
+      shader.fragmentShader = `varying vec3 vObjPos;\nvarying vec3 vObjNormal;\n${TRIPLANAR_GLSL}\n${shader.fragmentShader}`
+        .replace('#include <map_fragment>', TRI_MAP_FRAGMENT)
+        .replace('#include <emissivemap_fragment>', TRI_EMISSIVEMAP_FRAGMENT);
+    };
+    mat.customProgramCacheKey = () => 'hcinst-seamless-v1' + (mat.defines.USE_TRIPLANAR ? '_tri' : '');
+  }
 
-    const shared = { color, roughness, metalness, side: THREE.DoubleSide, transparent: true, depthWrite: false };
-    const mat = type === 1
-      ? new THREE.MeshPhysicalMaterial(shared)
-      : new THREE.MeshStandardMaterial(shared);
-    mat.opacity     = opacity;
-    mat.map         = map;
-    mat.emissiveMap = emissiveMap;
-    mat.emissive.copy(emissive);
-
-    if (old) old.dispose();
-    this._mat = mat;
-    if (this._mesh) this._mesh.material = mat;
-    mat.needsUpdate = true;
+  /** Seamless on/off (a shader define — flagged only on change) and sharpness. */
+  setMapping(seamless, sharp = 6) {
+    this._triSharp.value = sharp;
+    const d = this._mat.defines;
+    if (!!d.USE_TRIPLANAR === seamless) return;
+    if (seamless) d.USE_TRIPLANAR = true; else delete d.USE_TRIPLANAR;
+    this._mat.needsUpdate = true;
   }
 
   /**
@@ -182,64 +189,6 @@ export class HypercubeInstancer {
     this._mat.emissive.set(1, 1, 1);
     this._mat.emissiveIntensity = EM_FLOOR;
     this._mat.needsUpdate   = true;
-  }
-
-  applyParams(p, inputs, renderTarget) {
-    const matType = Math.round(p.get('scene3d.mat.type')?.value ?? 0);
-    if (matType !== this._matType) this._rebuildMat(matType);
-    if (this._mesh) this._mat = this._mesh.material; // defensive sync after potential rebuild
-
-    const hue = (p.get('scene3d.mat.hue')?.value ?? 240) / 360;
-    const sat = (p.get('scene3d.mat.sat')?.value ?? 50) / 100;
-    if (this._mat.color) this._mat.color.setHSL(hue, sat, sat > 0 ? 0.5 : 1.0);
-
-    const emissiveAmt = p.get('scene3d.mat.emissive')?.value ?? 0;
-    const emHue = (p.get('scene3d.mat.emissiveHue')?.value ?? 0) / 360;
-    const emSat = (p.get('scene3d.mat.emissiveSat')?.value ?? 0) / 100;
-    if (this._mat.emissive) {
-      const useIndep = emSat > 0;
-      this._mat.emissive.setHSL(
-        useIndep ? emHue : hue,
-        useIndep ? emSat : sat,
-        0.15 * emissiveAmt,
-      );
-      this._mat.emissiveIntensity = emissiveAmt;
-      // emissiveMap needs a non-black emissive color and intensity ≥ 1 to show
-      if (this._mat.emissiveMap) {
-        this._mat.emissive.set(1, 1, 1);
-        if (this._mat.emissiveIntensity < 1.0) this._mat.emissiveIntensity = 1.0;
-      }
-    }
-
-    if (this._mat.roughness !== undefined) this._mat.roughness = p.get('scene3d.mat.roughness').value;
-    if (this._mat.metalness !== undefined) this._mat.metalness = p.get('scene3d.mat.metalness').value;
-
-    const opacity = p.get('scene3d.mat.opacity').value;
-    this._mat.opacity     = opacity;
-    this._mat.transparent = opacity < 1;
-
-    if (matType === 1 && this._mat.isMeshPhysicalMaterial) {
-      this._mat.clearcoat    = p.get('scene3d.mat.clearcoat')?.value ?? 0;
-      this._mat.transmission = p.get('scene3d.mat.transmit')?.value  ?? 0;
-      this._mat.ior          = p.get('scene3d.mat.ior')?.value        ?? 1.5;
-      this._mat.transparent  = this._mat.transmission > 0 || opacity < 1;
-    }
-
-    // Texture source — mirrors SceneManager texSrc logic
-    const texSrcIdx = p.get('scene3d.mat.texsrc')?.value ?? 0;
-    const texSrcMap = [null, inputs.camera, inputs.movie, inputs.screen, inputs.draw, inputs.buffer, inputs.noise];
-    const liveTex   = texSrcMap[texSrcIdx] ?? null;
-    const useTex    = (liveTex && renderTarget && liveTex === renderTarget.texture) ? null : liveTex;
-    if (useTex !== this._liveTex) {
-      this._liveTex         = useTex;
-      this._mat.map         = useTex
-        ? Object.assign(useTex, { wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping })
-        : null;
-      this._mat.emissiveMap = useTex;
-      if (useTex) this._mat.emissive.set(1, 1, 1);
-    }
-
-    this._mat.needsUpdate = true;
   }
 
   dispose() {

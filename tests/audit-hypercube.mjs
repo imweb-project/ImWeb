@@ -36,6 +36,8 @@
  *      spin and scale: adoption compares mesh identity, not on/off.
  *  11. Show geometry: geometry and instances both visible — Transform drives
  *      both, Material only the geometry, the instancer keeps Inst tex/opacity.
+ *  15. Instances map their texture as the geometry does: the Material
+ *      panel's Mapping (Auto/UV/Seamless), same triplanar chunks, both slots.
  *  14. Instances write depth (no see-through stripes) and glow at the scene
  *      material's EM_FLOOR, so they are lit like the geometry.
  *  13. Rotation planes are addressed by (i,j), not index: Rot YZ spins YZ,
@@ -606,6 +608,52 @@ console.log('\n14. Instances shade like the geometry, and occlude properly');
   check('adopted instancer glows at the same floor as the geometry (was 1.0)',
     sm.mesh === hc._hInstancer.getMesh() && sm.mesh.material.emissiveIntensity === EM_FLOOR,
     `emissiveIntensity ${sm.mesh.material.emissiveIntensity}`);
+}
+
+// ── 15. Instances map their texture like the geometry (Seamless / UV) ──────
+console.log('\n15. Instancer texture mapping follows the Material panel\'s Mapping');
+{
+  // Owner report 2026-09-18: "the instancer does the texture a bit
+  // differently" — it used plain UVs (a model's UV islands showed as patches,
+  // spheres pinched at the poles) where the geometry used Seamless for Noise.
+  const { HypercubeInstancer } = await import('../src/scene3d/HypercubeInstancer.js');
+  const inst = new HypercubeInstancer(new THREE.Scene());
+  const mat = inst.getMesh().material;
+  const sh = { uniforms: {}, vertexShader: THREE.ShaderLib.standard.vertexShader, fragmentShader: THREE.ShaderLib.standard.fragmentShader };
+  mat.onBeforeCompile(sh);
+  check('instancer shader projects BOTH the colour map and the glow map',
+    sh.fragmentShader.includes('_triSample(map, vObjPos') && sh.fragmentShader.includes('_triSample(emissiveMap, vObjPos') &&
+    !sh.fragmentShader.includes('#include <map_fragment>') && !sh.fragmentShader.includes('#include <emissivemap_fragment>') &&
+    /vObjPos = position \* 2\.0;/.test(sh.vertexShader) && sh.uniforms.uTriSharp,
+    'replace both slots from Triplanar.js — the glow slot alone lays a UV copy over the seamless one (LEARNED 2026-09-01)');
+
+  const { ParameterSystem, registerCoreParameters } = await import('../src/controls/ParameterSystem.js');
+  const { SceneManager } = await import('../src/scene3d/SceneManager.js');
+  const ps = new ParameterSystem(); registerCoreParameters(ps);
+  ps.register({ id: 'hypercube.inst.showGeo', type: 'toggle', value: 0, group: 'hypercube' });
+  ps.register({ id: 'hypercube.inst.texsrc', type: 'select', options: ['None', 'A', 'B'], value: 1, group: 'hypercube' });
+  const sm = new SceneManager({}, 64, 64);
+  const hc = await sm.createHypercube({ dim: 4 });
+  hc.setInstancerVisible(true);
+  const noise = new THREE.Texture(), other = new THREE.Texture();
+  let routed = noise;
+  const inputs = { noise, resolveSource: () => routed };
+  const frame = () => sm.applyParams(ps, 0.016, inputs);
+  const tri = () => !!hc._hInstancer.getMesh().material.defines.USE_TRIPLANAR;
+  ps.set('scene3d.mat.mapping', 0); frame(); frame();
+  check('Mapping Auto + Inst tex Noise → Seamless (the geometry\'s rule)', tri() && sm.mesh === hc._hInstancer.getMesh());
+  // setMapping itself (SceneManager's material block flags this.material every
+  // frame on its own — a separate, older matter, so it is measured apart).
+  const im = hc._hInstancer.getMesh().material, v = im.version;
+  hc._hInstancer.setMapping(true, 6); hc._hInstancer.setMapping(true, 4);
+  check('setMapping with an unchanged mode does not re-flag the material',
+    im.version === v && hc._hInstancer._triSharp.value === 4, `version ${v} → ${im.version}`);
+  routed = other; frame();
+  check('Mapping Auto + another source → UV', !tri());
+  ps.set('scene3d.mat.mapping', 2); frame();
+  check('Mapping Seamless → Seamless for any source', tri());
+  ps.set('scene3d.mat.mapping', 1); routed = noise; frame();
+  check('Mapping UV → UV even for Noise', !tri());
 }
 
 console.log(failures ? `\n${failures} FAILURE(S)\n` : '\nAll hypercube checks passed.\n');

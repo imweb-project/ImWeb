@@ -18,6 +18,7 @@ import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { GeometryFactory, GEOMETRY_NAMES } from './GeometryFactory.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { TRIPLANAR_GLSL, TRI_MAP_FRAGMENT, TRI_EMISSIVEMAP_FRAGMENT } from './Triplanar.js';
 
 export class SceneManager {
   constructor(renderer, width, height) {
@@ -302,28 +303,8 @@ export class SceneManager {
     //
     // On the unit sphere (GeometryFactory radius 1) position == normal ==
     // normalize(position), so this is bit-identical to the old path there.
-    const TRIPLANAR_GLSL = `
-      uniform float uTriSharp;
-      vec3 _triWeights(vec3 n) {
-        // uTriSharp decides how abruptly the three projections hand over.
-        // Higher = narrower blend zone: crisper detail, but a sharper crease
-        // where planes meet — and in DISPLACEMENT a crease is a physical ridge,
-        // not a soft edge, which is why this needed to be playable rather than
-        // fixed at 6. Measured on a sphere: pow 6 leaves 30.7% of the surface
-        // in a blend zone, pow 3 leaves 55.8%, pow 2 leaves 72.9%. Wider is
-        // smoother but flatter, since it averages three samples over more of
-        // the surface. There is no free setting; that is the point of a knob.
-        vec3 w = pow(abs(normalize(n)), vec3(uTriSharp));
-        return w / (w.x + w.y + w.z);
-      }
-      vec4 _triSample(sampler2D tex, vec3 pos, vec3 nrm, float scale) {
-        vec3 w = _triWeights(nrm);
-        vec3 p = pos * scale * 0.5 + 0.5;
-        return textureLod(tex, p.yz, 0.0) * w.x
-             + textureLod(tex, p.xz, 0.0) * w.y
-             + textureLod(tex, p.xy, 0.0) * w.z;
-      }
-    `;
+    // TRIPLANAR_GLSL and the two fragment chunks live in Triplanar.js, shared
+    // with the Hypercube instancer.
     mat.onBeforeCompile = (shader) => {
       shader.uniforms.uWarpMap    = { value: this._fallback };
       shader.uniforms.uWarpAmt    = { value: 0 };
@@ -510,17 +491,7 @@ export class SceneManager {
         ${shader.fragmentShader}
       `.replace(
         '#include <map_fragment>',
-        `
-        #ifdef USE_MAP
-          #ifdef USE_TRIPLANAR
-            vec4 sampledDiffuseColor = _triSample(map, vObjPos, vObjNormal, 1.0);
-            diffuseColor *= sampledDiffuseColor;
-          #else
-            vec4 sampledDiffuseColor = textureLod(map, vMapUv, 0.0);
-            diffuseColor *= sampledDiffuseColor;
-          #endif
-        #endif
-        `
+        TRI_MAP_FRAGMENT
       ).replace(
         '#include <emissivemap_fragment>',
         // The emissive map is the SAME texture as the diffuse map, so it has to
@@ -528,16 +499,7 @@ export class SceneManager {
         // plain UV — so wiring emissiveMap without this laid a UV-mapped copy,
         // seam and pole pinch included, over the seamless triplanar diffuse.
         // Same _triSample as the diffuse path, so the two cannot drift apart.
-        `
-        #ifdef USE_EMISSIVEMAP
-          #ifdef USE_TRIPLANAR
-            vec4 emissiveColor = _triSample(emissiveMap, vObjPos, vObjNormal, 1.0);
-          #else
-            vec4 emissiveColor = texture2D(emissiveMap, vEmissiveMapUv);
-          #endif
-          totalEmissiveRadiance *= emissiveColor.rgb;
-        #endif
-        `
+        TRI_EMISSIVEMAP_FRAGMENT
       ).replace(
         '#include <dithering_fragment>',
         `#include <dithering_fragment>
@@ -1092,7 +1054,10 @@ export class SceneManager {
         srcIdx === 6;   // Auto — Noise is procedural, so it costs nothing to wrap
 
       const _useTriplanar = resolveTriplanar(texSrcIdx);
-      if (!!this.material.defines?.USE_TRIPLANAR !== _useTriplanar) {
+      // Not while the instancer is adopted: this.material is then ITS material,
+      // whose mapping follows Inst tex (set below) — toggling it here as well
+      // would flip the define every frame and recompile every frame.
+      if (!this._adoptedMesh && !!this.material.defines?.USE_TRIPLANAR !== _useTriplanar) {
         if (_useTriplanar) this.material.defines.USE_TRIPLANAR = true;
         else delete this.material.defines.USE_TRIPLANAR;
         this.material.needsUpdate = true;
@@ -1313,6 +1278,12 @@ export class SceneManager {
       // instancer is a feedback loop, and the texture object is what says so.
       const useInstTex = (instTex && instTex === this.target.texture) ? null : instTex;
       this._hypercube.setInstancerTexture(useInstTex);
+      // Same Mapping rule as the geometry: Seamless, UV, or Auto = Seamless for
+      // Noise. Auto reads the instancer's OWN source (Inst tex), by object
+      // identity against the Noise input rather than a hand-kept index.
+      const mapSel = p.get('scene3d.mat.mapping')?.value ?? 0;
+      const seamless = mapSel === 2 || (mapSel === 0 && !!useInstTex && useInstTex === inputs?.noise);
+      this._hypercube._hInstancer?.setMapping(seamless, p.get('scene3d.mat.triblend')?.value ?? 6);
     }
   }
 
