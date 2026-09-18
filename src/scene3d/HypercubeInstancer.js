@@ -10,6 +10,27 @@ const _geoFactory   = new GeometryFactory();
 const _GEO_PARAMS = { radius: 0.5, size: 1.0, w: 1.0, h: 1.0, rt: 0.5, rb: 0.5, height: 1.0,
                       radius1: 0.5, length: 1.0, outerR: 0.5, innerR: 0.15 };
 
+// Instance-sized tessellation, PER SHAPE (torus/knot/capsule give radSeg and
+// tubeSeg different meanings, so one shared object cannot carry them). The
+// scene's shapes are tessellated for vertex displacement — 128×128 spheres,
+// 64³ cubes — which the instancer never does, and every instance paid for it:
+// a sphere was 16,641 vertices, and 1024 of them at 10D stuttered on the
+// owner's machine. Round silhouettes keep facets under ~½ px at the largest
+// instance the owner uses (~400 px across); flat sides get 1 segment; the
+// polyhedra keep their detail, because their facets ARE the look.
+const _INST_SEG = {
+  Sphere:    { widthSeg: 64, heightSeg: 32 },
+  Torus:     { radSeg: 64, tubeSeg: 24 },
+  Cube:      { seg: 1 },
+  Plane:     { wSeg: 1, hSeg: 1 },
+  Cylinder:  { seg: 64, hSeg: 1 },
+  Capsule:   { cap: 12, radSeg: 48 },
+  TorusKnot: { tubeSeg: 160, radSeg: 16 },
+  Cone:      { seg: 64, hSeg: 1 },
+  Ring:      { thetaSeg: 64, phiSeg: 2 },
+};
+const _instGeo = (type) => _geoFactory.create(type, { ..._GEO_PARAMS, ...(_INST_SEG[type] ?? {}) });
+
 // Must equal SceneManager's EM_FLOOR: the instancer's texture glow matches the
 // 3D scene material's, so the two are lit alike.
 export const EM_FLOOR = 0.35;
@@ -20,7 +41,7 @@ export const EM_FLOOR = 0.35;
 // already costs at the full 4096 — measured from it, not a guessed constant.
 let _vertBudget = 0;
 const vertBudget = () => _vertBudget ||= MAX_INSTANCES *
-  _geoFactory.create('Sphere', _GEO_PARAMS).attributes.position.count;
+  _instGeo('Sphere').attributes.position.count;
 
 export class HypercubeInstancer {
   constructor(scene) {
@@ -47,8 +68,8 @@ export class HypercubeInstancer {
     // SceneManager._syncModelInstanceShape). A CLONE, because the old mesh's
     // geometry is disposed on every rebuild. No model loaded → a sphere.
     const geo = geoType === 'Model'
-      ? (this._modelGeo ? this._modelGeo.clone() : _geoFactory.create('Sphere', _GEO_PARAMS))
-      : _geoFactory.create(geoType, _GEO_PARAMS);
+      ? (this._modelGeo ? this._modelGeo.clone() : _instGeo('Sphere'))
+      : _instGeo(geoType);
     this._maxCount = geoType === 'Model' && this._modelGeo
       ? Math.max(1, Math.floor(vertBudget() / geo.attributes.position.count))
       : MAX_INSTANCES;

@@ -22,8 +22,8 @@ export class GeometryFactory {
     return new THREE.TorusGeometry(radius, tube, radSeg, tubeSeg);
   }
 
-  cube({ size = 1.4 } = {}) {
-    return new THREE.BoxGeometry(size, size, size, 64, 64, 64);
+  cube({ size = 1.4, seg = 64 } = {}) {
+    return new THREE.BoxGeometry(size, size, size, seg, seg, seg);
   }
 
   plane({ w = 2, h = 2, wSeg = 128, hSeg = 128 } = {}) {

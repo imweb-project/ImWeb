@@ -65,6 +65,13 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   names the same source.
 
 ### Fixed
+- **Hypercube instances are far lighter on the GPU.** Every instance used the
+  3D scene's full-detail shape: a 16,641-vertex sphere, and a 25,350-vertex
+  cube for a box that needs 24. Spheres stuttered at 10D. Instance shapes now
+  use instance-sized detail, and look the same at the sizes they're drawn:
+  sphere 2,145, torus 1,625, cube 24, plane 4, capsule 2,450, knot 2,737. The
+  polyhedra keep their facets. A 10D sphere cloud is now 2.2M vertices instead
+  of 17M.
 - **Hypercube instances map their texture like the geometry.** Instances
   always used the model's own texture coordinates, so an imported model showed
   the texture in patches and spheres pinched it at the poles. The geometry uses
