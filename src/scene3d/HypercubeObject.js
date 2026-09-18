@@ -407,11 +407,21 @@ export class HypercubeObject {
     const nActiveVerts  = vertexCount(this._dim);
     const writeColors   = this._colorsDirty;
 
+    // Both edge loops stop at the last live edge: nothing past it is drawn
+    // (setDrawRange below), and walking all 12D edges cost 768× the work at
+    // 4D. The ceiling moves only with _dim, and every _dim change sets
+    // _colorsDirty, so edges it newly admits get their colours that frame.
+    if (this._cachedDimForRange !== this._dim) {
+      this._lastActiveEdgeIdx = this._computeLastActiveEdge();
+      this._cachedDimForRange = this._dim;
+    }
+    const ceiling = this._lastActiveEdgeIdx + 1;
+
     // ── Line buffer ───────────────────────────────────────────────────────
     const lp = this._linePosBuf;
     const lc = this._lineColBuf;
 
-    for (let e = 0; e < edges.length; e++) {
+    for (let e = 0; e < ceiling; e++) {
       const [a, b, dimAxis] = edges[e];
       const base = e * 6;
       // Cull edges that belong to inactive dimensions OR reference vertex
@@ -443,7 +453,7 @@ export class HypercubeObject {
     const qb = this._quadEndBBuf;
     const qc = this._quadColBuf;
 
-    for (let e = 0; e < edges.length; e++) {
+    for (let e = 0; e < ceiling; e++) {
       const [a, b, dimAxis] = edges[e];
       const base6 = e * 6;
       if (dimAxis >= this._dim || a >= nActiveVerts || b >= nActiveVerts) {
@@ -471,11 +481,6 @@ export class HypercubeObject {
     }
 
     if (this._lines?.visible) {
-      if (this._cachedDimForRange !== this._dim) {
-        this._lastActiveEdgeIdx = this._computeLastActiveEdge();
-        this._cachedDimForRange = this._dim;
-      }
-      const ceiling      = this._lastActiveEdgeIdx + 1;
       const uploadFloats = ceiling * 4 * 3;
       this._lines.geometry.setDrawRange(0, ceiling * 6);
       const aEndA = this._lines.geometry.attributes.aEndA;

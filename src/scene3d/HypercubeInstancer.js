@@ -99,11 +99,11 @@ export class HypercubeInstancer {
       this._mesh.setMatrixAt(i, _dummy.matrix);
     }
 
-    for (let i = count; i < MAX_INSTANCES; i++) {
-      this._mesh.setMatrixAt(i, _zeroMatrix);
-    }
-
-    this._mesh.instanceMatrix.needsUpdate = true;
+    // count stops the draw; upload only the live range (see HypercubeFaces).
+    const im = this._mesh.instanceMatrix;
+    im.clearUpdateRanges();
+    im.addUpdateRange(0, count * 16);
+    im.needsUpdate = true;
     this._mesh.count   = count;
     this._mesh.visible = this._visible && count > 0;
   }
@@ -206,4 +206,3 @@ export class HypercubeInstancer {
 // Module-level reusables — avoid per-frame allocation
 const _dummy      = new THREE.Object3D();
 const _mat4       = new THREE.Matrix4(); // eslint-disable-line no-unused-vars
-const _zeroMatrix = new THREE.Matrix4().makeScale(0, 0, 0);

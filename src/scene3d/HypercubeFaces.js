@@ -128,27 +128,26 @@ export class HypercubeFaces {
       // see generate2CellFaces. c1 and c2 are the two edges adjacent to c0.
       // Do not re-sort: that winding is a constant, and deriving it here cost
       // a fresh array and a sort per face per frame.
-      const c0 = corners[0], c1 = corners[1], c2 = corners[2];
-
-      const get = (ci) => {
-        const pi = ci * 3;
-        return [projBuf[pi]*scale, projBuf[pi+1]*scale, projBuf[pi+2]*scale];
-      };
-      const v0 = get(c0), v1 = get(c1), v2 = get(c2);
+      // Read corners straight from projBuf — no per-face arrays, at 12D this
+      // loop runs 67k times a frame.
+      const p0 = corners[0] * 3, p1 = corners[1] * 3, p2 = corners[2] * 3, p3 = corners[3] * 3;
+      const v0x = projBuf[p0]*scale, v0y = projBuf[p0+1]*scale, v0z = projBuf[p0+2]*scale;
+      const v1x = projBuf[p1]*scale, v1y = projBuf[p1+1]*scale, v1z = projBuf[p1+2]*scale;
+      const v2x = projBuf[p2]*scale, v2y = projBuf[p2+1]*scale, v2z = projBuf[p2+2]*scale;
+      const v3x = projBuf[p3]*scale, v3y = projBuf[p3+1]*scale, v3z = projBuf[p3+2]*scale;
 
       // Centroid of all 4 corners
-      const v3 = get(corners[3]);
-      const cx = (v0[0]+v1[0]+v2[0]+v3[0])/4;
-      const cy = (v0[1]+v1[1]+v2[1]+v3[1])/4;
-      const cz = (v0[2]+v1[2]+v2[2]+v3[2])/4;
+      const cx = (v0x+v1x+v2x+v3x)/4;
+      const cy = (v0y+v1y+v2y+v3y)/4;
+      const cz = (v0z+v1z+v2z+v3z)/4;
 
       // Tangent = v1 - v0 (adjacent edge, length carries X scale)
-      const tx = v1[0]-v0[0], ty = v1[1]-v0[1], tz = v1[2]-v0[2];
+      const tx = v1x-v0x, ty = v1y-v0y, tz = v1z-v0z;
       const tLen = Math.sqrt(tx*tx + ty*ty + tz*tz);
       if (tLen < 1e-6) continue;
 
       // Bitangent = v2 - v0 (adjacent edge, length carries Y scale)
-      const bx = v2[0]-v0[0], by = v2[1]-v0[1], bz = v2[2]-v0[2];
+      const bx = v2x-v0x, by = v2y-v0y, bz = v2z-v0z;
 
       // Normal = tangent × bitangent (normalised — only orientation)
       const nx = ty*bz - tz*by;
@@ -169,11 +168,13 @@ export class HypercubeFaces {
       drawn++;
     }
 
-    for (let i = drawn; i < this._maxFaces; i++) {
-      this._mesh.setMatrixAt(i, _zeroMatrix);
-    }
-
-    this._mesh.instanceMatrix.needsUpdate = true;
+    // No zero-fill past `drawn` and no full-buffer upload: count already stops
+    // the draw there, and the full buffer is 4 MB — uploaded every frame at 4D
+    // to draw 24 faces.
+    const im = this._mesh.instanceMatrix;
+    im.clearUpdateRanges();
+    im.addUpdateRange(0, drawn * 16);
+    im.needsUpdate = true;
     this._mesh.count   = drawn;
     this._mesh.visible = this._visible && drawn > 0;
   }
@@ -255,4 +256,3 @@ export class HypercubeFaces {
 
 // Module-level reusable matrices — avoid per-frame allocation
 const _mat4       = new THREE.Matrix4();
-const _zeroMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
