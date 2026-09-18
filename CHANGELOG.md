@@ -8,6 +8,29 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Added
+- **Four more face blend modes on the Hypercube: Screen, Lighten, Darken and
+  Exclusion.** Face opacity fades each one toward "no effect", which Multiply
+  and Subtract do not do. Faces draw straight into the scene, so every mode had
+  to be something the GPU's blend stage can compute on its own. That rules out
+  Difference; Exclusion is the closest look. Each mode was measured on real
+  WebGL2 against its formula (exact to the 8-bit value). The options are appended, so saved
+  states keep their mode.
+- **Face tex, Face mask and Inst tex list every source** — all 33, not a
+  hand-kept seven. A source routed onto a face (SlitScan, Rutt-Etra…) now
+  renders because of it. Saved banks are migrated so each old choice still
+  names the same source.
+
+### Fixed
+- **Hypercube Faces and Instancer show without a Render Mode.** Mode's default,
+  "none", also switched both off, so turning Faces on showed nothing until Mode
+  was changed as well. Mode now only chooses wireframe, points or both. A saved
+  state with Faces on and Mode none now shows its faces.
+- **Boot no longer stalls ~80 s building Hypercube faces.** Faces for every
+  dimension were found by scanning every vertex for each candidate face; their
+  corners are now computed directly from bits, in about 75 ms for all
+  dimensions.
+
 ---
 
 ## [0.25.0] — 2026-09-16 — Hands On

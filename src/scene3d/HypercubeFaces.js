@@ -40,6 +40,7 @@ export class HypercubeFaces {
         uHasMask:     { value: 0.0 },
         uMaskInvert:  { value: 0.0 },
         uMaskLevel:   { value: 1.0 },
+        uBlendMode:   { value: 0 },
       },
       vertexShader: `
         out vec2 vUv;
@@ -63,6 +64,7 @@ export class HypercubeFaces {
         uniform float     uHasMask;
         uniform float     uMaskInvert;
         uniform float     uMaskLevel;
+        uniform int       uBlendMode;
         in vec2 vUv;
         out vec4 fragColor;
         void main() {
@@ -78,7 +80,13 @@ export class HypercubeFaces {
             if (uMaskInvert > 0.5) lum = 1.0 - lum;
             alpha *= lum;
           }
-          fragColor = vec4(col.rgb * uColor, alpha);
+          vec3 rgb = col.rgb * uColor;
+          // Modes 4+ are CustomBlending, whose colour factors never see alpha:
+          // opacity is folded in here, toward each mode's identity — black
+          // for Screen/Lighten/Exclusion, white for Darken.
+          if (uBlendMode == 6)      rgb = mix(vec3(1.0), rgb, alpha);
+          else if (uBlendMode >= 4) rgb *= alpha;
+          fragColor = vec4(rgb, alpha);
         }
       `,
     });
@@ -180,15 +188,37 @@ export class HypercubeFaces {
   }
 
   // idx: 0=Normal 1=Additive 2=Multiply 3=Subtract
+  // Index = hypercube.faces.blend option, APPEND-ONLY (saved as an integer).
+  // Faces draw straight into the scene, so every mode must be expressible in
+  // the fixed-function blend stage — which is why there is no Difference.
+  // Alpha always blends as Normal does, so the scene's coverage (read by the
+  // compositor) is the same in every mode.
   setBlending(idx) {
-    const modes = [
+    const presets = [
       THREE.NormalBlending,
       THREE.AdditiveBlending,
       THREE.MultiplyBlending,
       THREE.SubtractiveBlending,
     ];
-    this._mat.blending = modes[idx] ?? THREE.NormalBlending;
-    this._mat.needsUpdate = true;
+    //            equation            src factor                  dst factor
+    const custom = {
+      4: [THREE.AddEquation, THREE.OneMinusDstColorFactor, THREE.OneFactor],               // Screen    s(1-d) + d
+      5: [THREE.MaxEquation, THREE.OneFactor,              THREE.OneFactor],               // Lighten   max(s, d)
+      6: [THREE.MinEquation, THREE.OneFactor,              THREE.OneFactor],               // Darken    min(s, d)
+      7: [THREE.AddEquation, THREE.OneMinusDstColorFactor, THREE.OneMinusSrcColorFactor],  // Exclusion s + d - 2sd
+    }[idx];
+    const m = this._mat;
+    if (custom) {
+      m.blending          = THREE.CustomBlending;
+      [m.blendEquation, m.blendSrc, m.blendDst] = custom;
+      m.blendEquationAlpha = THREE.AddEquation;
+      m.blendSrcAlpha      = THREE.SrcAlphaFactor;
+      m.blendDstAlpha      = THREE.OneMinusSrcAlphaFactor;
+    } else {
+      m.blending = presets[idx] ?? THREE.NormalBlending;
+    }
+    m.uniforms.uBlendMode.value = custom ? idx : 0;
+    m.needsUpdate = true;
   }
 
   setColor(r, g, b) {

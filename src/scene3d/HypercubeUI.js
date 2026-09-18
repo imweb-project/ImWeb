@@ -155,7 +155,8 @@ export function buildHypercubePanel(container, hypercube, ps) {
   // exactly what the one-canonical-list rule forbids.
   const _TEX_SRC_LABELS = ps?.get('hypercube.faces.texsrc')?.options
     ?? ['None', 'Camera', 'Movie', 'Screen', 'Draw', 'Buffer', 'Noise'];
-  const _BLEND_LABELS   = ['Normal', 'Additive', 'Multiply', 'Subtract'];
+  const _BLEND_LABELS   = ps?.get('hypercube.faces.blend')?.options
+    ?? ['Normal', 'Additive', 'Multiply', 'Subtract'];
 
   _selectRow(renderSec, 'Faces', ['off', 'on'],
     ps?.get('hypercube.faces.active')?.value ? 1 : 0,

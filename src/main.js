@@ -381,7 +381,7 @@ async function main() {
   ps.register({ id:'hypercube.projMode',      type:'select',     options:['perspective','orthographic'],      value:0, label:'Proj Mode',    group:'hypercube' });
   ps.register({ id:'hypercube.faces.active',  type:'toggle',     value:0,                                    label:'Faces',        group:'hypercube' });
   ps.register({ id:'hypercube.faces.opacity', type:'continuous', value:0.5,  min:0.0,  max:1.0,  step:0.01,  label:'Face opacity', group:'hypercube' });
-  ps.register({ id:'hypercube.faces.blend',   type:'select',     options:['Normal','Additive','Multiply','Subtract'], value:0, label:'Face blend', group:'hypercube' });
+  ps.register({ id:'hypercube.faces.blend',   type:'select',     options:['Normal','Additive','Multiply','Subtract','Screen','Lighten','Darken','Exclusion'], value:0, label:'Face blend', group:'hypercube' });
   ps.register({ id:'hypercube.faces.hue',     type:'continuous', value:0,    min:0,    max:360,  step:1,     label:'Face hue',     group:'hypercube' });
   ps.register({ id:'hypercube.faces.sat',     type:'continuous', value:0,    min:0,    max:100,  step:1,     label:'Face sat',     group:'hypercube' });
   ps.register({ id:'hypercube.faces.texsrc',  type:'select',     options:OPT_SOURCES, value:0, label:'Face tex',   group:'hypercube' });
