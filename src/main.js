@@ -367,15 +367,15 @@ async function main() {
 
   // ── Hypercube parameters ───────────────────────────────────────────────────
   ps.register({ id:'hypercube.dim',           type:'continuous', value:4,    min:4,    max:12,   step:1,     label:'Dimension',    group:'hypercube' });
-  ps.register({ id:'hypercube.morphDuration', type:'continuous', value:2000, min:200,  max:8000, step:100,   group:'hypercube' });
-  ps.register({ id:'hypercube.wDistance',     type:'continuous', value:3.0,  min:1.1,  max:20,   step:0.1,   group:'hypercube' });
-  ps.register({ id:'hypercube.scale',         type:'continuous', value:1.0,  min:0.1,  max:5.0,  step:0.05,  group:'hypercube' });
-  ps.register({ id:'hypercube.edgeOpacity',   type:'continuous', value:1.0,  min:0.0,  max:1.0,  step:0.01,  group:'hypercube' });
-  ps.register({ id:'hypercube.pointSize',     type:'continuous', value:3.0,  min:0.5,  max:20,   step:0.5,   group:'hypercube' });
-  ps.register({ id:'hypercube.rot.xy',        type:'continuous', value:0.30, min:-2.0, max:2.0,  step:0.01,  group:'hypercube' });
-  ps.register({ id:'hypercube.rot.xz',        type:'continuous', value:0.20, min:-2.0, max:2.0,  step:0.01,  group:'hypercube' });
-  ps.register({ id:'hypercube.rot.yz',        type:'continuous', value:0.15, min:-2.0, max:2.0,  step:0.01,  group:'hypercube' });
-  ps.register({ id:'hypercube.rot.xw',        type:'continuous', value:0.40, min:-2.0, max:2.0,  step:0.01,  group:'hypercube' });
+  ps.register({ id:'hypercube.morphDuration', type:'continuous', value:2000, min:200,  max:8000, step:100, label:'Morph Time',  group:'hypercube' });
+  ps.register({ id:'hypercube.wDistance',     type:'continuous', value:3.0,  min:1.1,  max:20,   step:0.1, label:'W Distance',  group:'hypercube' });
+  ps.register({ id:'hypercube.scale',         type:'continuous', value:1.0,  min:0.1,  max:5.0,  step:0.05, label:'Scale',  group:'hypercube' });
+  ps.register({ id:'hypercube.edgeOpacity',   type:'continuous', value:1.0,  min:0.0,  max:1.0,  step:0.01, label:'Edge Opacity',  group:'hypercube' });
+  ps.register({ id:'hypercube.pointSize',     type:'continuous', value:3.0,  min:0.5,  max:20,   step:0.5, label:'Point Size',  group:'hypercube' });
+  ps.register({ id:'hypercube.rot.xy',        type:'continuous', value:0.30, min:-2.0, max:2.0,  step:0.01, label:'Rot XY',  group:'hypercube' });
+  ps.register({ id:'hypercube.rot.xz',        type:'continuous', value:0.20, min:-2.0, max:2.0,  step:0.01, label:'Rot XZ',  group:'hypercube' });
+  ps.register({ id:'hypercube.rot.yz',        type:'continuous', value:0.15, min:-2.0, max:2.0,  step:0.01, label:'Rot YZ',  group:'hypercube' });
+  ps.register({ id:'hypercube.rot.xw',        type:'continuous', value:0.40, min:-2.0, max:2.0,  step:0.01, label:'Rot XW',  group:'hypercube' });
   ps.register({ id:'hypercube.edgeWidth',     type:'continuous', value:1.5,  min:0.5,  max:8.0,  step:0.1,   label:'Edge Width',   group:'hypercube' });
   ps.register({ id:'hypercube.renderMode',    type:'select',     options:['wireframe','points','both','none'], value:3, label:'Render Mode', group:'hypercube' });
   ps.register({ id:'hypercube.projMode',      type:'select',     options:['perspective','orthographic'],      value:0, label:'Proj Mode',    group:'hypercube' });
@@ -727,7 +727,12 @@ async function main() {
   const _RENDER_MODES = ['wireframe','points','both','none'];
   const _PROJ_MODES   = ['perspective','orthographic'];
   const _GEO_TYPES    = ['Sphere','Torus','Cube','Plane','Cylinder','Capsule','TorusKnot','Cone','Dodecahedron','Icosahedron','Octahedron','Tetrahedron','Ring'];
-  ps.get('hypercube.dim')?.onChange(v    => scene3d.getHypercube()?.morphTo(Math.round(v), { durationMs: 0 }));
+  // Skip a dimension the cube is already at or heading to: under an LFO this
+  // fires every frame, and each call queued a same-dimension morph.
+  ps.get('hypercube.dim')?.onChange(v => {
+    const hc = scene3d.getHypercube(), d = Math.round(v);
+    if (hc && hc.targetDim !== d) hc.morphTo(d, { durationMs: 0 });
+  });
   ps.get('hypercube.renderMode')?.onChange(i => scene3d.getHypercube()?.setRenderMode(_RENDER_MODES[i] ?? 'wireframe'));
   ps.get('hypercube.projMode')?.onChange(i   => scene3d.getHypercube()?.setProjectionMode(_PROJ_MODES[i] ?? 'perspective'));
   ps.get('hypercube.wDistance')?.onChange(v  => scene3d.getHypercube()?.setWDistance(v));
@@ -1410,6 +1415,23 @@ async function main() {
       const hcContainer = document.createElement('div');
       hcSection.appendChild(hcHeader);
       hcSection.appendChild(hcContainer);
+
+      // Every hypercube param as a standard row — the badge is what puts it on
+      // the modulation grid (LFO, Random, MIDI, OSC, tables). The panel above
+      // is hand-built and has no badges, so without these the whole subsystem
+      // was hand-only. By GROUP, not a list: a param added later gets a row.
+      // Sibling of hcContainer, so _hcPanelRebuild's innerHTML='' leaves it be.
+      // Starts collapsed: 27 rows would push the panel off screen. The header
+      // is wired by the .subsection-header loop further down main().
+      const hcParams = document.createElement('div');
+      hcParams.className = 'panel-subsection collapsed';
+      const hcParamsHdr = document.createElement('div');
+      hcParamsHdr.className = 'subsection-header collapsed';
+      hcParamsHdr.textContent = 'Parameters · controllers';
+      hcParams.appendChild(hcParamsHdr);
+      for (const p of ps.getGroup('hypercube')) hcParams.appendChild(buildParamRow(p, contextMenu));
+      hcSection.appendChild(hcParams);
+
       scene3dTab.appendChild(hcSection);
 
       const hc = scene3d.getHypercube();

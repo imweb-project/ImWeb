@@ -674,6 +674,11 @@ export class HypercubeObject {
 
   get dim() { return this._dim; }
 
+  /** The dimension the cube will settle at once queued morphs finish. */
+  get targetDim() {
+    return this._morphQueue.length ? this._morphQueue[this._morphQueue.length - 1].toDim : this._dim;
+  }
+
   // ── Dispose ───────────────────────────────────────────────────────────────
 
   dispose() {

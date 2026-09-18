@@ -9,6 +9,13 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Every Hypercube parameter can take a controller.** A new collapsed
+  **Parameters · controllers** subsection under Hypercube gives all 27 a
+  standard row with a badge, so LFO, Random, MIDI, OSC and response tables
+  now reach dimension, rotation speeds, W distance, faces, instancer and the
+  rest. Until now the whole subsystem was hand-only, because its panel has no
+  badges. The panel above stays as it was. Its numbers do not follow a
+  controller yet, so watch the new rows when something is modulating.
 - **Four more face blend modes on the Hypercube: Screen, Lighten, Darken and
   Exclusion.** Face opacity fades each one toward "no effect". Faces draw straight into the scene, so every mode had
   to be something the GPU's blend stage can compute on its own. That rules out

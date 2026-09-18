@@ -236,5 +236,30 @@ console.log('\n6. HypercubeUI window listeners');
     (pre.match(/window\.addEventListener/g) || []).length === 0);
 }
 
+// ── 7. Every param on the modulation grid ──────────────────────────────────
+console.log('\n7. Hypercube params have standard rows (badges → LFO/MIDI/OSC)');
+{
+  // The hand-built panel has no controller badges, so these rows are the only
+  // way onto the modulation grid. They are built by GROUP; a param outside the
+  // group, or one without a label (the row would read "hypercube.rot.xy"),
+  // is what would slip through.
+  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  check('main.js builds a row for every param in the hypercube group',
+    /for \(const p of ps\.getGroup\('hypercube'\)\) hcParams\.appendChild\(buildParamRow\(p, contextMenu\)\)/.test(main),
+    'without these rows no hypercube param can take a controller');
+  const regs = [...main.matchAll(/ps\.register\(\{ id:'(hypercube\.[^']+)'([^\n]*)\}\);/g)];
+  const unlabelled = regs.filter(([, , rest]) => !/label:'[^']+'/.test(rest)).map(([, id]) => id);
+  const outside = regs.filter(([, , rest]) => !/group:'hypercube'/.test(rest)).map(([, id]) => id);
+  check(`all ${regs.length} hypercube params carry a label`, regs.length > 20 && unlabelled.length === 0, unlabelled.join(', '));
+  check('all hypercube params are in group hypercube', outside.length === 0, `${outside.join(', ')} — would get no row`);
+
+  const hc = mk();
+  hc.morphTo(8, { durationMs: 2000 });
+  check('targetDim reports the dimension a morph is heading to', hc.targetDim === 8);
+  hc.morphTo(5, { durationMs: 2000 });
+  check('targetDim reports the LAST queued morph', hc.targetDim === 5,
+    'the dim onChange skips when targetDim already matches — a wrong target drops real changes');
+}
+
 console.log(failures ? `\n${failures} FAILURE(S)\n` : '\nAll hypercube checks passed.\n');
 process.exit(failures ? 1 : 0);
