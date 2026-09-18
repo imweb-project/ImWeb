@@ -22,6 +22,9 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   and its "none" is now **off**. Saved files are unchanged.
 
 ### Added
+- **Hypercube Easing is saved.** It's now a regular row under Dimension, kept
+  in Display States and projects, with a badge like every other setting, so
+  a controller can switch it. Before, it lasted only until reload.
 - **Inst Budget — a GPU limit you can set.** In the Hypercube Instancer
   section, in millions of vertices per frame across all instances (default
   9M). When a shape is too heavy for every vertex of the cube, fewer instances

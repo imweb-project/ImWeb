@@ -6,14 +6,12 @@
 
 import {
   DIMENSION_COLORS,
-  EASING,
   MAX_DIM,
   rotationPlaneCount,
   vertexCount,
   edgeCount,
 } from './HypercubeGeometry.js';
 
-const EASING_KEYS = Object.keys(EASING);
 
 // ── Layout ──────────────────────────────────────────────────────────────────
 // One panel, grouped the way the cube is built. Every row below is a STANDARD
@@ -22,7 +20,7 @@ const EASING_KEYS = Object.keys(EASING);
 // disagreed with the badge rows on units and names (owner, 2026-09-18).
 // tests/audit-hypercube.mjs checks every hypercube param sits in exactly one
 // of these lists, so a new param cannot silently get no row.
-export const HC_DIMENSION_IDS = ['hypercube.dim', 'hypercube.morphDuration'];
+export const HC_DIMENSION_IDS = ['hypercube.dim', 'hypercube.morphDuration', 'hypercube.easing'];
 export const HC_SECTIONS = [
   { title: 'Projection',     ids: ['hypercube.projMode', 'hypercube.wDistance', 'hypercube.scale'] },
   { title: 'Rotation',       ids: ['hypercube.rot.xy', 'hypercube.rot.xz', 'hypercube.rot.yz', 'hypercube.rot.xw'],
@@ -79,12 +77,6 @@ export function buildHypercubePanel(container, hypercube, ps, rowFor) {
   }
   panel.appendChild(pillRow);
   for (const id of HC_DIMENSION_IDS) panel.appendChild(rowFor(id));
-  // Easing is a panel preference, not a param (never saved) — the dim handler
-  // reads it from the object so pills, drags and controllers ease alike.
-  hypercube.morphEasing ??= 'easeInOut';
-  _selectRow(panel, 'Easing', EASING_KEYS, EASING_KEYS.indexOf(hypercube.morphEasing), idx => {
-    hypercube.morphEasing = EASING_KEYS[idx];
-  });
 
   // ── Sections ────────────────────────────────────────────────────────────
   let moreBody = null;
@@ -266,29 +258,3 @@ function _paramRow(parent, label, value, min, max, step, onChange) {
   return row;
 }
 
-function _selectRow(parent, label, options, selectedIdx, onChange) {
-  const row = document.createElement('div');
-  row.style.cssText = 'display:flex;align-items:center;padding:2px 8px;gap:6px;';
-
-  const lbl = document.createElement('span');
-  lbl.textContent = label;
-  lbl.style.cssText = 'flex:1;color:var(--text-1,#e0e0f0);min-width:60px;';
-
-  const sel = document.createElement('select');
-  sel.style.cssText = `
-    background:var(--bg-2,#18181f);color:var(--text-1,#e0e0f0);
-    border:1px solid #444;font-size:10px;font-family:monospace;padding:1px 3px;
-  `;
-  options.forEach((opt, i) => {
-    const o = document.createElement('option');
-    o.value = i; o.textContent = opt;
-    if (i === selectedIdx) o.selected = true;
-    sel.appendChild(o);
-  });
-  sel.addEventListener('change', () => onChange(parseInt(sel.value)));
-
-  row.appendChild(lbl);
-  row.appendChild(sel);
-  parent.appendChild(row);
-  return row;
-}

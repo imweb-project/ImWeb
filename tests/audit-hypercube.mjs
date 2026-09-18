@@ -420,6 +420,10 @@ console.log('\n10. Dimension: morph when played, jump when recalled');
     /ps\.restoring \|\| presetMgr\.morphing/.test(h) && /morphToLatest\(/.test(h) &&
     /recalled \? 0 : \(ps\.get\('hypercube\.morphDuration'\)/.test(h),
     'owner decision 2026-09-18: controllers and hands morph, recall jumps');
+  check('Easing is a saved param the dim handler reads (it lived only in the panel, never saved)',
+    /easing: ps\.get\('hypercube\.easing'\)\?\.options\[ps\.get\('hypercube\.easing'\)\.value\]/.test(h) &&
+    /id:'hypercube\.easing',\s*type:'select',\s*options:Object\.keys\(EASING\)/.test(main),
+    'options must be Object.keys(EASING) — derived, append-only, never a retyped list');
   check('…and is registered after presetMgr exists (it reads presetMgr.morphing)',
     main.indexOf('const presetMgr = new PresetManager(') !== -1 &&
     main.indexOf("ps.get('hypercube.dim')?.onChange(") > main.indexOf('const presetMgr = new PresetManager('),

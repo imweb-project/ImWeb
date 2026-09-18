@@ -111,6 +111,7 @@ import { TextLayer } from "./inputs/TextLayer.js";
 import { buildWarpMaps } from "./inputs/WarpMaps.js";
 import { WarpMapEditor } from "./inputs/WarpMapEditor.js";
 import { SceneManager } from "./scene3d/SceneManager.js";
+import { EASING } from "./scene3d/HypercubeGeometry.js";
 import { Pipeline } from "./core/Pipeline.js";
 import { GestureArbitrator } from "./core/GestureArbitrator.js";
 import { MobileStatePad } from "./ui/components/MobileStatePad.js";
@@ -367,6 +368,9 @@ async function main() {
 
   // ── Hypercube parameters ───────────────────────────────────────────────────
   ps.register({ id:'hypercube.dim',           type:'continuous', value:4,    min:4,    max:12,   step:1,     label:'Dimension',    group:'hypercube' });
+  // Options derived from EASING, never retyped: stored as an index, so the key
+  // order there is append-only. Default easeInOut, what the panel always used.
+  ps.register({ id:'hypercube.easing',        type:'select',     options:Object.keys(EASING), value:Object.keys(EASING).indexOf('easeInOut'), label:'Easing', group:'hypercube' });
   ps.register({ id:'hypercube.morphDuration', type:'continuous', value:2000, min:200,  max:8000, step:100, label:'Morph Time',  group:'hypercube' });
   ps.register({ id:'hypercube.wDistance',     type:'continuous', value:3.0,  min:1.1,  max:20,   step:0.1, label:'W Distance',  group:'hypercube' });
   ps.register({ id:'hypercube.scale',         type:'continuous', value:1.0,  min:0.1,  max:5.0,  step:0.05, label:'Scale',  group:'hypercube' });
@@ -893,7 +897,7 @@ async function main() {
     const recalled = ps.restoring || presetMgr.morphing;
     hc.morphToLatest(Math.round(v), {
       durationMs: recalled ? 0 : (ps.get('hypercube.morphDuration')?.value ?? 2000),
-      easing: hc.morphEasing ?? 'easeInOut',   // the panel's Easing menu
+      easing: ps.get('hypercube.easing')?.options[ps.get('hypercube.easing').value] ?? 'easeInOut',
     });
   });
   presetMgr.addEventListener('toast', e => showToast(e.detail.msg));
