@@ -37,6 +37,9 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   orthographic quietly switched the projection back to perspective, though Proj
   still said orthographic. Choosing orthographic twice made perspective stay
   flat afterwards. W distance and the projection no longer share one value.
+- **Changing Inst Geo no longer detaches the instancer from the 3D scene.**
+  The new shape stopped following the scene's rotation, spin and scale, and
+  sat unrotated at size 1 until the instancer was switched off and on.
 - **The Hypercube panel no longer piles up hidden listeners.** Every dimension
   change left the old rotation rows' mouse listeners on the page for good
   (24 → 48 in four changes). They now exist only while you drag.

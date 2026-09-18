@@ -1295,13 +1295,7 @@ export class SceneManager {
       p.get('scene3d.light.dirY').value,
       p.get('scene3d.light.dirZ').value
     );
-    const _hi = this._hypercube?._hInstancer;
-    const wantInstancer = _hi?._visible === true;
-    const hasInstancer = this._adoptedMesh != null;
-    if (wantInstancer && !hasInstancer)
-      this._adoptMesh(this._hypercube._hInstancer.getMesh());
-    if (!wantInstancer && hasInstancer)
-      this._adoptMesh(null);
+    this._syncInstancerAdoption();
 
     // Instancer texture source — OPT_SOURCES, so 0 is None and value-1 is a
     // SOURCE_DEFS index resolved by the SAME resolver the layers and mix buses
@@ -1443,6 +1437,22 @@ export class SceneManager {
     this._faceMaskCopy.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+  }
+
+  /**
+   * Adopt the hypercube instancer's CURRENT mesh while it is on. Compared by
+   * identity, not by on/off: Inst Geo (setGeoType) replaces the mesh while the
+   * instancer stays on, and an on/off test kept driving the removed one — the
+   * scene's rotation, spin and scale stopped reaching the instancer until it
+   * was toggled. Release before re-adopting: _adoptMesh() stashes this.mesh
+   * as the scene's own mesh, which must never be a stale instancer.
+   */
+  _syncInstancerAdoption() {
+    const hi   = this._hypercube?._hInstancer;
+    const want = hi?._visible === true ? hi.getMesh() : null;
+    if (want === this._adoptedMesh) return;
+    if (this._adoptedMesh) this._adoptMesh(null);
+    if (want) this._adoptMesh(want);
   }
 
   _adoptMesh(mesh) {

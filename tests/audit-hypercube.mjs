@@ -29,6 +29,11 @@
  *   6. HypercubeUI rows do not leave window listeners behind. They were added
  *      per row for its lifetime and never removed: 24 → 48 in four dimension
  *      changes, measured.
+ *   7. Every hypercube param has a standard row — the only route to a
+ *      controller badge — and a label, and targetDim reports the last queued
+ *      morph (the dim handler skips on it).
+ *   8. An Inst Geo change keeps the instancer under SceneManager's rotation,
+ *      spin and scale: adoption compares mesh identity, not on/off.
  *
  * Calibrated 2026-09-18 with eight mutations, each caught and each restored
  * to green: renderMode re-gating faces; setVisible(false) not hiding; the
@@ -259,6 +264,32 @@ console.log('\n7. Hypercube params have standard rows (badges → LFO/MIDI/OSC)'
   hc.morphTo(5, { durationMs: 2000 });
   check('targetDim reports the LAST queued morph', hc.targetDim === 5,
     'the dim onChange skips when targetDim already matches — a wrong target drops real changes');
+}
+
+// ── 8. SceneManager drives the instancer's CURRENT mesh ────────────────────
+console.log('\n8. Inst Geo change keeps the instancer under the 3D scene transforms');
+{
+  // setGeoType() replaces the InstancedMesh while the instancer stays on. An
+  // on/off adoption test kept SceneManager.mesh on the removed mesh, so the
+  // scene's rotation, spin and scale stopped reaching the instancer until it
+  // was toggled. Real SceneManager methods on a stand-in `this` (the class
+  // itself needs a WebGLRenderer).
+  const { SceneManager } = await import('../src/scene3d/SceneManager.js');
+  const scene = new THREE.Scene();
+  const own = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial()); scene.add(own);
+  const hc = new HypercubeObject(scene, { dim: 4 });
+  const sm = { scene, mesh: own, material: own.material, _adoptedMesh: null, _ownMesh: null, _hypercube: hc,
+               _adoptMesh: SceneManager.prototype._adoptMesh };
+  const sync = () => SceneManager.prototype._syncInstancerAdoption.call(sm);
+  hc.setInstancerVisible(true); sync();
+  check('instancer on → adopted', sm.mesh === hc._hInstancer.getMesh());
+  hc.setInstancerGeoType('Torus'); sync();
+  check('Inst Geo changed → SceneManager drives the NEW mesh', sm.mesh === hc._hInstancer.getMesh() && scene.children.includes(sm.mesh),
+    'adoption must compare mesh identity, not just on/off — release, then adopt the current mesh');
+  hc.setInstancerVisible(false); sync();
+  check('instancer off → own mesh restored, in the scene exactly once',
+    sm.mesh === own && scene.children.filter(c => c === own).length === 1,
+    're-adopting without releasing first stashes the stale instancer as the scene\'s own mesh');
 }
 
 console.log(failures ? `\n${failures} FAILURE(S)\n` : '\nAll hypercube checks passed.\n');
