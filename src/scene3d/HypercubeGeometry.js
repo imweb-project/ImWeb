@@ -53,6 +53,31 @@ export const PLANE_PAIRS = [];
 for (let i = 0; i < MAX_DIM; i++) for (let j = i + 1; j < MAX_DIM; j++) PLANE_PAIRS.push([i, j]);
 export const PLANE_NAMES = PLANE_PAIRS.map(([i, j]) => AXIS_NAMES[i] + AXIS_NAMES[j]);
 
+const _ORD = ['', '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', '11th', '12th'];
+const _SPIN_AROUND = { '0,1': 'Z', '0,2': 'Y', '1,2': 'X' };
+/** Hover text per plane: what it turns, and the dimension it needs to move. */
+export const PLANE_HELP = PLANE_PAIRS.map(([i, j]) => {
+  const a = AXIS_NAMES[i], b = AXIS_NAMES[j];
+  if (j < 3) return `${a}${b} — an ordinary 3D spin, around the ${_SPIN_AROUND[`${i},${j}`]} axis. Always moves.`;
+  const what = i < 3 ? `turns ${a} into the ${_ORD[j + 1]} dimension (${b})`
+                     : `turns between the ${_ORD[i + 1]} (${a}) and ${_ORD[j + 1]} (${b}) dimensions`;
+  return `${a}${b} — ${what}. Moves once the cube has ${j + 1} dimensions or more.`;
+});
+
+/**
+ * Menu order for a plane picker whose options are ['—', ...PLANE_NAMES]:
+ * grouped by the dimension a plane needs, so 66 entries read as a few short
+ * lists. Values stay the true option index (mkSelect `order` format).
+ */
+export const PLANE_MENU_ORDER = (() => {
+  const out = [0, { header: 'Ordinary 3D spins' }];
+  for (let need = 3; need <= MAX_DIM; need++) {
+    if (need > 3) out.push({ header: `${need}D — through ${AXIS_NAMES[need - 1]}` });
+    PLANE_PAIRS.forEach(([, j], k) => { if (Math.max(3, j + 1) === need) out.push(k + 1); });
+  }
+  return out;
+})();
+
 // ── Stat helpers ──────────────────────────────────────────────────────────────
 
 /** 2^dim vertices */

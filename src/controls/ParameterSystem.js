@@ -246,6 +246,13 @@ export class Parameter {
   constructor(config) {
     this.id = config.id;
     this.label = config.label ?? config.id;
+    // Optional hover help — display only, never persisted: `help` for the row,
+    // `optionHelp[i]` for option i of a dropdown, `displayOrder` to group and
+    // reorder a dropdown's menu (same format as mkSelect's `order`) while the
+    // stored value stays the true option index.
+    this.help         = config.help ?? null;
+    this.optionHelp   = config.optionHelp ?? null;
+    this.displayOrder = config.displayOrder ?? null;
     this.type = config.type ?? PARAM_TYPE.CONTINUOUS;
     this.group = config.group ?? null;
     this.min = config.min ?? 0;

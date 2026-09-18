@@ -19,8 +19,10 @@
  *   value reported to onChangeVal stays the TRUE index into `opts` — which is
  *   what SELECT params persist. Items carry data-idx so nothing relies on
  *   menu position matching the value.
+ * @param titles Optional hover text per option (titles[i] for opts[i]) —
+ *   shown as the item's native tooltip after a moment's hover.
  */
-export function mkSelect(opts, initVal, onChangeVal, extraClass = '', order = null) {
+export function mkSelect(opts, initVal, onChangeVal, extraClass = '', order = null, titles = null) {
   const state = { v: Math.round(initVal) };
 
   const wrap = document.createElement('div');
@@ -62,6 +64,7 @@ export function mkSelect(opts, initVal, onChangeVal, extraClass = '', order = nu
       item.className = 'imw-sel-item' + (i === state.v ? ' sel' : '');
       item.dataset.idx = i;
       item.textContent = opts[i];
+      if (titles?.[i]) item.title = titles[i];
       item.addEventListener('click', e => {
         e.stopPropagation();
         _close();

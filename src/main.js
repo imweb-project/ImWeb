@@ -111,7 +111,7 @@ import { TextLayer } from "./inputs/TextLayer.js";
 import { buildWarpMaps } from "./inputs/WarpMaps.js";
 import { WarpMapEditor } from "./inputs/WarpMapEditor.js";
 import { SceneManager } from "./scene3d/SceneManager.js";
-import { EASING, PLANE_NAMES, PLANE_PAIRS } from "./scene3d/HypercubeGeometry.js";
+import { EASING, PLANE_NAMES, PLANE_PAIRS, PLANE_HELP, PLANE_MENU_ORDER } from "./scene3d/HypercubeGeometry.js";
 import { Pipeline } from "./core/Pipeline.js";
 import { GestureArbitrator } from "./core/GestureArbitrator.js";
 import { MobileStatePad } from "./ui/components/MobileStatePad.js";
@@ -390,8 +390,11 @@ async function main() {
   const _slotDefaults = [['XY', 0.30], ['XZ', 0.20], ['YZ', 0.15], ['XW', 0.40], ['—', 0], ['—', 0], ['—', 0], ['—', 0]];
   for (let n = 1; n <= 8; n++) {
     const [plane, speed] = _slotDefaults[n - 1];
-    ps.register({ id:`hypercube.slot${n}.plane`, type:'select', select:true, options:_PLANE_OPTS, value:_planeOpt(plane), label:`Slot ${n} plane`, group:'hypercube' });
-    ps.register({ id:HC_SLOT_SPEED[n - 1], type:'continuous', value:speed, min:-2.0, max:2.0, step:0.01, label:`Slot ${n} speed`, group:'hypercube' });
+    ps.register({ id:`hypercube.slot${n}.plane`, type:'select', select:true, options:_PLANE_OPTS, value:_planeOpt(plane), label:`Slot ${n} plane`, group:'hypercube',
+      help: 'Which rotation plane this slot turns. XY, XZ and YZ are ordinary 3D spins; planes with W, V, U … turn the cube through a higher dimension and only move once it has that many. Hover an entry for what it does.',
+      optionHelp: ['— : this slot turns nothing', ...PLANE_HELP], displayOrder: PLANE_MENU_ORDER });
+    ps.register({ id:HC_SLOT_SPEED[n - 1], type:'continuous', value:speed, min:-2.0, max:2.0, step:0.01, label:`Slot ${n} speed`, group:'hypercube',
+      help: 'How fast this slot\'s plane turns — radians per second, negative turns the other way. Two slots on the same plane add. A plane in no slot turns at its default speed.' });
   }
   // Depth cue by w: far in the extra dimensions = dimmer and thinner, so a
   // rotating high-D cube reads as depth rather than a flat tangle.

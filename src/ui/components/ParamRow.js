@@ -64,6 +64,9 @@ export function buildParamRow(param, contextMenu) {
   // The four popover handlers below need no extra guard: every one of them
   // already returns on `!param.controller`, and for these that is permanent.
   if (param.setup) ctrlEl.title = 'Setup act — takes no controller';
+  // Hover help (native tooltip, appears after a moment) — on the label, so
+  // the badge's own title and the value field's controls are unaffected.
+  if (param.help) label.title = param.help;
 
   // Right-click or Ctrl+click on badge → controller settings popover
   ctrlEl.addEventListener('contextmenu', e => {
@@ -381,7 +384,7 @@ export function buildParamRow(param, contextMenu) {
       // Source dropdowns (mix*.srcA/srcB, td.captureSource) get the taxonomy
       // display order; identity check keeps every other SELECT untouched.
       const sel = _mkSelect(opts, param.value, i => { param.value = i; updateDisplay(); }, 'param-select',
-        opts === SOURCES ? SOURCE_DISPLAY_ORDER : null);
+        param.displayOrder ?? (opts === SOURCES ? SOURCE_DISPLAY_ORDER : null), param.optionHelp);
       binding.sync(() => { sel.value = param.value; });
       valueEl.appendChild(sel);
     }

@@ -747,6 +747,25 @@ console.log('\n17. Plane Bank — 8 slots, each a plane and a speed');
   hc.setPlaneSpeeds(new Map([['3,7', 0.5]])); hc.morphToLatest(9, { durationMs: 0 }); hc.update(16);
   check('a slot on a plane above the current dimension applies once the cube reaches it',
     hc._rotSpeeds[PI(3, 7, 9)] === 0.5);
+  // Hover help: 66 planes is a lot to choose from (owner, 2026-09-18)
+  const { PLANE_HELP, PLANE_MENU_ORDER } = await import('../src/scene3d/HypercubeGeometry.js');
+  const idx = PLANE_MENU_ORDER.filter(e => typeof e === 'number');
+  check('the plane menu is grouped by the dimension a plane needs, every option exactly once',
+    idx.length === 67 && new Set(idx).size === 67 && idx.every(i => i >= 0 && i <= 66) &&
+    PLANE_MENU_ORDER.filter(e => e.header).length === MAX_DIM - 2,
+    'an option missing from displayOrder cannot be picked; a duplicate shows twice');
+  check('every plane has hover help naming the dimension it needs',
+    PLANE_HELP.length === 66 && PLANE_HELP.every((h, k) => h.startsWith(PLANE_NAMES[k] + ' — ')) &&
+    PLANE_HELP[PI(0, 3, MAX_DIM)].includes('4 dimensions'));
+  check('the slot rows carry help, option help and the grouped order',
+    /optionHelp: \['— : this slot turns nothing', \.\.\.PLANE_HELP\], displayOrder: PLANE_MENU_ORDER/.test(main) &&
+    (main.match(/help: '/g) || []).length >= 2);
+  const row = readFileSync(new URL('../src/ui/components/ParamRow.js', import.meta.url), 'utf8');
+  const selSrc = readFileSync(new URL('../src/ui/components/Select.js', import.meta.url), 'utf8');
+  check('ParamRow shows param.help and passes displayOrder + optionHelp; Select titles its items',
+    /if \(param\.help\) label\.title = param\.help;/.test(row) &&
+    /param\.displayOrder \?\? \(opts === SOURCES \? SOURCE_DISPLAY_ORDER : null\), param\.optionHelp\)/.test(row) &&
+    /if \(titles\?\.\[i\]\) item\.title = titles\[i\];/.test(selSrc));
   const fn = cut(main, 'function _applyPlaneSlots()', '\n  }\n');
   check('two slots on one plane ADD (two controllers can push one plane)',
     /speeds\.set\(key, \(speeds\.get\(key\) \?\? 0\) \+/.test(fn));
