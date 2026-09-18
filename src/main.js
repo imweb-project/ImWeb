@@ -8851,21 +8851,19 @@ void main() {
     // The hypercube's face texture, face mask and instancer texture are real
     // consumers now that they can name any source: route SlitScan onto a face
     // and SlitScan has to actually tick, or the face samples a stale target.
-    // Gated on the thing being live, the same shape as the bokeh mask above —
-    // renderMode 'none' (index 3) hides faces AND instancer, so nothing is
-    // pulled in then.
+    // Gated on the faces/instancer toggles, the same shape as the bokeh mask
+    // above. NOT on renderMode: that picks wireframe vs points only.
     //
     // 3D Scene and 3D Depth are deliberately NOT pulled: that is the scene
     // reading its own output, which is the feedback case the identity check in
     // SceneManager nulls out. Letting it mark the scene "used" would make the
     // scene's own existence its justification.
-    const _hcLive = ps.get('hypercube.renderMode')?.value !== 3;
     // Derived from the canonical key list, not written as 6 and 20: the same
     // rule the rest of this file follows, and the indices are only meaningful
     // through SOURCE_DEFS anyway.
     const _hcSelfTex = [SOURCE_KEYS.indexOf('scene3d'), SOURCE_KEYS.indexOf('depth3d')];
     const _hcSrc = (id, gate) => {
-      if (!_hcLive || !gate) return -1;
+      if (!gate) return -1;
       const idx = (ps.get(id)?.value ?? 0) - 1;   // OPT_SOURCES: 0 is None
       return _hcSelfTex.includes(idx) ? -1 : idx;
     };

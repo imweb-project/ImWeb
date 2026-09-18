@@ -307,22 +307,19 @@ export class HypercubeObject {
   }
 
   _updateVisibility() {
+    // renderMode picks wireframe vs points ONLY. Faces and instancer have
+    // their own toggles and do not answer to it — 'none' used to hide them
+    // too, so switching Faces on showed nothing until Mode was changed.
     const show = this._renderMode !== 'none';
     if (this._lines)  this._lines.visible  = show && this._renderMode !== 'points';
     if (this._points) this._points.visible = show && this._renderMode !== 'wireframe';
-    // When entering 'none' mode, immediately hide faces and instancer too.
-    // update() is skipped for 'none' mode, so this is the only place that hides them.
-    if (!show) {
-      if (this._hFaces?._mesh)     this._hFaces._mesh.visible     = false;
-      if (this._hInstancer?._mesh) this._hInstancer._mesh.visible = false;
-    }
   }
 
   // ── Update ────────────────────────────────────────────────────────────────
 
   update(deltaMs) {
     // Skip all CPU work when nothing is visible.
-    // renderMode='none' hides lines/points; faces/instancer are gated separately.
+    // renderMode='none' hides lines/points; faces/instancer are gated by their own toggles.
     const linesOn     = this._lines?.visible;
     const pointsOn    = this._points?.visible;
     const facesOn     = this._hFaces?._visible;
@@ -360,12 +357,8 @@ export class HypercubeObject {
 
     this._updateBuffers();
     this._notifySubscribers();
-    // Only update faces/instancer when renderMode is not 'none'.
-    // _updateVisibility() already hid the meshes; skip the CPU/GPU work too.
-    if (this._renderMode !== 'none') {
-      this._hFaces.update(this._projBuf, this._dim, this._scale);
-      this._hInstancer.update(this._projBuf, this._dim, this._scale);
-    }
+    if (facesOn)     this._hFaces.update(this._projBuf, this._dim, this._scale);
+    if (instancerOn) this._hInstancer.update(this._projBuf, this._dim, this._scale);
   }
 
   _projectMorphInterp() {

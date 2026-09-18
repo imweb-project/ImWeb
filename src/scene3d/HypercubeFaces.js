@@ -170,7 +170,9 @@ export class HypercubeFaces {
     this._mesh.visible = this._visible && drawn > 0;
   }
 
-  setVisible(v) { this._visible = v; }
+  // Hide NOW on off: update() is skipped once nothing is visible, so waiting
+  // for it would leave the last frame's faces frozen on screen.
+  setVisible(v) { this._visible = v; if (!v && this._mesh) this._mesh.visible = false; }
 
   setOpacity(v) {
     this._opacity = v;
