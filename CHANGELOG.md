@@ -43,13 +43,10 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   project still jumps, so a recall lands exactly. A controller sweeping the
   dimension is followed rather than queued behind: the cube goes to the latest
   value once the running morph finishes.
-- **Every Hypercube parameter can take a controller.** A new collapsed
-  **Parameters · controllers** subsection under Hypercube gives all 27 a
-  standard row with a badge, so LFO, Random, MIDI, OSC and response tables
-  now reach dimension, rotation speeds, W distance, faces, instancer and the
-  rest. Until now the whole subsystem was hand-only, because its panel has no
-  badges. The panel above stays as it was. Its numbers do not follow a
-  controller yet, so watch the new rows when something is modulating.
+- **Every Hypercube parameter can take a controller.** All 28 now have a
+  standard row with a badge (see the new panel above), so LFO, Random, MIDI,
+  OSC and response tables reach dimension, rotation, W distance, faces,
+  instancer and the rest. Until now the whole subsystem was hand-only.
 - **Four more face blend modes on the Hypercube: Screen, Lighten, Darken and
   Exclusion.** Face opacity fades each one toward "no effect". Faces draw straight into the scene, so every mode had
   to be something the GPU's blend stage can compute on its own. That rules out
@@ -62,6 +59,12 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   names the same source.
 
 ### Fixed
+- **Rot YZ and Rot XW turn the planes they name.** Rot YZ was turning the XW
+  plane. Rot XW turned YZ at 4D, and a different plane again above 4D.
+  Changing dimension also handed each plane its neighbour's speed and angle,
+  which jolted the cube at the start of a morph. Every plane now keeps its own
+  speed and angle through dimension changes. Saved states with Rot YZ or
+  Rot XW set will now spin as their names say.
 - **The Hypercube costs a fraction of what it did per frame.** At the default
   4D a frame took ~4 ms of CPU and uploaded 4.2 MB to the GPU to draw 24
   faces. It now takes 0.18 ms and uploads 1.5 KB. At 8D it went from 4.7 ms
