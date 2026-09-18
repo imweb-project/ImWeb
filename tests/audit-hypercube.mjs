@@ -771,5 +771,33 @@ console.log('\n17. Plane Bank — 8 slots, each a plane and a speed');
     /speeds\.set\(key, \(speeds\.get\(key\) \?\? 0\) \+/.test(fn));
 }
 
+// ── 18. Capped instances spread evenly; orbit centre can be the object ────
+console.log('\n18. Capped instances spread over the cube; Orbit centre: object');
+{
+  const hc = mk({ dim: 11 }); hc.setRenderMode('points');
+  hc.setInstancerVisible(true); hc.setInstancerBudget(0.1); hc.update(16);   // ~46 of 2048 spheres
+  const im = hc._hInstancer.getMesh(), m = new THREE.Matrix4(), v = new THREE.Vector3();
+  im.getMatrixAt(im.count - 1, m); v.setFromMatrixPosition(m);
+  const lastIdx = Math.floor((im.count - 1) * (2048 / im.count));   // the instancer's own form
+  const want = new THREE.Vector3(hc._projBuf[lastIdx * 3], hc._projBuf[lastIdx * 3 + 1], hc._projBuf[lastIdx * 3 + 2]);
+  check('capped copies are spread over the whole cube, not its first vertices',
+    im.count < 2048 && lastIdx > 1500 && v.distanceTo(want) < 1e-6 * Math.max(1, want.length()),   // float32 matrix
+    `last copy sits on vertex ${lastIdx} (the first ${im.count} vertices share one corner of an 11-cube)`);
+
+  const { ParameterSystem, registerCoreParameters } = await import('../src/controls/ParameterSystem.js');
+  const { SceneManager } = await import('../src/scene3d/SceneManager.js');
+  const ps = new ParameterSystem(); registerCoreParameters(ps);
+  const sm = new SceneManager({}, 64, 64);
+  ps.set('scene3d.pos.z', -3.5); ps.set('scene3d.cam.orbit', 90);
+  const looksAt = () => { sm.applyParams(ps, 0.016, {}); const f = sm.camera.getWorldDirection(new THREE.Vector3());
+    return { obj: f.dot(sm.mesh.position.clone().sub(sm.camera.position).normalize()), origin: f.dot(sm.camera.position.clone().negate().normalize()) }; };
+  const off = looksAt();
+  ps.set('scene3d.cam.orbitObject', 1); const on = looksAt();
+  check('Orbit centre off: the camera looks at the world origin', off.origin > 0.9999);
+  check('Orbit centre: object — the camera looks at the object, wherever Transform put it',
+    on.obj > 0.9999 && Math.abs(sm.camera.position.distanceTo(sm.mesh.position) - ps.get('scene3d.cam.dist').value) < 1e-6,
+    `facing ${on.obj.toFixed(4)}`);
+}
+
 console.log(failures ? `\n${failures} FAILURE(S)\n` : '\nAll hypercube checks passed.\n');
 process.exit(failures ? 1 : 0);

@@ -3356,6 +3356,17 @@ export function registerCoreParameters(ps) {
       unit: "°/s",
     });
   }
+  // Orbit around the OBJECT instead of the world origin — Transform Position
+  // moves the object off the origin, and the camera then swung around empty
+  // space (owner, 2026-09-18). Off by default: existing framing is unchanged.
+  ps.register({
+    id: "scene3d.cam.orbitObject",
+    label: "Orbit centre: object",
+    group: "scene3d",
+    type: PARAM_TYPE.TOGGLE,
+    value: 0,
+    help: "Off: the camera circles the centre of the world. On: it circles the object, wherever Transform Position has moved it.",
+  });
   ps.register({
     id: "scene3d.mat.roughness",
     label: "Roughness",

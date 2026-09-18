@@ -148,8 +148,12 @@ export class HypercubeInstancer {
     }
     const s = instScale ?? this._instScale;
 
+    // Capped: spread the copies EVENLY over the cube. The first `count`
+    // vertices differ only in their low axes, so they bunched into one
+    // corner of it (owner, 11D: 50 of 2048 in a lopsided clump).
+    const stride = wanted / count;
     for (let i = 0; i < count; i++) {
-      const bi = i * 3;
+      const bi = Math.floor(i * stride) * 3;
       _dummy.position.set(
         projBuf[bi]     * scale,
         projBuf[bi + 1] * scale,

@@ -1242,7 +1242,8 @@ export class SceneManager {
 
       const ce = Math.cos(el), se = Math.sin(el);
       const sa = Math.sin(az), ca = Math.cos(az);
-      this.camera.position.set(d * ce * sa, d * se, d * ce * ca);
+      const t = this._orbitTarget(p);
+      this.camera.position.set(t.x + d * ce * sa, t.y + d * se, t.z + d * ce * ca);
 
       // Derive up from the orbit frame instead of leaving three.js to use a
       // fixed (0,1,0). That fixed vector goes parallel to the view direction at
@@ -1260,7 +1261,8 @@ export class SceneManager {
       const cr = Math.cos(rl), sr = Math.sin(rl);
       this.camera.up.set(upX * cr + cx * sr, upY * cr + cy * sr, upZ * cr + cz * sr);
     }
-    this.camera.lookAt(0, 0, 0);
+    const _t = this._orbitTarget(p);
+    this.camera.lookAt(_t.x, _t.y, _t.z);
     this.camera.updateProjectionMatrix();
 
     // Light
@@ -1505,6 +1507,18 @@ export class SceneManager {
     m.position.copy(this.mesh.position);
     m.rotation.copy(this.mesh.rotation);
     m.scale.setScalar(scale);
+  }
+
+  /**
+   * What the camera circles and looks at: the world origin, or — with Orbit
+   * centre: object — the scene object's position as Transform just set it.
+   * While the instancer is adopted this.mesh IS the instancer, which rides the
+   * same Transform, so the answer is the same point either way.
+   */
+  _orbitTarget(p) {
+    this._orbitT ??= new THREE.Vector3();
+    if (p.get('scene3d.cam.orbitObject')?.value && this.mesh) return this._orbitT.copy(this.mesh.position);
+    return this._orbitT.set(0, 0, 0);
   }
 
   /**

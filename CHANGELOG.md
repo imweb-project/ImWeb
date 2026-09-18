@@ -22,6 +22,9 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   and its "none" is now **off**. Saved files are unchanged.
 
 ### Added
+- **Orbit centre: object** (3D Camera). The camera can circle the object
+  instead of the world's centre, so moving the object with Transform Position
+  no longer makes an orbit swing it across the frame. Off by default.
 - **Plane Bank — play any of the 66 rotation planes.** Rotation now has 8
   slots, each a **plane** menu (XY … up to PO) and a **speed**, all saved and
   controllable. Slots 1–4 are the old Rot XY/XZ/YZ/XW rows, with the same
@@ -41,7 +44,8 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 - **Inst Budget — a GPU limit you can set.** In the Hypercube Instancer
   section, in millions of vertices per frame across all instances (default
   9M). When a shape is too heavy for every vertex of the cube, fewer instances
-  are drawn, and the stats line under the dimension buttons turns yellow and
+  are drawn, spread evenly over the whole cube, and the stats line under the
+  dimension buttons turns yellow and
   says "instances 50/64 (Inst Budget)". The default is measured on the
   studio machine: 8.5M ran clean, 11.5M stuttered. Raise it on a faster
   machine.
