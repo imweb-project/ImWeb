@@ -35,13 +35,12 @@ const _instGeo = (type) => _geoFactory.create(type, { ..._GEO_PARAMS, ...(_INST_
 // 3D scene material's, so the two are lit alike.
 export const EM_FLOOR = 0.35;
 
-// A 'Model' shape can be any size, and every instance draws all of it: the
-// bundled 179k-vertex model at 12D is 733M vertices a frame, enough to hang a
-// GPU. Model instances are capped at what the DEFAULT shape, the sphere,
-// already costs at the full 4096 — measured from it, not a guessed constant.
-let _vertBudget = 0;
-const vertBudget = () => _vertBudget ||= MAX_INSTANCES *
-  _instGeo('Sphere').attributes.position.count;
+// Every instance draws its whole shape, so the load is count × vertices: the
+// bundled 179k-vertex model at 12D would be 733M a frame. hypercube.inst.budget
+// (millions of vertices a frame) caps the instance COUNT for any shape. The
+// default, 9M, is measured on the owner's machine (2026-09-18): 8.5M ran
+// clean, 11.5M and 17M stuttered — and it fits a full 12D sphere cloud (8.8M).
+export const DEFAULT_VERT_BUDGET_M = 9;
 
 export class HypercubeInstancer {
   constructor(scene) {
@@ -70,10 +69,8 @@ export class HypercubeInstancer {
     const geo = geoType === 'Model'
       ? (this._modelGeo ? this._modelGeo.clone() : _instGeo('Sphere'))
       : _instGeo(geoType);
-    this._maxCount = geoType === 'Model' && this._modelGeo
-      ? Math.max(1, Math.floor(vertBudget() / geo.attributes.position.count))
-      : MAX_INSTANCES;
-    this._warnedCap = null;
+    this._shapeVerts = geo.attributes.position.count;
+    this._applyBudget();
 
     if (!this._mat) {
       // Depth-writing, and transparent only below full opacity — the way the
@@ -140,11 +137,14 @@ export class HypercubeInstancer {
    * dim: active dimension. scale: world scale. instScale: per-instance size.
    */
   update(projBuf, dim, scale, instScale) {
-    const count = Math.min(vertexCount(dim), MAX_INSTANCES, this._maxCount ?? MAX_INSTANCES);
-    if (count < Math.min(vertexCount(dim), MAX_INSTANCES) && this._warnedCap !== count) {
+    const wanted = Math.min(vertexCount(dim), MAX_INSTANCES);
+    const count  = Math.min(wanted, this._maxCount ?? MAX_INSTANCES);
+    // Read by the panel's stats line — the owner is not watching a console.
+    this.budgetLimit = count < wanted ? { drawn: count, wanted } : null;
+    if (this.budgetLimit && this._warnedCap !== count) {
       this._warnedCap = count;
-      console.warn(`[Hypercube] Model has ${this._mesh.geometry.attributes.position.count} vertices — ` +
-        `drawing ${count} of ${vertexCount(dim)} instances to stay within the sphere's GPU load. Use a lighter model or a lower dimension for all of them.`);
+      console.warn(`[Hypercube] ${this._shapeVerts}-vertex instances: drawing ${count} of ${wanted} ` +
+        `to stay within Inst Budget (${this._budgetM}M vertices). Raise it, or use a lighter shape or a lower dimension.`);
     }
     const s = instScale ?? this._instScale;
 
@@ -177,6 +177,18 @@ export class HypercubeInstancer {
   getMesh() { return this._mesh; }
 
   setInstanceScale(v) { this._instScale = v; }
+
+  /** hypercube.inst.budget — millions of vertices a frame across all instances. */
+  setVertexBudget(millions) {
+    this._budgetM = millions;
+    this._applyBudget();
+  }
+
+  _applyBudget() {
+    this._budgetM ??= DEFAULT_VERT_BUDGET_M;
+    this._maxCount = Math.max(1, Math.floor(this._budgetM * 1e6 / (this._shapeVerts || 1)));
+    this._warnedCap = null;
+  }
 
   setOpacity(v) {
     this._opacity = v;

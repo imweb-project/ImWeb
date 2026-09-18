@@ -34,7 +34,8 @@ export const HC_SECTIONS = [
                                    'hypercube.faces.masksrc', 'hypercube.faces.maskinv', 'hypercube.faces.masklvl'],
     openWhen: 'hypercube.faces.active' },
   { title: 'Instancer',      ids: ['hypercube.inst.active', 'hypercube.inst.showGeo', 'hypercube.inst.geo',
-                                   'hypercube.inst.scale', 'hypercube.inst.opacity', 'hypercube.inst.texsrc'],
+                                   'hypercube.inst.scale', 'hypercube.inst.opacity', 'hypercube.inst.texsrc',
+                                   'hypercube.inst.budget'],
     openWhen: 'hypercube.inst.active' },
 ];
 
@@ -144,7 +145,10 @@ export function buildHypercubePanel(container, hypercube, ps, rowFor) {
 
   function refresh() {
     const d = hypercube.dim, target = hypercube.targetDim ?? d;
-    stats.textContent = `${d}D · ${vertexCount(d)} verts · ${edgeCount(d)} edges · ${rotationPlaneCount(d)} planes`;
+    const lim = hypercube._hInstancer?._visible ? hypercube._hInstancer.budgetLimit : null;
+    stats.textContent = `${d}D · ${vertexCount(d)} verts · ${edgeCount(d)} edges · ${rotationPlaneCount(d)} planes` +
+      (lim ? ` · instances ${lim.drawn}/${lim.wanted} (Inst Budget)` : '');
+    stats.classList.toggle('limited', !!lim);
     for (const p of pills) p.classList.toggle('active', Number(p.dataset.dim) === target);
     if (d !== planesDim) { planesDim = d; rebuildMorePlanes(); }
   }

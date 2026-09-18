@@ -399,6 +399,8 @@ async function main() {
   // Off: the instancer REPLACES the 3D scene's geometry/model (and wears its
   // Material). On: both are visible — geometry keeps Transform and Material,
   // the instancer rides the same Transform with its own Inst tex/opacity.
+  // GPU guard: instance count × shape vertices ≤ this many million a frame.
+  ps.register({ id:'hypercube.inst.budget',   type:'continuous', value:9,    min:1,    max:64,   step:0.5,   label:'Inst Budget (M verts)', group:'hypercube' });
   ps.register({ id:'hypercube.inst.showGeo',  type:'toggle',     value:0,                                    label:'Show geometry', group:'hypercube' });
 
   // ── 3. Controllers ────────────────────────────────────────────────────────
@@ -755,6 +757,7 @@ async function main() {
   ps.get('hypercube.inst.active')?.onChange(v  => scene3d.getHypercube()?.setInstancerVisible(!!v));
   ps.get('hypercube.inst.geo')?.onChange(idx   => scene3d.getHypercube()?.setInstancerGeoType(_GEO_TYPES[idx] ?? 'Sphere'));
   ps.get('hypercube.inst.scale')?.onChange(v   => scene3d.getHypercube()?.setInstancerScale(v));
+  ps.get('hypercube.inst.budget')?.onChange(v  => scene3d.getHypercube()?.setInstancerBudget(v));
   ps.get('hypercube.inst.opacity')?.onChange(v => scene3d.getHypercube()?.setInstancerOpacity(v));
 
   // Helper to manage sequence buffers for profiler/VRAM estimation
@@ -969,6 +972,7 @@ async function main() {
     hc.setInstancerVisible(!!(g('hypercube.inst.active', 0)));
     hc.setInstancerGeoType(_GEO_TYPES[g('hypercube.inst.geo', 0)] ?? 'Sphere');
     hc.setInstancerScale   (g('hypercube.inst.scale',   0.08));
+    hc.setInstancerBudget  (g('hypercube.inst.budget',  9));
     hc.setInstancerOpacity (g('hypercube.inst.opacity', 1.0));
     // Rebuild hypercube UI panel so all select/range widgets reflect restored ps values
     _hcPanelRebuild?.();
@@ -1029,6 +1033,7 @@ async function main() {
     hc.setInstancerVisible(!!(g('hypercube.inst.active', 0)));
     hc.setInstancerGeoType(_GEO_TYPES[g('hypercube.inst.geo', 0)] ?? 'Sphere');
     hc.setInstancerScale   (g('hypercube.inst.scale',   0.08));
+    hc.setInstancerBudget  (g('hypercube.inst.budget',  9));
     hc.setInstancerOpacity (g('hypercube.inst.opacity', 1.0));
   })();
 

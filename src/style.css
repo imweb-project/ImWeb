@@ -5663,3 +5663,7 @@ body.midi-map-mode .param-row:hover {
     font-size: 10px;
     color: var(--text-2);
 }
+/* The instance count is being held down by Inst Budget. */
+.hc-stats.limited {
+    color: var(--accent);
+}

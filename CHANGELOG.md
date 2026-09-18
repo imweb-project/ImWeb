@@ -22,6 +22,13 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   and its "none" is now **off**. Saved files are unchanged.
 
 ### Added
+- **Inst Budget — a GPU limit you can set.** In the Hypercube Instancer
+  section, in millions of vertices per frame across all instances (default
+  9M). When a shape is too heavy for every vertex of the cube, fewer instances
+  are drawn, and the stats line under the dimension buttons turns yellow and
+  says "instances 50/64 (Inst Budget)". The default is measured on the
+  studio machine: 8.5M ran clean, 11.5M stuttered. Raise it on a faster
+  machine.
 - **Depth Cue for the Hypercube** (Edges & Points). Points and edges fade and
   thin the farther they sit in the extra dimensions, so a rotating high-D
   cube reads as depth instead of a flat tangle. Each edge fades along its
@@ -33,9 +40,8 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   vertex. The model is merged into one shape, sized like the built-in shapes
   and coloured by Inst tex. It updates when you load another model, and
   becomes a sphere after Back to Geometry. A detailed model is capped so it
-  never costs the GPU more than the default sphere does at 12D. The bundled
-  Harabara model draws 380 copies, the whole cube up to 8D; above that the
-  console says how many are drawn.
+  stays within **Inst Budget** (see above): the bundled Harabara model draws
+  50 copies at the default.
 - **Show geometry — instances and geometry together.** A new **Show geometry**
   switch for the Hypercube Instancer keeps the 3D scene's geometry or imported
   model visible alongside the instances. Transform (rotation, spin, scale,

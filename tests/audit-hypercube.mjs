@@ -503,20 +503,35 @@ console.log('\n12. Inst geo Model — the imported model on every vertex');
     `${merged?.attributes.position.count} verts / ${merged?.index?.count} indices — every part is rewritten to Float32 ` +
     'position/normal/uv, and the index is KEPT (de-indexing took the bundled model from 179k to 769k vertices)');
 
-  // a heavy model is capped at the sphere's full-12D vertex load
+  // Inst Budget caps count × shape vertices, for every shape
+  const { DEFAULT_VERT_BUDGET_M, HypercubeInstancer } = await import('../src/scene3d/HypercubeInstancer.js');
   const hc12 = mk({ dim: 12 }); hc12.setRenderMode('wireframe');
   const heavy = new THREE.SphereGeometry(0.5, 400, 400);          // ~160k vertices
   hc12._hInstancer.setModelGeometry(heavy); hc12.setInstancerGeoType('Model'); hc12.setInstancerVisible(true);
   const warned = []; const w = console.warn; console.warn = m => warned.push(String(m));
   hc12.update(16); console.warn = w;
   const im = hc12._hInstancer.getMesh();
-  const sphereLoad = 4096 * new THREE.SphereGeometry(0.5, 128, 128).attributes.position.count;
-  check('a heavy Model draws no more vertices than the sphere does at 12D',
-    im.count * im.geometry.attributes.position.count <= sphereLoad && im.count > 0 && im.count < 4096,
-    `${im.count} × ${im.geometry.attributes.position.count} vs budget ${sphereLoad}`);
-  check('…and says so, rather than silently dropping instances', warned.some(m => /drawing \d+ of 4096 instances/.test(m)));
+  check(`a heavy Model stays within the default Inst Budget (${DEFAULT_VERT_BUDGET_M}M vertices)`,
+    im.count * im.geometry.attributes.position.count <= DEFAULT_VERT_BUDGET_M * 1e6 && im.count > 0 && im.count < 4096,
+    `${im.count} × ${im.geometry.attributes.position.count}`);
+  check('…and says so, in the console and to the panel (budgetLimit)',
+    warned.some(m => /drawing \d+ of 4096/.test(m)) && hc12._hInstancer.budgetLimit?.wanted === 4096);
   const light = mk({ dim: 12 }); light.setRenderMode('wireframe'); light.setInstancerVisible(true); light.update(16);
-  check('built-in shapes are not capped', light._hInstancer.getMesh().count === 4096);
+  check('default budget: a full 12D sphere cloud is not capped',
+    light._hInstancer.getMesh().count === 4096 && light._hInstancer.budgetLimit === null, `${light._hInstancer.getMesh().count} drawn`);
+  light.setInstancerBudget(2); light.update(16);
+  const capped = light._hInstancer.getMesh().count * light._hInstancer.getMesh().geometry.attributes.position.count <= 2e6;
+  light.setInstancerBudget(64); light.update(16);
+  check('a lower budget caps built-in shapes too, and raising it restores them',
+    capped && light._hInstancer.getMesh().count === 4096);
+  const opt = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8').match(/id:'hypercube\.inst\.budget'[^\n]*value:([\d.]+)/);
+  check('the registered default matches DEFAULT_VERT_BUDGET_M', opt && Number(opt[1]) === DEFAULT_VERT_BUDGET_M);
+  // instance shapes are instance-sized (a 16,641-vertex sphere per instance stuttered at 10D)
+  const hi = new HypercubeInstancer(new THREE.Scene()); const worst = [];
+  for (const t of ['Sphere','Torus','Cube','Plane','Cylinder','Capsule','TorusKnot','Cone','Dodecahedron','Icosahedron','Octahedron','Tetrahedron','Ring']) {
+    hi.setGeoType(t); const n = hi.getMesh().geometry.attributes.position.count; if (n > 3000) worst.push(`${t} ${n}`); }
+  check('every built-in instance shape is under 3,000 vertices', !worst.length,
+    worst.join(', ') + ' — use _INST_SEG, not the scene tessellation');
 
   // Back to Geometry → the Model shape falls back
   sm._importedModelName = null; sm._geoKey = null; sm.setGeometry('Torus'); frame();
