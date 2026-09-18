@@ -37,6 +37,13 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   orthographic quietly switched the projection back to perspective, though Proj
   still said orthographic. Choosing orthographic twice made perspective stay
   flat afterwards. W distance and the projection no longer share one value.
+- **Geometry, Back to Geometry, Import and Material work while the Hypercube
+  Instancer is on.** With the instancer on, "↩ Back to Geometry" did nothing,
+  importing a model knocked the instancer out of the scene and gave the model
+  the instancer's material, and Material stopped reaching the geometry. These
+  now act on the scene's own object. While the instancer is on, that object
+  waits behind it, and it comes back exactly as you left it when the instancer
+  goes off.
 - **Changing Inst Geo no longer detaches the instancer from the 3D scene.**
   The new shape stopped following the scene's rotation, spin and scale, and
   sat unrotated at size 1 until the instancer was switched off and on.

@@ -162,7 +162,7 @@ export class SceneManager {
   }
 
   _replaceMesh(geo) {
-    if (this._adoptedMesh) return;
+    if (this._adoptedMesh) return this._withOwnMesh(() => this._replaceMesh(geo));
     if (this.mesh) {
       this.scene.remove(this.mesh);
       if (this.mesh.geometry) this.mesh.geometry.dispose();
@@ -185,6 +185,7 @@ export class SceneManager {
   }
 
   _rebuildCloner(mode, count) {
+    if (this._adoptedMesh) return this._withOwnMesh(() => this._rebuildCloner(mode, count));
     this._cloneMode  = mode;
     this._cloneCount = count;
 
@@ -551,6 +552,7 @@ export class SceneManager {
   }
 
   _rebuildMaterial(type) {
+    if (this._adoptedMesh) return this._withOwnMesh(() => this._rebuildMaterial(type));
     if (this._matType === type) return;
     this._matType = type;
 
@@ -663,7 +665,7 @@ export class SceneManager {
 
   async loadGLTF(url, name = '', params = null) {
     return new Promise((resolve, reject) => {
-      this.gltfLoader.load(url, gltf => {
+      this.gltfLoader.load(url, gltf => this._withOwnMesh(() => {
         const model = gltf.scene;
         // Collect SkinnedMesh nodes first (modifying hierarchy during traverse is unsafe)
         const skinnedMeshes = [];
@@ -701,13 +703,13 @@ export class SceneManager {
         this._importPending = false;
         this.scene.add(pivot);
         resolve(pivot);
-      }, undefined, reject);
+      }), undefined, reject);
     });
   }
 
   async loadOBJ(url, name = '') {
     return new Promise((resolve, reject) => {
-      this.objLoader.load(url, obj => {
+      this.objLoader.load(url, obj => this._withOwnMesh(() => {
         obj.traverse(child => {
           if (child.isMesh) child.material = this.material;
         });
@@ -720,13 +722,13 @@ export class SceneManager {
         this._importPending = false;
         this.scene.add(pivot);
         resolve(pivot);
-      }, undefined, reject);
+      }), undefined, reject);
     });
   }
 
   async loadSTL(url, name = '') {
     return new Promise((resolve, reject) => {
-      this.stlLoader.load(url, geo => {
+      this.stlLoader.load(url, geo => this._withOwnMesh(() => {
         const model = new THREE.Mesh(geo, this.material ?? new THREE.MeshStandardMaterial({ color: 0xffffff }));
         this._setupAnimations(null, [], null);
         const pivot = this._wrapInPivot(model);
@@ -737,13 +739,13 @@ export class SceneManager {
         this._importPending = false;
         this.scene.add(pivot);
         resolve(pivot);
-      }, undefined, reject);
+      }), undefined, reject);
     });
   }
 
   async loadCollada(url, name = '', params = null) {
     return new Promise((resolve, reject) => {
-      this.colladaLoader.load(url, collada => {
+      this.colladaLoader.load(url, collada => this._withOwnMesh(() => {
         const model = collada.scene;
         model.traverse(child => {
           if (child.isMesh) child.material = this.material;
@@ -763,7 +765,7 @@ export class SceneManager {
         this._setupAnimations(model, clips, params);
 
         resolve(pivot);
-      }, undefined, reject);
+      }), undefined, reject);
     });
   }
 
@@ -1440,6 +1442,23 @@ export class SceneManager {
   }
 
   /**
+   * Run `fn` against the scene's OWN mesh and material while the hypercube
+   * instancer is adopted. Adoption points this.mesh/this.material at the
+   * instancer, so anything that REPLACES the scene's object — Geometry, Back to
+   * Geometry, Cloner, material type, a model import — used to land on the
+   * instancer: Back to Geometry was refused outright, an import pulled the
+   * instancer out of the scene and dressed the model in its material. Release,
+   * do the work on the real object, re-adopt: the new object is stashed hidden
+   * behind the instancer, exactly as the old one was.
+   */
+  _withOwnMesh(fn) {
+    const inst = this._adoptedMesh;
+    if (!inst) return fn();
+    this._adoptMesh(null);
+    try { return fn(); } finally { this._adoptMesh(inst); }
+  }
+
+  /**
    * Adopt the hypercube instancer's CURRENT mesh while it is on. Compared by
    * identity, not by on/off: Inst Geo (setGeoType) replaces the mesh while the
    * instancer stays on, and an on/off test kept driving the removed one — the
@@ -1461,6 +1480,7 @@ export class SceneManager {
     }
     if (mesh) {
       this._ownMesh = this.mesh;
+      this._ownMaterial = this.material;
       this._adoptedMesh = mesh;
       if (this._ownMesh) this.scene.remove(this._ownMesh);
       // mesh already in scene via HypercubeInstancer constructor
@@ -1469,9 +1489,13 @@ export class SceneManager {
     } else {
       if (this._ownMesh) this.scene.add(this._ownMesh);
       this.mesh = this._ownMesh;
-      this.material = this._ownMesh?.material ?? this.material;
+      // The material stashed at adoption, not _ownMesh.material: an imported
+      // model's pivot is a Group and has none, which fell back to the
+      // instancer's material and left Material driving the wrong object.
+      this.material = this._ownMaterial ?? this.material;
       this._adoptedMesh = null;
       this._ownMesh = null;
+      this._ownMaterial = null;
     }
   }
 

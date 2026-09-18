@@ -34,6 +34,9 @@
  *      morph (the dim handler skips on it).
  *   8. An Inst Geo change keeps the instancer under SceneManager's rotation,
  *      spin and scale: adoption compares mesh identity, not on/off.
+ *   9. While the instancer is adopted, Geometry / Back to Geometry / Cloner /
+ *      material type / model import act on the scene's OWN object
+ *      (_withOwnMesh), and it comes back intact when the instancer goes off.
  *
  * Calibrated 2026-09-18 with eight mutations, each caught and each restored
  * to green: renderMode re-gating faces; setVisible(false) not hiding; the
@@ -290,6 +293,49 @@ console.log('\n8. Inst Geo change keeps the instancer under the 3D scene transfo
   check('instancer off → own mesh restored, in the scene exactly once',
     sm.mesh === own && scene.children.filter(c => c === own).length === 1,
     're-adopting without releasing first stashes the stale instancer as the scene\'s own mesh');
+}
+
+// ── 9. Geometry, import and material act on the scene's OWN object ─────────
+console.log('\n9. With the instancer adopted, Geometry / import / material hit the real object');
+{
+  // Adoption points SceneManager.mesh/material at the instancer. The owner's
+  // report (2026-09-18): with Instancer on, "Back to Geometry" did nothing and
+  // Material stopped reaching the geometry — setGeometry was refused while
+  // adopted, and an import pulled the instancer out of the scene and dressed
+  // the model in the instancer's material. Real SceneManager (it constructs in
+  // Node with a stub renderer); a real OBJ through loadOBJ via a data: URL.
+  globalThis.ProgressEvent ??= class ProgressEvent extends Event { constructor(t, o = {}) { super(t); Object.assign(this, o); } };
+  const { SceneManager } = await import('../src/scene3d/SceneManager.js');
+  const obj = 'data:text/plain;base64,' + Buffer.from('v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n').toString('base64');
+  for (const instOn of [true, false]) {
+    const tag = instOn ? 'instancer ON' : 'instancer off';
+    const sm = new SceneManager({}, 64, 64);
+    const hc = await sm.createHypercube({ dim: 4 });
+    const inScene = o => { let f = false; sm.scene.traverse(c => { if (c === o) f = true; }); return f; };
+    const inst = () => hc._hInstancer.getMesh();
+    hc.setInstancerVisible(instOn); sm._syncInstancerAdoption();
+    const pivot = await sm.loadOBJ(obj, 'tri.obj'); sm._syncInstancerAdoption();
+    let modelMat = null; pivot.traverse(c => { if (c.isMesh) modelMat = c.material; });
+    if (instOn) {
+      check(`${tag}: import leaves the instancer in the scene`, inScene(inst()),
+        'loaders must run inside _withOwnMesh — they replace this.mesh');
+      check(`${tag}: imported model is not dressed in the instancer's material`, modelMat !== inst().material);
+    }
+    // "↩ Back to Geometry", exactly as the UI button does it
+    sm._importedModelName = null; sm._geoKey = null; sm.setGeometry('Torus'); sm._syncInstancerAdoption();
+    sm._rebuildMaterial(3);                                   // Normal
+    if (instOn) {
+      check(`${tag}: Back to Geometry is not refused (Torus stashed behind the instancer)`,
+        sm._ownMesh?.geometry?.type?.includes('Torus') && inScene(inst()),
+        '_replaceMesh must release the instancer, not return early');
+      hc.setInstancerVisible(false); sm._syncInstancerAdoption();
+    }
+    check(`${tag}: geometry is the Torus, in the scene, wearing the Normal material`,
+      sm.mesh?.geometry?.type?.includes('Torus') && inScene(sm.mesh) &&
+      sm.mesh.material?.isMeshNormalMaterial === true && sm.material === sm.mesh.material,
+      'Material must follow the geometry once the instancer lets go');
+    check(`${tag}: the model's pivot is gone from the scene`, !inScene(pivot));
+  }
 }
 
 console.log(failures ? `\n${failures} FAILURE(S)\n` : '\nAll hypercube checks passed.\n');
