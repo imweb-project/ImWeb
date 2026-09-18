@@ -81,11 +81,11 @@ export class HypercubeFaces {
             alpha *= lum;
           }
           vec3 rgb = col.rgb * uColor;
-          // Modes 4+ are CustomBlending, whose colour factors never see alpha:
-          // opacity is folded in here, toward each mode's identity — black
-          // for Screen/Lighten/Exclusion, white for Darken.
-          if (uBlendMode == 6)      rgb = mix(vec3(1.0), rgb, alpha);
-          else if (uBlendMode >= 4) rgb *= alpha;
+          // Every mode but Normal/Additive blends with colour factors that never
+          // see alpha, so opacity is folded in here, toward the mode's identity:
+          // white for Multiply/Darken, black for Subtract/Screen/Lighten/Exclusion.
+          if (uBlendMode == 2 || uBlendMode == 6) rgb = mix(vec3(1.0), rgb, alpha);
+          else if (uBlendMode >= 3)               rgb *= alpha;
           fragColor = vec4(rgb, alpha);
         }
       `,
@@ -191,17 +191,18 @@ export class HypercubeFaces {
   // Index = hypercube.faces.blend option, APPEND-ONLY (saved as an integer).
   // Faces draw straight into the scene, so every mode must be expressible in
   // the fixed-function blend stage — which is why there is no Difference.
-  // Alpha always blends as Normal does, so the scene's coverage (read by the
-  // compositor) is the same in every mode.
+  // Screen..Exclusion blend alpha as Normal does. Multiply and Subtract leave
+  // the scene's alpha alone: three's MultiplyBlending multiplied it by the
+  // face alpha, so opacity punched a hole in the scene's coverage.
   setBlending(idx) {
     const presets = [
       THREE.NormalBlending,
       THREE.AdditiveBlending,
-      THREE.MultiplyBlending,
-      THREE.SubtractiveBlending,
     ];
     //            equation            src factor                  dst factor
     const custom = {
+      2: [THREE.AddEquation, THREE.ZeroFactor,             THREE.SrcColorFactor],          // Multiply  s * d
+      3: [THREE.AddEquation, THREE.ZeroFactor,             THREE.OneMinusSrcColorFactor],  // Subtract  d(1-s), as three's SubtractiveBlending
       4: [THREE.AddEquation, THREE.OneMinusDstColorFactor, THREE.OneFactor],               // Screen    s(1-d) + d
       5: [THREE.MaxEquation, THREE.OneFactor,              THREE.OneFactor],               // Lighten   max(s, d)
       6: [THREE.MinEquation, THREE.OneFactor,              THREE.OneFactor],               // Darken    min(s, d)
@@ -211,9 +212,10 @@ export class HypercubeFaces {
     if (custom) {
       m.blending          = THREE.CustomBlending;
       [m.blendEquation, m.blendSrc, m.blendDst] = custom;
+      const keepAlpha = idx === 2 || idx === 3;
       m.blendEquationAlpha = THREE.AddEquation;
-      m.blendSrcAlpha      = THREE.SrcAlphaFactor;
-      m.blendDstAlpha      = THREE.OneMinusSrcAlphaFactor;
+      m.blendSrcAlpha      = keepAlpha ? THREE.ZeroFactor : THREE.SrcAlphaFactor;
+      m.blendDstAlpha      = keepAlpha ? THREE.OneFactor  : THREE.OneMinusSrcAlphaFactor;
     } else {
       m.blending = presets[idx] ?? THREE.NormalBlending;
     }

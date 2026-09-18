@@ -10,8 +10,7 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ### Added
 - **Four more face blend modes on the Hypercube: Screen, Lighten, Darken and
-  Exclusion.** Face opacity fades each one toward "no effect", which Multiply
-  and Subtract do not do. Faces draw straight into the scene, so every mode had
+  Exclusion.** Face opacity fades each one toward "no effect". Faces draw straight into the scene, so every mode had
   to be something the GPU's blend stage can compute on its own. That rules out
   Difference; Exclusion is the closest look. Each mode was measured on real
   WebGL2 against its formula (exact to the 8-bit value). The options are appended, so saved
@@ -22,6 +21,13 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   names the same source.
 
 ### Fixed
+- **Face opacity now works in Multiply and Subtract.** Both ignored it — a
+  face multiplied or subtracted at full strength whatever the slider said.
+  Opacity now fades them to no effect at 0. Multiply also no longer punches
+  the 3D scene's transparency by the face opacity. That made a
+  half-transparent hole in the scene wherever a face sat, visible once
+  composited. Saved states using these two modes at less than full opacity
+  will look lighter.
 - **Hypercube Faces and Instancer show without a Render Mode.** Mode's default,
   "none", also switched both off, so turning Faces on showed nothing until Mode
   was changed as well. Mode now only chooses wireframe, points or both. A saved
