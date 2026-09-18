@@ -352,7 +352,7 @@ export class HypercubeObject {
     if (this._morphState && this._morphFromVertices) {
       this._projectMorphInterp();
     } else {
-      this._projectInPlace(this._vertices, this._dim, this._rotAngles, this._wDistance, this._projBuf);
+      this._projectInPlace(this._vertices, this._dim, this._rotAngles, this._projW(), this._projBuf);
     }
 
     this._updateBuffers();
@@ -365,8 +365,8 @@ export class HypercubeObject {
     // fromAngles may be longer than fromDim needs — _projectInPlace only reads
     // rotationPlaneCount(fromDim) entries, so passing the full array is safe.
     const fromAngles = this._morphFromAngles ?? this._rotAngles;
-    this._projectInPlace(this._morphFromVertices, this._morphFromDim, fromAngles,    this._wDistance, this._morphFromProjBuf);
-    this._projectInPlace(this._vertices,          this._dim,          this._rotAngles, this._wDistance, this._morphToProjBuf);
+    this._projectInPlace(this._morphFromVertices, this._morphFromDim, fromAngles,    this._projW(), this._morphFromProjBuf);
+    this._projectInPlace(this._vertices,          this._dim,          this._rotAngles, this._projW(), this._morphToProjBuf);
 
     const t         = this._morphState.t;
     const mt        = 1 - t;
@@ -602,14 +602,16 @@ export class HypercubeObject {
     this._updateVisibility();
   }
 
+  // _wDistance is the user's value in BOTH modes; orthographic is applied at
+  // projection time. They used to share the field (ortho wrote 1e9 into it),
+  // so W-dist moved while in ortho silently dropped to perspective, and
+  // selecting ortho twice saved 1e9 as the distance to return to.
   setProjectionMode(mode) {
     this._projectionMode = mode;
-    if (mode === 'orthographic') {
-      this._wDistanceSaved = this._wDistance;
-      this._wDistance = 1e9;
-    } else if (this._wDistanceSaved != null) {
-      this._wDistance = this._wDistanceSaved;
-    }
+  }
+
+  _projW() {
+    return this._projectionMode === 'orthographic' ? 1e9 : this._wDistance;
   }
 
   setWDistance(d) {
