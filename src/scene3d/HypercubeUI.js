@@ -150,7 +150,11 @@ export function buildHypercubePanel(container, hypercube, ps) {
   _paramRow(renderSec, 'Edge width',
     ps?.get('hypercube.edgeWidth')?.value ?? hypercube._edgeWidth ?? 1.5,
     0.5, 8.0, 0.1, v => { hypercube.setEdgeWidth(v);     ps?.set('hypercube.edgeWidth', v); });
-  const _TEX_SRC_LABELS = ['None', 'Camera', 'Movie', 'Screen', 'Draw', 'Buffer', 'Noise'];
+  // Read from the params themselves, not retyped: these three menus are
+  // OPT_SOURCES now, and a fourth hand-written copy of the source list is
+  // exactly what the one-canonical-list rule forbids.
+  const _TEX_SRC_LABELS = ps?.get('hypercube.faces.texsrc')?.options
+    ?? ['None', 'Camera', 'Movie', 'Screen', 'Draw', 'Buffer', 'Noise'];
   const _BLEND_LABELS   = ['Normal', 'Additive', 'Multiply', 'Subtract'];
 
   _selectRow(renderSec, 'Faces', ['off', 'on'],

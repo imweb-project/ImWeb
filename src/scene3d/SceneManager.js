@@ -1303,14 +1303,32 @@ export class SceneManager {
     if (!wantInstancer && hasInstancer)
       this._adoptMesh(null);
 
-    // Instancer texture source — 0=None 1=Camera 2=Movie 3=Screen 4=Draw 5=Buffer 6=Noise
+    // Instancer texture source — OPT_SOURCES, so 0 is None and value-1 is a
+    // SOURCE_DEFS index resolved by the SAME resolver the layers and mix buses
+    // use. The seven-entry map this replaced was a hand-written copy that had
+    // drifted 28 sources behind the canonical list.
     if (this._hypercube) {
-      const instTexIdx = p.get('hypercube.inst.texsrc')?.value ?? 0;
-      const instTexMap = [null, inputs.camera, inputs.movie, inputs.screen, inputs.draw, inputs.buffer, inputs.noise];
-      const instTex    = instTexMap[instTexIdx] ?? null;
+      const instTex    = this._resolveOptSource(p, 'hypercube.inst.texsrc', inputs);
+      // Identity, not a timing flag: routing the 3D Scene back into its own
+      // instancer is a feedback loop, and the texture object is what says so.
       const useInstTex = (instTex && instTex === this.target.texture) ? null : instTex;
       this._hypercube.setInstancerTexture(useInstTex);
     }
+  }
+
+  /**
+   * Resolve an OPT_SOURCES-valued param to a texture: 0 is None, and value-1
+   * is a SOURCE_DEFS index handed to `inputs.resolveSource` — the very
+   * `_resolveLayerTex` the layers, mix buses and the SDF read through, so
+   * these menus can never drift behind the canonical list again.
+   *
+   * Falls back to null rather than to a picture when the resolver is absent:
+   * a missing route should read as "off", not as whatever happened to be bound.
+   */
+  _resolveOptSource(params, id, inputs) {
+    const v = params.get(id)?.value ?? 0;
+    if (!v) return null;
+    return inputs?.resolveSource?.(v - 1) ?? null;
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -1329,11 +1347,8 @@ export class SceneManager {
   render(params, dt = 0, inputs = {}) {
     this.update(dt * 1000);
     this.applyParams(params, dt, inputs);
-    // Select face texture from hypercube.faces.texsrc param
-    // 0=None 1=Camera 2=Movie 3=Screen 4=Draw 5=Buffer 6=Noise
-    const _texSrcMap = [null, inputs.camera, inputs.movie, inputs.screen, inputs.draw, inputs.buffer, inputs.noise];
-    const faceTexIdx = params.get('hypercube.faces.texsrc')?.value ?? 0;
-    const faceTex    = _texSrcMap[faceTexIdx] ?? null;
+    // Face texture — any source, through the one canonical resolver.
+    const faceTex = this._resolveOptSource(params, 'hypercube.faces.texsrc', inputs);
 
     if (faceTex && this._hypercube) {
       // Blit into isolated copy target to avoid WebGL feedback loop
@@ -1348,9 +1363,8 @@ export class SceneManager {
       this._hypercube?.setFaceTexture(null);
     }
 
-    // Face mask — same source map, same isolation pattern
-    const faceMaskIdx = params.get('hypercube.faces.masksrc')?.value ?? 0;
-    const faceMask    = _texSrcMap[faceMaskIdx] ?? null;
+    // Face mask — same resolver, same isolation pattern
+    const faceMask = this._resolveOptSource(params, 'hypercube.faces.masksrc', inputs);
     if (faceMask && this._hypercube) {
       this._copyMat.map = faceMask;
       this._copyMat.needsUpdate = true;

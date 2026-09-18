@@ -1170,6 +1170,19 @@ export const SOURCES = SOURCE_DEFS.map((s) => s.label);
 export const SOURCE_KEYS = SOURCE_DEFS.map((s) => s.key);
 
 /**
+ * Source menu for the texture/mask slots that can also be switched OFF:
+ * the canonical list with a 'None' prepended, so `value - 1` is a SOURCE_DEFS
+ * index and 0 means no texture. DERIVED, never retyped — these menus carried a
+ * hand-written seven-entry copy (Camera/Movie/Screen/Draw/Buffer/Noise) that
+ * had drifted 28 sources behind SOURCE_DEFS, which is exactly the failure the
+ * one-canonical-list rule exists to prevent.
+ *
+ * Append-only, like SOURCES itself: the value persists as an integer index.
+ * migrateHypercubeTexSrc() carries files written against the old short list.
+ */
+export const OPT_SOURCES = ['None', ...SOURCES];
+
+/**
  * Indirect entries appended to the capture-source lists: "whatever that layer is
  * currently showing" rather than a fixed source.
  *
@@ -1554,7 +1567,7 @@ export function migrateStatesSdfParams(states) {
  *
  * 2 — layer.fg/bg.blendAmount moved from 0–1 to 0–100 %.
  */
-export const PARAM_SCHEMA = 2;
+export const PARAM_SCHEMA = 3;
 
 /**
  * Per-id conversion factor, because the two params did NOT change the same way.
@@ -1617,6 +1630,66 @@ export function migrateBlendPercent(values, recs, savedSchema) {
 export function migrateStatesBlendPercent(states, savedSchema) {
   if (Array.isArray(states)) {
     for (const s of states) if (s) migrateBlendPercent(s.values, s.controllers, savedSchema);
+  }
+  return states;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hypercube texture/mask source menus — short hand-written list → OPT_SOURCES
+//
+// The three menus used to read ['None','Camera','Movie','Screen','Draw',
+// 'Buffer','Noise']; they now read OPT_SOURCES, so the same integer means a
+// different source. Only None/Camera/Movie happen to land on themselves.
+//
+// NEEDS A STAMP, like migrateBlendPercent and unlike the SDF one: this renames
+// nothing, so a stored 3 is 'Screen' or 'Buffer' depending only on when it was
+// written, and the data cannot say which. PARAM_SCHEMA 3 is that line.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Old menu index → OPT_SOURCES index. Old: None Camera Movie Screen Draw Buffer Noise. */
+const HC_TEXSRC_REMAP = [
+  0,                                    // None   → None
+  SOURCES.indexOf('Camera')    + 1,     // Camera → Camera
+  SOURCES.indexOf('Movie A')   + 1,     // Movie  → Movie A
+  SOURCES.indexOf('Output')    + 1,     // Screen → Output  (it was pipeline.prev)
+  SOURCES.indexOf('Draw')      + 1,     // Draw   → Draw
+  SOURCES.indexOf('Buffer')    + 1,     // Buffer → Buffer
+  SOURCES.indexOf('Noise')     + 1,     // Noise  → Noise
+];
+
+export const HC_TEXSRC_IDS = [
+  'hypercube.faces.texsrc',
+  'hypercube.faces.masksrc',
+  'hypercube.inst.texsrc',
+];
+
+export function migrateHypercubeTexSrc(values, recs, savedSchema) {
+  if ((savedSchema ?? 1) >= 3) return values;
+  const map = (v) =>
+    typeof v === 'number' && v >= 0 && v < HC_TEXSRC_REMAP.length ? HC_TEXSRC_REMAP[v] : v;
+
+  if (values) {
+    for (const id of HC_TEXSRC_IDS) if (id in values) values[id] = map(values[id]);
+  }
+  // Recall bounds are index bounds on a SELECT, so they move with the value —
+  // the same treatment blend percentages get, and for the same reason: it is
+  // the same quantity in the same menu, just relabelled.
+  if (recs) {
+    for (const id of HC_TEXSRC_IDS) {
+      const rec = recs[id];
+      if (!rec) continue;
+      if ('value'   in rec) rec.value   = map(rec.value);
+      if ('ctrlMin' in rec) rec.ctrlMin = map(rec.ctrlMin);
+      if ('ctrlMax' in rec) rec.ctrlMax = map(rec.ctrlMax);
+    }
+  }
+  return values;
+}
+
+/** migrateHypercubeTexSrc over a Display State array. Mutates and returns it. */
+export function migrateStatesHypercubeTexSrc(states, savedSchema) {
+  if (Array.isArray(states)) {
+    for (const s of states) if (s) migrateHypercubeTexSrc(s.values, s.controllers, savedSchema);
   }
   return states;
 }

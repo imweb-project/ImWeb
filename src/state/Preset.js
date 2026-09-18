@@ -16,6 +16,8 @@ import {
   PARAM_SCHEMA,
   migrateBlendPercent,
   migrateStatesBlendPercent,
+  migrateHypercubeTexSrc,
+  migrateStatesHypercubeTexSrc,
 } from '../controls/ParameterSystem.js';
 
 export const MAX_STATES = 32;
@@ -151,10 +153,12 @@ export class Preset {
   static importBank(data, targetIndex) {
     const p = new Preset(targetIndex);
     p.name        = data.name   || `Bank ${targetIndex + 1}`;
-    p.states      = migrateStatesBlendPercent(
-                      migrateStatesScene3dParams(
-                        migrateStatesSdfParams(
-                          migrateStatesCaptureBase(data.states || [], data.sourceCount))),
+    p.states      = migrateStatesHypercubeTexSrc(
+                      migrateStatesBlendPercent(
+                        migrateStatesScene3dParams(
+                          migrateStatesSdfParams(
+                            migrateStatesCaptureBase(data.states || [], data.sourceCount))),
+                        data.schema),
                       data.schema);
     p.activeState = data.activeState ?? 0;
     return p;
@@ -172,10 +176,12 @@ export class Preset {
     migrateStatesSdfParams(p.states);
     migrateStatesScene3dParams(p.states);
     migrateStatesBlendPercent(p.states, data.schema);
+    migrateStatesHypercubeTexSrc(p.states, data.schema);
     // The bank's own controller bag, separate from any state's.
     migrateSdfParams(null, p.controllers);
     migrateScene3dParams(null, p.controllers);
     migrateBlendPercent(null, p.controllers, data.schema);
+    migrateHypercubeTexSrc(null, p.controllers, data.schema);
     return p;
   }
 
@@ -515,6 +521,7 @@ export class PresetManager extends EventTarget {
     migrateSdfParams(data.values, data.controllers);
     migrateScene3dParams(data.values, data.controllers);
     migrateBlendPercent(data.values, data.controllers, data.schema);
+    migrateHypercubeTexSrc(data.values, data.controllers, data.schema);
     if ('output.transfer' in data.values) {
       data.values['feedback.mode'] = data.values['output.transfer'];
       delete data.values['output.transfer'];

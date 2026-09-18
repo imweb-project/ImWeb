@@ -37,6 +37,7 @@ import {
   setTableManager,
   SOURCE_KEYS,
   SOURCE_DISPLAY_ORDER,
+  OPT_SOURCES,
   CAPTURE_INDIRECT_BASE,
   MIXBUS_IDX,
   PARTICLE_MASK_SRC,
@@ -383,15 +384,15 @@ async function main() {
   ps.register({ id:'hypercube.faces.blend',   type:'select',     options:['Normal','Additive','Multiply','Subtract'], value:0, label:'Face blend', group:'hypercube' });
   ps.register({ id:'hypercube.faces.hue',     type:'continuous', value:0,    min:0,    max:360,  step:1,     label:'Face hue',     group:'hypercube' });
   ps.register({ id:'hypercube.faces.sat',     type:'continuous', value:0,    min:0,    max:100,  step:1,     label:'Face sat',     group:'hypercube' });
-  ps.register({ id:'hypercube.faces.texsrc',  type:'select',     options:['None','Camera','Movie','Screen','Draw','Buffer','Noise'], value:0, label:'Face tex',   group:'hypercube' });
-  ps.register({ id:'hypercube.faces.masksrc', type:'select',     options:['None','Camera','Movie','Screen','Draw','Buffer','Noise'], value:0, label:'Face mask',  group:'hypercube' });
+  ps.register({ id:'hypercube.faces.texsrc',  type:'select',     options:OPT_SOURCES, value:0, label:'Face tex',   group:'hypercube' });
+  ps.register({ id:'hypercube.faces.masksrc', type:'select',     options:OPT_SOURCES, value:0, label:'Face mask',  group:'hypercube' });
   ps.register({ id:'hypercube.faces.maskinv', type:'toggle',     value:0,                                    label:'Mask invert', group:'hypercube' });
   ps.register({ id:'hypercube.faces.masklvl', type:'continuous', value:1.0,  min:0.0,  max:4.0,  step:0.01,  label:'Mask level',  group:'hypercube' });
   ps.register({ id:'hypercube.inst.active',   type:'toggle',     value:0,                                    label:'Instancer',    group:'hypercube' });
   ps.register({ id:'hypercube.inst.geo',      type:'select',     options:['Sphere','Torus','Cube','Plane','Cylinder','Capsule','TorusKnot','Cone','Dodecahedron','Icosahedron','Octahedron','Tetrahedron','Ring'], value:0, label:'Inst Geo', group:'hypercube' });
   ps.register({ id:'hypercube.inst.scale',    type:'continuous', value:0.08, min:0.01, max:2.0,  step:0.01,  label:'Inst Scale',   group:'hypercube' });
   ps.register({ id:'hypercube.inst.opacity',  type:'continuous', value:1.0,  min:0.0,  max:1.0,  step:0.01,  label:'Inst Opacity', group:'hypercube' });
-  ps.register({ id:'hypercube.inst.texsrc',   type:'select',     options:['None','Camera','Movie','Screen','Draw','Buffer','Noise'], value:0, label:'Inst tex', group:'hypercube' });
+  ps.register({ id:'hypercube.inst.texsrc',   type:'select',     options:OPT_SOURCES, value:0, label:'Inst tex', group:'hypercube' });
 
   // ── 3. Controllers ────────────────────────────────────────────────────────
 
@@ -8847,10 +8848,38 @@ void main() {
         ? ps.get("effect.bokehmask").value
         : -1;
 
+    // The hypercube's face texture, face mask and instancer texture are real
+    // consumers now that they can name any source: route SlitScan onto a face
+    // and SlitScan has to actually tick, or the face samples a stale target.
+    // Gated on the thing being live, the same shape as the bokeh mask above —
+    // renderMode 'none' (index 3) hides faces AND instancer, so nothing is
+    // pulled in then.
+    //
+    // 3D Scene and 3D Depth are deliberately NOT pulled: that is the scene
+    // reading its own output, which is the feedback case the identity check in
+    // SceneManager nulls out. Letting it mark the scene "used" would make the
+    // scene's own existence its justification.
+    const _hcLive = ps.get('hypercube.renderMode')?.value !== 3;
+    // Derived from the canonical key list, not written as 6 and 20: the same
+    // rule the rest of this file follows, and the indices are only meaningful
+    // through SOURCE_DEFS anyway.
+    const _hcSelfTex = [SOURCE_KEYS.indexOf('scene3d'), SOURCE_KEYS.indexOf('depth3d')];
+    const _hcSrc = (id, gate) => {
+      if (!_hcLive || !gate) return -1;
+      const idx = (ps.get(id)?.value ?? 0) - 1;   // OPT_SOURCES: 0 is None
+      return _hcSelfTex.includes(idx) ? -1 : idx;
+    };
+    const _hcFacesOn = !!ps.get('hypercube.faces.active')?.value;
+    const _hcInstOn  = !!ps.get('hypercube.inst.active')?.value;
+    const _cHcTex  = _hcSrc('hypercube.faces.texsrc',  _hcFacesOn);
+    const _cHcMask = _hcSrc('hypercube.faces.masksrc', _hcFacesOn);
+    const _cHcInst = _hcSrc('hypercube.inst.texsrc',   _hcInstOn);
+
     const _direct = (i) =>
       _cFg === i || _cBg === i || _cDs === i || _cTd === i || _cTdMap === i ||
       _cSlit === i || _cVwarp === i || _cDelay === i || _cRutt === i ||
-      _cSdfTex === i || _cSdfRef === i || _cKeySrc === i || _cBokeh === i;
+      _cSdfTex === i || _cSdfRef === i || _cKeySrc === i || _cBokeh === i ||
+      _cHcTex === i || _cHcMask === i || _cHcInst === i;
 
     // Per-bus inputs. Which one can actually reach the bus output? MIXBUS
     // computes mix(a, modeResult, xfade): xfade=0 is pure srcA (srcB hidden),
@@ -9344,6 +9373,10 @@ void main() {
         noise: noiseTexture,
         warpMaps,
         dispTex: _resolveLayerTex(ps.get('layer.ds')?.value ?? 0),
+        // The hypercube's face/mask/instancer menus are OPT_SOURCES, so they
+        // resolve through the SAME function the layers use rather than through
+        // a private copy of the source list.
+        resolveSource: _resolveLayerTex,
       });
 
     // Assemble input sources
