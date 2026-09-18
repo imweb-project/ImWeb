@@ -15,246 +15,147 @@ import {
 
 const EASING_KEYS = Object.keys(EASING);
 
-/**
- * Build and append a hypercube control panel to container.
- * @param {HTMLElement}      container  – parent DOM node
- * @param {HypercubeObject}  hypercube  – live HypercubeObject
- * @param {ParameterSystem|null} ps     – optional; unused currently but kept for future wiring
- * @returns {HTMLElement} the panel root
- */
-// Mapping from (i,j) plane to ps param id — covers the 4 base-4D planes
-const _ROT_PARAM = { '0,1':'hypercube.rot.xy', '0,2':'hypercube.rot.xz', '1,2':'hypercube.rot.yz', '0,3':'hypercube.rot.xw' };
+// ── Layout ──────────────────────────────────────────────────────────────────
+// One panel, grouped the way the cube is built. Every row below is a STANDARD
+// param row (badge → LFO/MIDI/OSC, live value, same units everywhere); the
+// hand-built rows it replaces had no badges, read ps once and went stale, and
+// disagreed with the badge rows on units and names (owner, 2026-09-18).
+// tests/audit-hypercube.mjs checks every hypercube param sits in exactly one
+// of these lists, so a new param cannot silently get no row.
+export const HC_DIMENSION_IDS = ['hypercube.dim', 'hypercube.morphDuration'];
+export const HC_SECTIONS = [
+  { title: 'Projection',     ids: ['hypercube.projMode', 'hypercube.wDistance', 'hypercube.scale'] },
+  { title: 'Rotation',       ids: ['hypercube.rot.xy', 'hypercube.rot.xz', 'hypercube.rot.yz', 'hypercube.rot.xw'],
+    morePlanes: true },
+  { title: 'Edges & Points', ids: ['hypercube.renderMode', 'hypercube.edgeWidth', 'hypercube.edgeOpacity',
+                                   'hypercube.pointSize'] },
+  { title: 'Faces',          ids: ['hypercube.faces.active', 'hypercube.faces.opacity', 'hypercube.faces.blend',
+                                   'hypercube.faces.hue', 'hypercube.faces.sat', 'hypercube.faces.texsrc',
+                                   'hypercube.faces.masksrc', 'hypercube.faces.maskinv', 'hypercube.faces.masklvl'],
+    openWhen: 'hypercube.faces.active' },
+  { title: 'Instancer',      ids: ['hypercube.inst.active', 'hypercube.inst.showGeo', 'hypercube.inst.geo',
+                                   'hypercube.inst.scale', 'hypercube.inst.opacity', 'hypercube.inst.texsrc'],
+    openWhen: 'hypercube.inst.active' },
+];
 
-export function buildHypercubePanel(container, hypercube, ps) {
+// Planes that have a param are shown as its row; the rest are live-only.
+const _ROT_PARAM = { '0,1': 'hypercube.rot.xy', '0,2': 'hypercube.rot.xz', '1,2': 'hypercube.rot.yz', '0,3': 'hypercube.rot.xw' };
+const _AXIS = 'XYZWVUTSRQPO';
+
+/**
+ * Build the hypercube panel ONCE. Returns { panel, refresh }: standard rows
+ * follow their params by themselves, so a state recall only needs refresh()
+ * for the live-only extra planes — rebuilding the whole panel per recall
+ * leaked every row's param listeners and a 200 ms interval each time.
+ *
+ * @param {HTMLElement}     container
+ * @param {HypercubeObject} hypercube
+ * @param {ParameterSystem} ps
+ * @param {(id:string) => HTMLElement} rowFor  – builds a standard param row
+ */
+export function buildHypercubePanel(container, hypercube, ps, rowFor) {
   const panel = document.createElement('div');
   panel.className = 'hc-panel';
-  panel.style.cssText = 'padding:8px 0;font-family:monospace;font-size:11px;color:var(--text-1,#e0e0f0);';
 
-  let morphDuration = ps?.get('hypercube.morphDuration')?.value ?? 800;
-  let morphEasing   = 'easeInOut';
-  let lastRebuildDim = -1;
-  let pendingRebuild = null;
-
-  // ── Dimension pills ─────────────────────────────────────────────────────
-  const dimSec = _section(panel, 'DIMENSION');
+  // ── Header: dimension pills + stats ─────────────────────────────────────
+  const stats = document.createElement('div');
+  stats.className = 'hc-stats';
+  panel.appendChild(stats);
 
   const pillRow = document.createElement('div');
-  pillRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;padding:4px 8px 6px;';
-
+  pillRow.className = 'hc-pills';
+  const pills = [];
   for (let d = 4; d <= MAX_DIM; d++) {
     const col  = DIMENSION_COLORS[d] ?? '#ffffff';
     const pill = document.createElement('button');
     pill.textContent = `${d}D`;
     pill.dataset.dim = d;
-    pill.style.cssText = `
-      padding:3px 8px;border:1px solid ${col}66;background:${col}22;
-      color:${col};cursor:pointer;font-size:10px;font-family:monospace;
-      border-radius:3px;transition:background 0.12s;
-    `;
-    pill.addEventListener('mouseenter', () => { pill.style.background = `${col}44`; });
-    pill.addEventListener('mouseleave', () => { pill.style.background = `${col}22`; });
-    pill.addEventListener('click', () => {
-      hypercube.morphTo(d, { durationMs: morphDuration, easing: morphEasing });
-      ps?.set('hypercube.dim', d);   // persist to state
-      // Stats text updates next interval tick. Defer the 66-row DOM rebuild
-      // until after the morph completes so it doesn't freeze the start frames.
-      if (pendingRebuild) clearTimeout(pendingRebuild);
-      pendingRebuild = setTimeout(() => {
-        pendingRebuild = null;
-        lastRebuildDim = -1; // force rebuild on next updateStats
-      }, morphDuration + 50);
-    });
+    pill.style.setProperty('--pill', col);
+    // Through the param, like any controller: it morphs over Morph Time.
+    pill.addEventListener('click', () => ps.set('hypercube.dim', d));
     pillRow.appendChild(pill);
+    pills.push(pill);
   }
-  dimSec.appendChild(pillRow);
-
-  _paramRow(dimSec, 'Morph ms', morphDuration, 100, 4000, 50, v => {
-    morphDuration = v;
-    ps?.set('hypercube.morphDuration', v);
+  panel.appendChild(pillRow);
+  for (const id of HC_DIMENSION_IDS) panel.appendChild(rowFor(id));
+  // Easing is a panel preference, not a param (never saved) — the dim handler
+  // reads it from the object so pills, drags and controllers ease alike.
+  hypercube.morphEasing ??= 'easeInOut';
+  _selectRow(panel, 'Easing', EASING_KEYS, EASING_KEYS.indexOf(hypercube.morphEasing), idx => {
+    hypercube.morphEasing = EASING_KEYS[idx];
   });
-  _selectRow(dimSec, 'Easing', EASING_KEYS, EASING_KEYS.indexOf(morphEasing), idx => {
-    morphEasing = EASING_KEYS[idx];
-  });
 
-  // ── Projection ──────────────────────────────────────────────────────────
-  const projSec = _section(panel, 'PROJECTION');
-  _paramRow(projSec, 'W-dist', ps?.get('hypercube.wDistance')?.value ?? hypercube._wDistance ?? 3.0, 1.1, 20, 0.1, v => {
-    hypercube.setWDistance(v);
-    ps?.set('hypercube.wDistance', v);
-  });
-  _paramRow(projSec, 'Scale', ps?.get('hypercube.scale')?.value ?? hypercube._scale ?? 1.0, 0.1, 5, 0.05, v => {
-    hypercube.setScale(v);
-    ps?.set('hypercube.scale', v);
-  });
-  // ── Rotation planes ─────────────────────────────────────────────────────
-  const rotSec = _section(panel, 'ROTATION PLANES');
+  // ── Sections ────────────────────────────────────────────────────────────
+  let moreBody = null;
+  for (const sec of HC_SECTIONS) {
+    const wrap = document.createElement('div');
+    wrap.className = 'panel-subsection';
+    const hdr = document.createElement('div');
+    hdr.className = 'subsection-header';
+    hdr.textContent = sec.title;
+    // Wired here; the flag stops main.js's sweep of .subsection-header wiring
+    // it a second time (two toggles per click = no toggle), whichever of the
+    // two runs first.
+    hdr.dataset.collapseWired = '1';
+    hdr.addEventListener('click', () => {
+      wrap.classList.toggle('collapsed');
+      hdr.classList.toggle('collapsed', wrap.classList.contains('collapsed'));
+    });
+    wrap.appendChild(hdr);
+    for (const id of sec.ids) wrap.appendChild(rowFor(id));
 
-  function rebuildRotationRows() {
-    // Remove all children after the section header
-    while (rotSec.children.length > 1) rotSec.removeChild(rotSec.lastChild);
+    if (sec.openWhen) {
+      // Faces / Instancer: closed while off, and opened when switched on —
+      // by a hand, a controller or a recall.
+      const setOpen = on => { wrap.classList.toggle('collapsed', !on); hdr.classList.toggle('collapsed', !on); };
+      setOpen(!!ps.get(sec.openWhen)?.value);
+      ps.get(sec.openWhen)?.onChange(v => { if (v) setOpen(true); });
+    }
+    if (sec.morePlanes) {
+      const { body } = _collapsible(wrap, 'More planes — live only, not saved', false);
+      moreBody = body;
+    }
+    panel.appendChild(wrap);
+  }
 
+  // Planes beyond the four with params: live speeds on the object, rebuilt
+  // when the dimension changes (the plane count does).
+  let planesDim = -1;
+  function rebuildMorePlanes() {
+    if (!moreBody) return;
+    moreBody.textContent = '';
     const dim = hypercube.dim;
-
-    // Collect planes into tier buckets
-    const tiers = [
-      { label: 'Base 3D',  planes: [], open: true },
-      { label: 'W tier',   planes: [], open: true },
-      { label: 'V+ tier',  planes: [], open: false },
-    ];
-
     let idx = 0;
     for (let i = 0; i < dim; i++) {
-      for (let j = i + 1; j < dim; j++) {
-        const tier = Math.max(i, j) < 3 ? 0 : Math.max(i, j) < 4 ? 1 : 2;
-        tiers[tier].planes.push({ i, j, idx });
-        idx++;
+      for (let j = i + 1; j < dim; j++, idx++) {
+        if (_ROT_PARAM[`${i},${j}`]) continue;
+        const pIdx = idx;
+        _paramRow(moreBody, `Rot ${_AXIS[i]}${_AXIS[j]}`, hypercube._rotSpeeds?.[pIdx] ?? 0, -2, 2, 0.01,
+          v => hypercube.setRotationSpeed(pIdx, v));
       }
     }
-
-    for (const { label, planes, open } of tiers) {
-      if (planes.length === 0) continue;
-      const { body } = _collapsible(rotSec, label, open);
-      for (const { i, j, idx: pIdx } of planes) {
-        const paramId = _ROT_PARAM[`${i},${j}`] ?? null;
-        // Read initial speed from ps if available, else from live object
-        const initSpeed = paramId && ps?.get(paramId)
-          ? ps.get(paramId).value * 100
-          : (hypercube._rotSpeeds?.[pIdx] ?? 0) * 100;
-        _paramRow(body, `${i}↔${j}`, initSpeed, -628, 628, 1, v => {
-          hypercube.setRotationSpeed(pIdx, v / 100);
-          if (paramId) ps?.set(paramId, v / 100);  // persist to state
-        });
-      }
+    if (!moreBody.children.length) {
+      const none = document.createElement('div');
+      none.className = 'hc-note';
+      none.textContent = 'All planes of this dimension have rows above.';
+      moreBody.appendChild(none);
     }
   }
-  rebuildRotationRows();
 
-  // ── Projection mode ─────────────────────────────────────────────────────
-  const _PROJ = ['perspective', 'orthographic'];
-  _selectRow(projSec, 'Proj', _PROJ,
-    ps?.get('hypercube.projMode')?.value ?? 0,
-    idx => { hypercube.setProjectionMode(_PROJ[idx]); ps?.set('hypercube.projMode', idx); });
-
-  // ── Render ──────────────────────────────────────────────────────────────
-  const renderSec = _section(panel, 'RENDER');
-  const _RMODES = ['wireframe', 'points', 'both', 'none'];
-  _selectRow(renderSec, 'Mode', _RMODES,
-    ps?.get('hypercube.renderMode')?.value ?? 3,
-    idx => { hypercube.setRenderMode(_RMODES[idx]); ps?.set('hypercube.renderMode', idx); });
-  _paramRow(renderSec, 'Pt size',
-    ps?.get('hypercube.pointSize')?.value ?? hypercube._pointSize ?? 3.0,
-    0.5, 20, 0.5, v => { hypercube.setPointSize(v);      ps?.set('hypercube.pointSize', v); });
-  _paramRow(renderSec, 'Edge opacity',
-    (ps?.get('hypercube.edgeOpacity')?.value ?? hypercube._edgeOpacityMult ?? 1.0) * 100,
-    0, 100, 1, v => { hypercube.setEdgeOpacity(v / 100); ps?.set('hypercube.edgeOpacity', v / 100); });
-  _paramRow(renderSec, 'Edge width',
-    ps?.get('hypercube.edgeWidth')?.value ?? hypercube._edgeWidth ?? 1.5,
-    0.5, 8.0, 0.1, v => { hypercube.setEdgeWidth(v);     ps?.set('hypercube.edgeWidth', v); });
-  // Read from the params themselves, not retyped: these three menus are
-  // OPT_SOURCES now, and a fourth hand-written copy of the source list is
-  // exactly what the one-canonical-list rule forbids.
-  const _TEX_SRC_LABELS = ps?.get('hypercube.faces.texsrc')?.options
-    ?? ['None', 'Camera', 'Movie', 'Screen', 'Draw', 'Buffer', 'Noise'];
-  const _BLEND_LABELS   = ps?.get('hypercube.faces.blend')?.options
-    ?? ['Normal', 'Additive', 'Multiply', 'Subtract'];
-
-  _selectRow(renderSec, 'Faces', ['off', 'on'],
-    ps?.get('hypercube.faces.active')?.value ? 1 : 0,
-    idx => { hypercube.setFacesVisible(idx === 1); ps?.set('hypercube.faces.active', idx === 1 ? 1 : 0); });
-  _paramRow(renderSec, 'Face opacity',
-    ps?.get('hypercube.faces.opacity')?.value ?? 0.5,
-    0.0, 1.0, 0.01,
-    v => { hypercube.setFaceOpacity(v); ps?.set('hypercube.faces.opacity', v); });
-  _selectRow(renderSec, 'Face blend', _BLEND_LABELS,
-    ps?.get('hypercube.faces.blend')?.value ?? 0,
-    idx => { hypercube.setFaceBlending(idx); ps?.set('hypercube.faces.blend', idx); });
-  _paramRow(renderSec, 'Face hue',
-    ps?.get('hypercube.faces.hue')?.value ?? 0,
-    0, 360, 1, v => {
-      hypercube.setFaceHue(v, ps?.get('hypercube.faces.sat')?.value ?? 0);
-      ps?.set('hypercube.faces.hue', v);
-    });
-  _paramRow(renderSec, 'Face sat',
-    ps?.get('hypercube.faces.sat')?.value ?? 0,
-    0, 100, 1, v => {
-      hypercube.setFaceHue(ps?.get('hypercube.faces.hue')?.value ?? 0, v);
-      ps?.set('hypercube.faces.sat', v);
-    });
-  _selectRow(renderSec, 'Face tex', _TEX_SRC_LABELS,
-    ps?.get('hypercube.faces.texsrc')?.value ?? 0,
-    idx => { ps?.set('hypercube.faces.texsrc', idx); });
-  _selectRow(renderSec, 'Face mask', _TEX_SRC_LABELS,
-    ps?.get('hypercube.faces.masksrc')?.value ?? 0,
-    idx => { ps?.set('hypercube.faces.masksrc', idx); });
-  _selectRow(renderSec, 'Mask inv', ['off', 'on'],
-    ps?.get('hypercube.faces.maskinv')?.value ? 1 : 0,
-    idx => { hypercube.setFaceMaskInvert(idx === 1); ps?.set('hypercube.faces.maskinv', idx === 1 ? 1 : 0); });
-  _paramRow(renderSec, 'Mask level',
-    ps?.get('hypercube.faces.masklvl')?.value ?? 1.0,
-    0.0, 4.0, 0.01,
-    v => { hypercube.setFaceMaskLevel(v); ps?.set('hypercube.faces.masklvl', v); });
-
-  const _GEO_LABELS = ps?.get('hypercube.inst.geo')?.options
-    ?? ['Sphere','Torus','Cube','Plane','Cylinder','Capsule','TorusKnot','Cone','Dodecahedron','Icosahedron','Octahedron','Tetrahedron','Ring'];
-  _selectRow(renderSec, 'Instancer', ['off', 'on'],
-    ps?.get('hypercube.inst.active')?.value ? 1 : 0,
-    idx => { hypercube.setInstancerVisible(idx === 1); ps?.set('hypercube.inst.active', idx === 1 ? 1 : 0); });
-  _selectRow(renderSec, 'Inst geo', _GEO_LABELS,
-    ps?.get('hypercube.inst.geo')?.value ?? 0,
-    idx => { hypercube.setInstancerGeoType(_GEO_LABELS[idx]); ps?.set('hypercube.inst.geo', idx); });
-  _paramRow(renderSec, 'Inst scale',
-    ps?.get('hypercube.inst.scale')?.value ?? 0.08,
-    0.01, 2.0, 0.01,
-    v => { hypercube.setInstancerScale(v);   ps?.set('hypercube.inst.scale', v); });
-  _paramRow(renderSec, 'Inst opacity',
-    ps?.get('hypercube.inst.opacity')?.value ?? 1.0,
-    0.0, 1.0, 0.01,
-    v => { hypercube.setInstancerOpacity(v); ps?.set('hypercube.inst.opacity', v); });
-  _selectRow(renderSec, 'Inst tex', _TEX_SRC_LABELS,
-    ps?.get('hypercube.inst.texsrc')?.value ?? 0,
-    idx => { ps?.set('hypercube.inst.texsrc', idx); });
-
-  // ── Stats ────────────────────────────────────────────────────────────────
-  const statsDiv = document.createElement('div');
-  statsDiv.style.cssText = `
-    padding:4px 8px;color:var(--text-2,#8888a0);font-size:10px;
-    border-top:1px solid #2a2a34;margin-top:4px;
-  `;
-
-  function updateStats() {
-    const d = hypercube.dim;
-    statsDiv.textContent =
-      `dim:${d}  verts:${vertexCount(d)}  edges:${edgeCount(d)}  planes:${rotationPlaneCount(d)}`;
-    // Only rebuild the rotation-plane rows when dim actually changed — at 12D
-    // this is 66 row creations and was firing every 200ms unconditionally.
-    if (d !== lastRebuildDim) {
-      lastRebuildDim = d;
-      rebuildRotationRows();
-    }
+  function refresh() {
+    const d = hypercube.dim, target = hypercube.targetDim ?? d;
+    stats.textContent = `${d}D · ${vertexCount(d)} verts · ${edgeCount(d)} edges · ${rotationPlaneCount(d)} planes`;
+    for (const p of pills) p.classList.toggle('active', Number(p.dataset.dim) === target);
+    if (d !== planesDim) { planesDim = d; rebuildMorePlanes(); }
   }
-  updateStats();
-  setInterval(updateStats, 200);
-  panel.appendChild(statsDiv);
+  refresh();
+  setInterval(refresh, 200);   // once — the panel is never rebuilt
 
   container.appendChild(panel);
-  return panel;
+  return { panel, refresh: () => { planesDim = -1; refresh(); } };
 }
 
 // ── DOM helpers ───────────────────────────────────────────────────────────────
-
-function _section(parent, label) {
-  const sec = document.createElement('div');
-  sec.style.cssText = 'margin-bottom:2px;';
-  const hdr = document.createElement('div');
-  hdr.textContent = label;
-  hdr.style.cssText = `
-    padding:3px 8px;font-size:9px;letter-spacing:0.08em;text-transform:uppercase;
-    color:var(--text-2,#8888a0);background:var(--bg-3,#1f1f25);
-  `;
-  sec.appendChild(hdr);
-  parent.appendChild(sec);
-  return sec;
-}
 
 function _collapsible(parent, label, open = true) {
   const group  = document.createElement('div');

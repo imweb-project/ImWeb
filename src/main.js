@@ -377,7 +377,7 @@ async function main() {
   ps.register({ id:'hypercube.rot.yz',        type:'continuous', value:0.15, min:-2.0, max:2.0,  step:0.01, label:'Rot YZ',  group:'hypercube' });
   ps.register({ id:'hypercube.rot.xw',        type:'continuous', value:0.40, min:-2.0, max:2.0,  step:0.01, label:'Rot XW',  group:'hypercube' });
   ps.register({ id:'hypercube.edgeWidth',     type:'continuous', value:1.5,  min:0.5,  max:8.0,  step:0.1,   label:'Edge Width',   group:'hypercube' });
-  ps.register({ id:'hypercube.renderMode',    type:'select',     options:['wireframe','points','both','none'], value:3, label:'Render Mode', group:'hypercube' });
+  ps.register({ id:'hypercube.renderMode',    type:'select',     options:['wireframe','points','both','off'], value:3, label:'Draw', group:'hypercube' });
   ps.register({ id:'hypercube.projMode',      type:'select',     options:['perspective','orthographic'],      value:0, label:'Proj Mode',    group:'hypercube' });
   ps.register({ id:'hypercube.faces.active',  type:'toggle',     value:0,                                    label:'Faces',        group:'hypercube' });
   ps.register({ id:'hypercube.faces.opacity', type:'continuous', value:0.5,  min:0.0,  max:1.0,  step:0.01,  label:'Face opacity', group:'hypercube' });
@@ -885,6 +885,7 @@ async function main() {
     const recalled = ps.restoring || presetMgr.morphing;
     hc.morphToLatest(Math.round(v), {
       durationMs: recalled ? 0 : (ps.get('hypercube.morphDuration')?.value ?? 2000),
+      easing: hc.morphEasing ?? 'easeInOut',   // the panel's Easing menu
     });
   });
   presetMgr.addEventListener('toast', e => showToast(e.detail.msg));
@@ -1430,35 +1431,17 @@ async function main() {
       const hcContainer = document.createElement('div');
       hcSection.appendChild(hcHeader);
       hcSection.appendChild(hcContainer);
-
-      // Every hypercube param as a standard row — the badge is what puts it on
-      // the modulation grid (LFO, Random, MIDI, OSC, tables). The panel above
-      // is hand-built and has no badges, so without these the whole subsystem
-      // was hand-only. By GROUP, not a list: a param added later gets a row.
-      // Sibling of hcContainer, so _hcPanelRebuild's innerHTML='' leaves it be.
-      // Starts collapsed: 27 rows would push the panel off screen. The header
-      // is wired by the .subsection-header loop further down main().
-      const hcParams = document.createElement('div');
-      hcParams.className = 'panel-subsection collapsed';
-      const hcParamsHdr = document.createElement('div');
-      hcParamsHdr.className = 'subsection-header collapsed';
-      hcParamsHdr.textContent = 'Parameters · controllers';
-      hcParams.appendChild(hcParamsHdr);
-      for (const p of ps.getGroup('hypercube')) hcParams.appendChild(buildParamRow(p, contextMenu));
-      hcSection.appendChild(hcParams);
-
       scene3dTab.appendChild(hcSection);
 
       const hc = scene3d.getHypercube();
       if (hc) {
         import('./scene3d/HypercubeUI.js').then(({ buildHypercubePanel }) => {
-          buildHypercubePanel(hcContainer, hc, ps);
-          // Rebuild function: clear container and re-run buildHypercubePanel so that
-          // all select/range widgets pick up restored ps values after a state recall.
-          _hcPanelRebuild = () => {
-            hcContainer.innerHTML = '';
-            buildHypercubePanel(hcContainer, hc, ps);
-          };
+          // Standard param rows (badges, live values) — built once. A recall
+          // only refreshes the live-only extra rotation planes; rebuilding the
+          // panel per recall leaked every row's listeners and an interval.
+          const { refresh } = buildHypercubePanel(hcContainer, hc, ps,
+            id => buildParamRow(ps.get(id), contextMenu));
+          _hcPanelRebuild = refresh;
         });
       }
     }
@@ -1857,6 +1840,10 @@ async function main() {
   // nested inside its own parent's. They also start expanded, so adding the
   // capability changes nothing until a header is actually clicked.
   document.querySelectorAll(".subsection-header").forEach((hdr) => {
+    // A panel built asynchronously (Hypercube) wires its own headers; wiring
+    // one twice makes each click toggle twice, i.e. not at all.
+    if (hdr.dataset.collapseWired) return;
+    hdr.dataset.collapseWired = "1";
     hdr.addEventListener("click", (e) => {
       if (e.target.tagName === "BUTTON") return;
       const wrap = hdr.closest(".panel-subsection");

@@ -5620,3 +5620,46 @@ body.midi-map-mode .param-row:hover {
     outline-offset: -2px;
     animation: map-target-pulse 0.7s ease-in-out infinite alternate;
 }
+
+/* ── Hypercube panel (HypercubeUI.js) ─────────────────────────────────────────
+   Standard param rows in .panel-subsection groups; these rules only style the
+   pieces that are not param rows: the dimension pills, the stats line, and the
+   live-only extra rotation planes. */
+.hc-panel {
+    padding: 4px 0 8px;
+}
+.hc-stats {
+    padding: 2px 8px 4px;
+    font-family: var(--font-mono, monospace);
+    font-size: 10px;
+    color: var(--text-2);
+}
+.hc-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 2px 8px 6px;
+}
+.hc-pills button {
+    padding: 3px 8px;
+    border: 1px solid color-mix(in srgb, var(--pill) 40%, transparent);
+    background: color-mix(in srgb, var(--pill) 13%, transparent);
+    color: var(--pill);
+    font: 10px var(--font-mono, monospace);
+    border-radius: 3px;
+    cursor: pointer;
+}
+.hc-pills button:hover {
+    background: color-mix(in srgb, var(--pill) 27%, transparent);
+}
+/* The dimension the cube is at or morphing to. */
+.hc-pills button.active {
+    background: var(--pill);
+    color: var(--bg-1, #111);
+    font-weight: 600;
+}
+.hc-note {
+    padding: 2px 8px;
+    font-size: 10px;
+    color: var(--text-2);
+}

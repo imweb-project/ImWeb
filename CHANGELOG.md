@@ -8,6 +8,19 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Changed
+- **One Hypercube panel, grouped the way the cube is built.** The hand-built
+  rows and the "Parameters · controllers" list showed the same settings twice,
+  with different names and units, and the hand-built half went stale when a
+  controller moved something. Now there is one set of standard rows, each with
+  its badge and live value. Dimension and Morph Time sit under the dimension
+  buttons, and the active dimension is highlighted. Below them come
+  **Projection**, **Rotation**, **Edges & Points**, **Faces** and
+  **Instancer**. Faces and Instancer stay folded while switched off and open
+  when switched on. Rotation planes without a parameter, 5D and up, are under
+  "More planes" with the same names and units. Render Mode is now **Draw**,
+  and its "none" is now **off**. Saved files are unchanged.
+
 ### Added
 - **An imported model as the instance shape.** Hypercube **Inst geo** has a new
   last entry, **Model**, which puts the 3D scene's imported model on every

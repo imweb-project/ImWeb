@@ -259,9 +259,19 @@ console.log('\n7. Hypercube params have standard rows (badges → LFO/MIDI/OSC)'
   // group, or one without a label (the row would read "hypercube.rot.xy"),
   // is what would slip through.
   const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
-  check('main.js builds a row for every param in the hypercube group',
-    /for \(const p of ps\.getGroup\('hypercube'\)\) hcParams\.appendChild\(buildParamRow\(p, contextMenu\)\)/.test(main),
-    'without these rows no hypercube param can take a controller');
+  check('main.js builds the panel with STANDARD rows (buildParamRow → badge)',
+    /buildHypercubePanel\(hcContainer, hc, ps,\s*id => buildParamRow\(ps\.get\(id\), contextMenu\)\)/.test(main),
+    'the hand-built rows had no badges — no hypercube param could take a controller');
+  const { HC_SECTIONS, HC_DIMENSION_IDS } = await import('../src/scene3d/HypercubeUI.js');
+  const placed = [...HC_DIMENSION_IDS, ...HC_SECTIONS.flatMap(x => x.ids)];
+  const registered = [...main.matchAll(/ps\.register\(\{ id:'(hypercube\.[^']+)'/g)].map(m => m[1]);
+  const missing = registered.filter(id => !placed.includes(id));
+  const twice   = placed.filter((id, i) => placed.indexOf(id) !== i);
+  const dead    = placed.filter(id => !registered.includes(id));
+  check(`every hypercube param has exactly one row in the panel (${registered.length})`,
+    registered.length > 20 && !missing.length && !twice.length && !dead.length,
+    [missing.length && `no row: ${missing.join(', ')} — add it to HC_SECTIONS in HypercubeUI.js`,
+     twice.length && `twice: ${twice.join(', ')}`, dead.length && `not registered: ${dead.join(', ')}`].filter(Boolean).join('; '));
   const regs = [...main.matchAll(/ps\.register\(\{ id:'(hypercube\.[^']+)'([^\n]*)\}\);/g)];
   const unlabelled = regs.filter(([, , rest]) => !/label:'[^']+'/.test(rest)).map(([, id]) => id);
   const outside = regs.filter(([, , rest]) => !/group:'hypercube'/.test(rest)).map(([, id]) => id);
