@@ -30,6 +30,12 @@
  *      per row for its lifetime and never removed: 24 → 48 in four dimension
  *      changes, measured.
  *
+ * Calibrated 2026-09-18 with eight mutations, each caught and each restored
+ * to green: renderMode re-gating faces; setVisible(false) not hiding; the
+ * full-buffer upload; Multiply punching alpha; Darken fading to black; and the
+ * pre-fix versions of the ortho code (64ccd43^), the UI rows (4fe617f^) and
+ * the face enumeration (8d97d33^, caught at 6053 ms by the timing check only).
+ *
  * Run:  node tests/audit-hypercube.mjs
  */
 
@@ -65,9 +71,11 @@ console.log('\n1. 2-cell faces by bit arithmetic');
   const all = [];
   for (let d = 2; d <= MAX_DIM; d++) all[d] = generate2CellFaces(d);
   const ms = performance.now() - t0;
-  // Bit arithmetic does all dims in ~75 ms; the vertex scan took 12.7 s for
-  // 12D alone standalone and ~78 s under boot. 3 s sits far from both.
-  check(`all dims 2–${MAX_DIM} generate in < 3000 ms`, ms < 3000,
+  // Bit arithmetic does all dims in ~75 ms. The vertex scan (8d97d33^) takes
+  // 6.0 s in Node, 12.7 s for 12D alone in Chrome, ~78 s under boot. 1 s leaves
+  // ~13× headroom above the fix and 6× below the regression. It is the ONLY
+  // check that catches the old algorithm: its corners were already correct.
+  check(`all dims 2–${MAX_DIM} generate in < 1000 ms`, ms < 1000,
     `${ms.toFixed(0)} ms — enumeration has regressed to scanning vertices; corners are ` +
     `[base, base|bitA, base|bitB, base|bitA|bitB] with base built from the fixed axes' bits`);
 
