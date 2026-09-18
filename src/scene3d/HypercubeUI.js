@@ -309,10 +309,9 @@ function _paramRow(parent, label, value, min, max, step, onChange) {
 
   let dragging = false, startY = 0, startVal = 0;
 
-  display.addEventListener('mousedown', e => {
-    dragging = true; startY = e.clientY; startVal = current;
-    e.preventDefault();
-  });
+  // Window listeners live only for the length of a drag. Registered per row
+  // for the row's lifetime, they were never removed — rebuildRotationRows()
+  // discards its rows on every dimension change, leaking two each (132 at 12D).
   const onMove = e => {
     if (!dragging) return;
     const mult = e.shiftKey ? 10 : 1;
@@ -321,9 +320,17 @@ function _paramRow(parent, label, value, min, max, step, onChange) {
     display.textContent = fmt(current);
     onChange(current);
   };
-  const onUp = () => { dragging = false; };
-  window.addEventListener('mousemove', onMove);
-  window.addEventListener('mouseup', onUp);
+  const onUp = () => {
+    dragging = false;
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup', onUp);
+  };
+  display.addEventListener('mousedown', e => {
+    dragging = true; startY = e.clientY; startVal = current;
+    e.preventDefault();
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  });
 
   display.addEventListener('dblclick', () => {
     const input = document.createElement('input');
