@@ -111,7 +111,7 @@ import { TextLayer } from "./inputs/TextLayer.js";
 import { buildWarpMaps } from "./inputs/WarpMaps.js";
 import { WarpMapEditor } from "./inputs/WarpMapEditor.js";
 import { SceneManager } from "./scene3d/SceneManager.js";
-import { EASING } from "./scene3d/HypercubeGeometry.js";
+import { EASING, PLANE_NAMES, PLANE_PAIRS } from "./scene3d/HypercubeGeometry.js";
 import { Pipeline } from "./core/Pipeline.js";
 import { GestureArbitrator } from "./core/GestureArbitrator.js";
 import { MobileStatePad } from "./ui/components/MobileStatePad.js";
@@ -376,10 +376,23 @@ async function main() {
   ps.register({ id:'hypercube.scale',         type:'continuous', value:1.0,  min:0.1,  max:5.0,  step:0.05, label:'Scale',  group:'hypercube' });
   ps.register({ id:'hypercube.edgeOpacity',   type:'continuous', value:1.0,  min:0.0,  max:1.0,  step:0.01, label:'Edge Opacity',  group:'hypercube' });
   ps.register({ id:'hypercube.pointSize',     type:'continuous', value:3.0,  min:0.5,  max:20,   step:0.5, label:'Point Size',  group:'hypercube' });
-  ps.register({ id:'hypercube.rot.xy',        type:'continuous', value:0.30, min:-2.0, max:2.0,  step:0.01, label:'Rot XY',  group:'hypercube' });
-  ps.register({ id:'hypercube.rot.xz',        type:'continuous', value:0.20, min:-2.0, max:2.0,  step:0.01, label:'Rot XZ',  group:'hypercube' });
-  ps.register({ id:'hypercube.rot.yz',        type:'continuous', value:0.15, min:-2.0, max:2.0,  step:0.01, label:'Rot YZ',  group:'hypercube' });
-  ps.register({ id:'hypercube.rot.xw',        type:'continuous', value:0.40, min:-2.0, max:2.0,  step:0.01, label:'Rot XW',  group:'hypercube' });
+  // ── Plane Bank: 8 slots, each a plane + a speed ────────────────────────────
+  // Any of the 66 planes of the 12-cube can be played; planes in no slot turn
+  // at their default speed. Slots 1–4 KEEP the old rot.xy/xz/yz/xw ids as
+  // their speeds, with planes defaulting to XY/XZ/YZ/XW — so every saved state,
+  // bank and MIDI binding on those rows behaves exactly as before (the mix.
+  // bus-1 rule: renaming ids breaks every save for zero gain). Plane menus are
+  // indices into PLANE_NAMES (append-only), 0 = none.
+  const _PLANE_OPTS = ['—', ...PLANE_NAMES];
+  const _planeOpt = n => _PLANE_OPTS.indexOf(n);
+  const HC_SLOT_SPEED = ['hypercube.rot.xy', 'hypercube.rot.xz', 'hypercube.rot.yz', 'hypercube.rot.xw',
+                         'hypercube.slot5.speed', 'hypercube.slot6.speed', 'hypercube.slot7.speed', 'hypercube.slot8.speed'];
+  const _slotDefaults = [['XY', 0.30], ['XZ', 0.20], ['YZ', 0.15], ['XW', 0.40], ['—', 0], ['—', 0], ['—', 0], ['—', 0]];
+  for (let n = 1; n <= 8; n++) {
+    const [plane, speed] = _slotDefaults[n - 1];
+    ps.register({ id:`hypercube.slot${n}.plane`, type:'select', select:true, options:_PLANE_OPTS, value:_planeOpt(plane), label:`Slot ${n} plane`, group:'hypercube' });
+    ps.register({ id:HC_SLOT_SPEED[n - 1], type:'continuous', value:speed, min:-2.0, max:2.0, step:0.01, label:`Slot ${n} speed`, group:'hypercube' });
+  }
   // Depth cue by w: far in the extra dimensions = dimmer and thinner, so a
   // rotating high-D cube reads as depth rather than a flat tangle.
   ps.register({ id:'hypercube.depthCue',      type:'continuous', value:0,    min:0,    max:1,    step:0.01,  label:'Depth Cue',    group:'hypercube' });
@@ -753,10 +766,26 @@ async function main() {
   ps.get('hypercube.depthCue')?.onChange(v   => scene3d.getHypercube()?.setDepthCue(v));
   // By PLANE, not index: the index of a plane depends on the dimension, and
   // indices 2/3 were never YZ/XW — Rot YZ spun XW, Rot XW spun YZ (4D) or XV.
-  ps.get('hypercube.rot.xy')?.onChange(v => scene3d.getHypercube()?.setPlaneSpeed(0, 1, v));
-  ps.get('hypercube.rot.xz')?.onChange(v => scene3d.getHypercube()?.setPlaneSpeed(0, 2, v));
-  ps.get('hypercube.rot.yz')?.onChange(v => scene3d.getHypercube()?.setPlaneSpeed(1, 2, v));
-  ps.get('hypercube.rot.xw')?.onChange(v => scene3d.getHypercube()?.setPlaneSpeed(0, 3, v));
+  // All 8 slots → one Map of plane → speed, applied wholesale, so a plane a
+  // slot lets go of returns to its default. Two slots on one plane ADD (two
+  // controllers can push the same plane).
+  function _applyPlaneSlots() {
+    const hc = scene3d.getHypercube();
+    if (!hc) return;
+    const speeds = new Map();
+    for (let n = 1; n <= 8; n++) {
+      const opt = ps.get(`hypercube.slot${n}.plane`)?.value ?? 0;
+      if (!opt) continue;
+      const [i, j] = PLANE_PAIRS[opt - 1];
+      const key = `${i},${j}`;
+      speeds.set(key, (speeds.get(key) ?? 0) + (ps.get(HC_SLOT_SPEED[n - 1])?.value ?? 0));
+    }
+    hc.setPlaneSpeeds(speeds);
+  }
+  for (let n = 1; n <= 8; n++) {
+    ps.get(`hypercube.slot${n}.plane`)?.onChange(_applyPlaneSlots);
+    ps.get(HC_SLOT_SPEED[n - 1])?.onChange(_applyPlaneSlots);
+  }
   // Instancer
   ps.get('hypercube.inst.active')?.onChange(v  => scene3d.getHypercube()?.setInstancerVisible(!!v));
   ps.get('hypercube.inst.geo')?.onChange(idx   => scene3d.getHypercube()?.setInstancerGeoType(_GEO_TYPES[idx] ?? 'Sphere'));
@@ -961,10 +990,7 @@ async function main() {
     hc.setPointSize  (g('hypercube.pointSize',    3.0));
     hc.setEdgeWidth  (g('hypercube.edgeWidth',    1.5));
     hc.setDepthCue   (g('hypercube.depthCue',     0));
-    hc.setPlaneSpeed(0, 1, g('hypercube.rot.xy',  0.30));
-    hc.setPlaneSpeed(0, 2, g('hypercube.rot.xz',  0.20));
-    hc.setPlaneSpeed(1, 2, g('hypercube.rot.yz',  0.15));
-    hc.setPlaneSpeed(0, 3, g('hypercube.rot.xw',  0.40));
+    _applyPlaneSlots();
     hc.setRenderMode     (_RENDER_MODES[g('hypercube.renderMode', 0)] ?? 'wireframe');
     hc.setProjectionMode (_PROJ_MODES[g('hypercube.projMode', 0)]    ?? 'perspective');
     hc.setFacesVisible   (!!(g('hypercube.faces.active',  0)));
@@ -1022,10 +1048,7 @@ async function main() {
     hc.setPointSize  (g('hypercube.pointSize',    3.0));
     hc.setEdgeWidth  (g('hypercube.edgeWidth',    1.5));
     hc.setDepthCue   (g('hypercube.depthCue',     0));
-    hc.setPlaneSpeed(0, 1, g('hypercube.rot.xy',  0.30));
-    hc.setPlaneSpeed(0, 2, g('hypercube.rot.xz',  0.20));
-    hc.setPlaneSpeed(1, 2, g('hypercube.rot.yz',  0.15));
-    hc.setPlaneSpeed(0, 3, g('hypercube.rot.xw',  0.40));
+    _applyPlaneSlots();
     hc.setRenderMode     (_RENDER_MODES[g('hypercube.renderMode', 0)] ?? 'wireframe');
     hc.setProjectionMode (_PROJ_MODES[g('hypercube.projMode', 0)]    ?? 'perspective');
     hc.setFacesVisible   (!!(g('hypercube.faces.active',  0)));

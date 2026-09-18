@@ -38,6 +38,21 @@ export const EASING = {
   },
 };
 
+// ── Rotation plane names ──────────────────────────────────────────────────────
+
+/** Axis letters, 0..MAX_DIM-1: X Y Z W, then V U T S R Q P O. */
+export const AXIS_NAMES = 'XYZWVUTSRQPO'.split('');
+
+/**
+ * Every rotation plane of the 12-cube, in the projection's own (i,j) order at
+ * MAX_DIM — "XY", "XZ" … "XO", "YZ" …. The Plane Bank's menus store an index
+ * into this list, so it is APPEND-ONLY by construction (it is derived from
+ * MAX_DIM, which only grows at the end).
+ */
+export const PLANE_PAIRS = [];
+for (let i = 0; i < MAX_DIM; i++) for (let j = i + 1; j < MAX_DIM; j++) PLANE_PAIRS.push([i, j]);
+export const PLANE_NAMES = PLANE_PAIRS.map(([i, j]) => AXIS_NAMES[i] + AXIS_NAMES[j]);
+
 // ── Stat helpers ──────────────────────────────────────────────────────────────
 
 /** 2^dim vertices */

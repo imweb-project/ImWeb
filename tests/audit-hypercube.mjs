@@ -36,6 +36,8 @@
  *      spin and scale: adoption compares mesh identity, not on/off.
  *  11. Show geometry: geometry and instances both visible — Transform drives
  *      both, Material only the geometry, the instancer keeps Inst tex/opacity.
+ *  17. The Plane Bank: 8 slots (plane + speed); slots 1–4 keep the rot.* ids
+ *      and old defaults; released planes return to default; slots add.
  *  16. Depth cue by w: points and edges dim and shrink with distance in the
  *      extra dimensions; nothing is computed or uploaded at 0.
  *  15. Instances map their texture as the geometry does: the Material
@@ -239,24 +241,19 @@ console.log('\n5. W distance and orthographic are independent');
   check('constructed with projectionMode ortho → projects ortho', P(mk({ projectionMode: 'orthographic' })) === ortho);
 }
 
-// ── 6. HypercubeUI listener lifetime ───────────────────────────────────────
-console.log('\n6. HypercubeUI window listeners');
+// ── 6. HypercubeUI: no hand-built mouse rows, no window listeners ──────────
+console.log('\n6. HypercubeUI has no hand-built mouse rows');
 {
-  // Static: the panel needs a DOM. Every window listener must be removed by
-  // the same handler reference, and added only inside a mousedown handler.
-  const ui = src('HypercubeUI.js');
-  const adds = [...ui.matchAll(/window\.addEventListener\('(\w+)',\s*(\w+)\)/g)].map(m => `${m[1]}:${m[2]}`);
-  const rems = new Set([...ui.matchAll(/window\.removeEventListener\('(\w+)',\s*(\w+)\)/g)].map(m => `${m[1]}:${m[2]}`));
-  const unpaired = adds.filter(a => !rems.has(a));
-  check('every window.addEventListener has a matching removeEventListener',
-    adds.length > 0 && unpaired.length === 0,
-    unpaired.length ? `unpaired: ${unpaired.join(', ')} — rows are discarded on every dimension change` : 'no window listeners found — has the drag moved?');
-  const row = cut(ui, 'function _paramRow(', "display.addEventListener('dblclick'");
-  const pre = cut(row, 'function _paramRow(', "display.addEventListener('mousedown'");
-  const md  = row.slice(pre.length);
-  check('_paramRow adds its window listeners inside mousedown, not at row creation',
-    row.length > 0 && (md.match(/window\.addEventListener/g) || []).length === 2 &&
-    (pre.match(/window\.addEventListener/g) || []).length === 0);
+  // History: the panel's hand-built drag rows leaked window listeners (24 → 48
+  // over four dimension changes), then were fixed to add them per drag, and
+  // were mouse-only — dead on the iPad. The Plane Bank retired the last of
+  // them (the live-only "More planes" rows): every row is a standard param
+  // row now. Keep it that way — static, since the panel needs a DOM.
+  const ui = src('HypercubeUI.js').replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+  check('the panel registers no window listeners', !/window\.addEventListener/.test(ui),
+    'a row that needs window listeners is a hand-built row — use buildParamRow via rowFor');
+  check('…and no mouse-only handlers (touch has no mousedown/mousemove)', !/'mouse(down|move|up)'/.test(ui),
+    'the iPad cannot drive mouse-only rows');
 }
 
 // ── 7. Every param on the modulation grid ──────────────────────────────────
@@ -271,8 +268,13 @@ console.log('\n7. Hypercube params have standard rows (badges → LFO/MIDI/OSC)'
     /buildHypercubePanel\(hcContainer, hc, ps,\s*id => buildParamRow\(ps\.get\(id\), contextMenu\)\)/.test(main),
     'the hand-built rows had no badges — no hypercube param could take a controller');
   const { HC_SECTIONS, HC_DIMENSION_IDS } = await import('../src/scene3d/HypercubeUI.js');
-  const placed = [...HC_DIMENSION_IDS, ...HC_SECTIONS.flatMap(x => x.ids)];
-  const registered = [...main.matchAll(/ps\.register\(\{ id:'(hypercube\.[^']+)'/g)].map(m => m[1]);
+  const placed = [...HC_DIMENSION_IDS, ...HC_SECTIONS.flatMap(x => [...x.ids, ...(x.fold?.ids ?? [])])];
+  // Literal registrations, plus the Plane Bank's loop: its speed ids come from
+  // HC_SLOT_SPEED and its plane ids from the slot${n}.plane template.
+  const slotSpeeds = [...(cut(main, 'const HC_SLOT_SPEED = [', '];').matchAll(/'(hypercube\.[^']+)'/g))].map(m => m[1]);
+  const slotPlanes = /id:`hypercube\.slot\$\{n\}\.plane`/.test(main) ? [1, 2, 3, 4, 5, 6, 7, 8].map(n => `hypercube.slot${n}.plane`) : [];
+  const registered = [...main.matchAll(/ps\.register\(\{ id:'(hypercube\.[^']+)'/g)].map(m => m[1])
+    .concat(slotSpeeds, slotPlanes);
   const missing = registered.filter(id => !placed.includes(id));
   const twice   = placed.filter((id, i) => placed.indexOf(id) !== i);
   const dead    = placed.filter(id => !registered.includes(id));
@@ -713,6 +715,41 @@ console.log('\n16. Depth cue: far in w = dimmer and smaller');
   h = make({ projectionMode: 'orthographic' }); h.setDepthCue(1); h.update(0);
   check('orthographic: no w-perspective, so a uniform cue (nothing dimmed)',
     Array.from(h._cueBuf.slice(0, 16)).every(c => c === 1));
+}
+
+// ── 17. The Plane Bank ─────────────────────────────────────────────────────
+console.log('\n17. Plane Bank — 8 slots, each a plane and a speed');
+{
+  const { PLANE_NAMES, PLANE_PAIRS } = await import('../src/scene3d/HypercubeGeometry.js');
+  const PI = HypercubeObject.planeIndex;
+  check('PLANE_NAMES: all 66 planes of the 12-cube, in the projection order at 12D',
+    PLANE_NAMES.length === 66 && PLANE_PAIRS.every(([i, j], k) => PI(i, j, MAX_DIM) === k) &&
+    PLANE_NAMES[0] === 'XY' && PLANE_NAMES[PI(1, 2, MAX_DIM)] === 'YZ' && PLANE_NAMES[PI(0, 3, MAX_DIM)] === 'XW',
+    'menus store an index into this list — it must stay append-only');
+
+  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  const reg = id => main.match(new RegExp(`id:'${id.replace(/\./g, '\\.')}'[^\\n]*value:([\\d.]+)`));
+  check('slots 1–4 speeds keep the old rot.* ids (saved states, banks, MIDI bindings)',
+    /HC_SLOT_SPEED = \['hypercube\.rot\.xy', 'hypercube\.rot\.xz', 'hypercube\.rot\.yz', 'hypercube\.rot\.xw'/.test(main),
+    'renaming them breaks every save for zero gain (the mix bus-1 rule)');
+  check('slots 1–4 default to XY/XZ/YZ/XW at the old speeds — an old state spins as before',
+    /_slotDefaults = \[\['XY', 0\.30\], \['XZ', 0\.20\], \['YZ', 0\.15\], \['XW', 0\.40\]/.test(main));
+
+  // setPlaneSpeeds: wholesale, and a released plane returns to its default
+  const hc = mk({ dim: 5 }); hc.setRenderMode('points');
+  const def = [...hc._rotSpeeds];
+  hc.setPlaneSpeeds(new Map([['0,1', 0.9], ['2,4', -1.1]]));
+  check('slot speeds land on their planes (incl. one beyond 4D: ZV)',
+    hc._rotSpeeds[PI(0, 1, 5)] === 0.9 && hc._rotSpeeds[PI(2, 4, 5)] === -1.1);
+  hc.setPlaneSpeeds(new Map([['0,1', 0.9]]));
+  check('a plane no slot names any more returns to its default speed',
+    hc._rotSpeeds[PI(2, 4, 5)] === def[PI(2, 4, 5)], `ZV ${hc._rotSpeeds[PI(2, 4, 5)]} vs default ${def[PI(2, 4, 5)]}`);
+  hc.setPlaneSpeeds(new Map([['3,7', 0.5]])); hc.morphToLatest(9, { durationMs: 0 }); hc.update(16);
+  check('a slot on a plane above the current dimension applies once the cube reaches it',
+    hc._rotSpeeds[PI(3, 7, 9)] === 0.5);
+  const fn = cut(main, 'function _applyPlaneSlots()', '\n  }\n');
+  check('two slots on one plane ADD (two controllers can push one plane)',
+    /speeds\.set\(key, \(speeds\.get\(key\) \?\? 0\) \+/.test(fn));
 }
 
 console.log(failures ? `\n${failures} FAILURE(S)\n` : '\nAll hypercube checks passed.\n');

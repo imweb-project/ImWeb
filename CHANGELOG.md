@@ -22,6 +22,15 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   and its "none" is now **off**. Saved files are unchanged.
 
 ### Added
+- **Plane Bank — play any of the 66 rotation planes.** Rotation now has 8
+  slots, each a **plane** menu (XY … up to PO) and a **speed**, all saved and
+  controllable. Slots 1–4 are the old Rot XY/XZ/YZ/XW rows, with the same
+  settings and bindings, so saved states spin exactly as before. Slots 5–8
+  fold away until needed. Any plane can go in a slot, including ones above
+  the current dimension, which start turning once the cube morphs up to
+  them. Two slots on the same plane add together. A plane in no slot turns
+  at its default speed. The live-only "More planes" rows are gone, and with
+  them the last panel rows that didn't work on the iPad.
 - **Hypercube Easing is saved.** It's now a regular row under Dimension, kept
   in Display States and projects, with a badge like every other setting, so
   a controller can switch it. Before, it lasted only until reload.

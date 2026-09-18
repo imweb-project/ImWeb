@@ -23,8 +23,12 @@ import {
 export const HC_DIMENSION_IDS = ['hypercube.dim', 'hypercube.morphDuration', 'hypercube.easing'];
 export const HC_SECTIONS = [
   { title: 'Projection',     ids: ['hypercube.projMode', 'hypercube.wDistance', 'hypercube.scale'] },
-  { title: 'Rotation',       ids: ['hypercube.rot.xy', 'hypercube.rot.xz', 'hypercube.rot.yz', 'hypercube.rot.xw'],
-    morePlanes: true },
+  // The Plane Bank: each slot is a plane menu + its speed. Slots 1–4 speeds
+  // are the old rot.xy/xz/yz/xw ids (see main.js); 5–8 fold away.
+  { title: 'Rotation',       ids: ['hypercube.slot1.plane', 'hypercube.rot.xy', 'hypercube.slot2.plane', 'hypercube.rot.xz',
+                                   'hypercube.slot3.plane', 'hypercube.rot.yz', 'hypercube.slot4.plane', 'hypercube.rot.xw'],
+    fold: { title: 'Slots 5–8', ids: ['hypercube.slot5.plane', 'hypercube.slot5.speed', 'hypercube.slot6.plane', 'hypercube.slot6.speed',
+                                      'hypercube.slot7.plane', 'hypercube.slot7.speed', 'hypercube.slot8.plane', 'hypercube.slot8.speed'] } },
   { title: 'Edges & Points', ids: ['hypercube.renderMode', 'hypercube.edgeWidth', 'hypercube.edgeOpacity',
                                    'hypercube.pointSize', 'hypercube.depthCue'] },
   { title: 'Faces',          ids: ['hypercube.faces.active', 'hypercube.faces.opacity', 'hypercube.faces.blend',
@@ -37,15 +41,11 @@ export const HC_SECTIONS = [
     openWhen: 'hypercube.inst.active' },
 ];
 
-// Planes that have a param are shown as its row; the rest are live-only.
-const _ROT_PARAM = { '0,1': 'hypercube.rot.xy', '0,2': 'hypercube.rot.xz', '1,2': 'hypercube.rot.yz', '0,3': 'hypercube.rot.xw' };
-const _AXIS = 'XYZWVUTSRQPO';
-
 /**
- * Build the hypercube panel ONCE. Returns { panel, refresh }: standard rows
- * follow their params by themselves, so a state recall only needs refresh()
- * for the live-only extra planes — rebuilding the whole panel per recall
- * leaked every row's param listeners and a 200 ms interval each time.
+ * Build the hypercube panel ONCE. Returns { panel, refresh }: every row is a
+ * standard param row that follows its param by itself, so a state recall
+ * needs nothing rebuilt — rebuilding the whole panel per recall leaked every
+ * row's param listeners and a 200 ms interval each time.
  *
  * @param {HTMLElement}     container
  * @param {HypercubeObject} hypercube
@@ -79,7 +79,6 @@ export function buildHypercubePanel(container, hypercube, ps, rowFor) {
   for (const id of HC_DIMENSION_IDS) panel.appendChild(rowFor(id));
 
   // ── Sections ────────────────────────────────────────────────────────────
-  let moreBody = null;
   for (const sec of HC_SECTIONS) {
     const wrap = document.createElement('div');
     wrap.className = 'panel-subsection';
@@ -104,35 +103,11 @@ export function buildHypercubePanel(container, hypercube, ps, rowFor) {
       setOpen(!!ps.get(sec.openWhen)?.value);
       ps.get(sec.openWhen)?.onChange(v => { if (v) setOpen(true); });
     }
-    if (sec.morePlanes) {
-      const { body } = _collapsible(wrap, 'More planes — live only, not saved', false);
-      moreBody = body;
+    if (sec.fold) {
+      const { body } = _collapsible(wrap, sec.fold.title, false);
+      for (const id of sec.fold.ids) body.appendChild(rowFor(id));
     }
     panel.appendChild(wrap);
-  }
-
-  // Planes beyond the four with params: live speeds on the object, rebuilt
-  // when the dimension changes (the plane count does).
-  let planesDim = -1;
-  function rebuildMorePlanes() {
-    if (!moreBody) return;
-    moreBody.textContent = '';
-    const dim = hypercube.dim;
-    let idx = 0;
-    for (let i = 0; i < dim; i++) {
-      for (let j = i + 1; j < dim; j++, idx++) {
-        if (_ROT_PARAM[`${i},${j}`]) continue;
-        const pIdx = idx;
-        _paramRow(moreBody, `Rot ${_AXIS[i]}${_AXIS[j]}`, hypercube._rotSpeeds?.[pIdx] ?? 0, -2, 2, 0.01,
-          v => hypercube.setRotationSpeed(pIdx, v));
-      }
-    }
-    if (!moreBody.children.length) {
-      const none = document.createElement('div');
-      none.className = 'hc-note';
-      none.textContent = 'All planes of this dimension have rows above.';
-      moreBody.appendChild(none);
-    }
   }
 
   function refresh() {
@@ -142,13 +117,12 @@ export function buildHypercubePanel(container, hypercube, ps, rowFor) {
       (lim ? ` · instances ${lim.drawn}/${lim.wanted} (Inst Budget)` : '');
     stats.classList.toggle('limited', !!lim);
     for (const p of pills) p.classList.toggle('active', Number(p.dataset.dim) === target);
-    if (d !== planesDim) { planesDim = d; rebuildMorePlanes(); }
   }
   refresh();
   setInterval(refresh, 200);   // once — the panel is never rebuilt
 
   container.appendChild(panel);
-  return { panel, refresh: () => { planesDim = -1; refresh(); } };
+  return { panel, refresh };
 }
 
 // ── DOM helpers ───────────────────────────────────────────────────────────────
@@ -180,81 +154,3 @@ function _collapsible(parent, label, open = true) {
   parent.appendChild(group);
   return { group, body };
 }
-
-/**
- * Param row: [label] [draggable value display]
- * Drag: (startY – currentY) × step × 0.5; Shift = ×10.
- * Double-click opens inline number input; Enter commits, Escape cancels.
- */
-function _paramRow(parent, label, value, min, max, step, onChange) {
-  const row = document.createElement('div');
-  row.style.cssText = 'display:flex;align-items:center;padding:2px 8px;gap:6px;';
-
-  const lbl = document.createElement('span');
-  lbl.textContent = label;
-  lbl.style.cssText = 'flex:1;color:var(--text-1,#e0e0f0);min-width:60px;';
-
-  const display = document.createElement('span');
-  display.style.cssText = `
-    min-width:44px;text-align:right;color:var(--accent,#c8a020);
-    cursor:ns-resize;user-select:none;
-  `;
-
-  let current = value;
-
-  const fmt = v => step < 1 ? v.toFixed(2) : String(Math.round(v));
-  display.textContent = fmt(current);
-
-  let dragging = false, startY = 0, startVal = 0;
-
-  // Window listeners live only for the length of a drag. Registered per row
-  // for the row's lifetime, they were never removed — rebuildRotationRows()
-  // discards its rows on every dimension change, leaking two each (132 at 12D).
-  const onMove = e => {
-    if (!dragging) return;
-    const mult = e.shiftKey ? 10 : 1;
-    const delta = (startY - e.clientY) * step * 0.5 * mult;
-    current = Math.max(min, Math.min(max, startVal + delta));
-    display.textContent = fmt(current);
-    onChange(current);
-  };
-  const onUp = () => {
-    dragging = false;
-    window.removeEventListener('mousemove', onMove);
-    window.removeEventListener('mouseup', onUp);
-  };
-  display.addEventListener('mousedown', e => {
-    dragging = true; startY = e.clientY; startVal = current;
-    e.preventDefault();
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  });
-
-  display.addEventListener('dblclick', () => {
-    const input = document.createElement('input');
-    input.type  = 'number';
-    input.value = current;
-    input.min   = min; input.max = max; input.step = step;
-    input.style.cssText = 'width:60px;background:#1a1a22;color:#e0e0f0;border:1px solid #555;font-size:11px;padding:1px 3px;';
-    row.replaceChild(input, display);
-    input.focus();
-    const commit = () => {
-      const v = Math.max(min, Math.min(max, parseFloat(input.value) || current));
-      current = v;
-      display.textContent = fmt(v);
-      if (row.contains(input)) row.replaceChild(display, input);
-      onChange(v);
-    };
-    input.addEventListener('keydown', e => {
-      if (e.key === 'Enter')  commit();
-      if (e.key === 'Escape' && row.contains(input)) row.replaceChild(display, input);
-    });
-    input.addEventListener('blur', commit);
-  });
-
-  row.appendChild(lbl);
-  row.appendChild(display);
-  parent.appendChild(row);
-  return row;
-}
-

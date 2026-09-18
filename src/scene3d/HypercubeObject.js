@@ -789,6 +789,26 @@ export class HypercubeObject {
     if (j < this._planeDim) this._rotSpeeds[HypercubeObject.planeIndex(i, j, this._planeDim)] = speedRadPerSec;
   }
 
+  /**
+   * The Plane Bank: REPLACE every param-driven plane speed at once
+   * (Map "i,j" → speed). A plane no slot names any more goes back to its
+   * default speed — per-plane setPlaneSpeed could never take one away.
+   */
+  setPlaneSpeeds(map) {
+    const dim = this._planeDim;
+    const defaults = defaultRotationSpeeds(dim);
+    const PI = HypercubeObject.planeIndex;
+    for (const key of this._pairSpeeds?.keys() ?? []) {
+      const [i, j] = key.split(',').map(Number);
+      if (j < dim) this._rotSpeeds[PI(i, j, dim)] = defaults[PI(i, j, dim)];
+    }
+    this._pairSpeeds = new Map(map);
+    for (const [key, v] of this._pairSpeeds) {
+      const [i, j] = key.split(',').map(Number);
+      if (j < dim) this._rotSpeeds[PI(i, j, dim)] = v;
+    }
+  }
+
   /** By INDEX into the current dimension's plane order (see planeIndex). */
   setRotationSpeed(planeIdx, speedRadPerSec) {
     if (planeIdx >= 0 && planeIdx < this._rotSpeeds.length) {
