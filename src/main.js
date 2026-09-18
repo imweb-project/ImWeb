@@ -393,6 +393,10 @@ async function main() {
   ps.register({ id:'hypercube.inst.scale',    type:'continuous', value:0.08, min:0.01, max:2.0,  step:0.01,  label:'Inst Scale',   group:'hypercube' });
   ps.register({ id:'hypercube.inst.opacity',  type:'continuous', value:1.0,  min:0.0,  max:1.0,  step:0.01,  label:'Inst Opacity', group:'hypercube' });
   ps.register({ id:'hypercube.inst.texsrc',   type:'select',     options:OPT_SOURCES, value:0, label:'Inst tex', group:'hypercube' });
+  // Off: the instancer REPLACES the 3D scene's geometry/model (and wears its
+  // Material). On: both are visible — geometry keeps Transform and Material,
+  // the instancer rides the same Transform with its own Inst tex/opacity.
+  ps.register({ id:'hypercube.inst.showGeo',  type:'toggle',     value:0,                                    label:'Show geometry', group:'hypercube' });
 
   // ── 3. Controllers ────────────────────────────────────────────────────────
 

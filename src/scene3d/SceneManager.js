@@ -961,6 +961,7 @@ export class SceneManager {
     } else {
       this.mesh.position.set(px, py, pz);
     }
+    this._rideTransform(p, s);
 
     // Material
     // Rebuild material if type changed
@@ -1297,7 +1298,7 @@ export class SceneManager {
       p.get('scene3d.light.dirY').value,
       p.get('scene3d.light.dirZ').value
     );
-    this._syncInstancerAdoption();
+    this._syncInstancerAdoption(!!p.get('hypercube.inst.showGeo')?.value);
 
     // Instancer texture source — OPT_SOURCES, so 0 is None and value-1 is a
     // SOURCE_DEFS index resolved by the SAME resolver the layers and mix buses
@@ -1442,6 +1443,22 @@ export class SceneManager {
   }
 
   /**
+   * Show geometry: the instancer is NOT adopted, so nothing drives it — copy
+   * the Transform this frame just gave the geometry. Scale is the plain Scale
+   * param, never an imported model's normalisation (that is a property of the
+   * model, and would shrink the instancer to the model's bounding box).
+   */
+  _rideTransform(p, scale) {
+    const hi = this._hypercube?._hInstancer;
+    if (!hi?._visible || !p.get('hypercube.inst.showGeo')?.value) return;
+    const m = hi.getMesh();
+    if (!m || m === this.mesh) return;
+    m.position.copy(this.mesh.position);
+    m.rotation.copy(this.mesh.rotation);
+    m.scale.setScalar(scale);
+  }
+
+  /**
    * Run `fn` against the scene's OWN mesh and material while the hypercube
    * instancer is adopted. Adoption points this.mesh/this.material at the
    * instancer, so anything that REPLACES the scene's object — Geometry, Back to
@@ -1466,9 +1483,11 @@ export class SceneManager {
    * was toggled. Release before re-adopting: _adoptMesh() stashes this.mesh
    * as the scene's own mesh, which must never be a stale instancer.
    */
-  _syncInstancerAdoption() {
+  _syncInstancerAdoption(showGeo = false) {
     const hi   = this._hypercube?._hInstancer;
-    const want = hi?._visible === true ? hi.getMesh() : null;
+    // Show geometry: nothing is adopted — the geometry stays this.mesh with its
+    // own Transform and Material, and _rideTransform() carries the instancer.
+    const want = hi?._visible === true && !showGeo ? hi.getMesh() : null;
     if (want === this._adoptedMesh) return;
     if (this._adoptedMesh) this._adoptMesh(null);
     if (want) this._adoptMesh(want);

@@ -34,6 +34,8 @@
  *      morph (the dim handler skips on it).
  *   8. An Inst Geo change keeps the instancer under SceneManager's rotation,
  *      spin and scale: adoption compares mesh identity, not on/off.
+ *  11. Show geometry: geometry and instances both visible — Transform drives
+ *      both, Material only the geometry, the instancer keeps Inst tex/opacity.
  *  10. Dimension MORPHS over Morph Time when played (hand, LFO, MIDI) and
  *      JUMPS when recalled (state, state morph, project) — owner's call. A
  *      newer target replaces a waiting one; a jump cuts a running morph.
@@ -402,6 +404,42 @@ console.log('\n10. Dimension: morph when played, jump when recalled');
     main.indexOf('const presetMgr = new PresetManager(') !== -1 &&
     main.indexOf("ps.get('hypercube.dim')?.onChange(") > main.indexOf('const presetMgr = new PresetManager('),
     'registered earlier, a dim change before line ~874 would hit presetMgr in its temporal dead zone');
+}
+
+// ── 11. Show geometry: instances AND geometry, each with its own look ──────
+console.log('\n11. Show geometry — both visible, Transform shared, Material the geometry\'s');
+{
+  // Owner decision 2026-09-18: with Show geometry on, Transform drives both,
+  // Material only the geometry/model, Inst tex/opacity only the instancer.
+  // Real applyParams against the real core params.
+  const { ParameterSystem, registerCoreParameters } = await import('../src/controls/ParameterSystem.js');
+  const { SceneManager } = await import('../src/scene3d/SceneManager.js');
+  const ps = new ParameterSystem(); registerCoreParameters(ps);
+  ps.register({ id: 'hypercube.inst.showGeo', type: 'toggle', value: 0, group: 'hypercube' });
+  const sm = new SceneManager({}, 64, 64);
+  const hc = await sm.createHypercube({ dim: 4 });
+  const inScene = o => { let f = false; sm.scene.traverse(c => { if (c === o) f = true; }); return f; };
+  const frame = () => sm.applyParams(ps, 0.016, {});
+  frame();
+  ps.set('scene3d.rot.y', 45); ps.set('scene3d.scale', 1.5);
+  hc.setInstancerVisible(true); frame();
+  const inst = hc._hInstancer.getMesh();
+  check('off (default): the instancer replaces the geometry', sm.mesh === inst && !inScene(sm._ownMesh));
+  ps.set('hypercube.inst.showGeo', 1); frame(); frame();
+  check('on: geometry is back in the scene as the driven object, instancer still there',
+    sm.mesh?.isMesh && sm.mesh !== inst && inScene(sm.mesh) && inScene(inst),
+    '_syncInstancerAdoption must not adopt while Show geometry is on');
+  check('on: the instancer rides rotation and Scale',
+    Math.abs(inst.rotation.y - sm.mesh.rotation.y) < 1e-12 && Math.abs(inst.rotation.y - Math.PI / 4) < 1e-6 && inst.scale.x === 1.5,
+    `rot ${inst.rotation.y} vs ${sm.mesh.rotation.y}, scale ${inst.scale.x} — _rideTransform copies after the Transform block`);
+  check('on: Material drives the geometry, the instancer keeps its own', sm.material === sm.mesh.material && inst.material !== sm.material);
+
+  const obj = 'data:text/plain;base64,' + Buffer.from('v 0 0 0\nv 10 0 0\nv 0 10 0\nf 1 2 3\n').toString('base64');
+  await sm.loadOBJ(obj, 'big.obj'); frame();
+  check('on + imported model: instancer takes Scale, not the model\'s normalisation',
+    inst.scale.x === 1.5 && sm.mesh.scale.x !== 1.5, `inst ${inst.scale.x}, model ${sm.mesh.scale.x}`);
+  ps.set('hypercube.inst.showGeo', 0); frame();
+  check('back off: replaced again', sm.mesh === inst && !inScene(sm._ownMesh));
 }
 
 console.log(failures ? `\n${failures} FAILURE(S)\n` : '\nAll hypercube checks passed.\n');

@@ -9,6 +9,12 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Show geometry — instances and geometry together.** A new **Show geometry**
+  switch for the Hypercube Instancer keeps the 3D scene's geometry or imported
+  model visible alongside the instances. Transform (rotation, spin, scale,
+  position) moves both. Material stays on the geometry, and the instances keep
+  their own Inst tex and opacity. Off, the default, is the old behaviour: the
+  instances replace the geometry.
 - **Hypercube Dimension morphs when you play it.** Dragging Dimension, or
   driving it from an LFO, MIDI, OSC or any other controller, now morphs
   between dimensions over **Morph Time**, like the dimension buttons do. It
