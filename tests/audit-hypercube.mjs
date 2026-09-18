@@ -36,6 +36,8 @@
  *      spin and scale: adoption compares mesh identity, not on/off.
  *  11. Show geometry: geometry and instances both visible — Transform drives
  *      both, Material only the geometry, the instancer keeps Inst tex/opacity.
+ *  14. Instances write depth (no see-through stripes) and glow at the scene
+ *      material's EM_FLOOR, so they are lit like the geometry.
  *  13. Rotation planes are addressed by (i,j), not index: Rot YZ spins YZ,
  *      and speeds/angles follow their plane across dimension changes.
  *  12. Inst geo 'Model' draws the imported model — merged, unit-sized, any
@@ -562,6 +564,48 @@ console.log('\n13. Rot XY/XZ/YZ/XW spin the plane they name, in every dimension'
   const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
   check('no hypercube param drives a plane by bare index', !/setRotationSpeed\([0-3], /.test(main),
     'use setPlaneSpeed(i, j, v) — an index means a different plane in each dimension');
+}
+
+// ── 14. Instances are lit and depth-sorted like the geometry ───────────────
+console.log('\n14. Instances shade like the geometry, and occlude properly');
+{
+  // Owner report 2026-09-18: instances looked flat white beside the lit
+  // geometry, with horizontal stripes through the screen centre. The material
+  // was transparent + depthWrite:false (DoubleSide back faces drew over front
+  // faces; the fight lined up edge-on at eye level), and the texture glowed at
+  // emissiveIntensity 1.0 where the scene material uses a 0.35 floor.
+  const { HypercubeInstancer, EM_FLOOR } = await import('../src/scene3d/HypercubeInstancer.js');
+  const inst = new HypercubeInstancer(new THREE.Scene());
+  const m = () => inst.getMesh().material;
+  inst.setOpacity(1);
+  check('full opacity: instances write depth and are opaque', m().depthWrite === true && m().transparent === false,
+    `depthWrite ${m().depthWrite}, transparent ${m().transparent} — without depth, back faces and neighbours draw through`);
+  inst.setOpacity(0.5);
+  check('below full opacity: transparent, still depth-writing', m().transparent === true && m().depthWrite === true);
+  inst.setOpacity(1);
+  const tex = new THREE.Texture();
+  inst.setTexture(tex); const v = m().version; inst.setTexture(tex); inst.setTexture(tex);
+  check('the same texture every frame does not re-flag the material', m().version === v,
+    `version ${v} → ${m().version} — map/emissiveMap are shader defines`);
+  const smSrc = readFileSync(new URL('../src/scene3d/SceneManager.js', import.meta.url), 'utf8');
+  const floor = smSrc.match(/const EM_FLOOR = ([\d.]+);/);
+  check('instancer texture glow = the scene material\'s floor (Show geometry path)',
+    m().emissiveIntensity === EM_FLOOR && floor && Number(floor[1]) === EM_FLOOR,
+    `instancer ${m().emissiveIntensity}, scene floor ${floor?.[1]} — at 1.0 the glow drowns the lighting`);
+
+  // adopted path, through the real applyParams
+  const { ParameterSystem, registerCoreParameters } = await import('../src/controls/ParameterSystem.js');
+  const { SceneManager } = await import('../src/scene3d/SceneManager.js');
+  const ps = new ParameterSystem(); registerCoreParameters(ps);
+  ps.register({ id: 'hypercube.inst.showGeo', type: 'toggle', value: 0, group: 'hypercube' });
+  const sm = new SceneManager({}, 64, 64);
+  const hc = await sm.createHypercube({ dim: 4 });
+  hc.setInstancerVisible(true);
+  ps.set('scene3d.mat.emissive', 0);
+  sm.applyParams(ps, 0.016, {}); sm.applyParams(ps, 0.016, {});
+  check('adopted instancer glows at the same floor as the geometry (was 1.0)',
+    sm.mesh === hc._hInstancer.getMesh() && sm.mesh.material.emissiveIntensity === EM_FLOOR,
+    `emissiveIntensity ${sm.mesh.material.emissiveIntensity}`);
 }
 
 console.log(failures ? `\n${failures} FAILURE(S)\n` : '\nAll hypercube checks passed.\n');

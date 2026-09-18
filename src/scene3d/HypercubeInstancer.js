@@ -13,6 +13,10 @@ const _GEO_PARAMS = { radius: 0.5, size: 1.0, w: 1.0, h: 1.0, rt: 0.5, rb: 0.5, 
 // bundled 179k-vertex model at 12D is 733M vertices a frame, enough to hang a
 // GPU. Model instances are capped at what the DEFAULT shape, the sphere,
 // already costs at the full 4096 — measured from it, not a guessed constant.
+// Must equal SceneManager's EM_FLOOR: the instancer's texture glow matches the
+// 3D scene material's, so the two are lit alike.
+export const EM_FLOOR = 0.35;
+
 let _vertBudget = 0;
 const vertBudget = () => _vertBudget ||= MAX_INSTANCES *
   _geoFactory.create('Sphere', _GEO_PARAMS).attributes.position.count;
@@ -52,10 +56,17 @@ export class HypercubeInstancer {
     this._warnedCap = null;
 
     if (!this._mat) {
+      // Depth-writing, and transparent only below full opacity — the way the
+      // 3D scene's own material works. transparent + depthWrite:false let each
+      // DoubleSide instance's back faces draw over its front and instances
+      // over each other in draw order; the fight concentrated where surfaces
+      // are seen edge-on at eye level, a horizontal band through the centre of
+      // the screen, and every instance showed its own inside (owner report
+      // 2026-09-18).
       this._mat = new THREE.MeshStandardMaterial({
         side:        THREE.DoubleSide,
-        transparent: true,
-        depthWrite:  false,
+        transparent: this._opacity < 1,
+        depthWrite:  true,
         opacity:     this._opacity,
       });
       this._matType = 0;
@@ -142,6 +153,8 @@ export class HypercubeInstancer {
   setOpacity(v) {
     this._opacity = v;
     this._mat.opacity = v;
+    const t = v < 1;
+    if (this._mat.transparent !== t) { this._mat.transparent = t; this._mat.needsUpdate = true; }
   }
 
   setGeoType(type) {
@@ -157,11 +170,17 @@ export class HypercubeInstancer {
     old?.dispose();
   }
 
+  // Called every frame. The texture is a lit colour map plus a GLOW of itself
+  // at EM_FLOOR — the 3D scene material's floor (SceneManager applyParams),
+  // so instances shade like the geometry. At 1.0 the glow swamped the
+  // lighting and the instances read flat white. Only a CHANGED texture
+  // flags the material: map/emissiveMap are shader defines.
   setTexture(tex) {
+    if (this._mat.map === tex) return;
     this._mat.map           = tex;
     this._mat.emissiveMap   = tex;
     this._mat.emissive.set(1, 1, 1);
-    this._mat.emissiveIntensity = 1.0;
+    this._mat.emissiveIntensity = EM_FLOOR;
     this._mat.needsUpdate   = true;
   }
 

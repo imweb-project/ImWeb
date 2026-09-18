@@ -1011,11 +1011,10 @@ export class SceneManager {
           this.material.needsUpdate = true;
         }
       }
-      // Adopted meshes (the Hypercube instancer) were pinned at 1.0 by the
-      // texture-swap branch below; keeping that as their floor leaves them
-      // looking identical at Emissive 0 while the slider still does something.
-      this.material.emissiveIntensity =
-        (this._adoptedMesh ? 1.0 : EM_FLOOR) + emissiveAmt;
+      // One floor for everything, the adopted Hypercube instancer included. It
+      // used to get 1.0 — the full texture as glow — which drowned the lighting
+      // and made instances read flat white beside the lit geometry.
+      this.material.emissiveIntensity = EM_FLOOR + emissiveAmt;
 
       if (this.material.roughness !== undefined) this.material.roughness = p.get('scene3d.mat.roughness').value;
       if (this.material.metalness !== undefined) this.material.metalness = p.get('scene3d.mat.metalness').value;

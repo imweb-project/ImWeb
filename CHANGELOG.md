@@ -59,6 +59,15 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   names the same source.
 
 ### Fixed
+- **Hypercube instances are lit like the geometry, and the stripes are
+  gone.** Instances looked flat white next to the shaded geometry, with
+  ragged horizontal stripes through the middle of the screen. The texture
+  glowed at full strength, which drowned the lighting. It now glows at the
+  same gentle level as the geometry's material, plus the Emissive slider.
+  Instances also didn't hide what was behind them, so each one showed its own
+  inside and overlapping instances drew in the wrong order. Those errors
+  lined up in a band at eye level. They now block the view like the geometry
+  does, and become see-through only when Inst Opacity is below 1.
 - **Rot YZ and Rot XW turn the planes they name.** Rot YZ was turning the XW
   plane. Rot XW turned YZ at 4D, and a different plane again above 4D.
   Changing dimension also handed each plane its neighbour's speed and angle,
