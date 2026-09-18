@@ -36,6 +36,8 @@
  *      spin and scale: adoption compares mesh identity, not on/off.
  *  11. Show geometry: geometry and instances both visible — Transform drives
  *      both, Material only the geometry, the instancer keeps Inst tex/opacity.
+ *  16. Depth cue by w: points and edges dim and shrink with distance in the
+ *      extra dimensions; nothing is computed or uploaded at 0.
  *  15. Instances map their texture as the geometry does: the Material
  *      panel's Mapping (Auto/UV/Seamless), same triplanar chunks, both slots.
  *  14. Instances write depth (no see-through stripes) and glow at the scene
@@ -654,6 +656,44 @@ console.log('\n15. Instancer texture mapping follows the Material panel\'s Mappi
   check('Mapping Seamless → Seamless for any source', tri());
   ps.set('scene3d.mat.mapping', 1); routed = noise; frame();
   check('Mapping UV → UV even for Noise', !tri());
+}
+
+// ── 16. Depth cue by w ─────────────────────────────────────────────────────
+console.log('\n16. Depth cue: far in w = dimmer and smaller');
+{
+  const make = (o = {}) => {
+    const h = mk(o); h.setRenderMode('both');
+    for (let k = 0; k < h._rotSpeeds.length; k++) h.setRotationSpeed(k, 0);
+    h._rotAngles.fill(0);
+    return h;
+  };
+  let h = make();
+  const ptCue = () => h._points.geometry.attributes.aCue;
+  h.update(0); const v0 = ptCue().version; h.update(0); h.update(0);
+  check('Depth Cue 0: no cue computed or uploaded', ptCue().version === v0 && h._pointMat.uniforms.uDepthCue.value === 0);
+
+  h.setDepthCue(1); h.update(0);
+  // with no rotation a vertex's w is its 4th coordinate: +w is NEAR (scale > 1)
+  const n = 16; let signOk = true;
+  for (let i = 0; i < n; i++) {
+    const w = h._vertices[i][3], c = h._cueBuf[i];
+    if ((w > 0 && Math.abs(c - 1) > 1e-6) || (w < 0 && Math.abs(c) > 1e-6)) signOk = false;
+  }
+  check('4D, no rotation: +w vertices cue 1, −w vertices cue 0', signOk,
+    `cues ${Array.from(h._cueBuf.slice(0, n)).map(c => c.toFixed(2))}`);
+  check('the cue reaches both shaders', h._pointMat.uniforms.uDepthCue.value === 1 && h._lineMat.uniforms.uDepthCue.value === 1);
+  let edgeOk = true;
+  const ceil = h._lastActiveEdgeIdx + 1;
+  for (let e = 0; e < ceil; e++) {
+    const [a, b] = h._edges[e];
+    if (a >= n || b >= n) continue;
+    for (let v = 0; v < 4; v++) if (h._quadCueBuf[e * 8 + v * 2] !== h._cueBuf[a] || h._quadCueBuf[e * 8 + v * 2 + 1] !== h._cueBuf[b]) edgeOk = false;
+  }
+  check('each edge carries its two endpoints\' cues (fades along its length)', edgeOk);
+
+  h = make({ projectionMode: 'orthographic' }); h.setDepthCue(1); h.update(0);
+  check('orthographic: no w-perspective, so a uniform cue (nothing dimmed)',
+    Array.from(h._cueBuf.slice(0, 16)).every(c => c === 1));
 }
 
 console.log(failures ? `\n${failures} FAILURE(S)\n` : '\nAll hypercube checks passed.\n');

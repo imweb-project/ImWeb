@@ -109,6 +109,16 @@ export class HypercubeObject {
     this._ptPosBuf   = new Float32Array(maxVerts * 3);
     this._ptColBuf   = new Float32Array(maxVerts * 3);
 
+    // Depth cue by w: per-vertex product of the dim→3 perspective scales (how
+    // NEAR a vertex sits in the extra dimensions), normalised per frame to a
+    // 0..1 cue, fed to the point and edge shaders. Idle at Depth Cue 0.
+    this._depthCue    = 0;
+    this._wBuf        = new Float64Array(maxVerts);
+    this._morphFromW  = new Float64Array(maxVerts);
+    this._morphToW    = new Float64Array(maxVerts);
+    this._cueBuf      = new Float32Array(maxVerts);          // points: cue per vertex
+    this._quadCueBuf  = new Float32Array(maxEdges * 4 * 2);  // edges: (cueA, cueB) per quad vertex
+
     // Zero-allocation projection buffers
     this._projBuf          = new Float64Array(maxVerts * 3); // flat xyz output per vertex
     this._scratchCoords    = new Float64Array(MAX_DIM);      // single-vertex scratch
@@ -183,16 +193,20 @@ export class HypercubeObject {
     // ShaderMaterial created once
     if (!this._pointMat) {
       this._pointMat = new THREE.ShaderMaterial({
-        uniforms: { opacity: { value: 0.8 }, uPointSize: { value: this._pointSize } },
+        uniforms: { opacity: { value: 0.8 }, uPointSize: { value: this._pointSize }, uDepthCue: { value: 0 } },
         vertexShader: `
           attribute vec3 color;
+          attribute float aCue;
           varying vec3 vColor;
           uniform float uPointSize;
+          uniform float uDepthCue;
           void main() {
-            vColor = color;
+            // Depth cue by w: far in the extra dimensions = dimmer and smaller.
+            float k = 1.0 - uDepthCue * (1.0 - aCue);
+            vColor = color * k;
             vec4 mv = modelViewMatrix * vec4(position, 1.0);
             gl_Position = projectionMatrix * mv;
-            gl_PointSize = uPointSize * (60.0 / max(-mv.z, 0.1));
+            gl_PointSize = uPointSize * (60.0 / max(-mv.z, 0.1)) * mix(1.0, k, 0.7);
           }
         `,
         fragmentShader: `
@@ -222,6 +236,7 @@ export class HypercubeObject {
       quadGeo.setAttribute('aSide', new THREE.BufferAttribute(this._quadSideBuf, 1));
       quadGeo.setAttribute('aTB',   new THREE.BufferAttribute(this._quadTBBuf,   1));
       quadGeo.setAttribute('color', new THREE.BufferAttribute(this._quadColBuf,  3));
+      quadGeo.setAttribute('aCue',  new THREE.BufferAttribute(this._quadCueBuf,  2));
       quadGeo.setIndex(new THREE.BufferAttribute(this._quadIndexBuf, 1));
       quadGeo.setDrawRange(0, edgeCount(MAX_DIM) * 6);
 
@@ -234,6 +249,7 @@ export class HypercubeObject {
         uniforms: {
           uEdgeWidth:  { value: 1.5 },
           uResolution: { value: new THREE.Vector2(800, 600) },
+          uDepthCue:   { value: 0 },
         },
         vertexShader: `
           in vec3 aEndA;
@@ -241,9 +257,11 @@ export class HypercubeObject {
           in float aSide;
           in float aTB;
           in vec3 color;
+          in vec2 aCue;                 // depth cue at end A, end B
           out vec3 vColor;
           uniform float uEdgeWidth;
           uniform vec2 uResolution;
+          uniform float uDepthCue;
           void main() {
             gl_Position = vec4(2.0, 0.0, 0.0, 1.0); // default: off-screen
             vColor = vec3(0.0);
@@ -254,11 +272,13 @@ export class HypercubeObject {
             vec2 delta = (ndcB - ndcA) * uResolution;
             // 1.0 px threshold: sub-pixel edges are invisible; guards normalize() against NaN under ANGLE/Metal
             if (dot(delta, delta) >= 1.0) {
-              vColor = color;
+              // Depth cue by w, per END: an edge fades along its length.
+              float k      = 1.0 - uDepthCue * (1.0 - mix(aCue.x, aCue.y, round(aTB)));
+              vColor = color * k;
               vec2 dir     = normalize(delta);
               vec2 perp    = vec2(-dir.y, dir.x);
               vec4 clipPos = mix(clipA, clipB, round(aTB));
-              clipPos.xy  += perp * aSide * uEdgeWidth / uResolution * clipPos.w;
+              clipPos.xy  += perp * aSide * uEdgeWidth * mix(1.0, k, 0.7) / uResolution * clipPos.w;
               gl_Position  = clipPos;
             }
           }
@@ -283,6 +303,7 @@ export class HypercubeObject {
       const ptGeo = new THREE.BufferGeometry();
       ptGeo.setAttribute('position', new THREE.BufferAttribute(this._ptPosBuf, 3));
       ptGeo.setAttribute('color',    new THREE.BufferAttribute(this._ptColBuf, 3));
+      ptGeo.setAttribute('aCue',     new THREE.BufferAttribute(this._cueBuf, 1));
       this._points = new THREE.Points(ptGeo, this._pointMat);
       this._points.frustumCulled = false;
       this._scene.add(this._points);
@@ -295,7 +316,7 @@ export class HypercubeObject {
    * Zero-allocation projection: rotates and perspective-projects every active vertex
    * into outBuf as flat [x0,y0,z0, x1,y1,z1, ...] Float64 values.
    */
-  _projectInPlace(vertices, dim, rotAngles, wDistance, outBuf) {
+  _projectInPlace(vertices, dim, rotAngles, wDistance, outBuf, wOut = null) {
     const scratch = this._scratchCoords;
     const nVerts  = vertexCount(dim);
     for (let vi = 0; vi < nVerts; vi++) {
@@ -314,10 +335,13 @@ export class HypercubeObject {
         }
       }
       // Perspective project dim → 3 (in-place on scratch)
+      let wScale = 1;
       for (let d = dim - 1; d >= 3; d--) {
         const scale = wDistance / (wDistance - scratch[d]);
         for (let k = 0; k < d; k++) scratch[k] *= scale;
+        wScale *= scale;
       }
+      if (wOut) wOut[vi] = wScale;
       // Write result
       outBuf[vi * 3]     = scratch[0];
       outBuf[vi * 3 + 1] = scratch[1];
@@ -371,7 +395,7 @@ export class HypercubeObject {
     if (this._morphState && this._morphFromVertices) {
       this._projectMorphInterp();
     } else {
-      this._projectInPlace(this._vertices, this._dim, this._rotAngles, this._projW(), this._projBuf);
+      this._projectInPlace(this._vertices, this._dim, this._rotAngles, this._projW(), this._projBuf, this._wBuf);
     }
 
     this._updateBuffers();
@@ -384,8 +408,8 @@ export class HypercubeObject {
     // fromAngles may be longer than fromDim needs — _projectInPlace only reads
     // rotationPlaneCount(fromDim) entries, so passing the full array is safe.
     const fromAngles = this._morphFromAngles ?? this._rotAngles;
-    this._projectInPlace(this._morphFromVertices, this._morphFromDim, fromAngles,    this._projW(), this._morphFromProjBuf);
-    this._projectInPlace(this._vertices,          this._dim,          this._rotAngles, this._projW(), this._morphToProjBuf);
+    this._projectInPlace(this._morphFromVertices, this._morphFromDim, fromAngles,    this._projW(), this._morphFromProjBuf, this._morphFromW);
+    this._projectInPlace(this._vertices,          this._dim,          this._rotAngles, this._projW(), this._morphToProjBuf,   this._morphToW);
 
     const t         = this._morphState.t;
     const mt        = 1 - t;
@@ -398,12 +422,54 @@ export class HypercubeObject {
       this._projBuf[bi]     = this._morphFromProjBuf[bi]     * mt + this._morphToProjBuf[bi]     * t;
       this._projBuf[bi + 1] = this._morphFromProjBuf[bi + 1] * mt + this._morphToProjBuf[bi + 1] * t;
       this._projBuf[bi + 2] = this._morphFromProjBuf[bi + 2] * mt + this._morphToProjBuf[bi + 2] * t;
+      this._wBuf[i] = this._morphFromW[i] * mt + this._morphToW[i] * t;
     }
     for (let i = count; i < toCount; i++) {
       const bi = i * 3;
       this._projBuf[bi]     = this._morphToProjBuf[bi];
       this._projBuf[bi + 1] = this._morphToProjBuf[bi + 1];
       this._projBuf[bi + 2] = this._morphToProjBuf[bi + 2];
+      this._wBuf[i] = this._morphToW[i];
+    }
+  }
+
+  /**
+   * Normalise this frame's w-scales to a 0..1 cue (nearest vertex 1, farthest
+   * 0) and upload it for the live points and edges. Per frame, because it
+   * moves with every rotation; skipped entirely at Depth Cue 0, where the
+   * shaders ignore the attribute. Orthographic has no w-perspective — every
+   * scale is 1 — so the cue is uniformly 1 there: nothing to cue by.
+   */
+  _updateDepthCue(nVerts, ceiling) {
+    const amt = this._depthCue;
+    if (this._lineMat) this._lineMat.uniforms.uDepthCue.value = amt;
+    if (this._pointMat) this._pointMat.uniforms.uDepthCue.value = amt;
+    if (amt <= 0) return;
+    const w = this._wBuf, cue = this._cueBuf;
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < nVerts; i++) { const v = w[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
+    // RELATIVE threshold: orthographic sets W distance to 1e9, where scales
+    // still differ by ~2e-9 — normalising that noise would dim half the cube
+    // at random. The narrowest real spread (W distance 20) is ~0.1 of hi.
+    const span = hi - lo;
+    const flat = !(span > 1e-6 * hi);
+    for (let i = 0; i < nVerts; i++) cue[i] = flat ? 1 : (w[i] - lo) / span;
+
+    const edges = this._edges, qc = this._quadCueBuf;
+    for (let e = 0; e < ceiling; e++) {
+      const [a, b] = edges[e];
+      const ca = a < nVerts ? cue[a] : 1, cb = b < nVerts ? cue[b] : 1;
+      const q = e * 8;
+      qc[q] = ca; qc[q + 1] = cb; qc[q + 2] = ca; qc[q + 3] = cb;
+      qc[q + 4] = ca; qc[q + 5] = cb; qc[q + 6] = ca; qc[q + 7] = cb;
+    }
+    if (this._lines?.visible) {
+      const at = this._lines.geometry.attributes.aCue;
+      at.clearUpdateRanges(); at.addUpdateRange(0, ceiling * 8); at.needsUpdate = true;
+    }
+    if (this._points?.visible) {
+      const at = this._points.geometry.attributes.aCue;
+      at.clearUpdateRanges(); at.addUpdateRange(0, nVerts); at.needsUpdate = true;
     }
   }
 
@@ -543,6 +609,8 @@ export class HypercubeObject {
       if (writeColors) this._points.geometry.attributes.color.needsUpdate = true;
     }
 
+    this._updateDepthCue(nActiveVerts, ceiling);
+
     if (writeColors) this._colorsDirty = false;
     if (this._lineMat) {
       this._lineMat.uniforms.uEdgeWidth.value = this._edgeWidth ?? 1.5;
@@ -667,6 +735,9 @@ export class HypercubeObject {
     if (this._lines)  this._lines.visible  = visible && this._renderMode !== 'points';
     if (this._points) this._points.visible = visible && this._renderMode !== 'wireframe';
   }
+
+  /** 0 = off; 1 = the farthest vertex in w goes dark and small. */
+  setDepthCue(v) { this._depthCue = Math.max(0, Math.min(1, v)); }
 
   setPointSize(size) {
     this._pointSize = size;

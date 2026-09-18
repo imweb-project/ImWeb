@@ -376,6 +376,9 @@ async function main() {
   ps.register({ id:'hypercube.rot.xz',        type:'continuous', value:0.20, min:-2.0, max:2.0,  step:0.01, label:'Rot XZ',  group:'hypercube' });
   ps.register({ id:'hypercube.rot.yz',        type:'continuous', value:0.15, min:-2.0, max:2.0,  step:0.01, label:'Rot YZ',  group:'hypercube' });
   ps.register({ id:'hypercube.rot.xw',        type:'continuous', value:0.40, min:-2.0, max:2.0,  step:0.01, label:'Rot XW',  group:'hypercube' });
+  // Depth cue by w: far in the extra dimensions = dimmer and thinner, so a
+  // rotating high-D cube reads as depth rather than a flat tangle.
+  ps.register({ id:'hypercube.depthCue',      type:'continuous', value:0,    min:0,    max:1,    step:0.01,  label:'Depth Cue',    group:'hypercube' });
   ps.register({ id:'hypercube.edgeWidth',     type:'continuous', value:1.5,  min:0.5,  max:8.0,  step:0.1,   label:'Edge Width',   group:'hypercube' });
   ps.register({ id:'hypercube.renderMode',    type:'select',     options:['wireframe','points','both','off'], value:3, label:'Draw', group:'hypercube' });
   ps.register({ id:'hypercube.projMode',      type:'select',     options:['perspective','orthographic'],      value:0, label:'Proj Mode',    group:'hypercube' });
@@ -741,6 +744,7 @@ async function main() {
   ps.get('hypercube.edgeOpacity')?.onChange(v => scene3d.getHypercube()?.setEdgeOpacity(v));
   ps.get('hypercube.pointSize')?.onChange(v  => scene3d.getHypercube()?.setPointSize(v));
   ps.get('hypercube.edgeWidth')?.onChange(v  => scene3d.getHypercube()?.setEdgeWidth(v));
+  ps.get('hypercube.depthCue')?.onChange(v   => scene3d.getHypercube()?.setDepthCue(v));
   // By PLANE, not index: the index of a plane depends on the dimension, and
   // indices 2/3 were never YZ/XW — Rot YZ spun XW, Rot XW spun YZ (4D) or XV.
   ps.get('hypercube.rot.xy')?.onChange(v => scene3d.getHypercube()?.setPlaneSpeed(0, 1, v));
@@ -949,6 +953,7 @@ async function main() {
     hc.setEdgeOpacity(g('hypercube.edgeOpacity',  1.0));
     hc.setPointSize  (g('hypercube.pointSize',    3.0));
     hc.setEdgeWidth  (g('hypercube.edgeWidth',    1.5));
+    hc.setDepthCue   (g('hypercube.depthCue',     0));
     hc.setPlaneSpeed(0, 1, g('hypercube.rot.xy',  0.30));
     hc.setPlaneSpeed(0, 2, g('hypercube.rot.xz',  0.20));
     hc.setPlaneSpeed(1, 2, g('hypercube.rot.yz',  0.15));
@@ -1008,6 +1013,7 @@ async function main() {
     hc.setEdgeOpacity(g('hypercube.edgeOpacity',  1.0));
     hc.setPointSize  (g('hypercube.pointSize',    3.0));
     hc.setEdgeWidth  (g('hypercube.edgeWidth',    1.5));
+    hc.setDepthCue   (g('hypercube.depthCue',     0));
     hc.setPlaneSpeed(0, 1, g('hypercube.rot.xy',  0.30));
     hc.setPlaneSpeed(0, 2, g('hypercube.rot.xz',  0.20));
     hc.setPlaneSpeed(1, 2, g('hypercube.rot.yz',  0.15));

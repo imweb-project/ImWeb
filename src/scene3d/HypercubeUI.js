@@ -28,7 +28,7 @@ export const HC_SECTIONS = [
   { title: 'Rotation',       ids: ['hypercube.rot.xy', 'hypercube.rot.xz', 'hypercube.rot.yz', 'hypercube.rot.xw'],
     morePlanes: true },
   { title: 'Edges & Points', ids: ['hypercube.renderMode', 'hypercube.edgeWidth', 'hypercube.edgeOpacity',
-                                   'hypercube.pointSize'] },
+                                   'hypercube.pointSize', 'hypercube.depthCue'] },
   { title: 'Faces',          ids: ['hypercube.faces.active', 'hypercube.faces.opacity', 'hypercube.faces.blend',
                                    'hypercube.faces.hue', 'hypercube.faces.sat', 'hypercube.faces.texsrc',
                                    'hypercube.faces.masksrc', 'hypercube.faces.maskinv', 'hypercube.faces.masklvl'],

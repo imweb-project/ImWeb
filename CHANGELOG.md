@@ -22,6 +22,12 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   and its "none" is now **off**. Saved files are unchanged.
 
 ### Added
+- **Depth Cue for the Hypercube** (Edges & Points). Points and edges fade and
+  thin the farther they sit in the extra dimensions, so a rotating high-D
+  cube reads as depth instead of a flat tangle. Each edge fades along its
+  length between its two ends. 0 is off; 1 takes the farthest vertices to
+  dark. It has no effect in orthographic, which has no depth in the extra
+  dimensions. It costs nothing at 0.
 - **An imported model as the instance shape.** Hypercube **Inst geo** has a new
   last entry, **Model**, which puts the 3D scene's imported model on every
   vertex. The model is merged into one shape, sized like the built-in shapes
