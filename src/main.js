@@ -741,11 +741,12 @@ async function main() {
   ps.get('hypercube.edgeOpacity')?.onChange(v => scene3d.getHypercube()?.setEdgeOpacity(v));
   ps.get('hypercube.pointSize')?.onChange(v  => scene3d.getHypercube()?.setPointSize(v));
   ps.get('hypercube.edgeWidth')?.onChange(v  => scene3d.getHypercube()?.setEdgeWidth(v));
-  // Rotation plane indices: 0=xy, 1=xz, 2=yz, 3=xw (matches HypercubeGeometry iteration order)
-  ps.get('hypercube.rot.xy')?.onChange(v => scene3d.getHypercube()?.setRotationSpeed(0, v));
-  ps.get('hypercube.rot.xz')?.onChange(v => scene3d.getHypercube()?.setRotationSpeed(1, v));
-  ps.get('hypercube.rot.yz')?.onChange(v => scene3d.getHypercube()?.setRotationSpeed(2, v));
-  ps.get('hypercube.rot.xw')?.onChange(v => scene3d.getHypercube()?.setRotationSpeed(3, v));
+  // By PLANE, not index: the index of a plane depends on the dimension, and
+  // indices 2/3 were never YZ/XW — Rot YZ spun XW, Rot XW spun YZ (4D) or XV.
+  ps.get('hypercube.rot.xy')?.onChange(v => scene3d.getHypercube()?.setPlaneSpeed(0, 1, v));
+  ps.get('hypercube.rot.xz')?.onChange(v => scene3d.getHypercube()?.setPlaneSpeed(0, 2, v));
+  ps.get('hypercube.rot.yz')?.onChange(v => scene3d.getHypercube()?.setPlaneSpeed(1, 2, v));
+  ps.get('hypercube.rot.xw')?.onChange(v => scene3d.getHypercube()?.setPlaneSpeed(0, 3, v));
   // Instancer
   ps.get('hypercube.inst.active')?.onChange(v  => scene3d.getHypercube()?.setInstancerVisible(!!v));
   ps.get('hypercube.inst.geo')?.onChange(idx   => scene3d.getHypercube()?.setInstancerGeoType(_GEO_TYPES[idx] ?? 'Sphere'));
@@ -948,10 +949,10 @@ async function main() {
     hc.setEdgeOpacity(g('hypercube.edgeOpacity',  1.0));
     hc.setPointSize  (g('hypercube.pointSize',    3.0));
     hc.setEdgeWidth  (g('hypercube.edgeWidth',    1.5));
-    hc.setRotationSpeed(0, g('hypercube.rot.xy',  0.30));
-    hc.setRotationSpeed(1, g('hypercube.rot.xz',  0.20));
-    hc.setRotationSpeed(2, g('hypercube.rot.yz',  0.15));
-    hc.setRotationSpeed(3, g('hypercube.rot.xw',  0.40));
+    hc.setPlaneSpeed(0, 1, g('hypercube.rot.xy',  0.30));
+    hc.setPlaneSpeed(0, 2, g('hypercube.rot.xz',  0.20));
+    hc.setPlaneSpeed(1, 2, g('hypercube.rot.yz',  0.15));
+    hc.setPlaneSpeed(0, 3, g('hypercube.rot.xw',  0.40));
     hc.setRenderMode     (_RENDER_MODES[g('hypercube.renderMode', 0)] ?? 'wireframe');
     hc.setProjectionMode (_PROJ_MODES[g('hypercube.projMode', 0)]    ?? 'perspective');
     hc.setFacesVisible   (!!(g('hypercube.faces.active',  0)));
@@ -1007,10 +1008,10 @@ async function main() {
     hc.setEdgeOpacity(g('hypercube.edgeOpacity',  1.0));
     hc.setPointSize  (g('hypercube.pointSize',    3.0));
     hc.setEdgeWidth  (g('hypercube.edgeWidth',    1.5));
-    hc.setRotationSpeed(0, g('hypercube.rot.xy',  0.30));
-    hc.setRotationSpeed(1, g('hypercube.rot.xz',  0.20));
-    hc.setRotationSpeed(2, g('hypercube.rot.yz',  0.15));
-    hc.setRotationSpeed(3, g('hypercube.rot.xw',  0.40));
+    hc.setPlaneSpeed(0, 1, g('hypercube.rot.xy',  0.30));
+    hc.setPlaneSpeed(0, 2, g('hypercube.rot.xz',  0.20));
+    hc.setPlaneSpeed(1, 2, g('hypercube.rot.yz',  0.15));
+    hc.setPlaneSpeed(0, 3, g('hypercube.rot.xw',  0.40));
     hc.setRenderMode     (_RENDER_MODES[g('hypercube.renderMode', 0)] ?? 'wireframe');
     hc.setProjectionMode (_PROJ_MODES[g('hypercube.projMode', 0)]    ?? 'perspective');
     hc.setFacesVisible   (!!(g('hypercube.faces.active',  0)));

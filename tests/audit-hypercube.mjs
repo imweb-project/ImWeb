@@ -36,6 +36,8 @@
  *      spin and scale: adoption compares mesh identity, not on/off.
  *  11. Show geometry: geometry and instances both visible — Transform drives
  *      both, Material only the geometry, the instancer keeps Inst tex/opacity.
+ *  13. Rotation planes are addressed by (i,j), not index: Rot YZ spins YZ,
+ *      and speeds/angles follow their plane across dimension changes.
  *  12. Inst geo 'Model' draws the imported model — merged, unit-sized, any
  *      attribute encoding — and falls back to a sphere without one.
  *  10. Dimension MORPHS over Morph Time when played (hand, LFO, MIDI) and
@@ -516,6 +518,50 @@ console.log('\n12. Inst geo Model — the imported model on every vertex');
   const opts = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8').match(/id:'hypercube\.inst\.geo'[^\n]*options:\[([^\]]*)\]/);
   check("'Model' is the LAST Inst geo option (append-only: stored as an index)",
     opts && opts[1].replace(/['\s]/g, '').split(',').at(-1) === 'Model' && opts[1].split(',').length === 14);
+}
+
+// ── 13. Rotation planes are addressed by PLANE, not by index ───────────────
+console.log('\n13. Rot XY/XZ/YZ/XW spin the plane they name, in every dimension');
+{
+  // The projection applies planes in the order (0,1),(0,2)…(0,d-1),(1,2)…, so
+  // an index names a different plane per dimension. main.js drove rot.yz into
+  // index 2 and rot.xw into 3: Rot YZ spun XW, Rot XW spun YZ at 4D and X-V
+  // above. _rebuild copied angles/speeds by index across dimensions too.
+  const PI = HypercubeObject.planeIndex;
+  let orderOk = true;
+  for (let d = 2; d <= MAX_DIM; d++) { let k = 0; for (let i = 0; i < d; i++) for (let j = i + 1; j < d; j++) if (PI(i, j, d) !== k++) orderOk = false; }
+  check('planeIndex(i,j,dim) is the projection loop\'s order for every dim', orderOk);
+
+  const still = o => { const h = mk(o); h.setRenderMode('points'); for (let k = 0; k < h._rotSpeeds.length; k++) h.setRotationSpeed(k, 0); h._rotAngles.fill(0); return h; };
+  const P = h => { h.update(0); return Array.from(h._projBuf.slice(0, 16 * 3)); };
+  const ref = P(still());
+  const hc = still(); hc.setPlaneSpeed(1, 2, 1.0); for (let k = 0; k < 20; k++) hc.update(16);
+  const got = P(hc);
+  let xSame = true, yzMoved = false;
+  for (let v = 0; v < 16; v++) {
+    if (Math.abs(got[v * 3] - ref[v * 3]) > 1e-9) xSame = false;
+    if (Math.abs(got[v * 3 + 1] - ref[v * 3 + 1]) > 1e-3 || Math.abs(got[v * 3 + 2] - ref[v * 3 + 2]) > 1e-3) yzMoved = true;
+  }
+  check('Rot YZ turns y and z and leaves x alone (it used to spin XW)', xSame && yzMoved,
+    `x unchanged: ${xSame}, y/z moved: ${yzMoved} — main.js must call setPlaneSpeed(1, 2, …) for rot.yz`);
+
+  const h = mk(); h.setRenderMode('points');
+  h.setPlaneSpeed(0, 3, 0.7); h.setRotationSpeed(PI(1, 3, 4), 0.9);     // a param plane and a live-only one
+  for (let k = 0; k < 10; k++) h.update(16);
+  const before = new Map(); for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) before.set(`${i},${j}`, h._rotAngles[PI(i, j, 4)]);
+  h.morphToLatest(6, { durationMs: 0 }); h.update(16);
+  check('speeds follow their plane across a dimension change', h._rotSpeeds[PI(0, 3, 6)] === 0.7 && h._rotSpeeds[PI(1, 3, 6)] === 0.9,
+    `XW ${h._rotSpeeds[PI(0, 3, 6)]}, YW ${h._rotSpeeds[PI(1, 3, 6)]}`);
+  const dt = 0.016; let anglesOk = true;
+  for (const [key, a] of before) { const [i, j] = key.split(',').map(Number);
+    if (Math.abs(h._rotAngles[PI(i, j, 6)] - (a + h._rotSpeeds[PI(i, j, 6)] * dt)) > 1e-9) anglesOk = false; }
+  check('angles follow their plane too (no jump when a morph starts)', anglesOk);
+  const dn = mk({ dim: 8 }); dn.setRenderMode('points'); dn.morphToLatest(5, { durationMs: 1000 }); dn.update(16);
+  check('a downward morph resizes the rotation arrays at once', dn._rotAngles.length === 10 && dn._planeDim === 5,
+    `${dn._rotAngles.length} planes mid-morph to 5D — the to-projection reads them at the new dimension`);
+  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  check('no hypercube param drives a plane by bare index', !/setRotationSpeed\([0-3], /.test(main),
+    'use setPlaneSpeed(i, j, v) — an index means a different plane in each dimension');
 }
 
 console.log(failures ? `\n${failures} FAILURE(S)\n` : '\nAll hypercube checks passed.\n');

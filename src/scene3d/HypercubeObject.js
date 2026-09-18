@@ -138,26 +138,45 @@ export class HypercubeObject {
 
   _rebuild() {
     // vertices and edges are permanent MAX_DIM arrays — no regeneration needed
-
-    const nPlanes   = rotationPlaneCount(this._dim);
-    const oldAngles = this._rotAngles;
-    const oldSpeeds = this._rotSpeeds;
-
-    this._rotAngles = new Float64Array(nPlanes);
-    this._rotSpeeds = defaultRotationSpeeds(this._dim);
-
-    // Carry over angles/speeds for any planes that existed before
-    if (oldAngles) {
-      const n = Math.min(oldAngles.length, nPlanes);
-      for (let i = 0; i < n; i++) this._rotAngles[i] = oldAngles[i];
-    }
-    if (oldSpeeds) {
-      const n = Math.min(oldSpeeds.length, nPlanes);
-      for (let i = 0; i < n; i++) this._rotSpeeds[i] = oldSpeeds[i];
-    }
-
+    this._remapRotation();
     this._colorsDirty = true;
     this._rebuildGeometry();
+  }
+
+  /**
+   * Index of rotation plane (i,j), i<j, in a `dim`-dimensional cube — the
+   * order _projectInPlace applies them: (0,1),(0,2)…(0,dim-1),(1,2)… So an
+   * index names a DIFFERENT plane in every dimension: at 4D index 2 is (0,3),
+   * XW; it is never YZ. Anything addressing a plane by meaning uses this.
+   */
+  static planeIndex(i, j, dim) {
+    return i * (2 * dim - i - 1) / 2 + (j - i - 1);
+  }
+
+  /**
+   * Size the rotation arrays to _dim, carrying each plane's angle and speed
+   * across BY PLANE (i,j), not by index. Copying by index handed every plane
+   * its neighbour's state on each dimension change — a jump at morph start
+   * and speeds on the wrong planes. Param-driven speeds (setPlaneSpeed) win.
+   */
+  _remapRotation() {
+    const dim = this._dim, from = this._planeDim ?? 0;
+    const oldA = this._rotAngles, oldS = this._rotSpeeds;
+    this._rotAngles = new Float64Array(rotationPlaneCount(dim));
+    this._rotSpeeds = defaultRotationSpeeds(dim);
+    const PI = HypercubeObject.planeIndex;
+    if (oldA && oldS) {
+      const top = Math.min(dim, from);
+      for (let i = 0; i < top; i++) for (let j = i + 1; j < top; j++) {
+        this._rotAngles[PI(i, j, dim)] = oldA[PI(i, j, from)];
+        this._rotSpeeds[PI(i, j, dim)] = oldS[PI(i, j, from)];
+      }
+    }
+    for (const [key, v] of this._pairSpeeds ?? []) {
+      const [i, j] = key.split(',').map(Number);
+      if (j < dim) this._rotSpeeds[PI(i, j, dim)] = v;
+    }
+    this._planeDim = dim;
   }
 
   _rebuildGeometry() {
@@ -587,6 +606,10 @@ export class HypercubeObject {
     // For downward morphs: keep old geometry, defer rebuild to avoid ghost doubling
     if (toDim > this._morphFromDim) {
       this._rebuild();
+    } else {
+      // ...but the ROTATION arrays follow _dim now in both directions: the
+      // to-projection reads them at toDim, and their layout is per-dimension.
+      this._remapRotation();
     }
     // dim changed → edge colors and dim cull mask must be rewritten next frame
     this._colorsDirty = true;
@@ -684,6 +707,17 @@ export class HypercubeObject {
   /**
    * Set rotation speed (rad/s) for one rotation plane by index.
    */
+  /**
+   * Speed of plane (i,j) — what the Rot XY/XZ/YZ/XW params mean. Remembered
+   * per plane, so it survives dimension changes and applies once a morph
+   * brings the plane into existence.
+   */
+  setPlaneSpeed(i, j, speedRadPerSec) {
+    (this._pairSpeeds ??= new Map()).set(`${i},${j}`, speedRadPerSec);
+    if (j < this._planeDim) this._rotSpeeds[HypercubeObject.planeIndex(i, j, this._planeDim)] = speedRadPerSec;
+  }
+
+  /** By INDEX into the current dimension's plane order (see planeIndex). */
   setRotationSpeed(planeIdx, speedRadPerSec) {
     if (planeIdx >= 0 && planeIdx < this._rotSpeeds.length) {
       this._rotSpeeds[planeIdx] = speedRadPerSec;
