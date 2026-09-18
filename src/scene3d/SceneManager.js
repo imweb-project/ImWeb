@@ -1207,6 +1207,15 @@ export class SceneManager {
         });
       }
 
+      // Deliberately unconditional — do not "optimise" away. Measured
+      // 2026-09-18 on WebGL2 (three r168): the per-frame re-check costs ~5-7 µs
+      // (three rebuilds this material's parameters and cache key, finds the
+      // cached program, no recompile). Four writes above change program
+      // parameters WITHOUT flagging and rely on this line: transparent (from
+      // Opacity crossing 1), clearcoat and transmission (0 → >0), and map
+      // (texture source None ↔ a texture). Replacing it with a dirty-check means
+      // enumerating every program-affecting property — miss one and a control
+      // silently stops working (memory: measure-guards-dont-read-them).
       this.material.needsUpdate = true;
       }
     // Camera
