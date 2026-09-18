@@ -194,7 +194,8 @@ export function buildHypercubePanel(container, hypercube, ps) {
     0.0, 4.0, 0.01,
     v => { hypercube.setFaceMaskLevel(v); ps?.set('hypercube.faces.masklvl', v); });
 
-  const _GEO_LABELS = ['Sphere','Torus','Cube','Plane','Cylinder','Capsule','TorusKnot','Cone','Dodecahedron','Icosahedron','Octahedron','Tetrahedron','Ring'];
+  const _GEO_LABELS = ps?.get('hypercube.inst.geo')?.options
+    ?? ['Sphere','Torus','Cube','Plane','Cylinder','Capsule','TorusKnot','Cone','Dodecahedron','Icosahedron','Octahedron','Tetrahedron','Ring'];
   _selectRow(renderSec, 'Instancer', ['off', 'on'],
     ps?.get('hypercube.inst.active')?.value ? 1 : 0,
     idx => { hypercube.setInstancerVisible(idx === 1); ps?.set('hypercube.inst.active', idx === 1 ? 1 : 0); });

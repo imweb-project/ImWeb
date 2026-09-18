@@ -389,7 +389,7 @@ async function main() {
   ps.register({ id:'hypercube.faces.maskinv', type:'toggle',     value:0,                                    label:'Mask invert', group:'hypercube' });
   ps.register({ id:'hypercube.faces.masklvl', type:'continuous', value:1.0,  min:0.0,  max:4.0,  step:0.01,  label:'Mask level',  group:'hypercube' });
   ps.register({ id:'hypercube.inst.active',   type:'toggle',     value:0,                                    label:'Instancer',    group:'hypercube' });
-  ps.register({ id:'hypercube.inst.geo',      type:'select',     options:['Sphere','Torus','Cube','Plane','Cylinder','Capsule','TorusKnot','Cone','Dodecahedron','Icosahedron','Octahedron','Tetrahedron','Ring'], value:0, label:'Inst Geo', group:'hypercube' });
+  ps.register({ id:'hypercube.inst.geo',      type:'select',     options:['Sphere','Torus','Cube','Plane','Cylinder','Capsule','TorusKnot','Cone','Dodecahedron','Icosahedron','Octahedron','Tetrahedron','Ring','Model'], value:0, label:'Inst Geo', group:'hypercube' });
   ps.register({ id:'hypercube.inst.scale',    type:'continuous', value:0.08, min:0.01, max:2.0,  step:0.01,  label:'Inst Scale',   group:'hypercube' });
   ps.register({ id:'hypercube.inst.opacity',  type:'continuous', value:1.0,  min:0.0,  max:1.0,  step:0.01,  label:'Inst Opacity', group:'hypercube' });
   ps.register({ id:'hypercube.inst.texsrc',   type:'select',     options:OPT_SOURCES, value:0, label:'Inst tex', group:'hypercube' });
@@ -730,7 +730,8 @@ async function main() {
   // These fire during restoreState so saved values are pushed into the object on recall/startup.
   const _RENDER_MODES = ['wireframe','points','both','none'];
   const _PROJ_MODES   = ['perspective','orthographic'];
-  const _GEO_TYPES    = ['Sphere','Torus','Cube','Plane','Cylinder','Capsule','TorusKnot','Cone','Dodecahedron','Icosahedron','Octahedron','Tetrahedron','Ring'];
+  // Read from the param, not retyped — APPEND-ONLY (saved as an index); 'Model' is last.
+  const _GEO_TYPES    = ps.get('hypercube.inst.geo').options;
   // hypercube.dim's handler is registered after presetMgr exists — it needs
   // to know whether a state morph is running. See below the PresetManager.
   ps.get('hypercube.renderMode')?.onChange(i => scene3d.getHypercube()?.setRenderMode(_RENDER_MODES[i] ?? 'wireframe'));

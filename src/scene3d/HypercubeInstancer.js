@@ -9,6 +9,14 @@ const _geoFactory   = new GeometryFactory();
 const _GEO_PARAMS = { radius: 0.5, size: 1.0, w: 1.0, h: 1.0, rt: 0.5, rb: 0.5, height: 1.0,
                       radius1: 0.5, length: 1.0, outerR: 0.5, innerR: 0.15 };
 
+// A 'Model' shape can be any size, and every instance draws all of it: the
+// bundled 179k-vertex model at 12D is 733M vertices a frame, enough to hang a
+// GPU. Model instances are capped at what the DEFAULT shape, the sphere,
+// already costs at the full 4096 — measured from it, not a guessed constant.
+let _vertBudget = 0;
+const vertBudget = () => _vertBudget ||= MAX_INSTANCES *
+  _geoFactory.create('Sphere', _GEO_PARAMS).attributes.position.count;
+
 export class HypercubeInstancer {
   constructor(scene) {
     this._scene    = scene;
@@ -32,7 +40,16 @@ export class HypercubeInstancer {
     }
 
     // Use the shared GeometryFactory — same geometries as the 3D Scene section
-    const geo = _geoFactory.create(geoType, _GEO_PARAMS);
+    // 'Model' draws the 3D scene's imported model (merged, unit-sized — see
+    // SceneManager._syncModelInstanceShape). A CLONE, because the old mesh's
+    // geometry is disposed on every rebuild. No model loaded → a sphere.
+    const geo = geoType === 'Model'
+      ? (this._modelGeo ? this._modelGeo.clone() : _geoFactory.create('Sphere', _GEO_PARAMS))
+      : _geoFactory.create(geoType, _GEO_PARAMS);
+    this._maxCount = geoType === 'Model' && this._modelGeo
+      ? Math.max(1, Math.floor(vertBudget() / geo.attributes.position.count))
+      : MAX_INSTANCES;
+    this._warnedCap = null;
 
     if (!this._mat) {
       this._mat = new THREE.MeshStandardMaterial({
@@ -84,7 +101,12 @@ export class HypercubeInstancer {
    * dim: active dimension. scale: world scale. instScale: per-instance size.
    */
   update(projBuf, dim, scale, instScale) {
-    const count = Math.min(vertexCount(dim), MAX_INSTANCES);
+    const count = Math.min(vertexCount(dim), MAX_INSTANCES, this._maxCount ?? MAX_INSTANCES);
+    if (count < Math.min(vertexCount(dim), MAX_INSTANCES) && this._warnedCap !== count) {
+      this._warnedCap = count;
+      console.warn(`[Hypercube] Model has ${this._mesh.geometry.attributes.position.count} vertices — ` +
+        `drawing ${count} of ${vertexCount(dim)} instances to stay within the sphere's GPU load. Use a lighter model or a lower dimension for all of them.`);
+    }
     const s = instScale ?? this._instScale;
 
     for (let i = 0; i < count; i++) {
@@ -125,6 +147,14 @@ export class HypercubeInstancer {
   setGeoType(type) {
     this._geoType = type;
     this._build(type);
+  }
+
+  /** The shape 'Model' draws (or null for none). Owned here from now on. */
+  setModelGeometry(geo) {
+    const old = this._modelGeo;
+    this._modelGeo = geo;
+    if (this._geoType === 'Model') this._build('Model');
+    old?.dispose();
   }
 
   setTexture(tex) {

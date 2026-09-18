@@ -36,6 +36,8 @@
  *      spin and scale: adoption compares mesh identity, not on/off.
  *  11. Show geometry: geometry and instances both visible — Transform drives
  *      both, Material only the geometry, the instancer keeps Inst tex/opacity.
+ *  12. Inst geo 'Model' draws the imported model — merged, unit-sized, any
+ *      attribute encoding — and falls back to a sphere without one.
  *  10. Dimension MORPHS over Morph Time when played (hand, LFO, MIDI) and
  *      JUMPS when recalled (state, state morph, project) — owner's call. A
  *      newer target replaces a waiting one; a jump cuts a running morph.
@@ -440,6 +442,70 @@ console.log('\n11. Show geometry — both visible, Transform shared, Material th
     inst.scale.x === 1.5 && sm.mesh.scale.x !== 1.5, `inst ${inst.scale.x}, model ${sm.mesh.scale.x}`);
   ps.set('hypercube.inst.showGeo', 0); frame();
   check('back off: replaced again', sm.mesh === inst && !inScene(sm._ownMesh));
+}
+
+// ── 12. Inst geo 'Model': the imported model as the instance shape ─────────
+console.log('\n12. Inst geo Model — the imported model on every vertex');
+{
+  const { ParameterSystem, registerCoreParameters } = await import('../src/controls/ParameterSystem.js');
+  const { SceneManager } = await import('../src/scene3d/SceneManager.js');
+  const ps = new ParameterSystem(); registerCoreParameters(ps);
+  ps.register({ id: 'hypercube.inst.showGeo', type: 'toggle', value: 0, group: 'hypercube' });
+  const sm = new SceneManager({}, 64, 64);
+  const hc = await sm.createHypercube({ dim: 4 });
+  const frame = () => sm.applyParams(ps, 0.016, {});
+  hc.setInstancerVisible(true); hc.setInstancerGeoType('Model'); frame();
+  const geoOf = () => hc._hInstancer.getMesh().geometry;
+  check('Model with no model loaded → a sphere, not an empty mesh', geoOf().type === 'SphereGeometry');
+
+  // two separate parts, far from the origin and large — must come out as ONE
+  // centred, unit-sized shape
+  const obj = 'data:text/plain;base64,' + Buffer.from(
+    'o a\nv 100 0 0\nv 110 0 0\nv 100 10 0\nf 1 2 3\no b\nv 100 0 20\nv 110 0 20\nv 100 10 20\nf 4 5 6\n').toString('base64');
+  const pivot = await sm.loadOBJ(obj, 'two.obj'); frame();
+  const g = geoOf(); g.computeBoundingBox();
+  const sz = g.boundingBox.getSize(new THREE.Vector3()), ct = g.boundingBox.getCenter(new THREE.Vector3());
+  check('imported model → instancer draws it (both parts merged)', g.attributes.position.count === 6,
+    `${g.attributes.position.count} vertices — expected 6 from two triangles`);
+  check('…centred and unit-sized like the built-in shapes', Math.abs(Math.max(sz.x, sz.y, sz.z) - 1) < 1e-6 && ct.length() < 1e-6,
+    `size ${sz.toArray()}, centre ${ct.toArray()}`);
+  const xs = []; pivot.traverse(c => { if (c.isMesh) xs.push(c.geometry.attributes.position.getX(0)); });
+  check('…and the scene model\'s own geometry is untouched (merge works on copies)',
+    xs.length === 2 && xs.every(x => x === 100), `first x per part: ${xs}`);
+
+  // quantised / normalised attributes (meshopt GLTF) merge alongside plain ones
+  const root = new THREE.Group();
+  root.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1)));
+  const q = new THREE.BufferGeometry();
+  q.setAttribute('position', new THREE.BufferAttribute(new Int16Array([0, 0, 0, 32767, 0, 0, 0, 32767, 0]), 3, true));
+  root.add(new THREE.Mesh(q));
+  const merged = SceneManager.prototype._mergedModelGeometry.call(sm, root);
+  check('parts with quantised attributes merge with plain ones, indices kept',
+    merged?.attributes.position.count === 24 + 3 && merged.index?.count === 36 + 3,
+    `${merged?.attributes.position.count} verts / ${merged?.index?.count} indices — every part is rewritten to Float32 ` +
+    'position/normal/uv, and the index is KEPT (de-indexing took the bundled model from 179k to 769k vertices)');
+
+  // a heavy model is capped at the sphere's full-12D vertex load
+  const hc12 = mk({ dim: 12 }); hc12.setRenderMode('wireframe');
+  const heavy = new THREE.SphereGeometry(0.5, 400, 400);          // ~160k vertices
+  hc12._hInstancer.setModelGeometry(heavy); hc12.setInstancerGeoType('Model'); hc12.setInstancerVisible(true);
+  const warned = []; const w = console.warn; console.warn = m => warned.push(String(m));
+  hc12.update(16); console.warn = w;
+  const im = hc12._hInstancer.getMesh();
+  const sphereLoad = 4096 * new THREE.SphereGeometry(0.5, 128, 128).attributes.position.count;
+  check('a heavy Model draws no more vertices than the sphere does at 12D',
+    im.count * im.geometry.attributes.position.count <= sphereLoad && im.count > 0 && im.count < 4096,
+    `${im.count} × ${im.geometry.attributes.position.count} vs budget ${sphereLoad}`);
+  check('…and says so, rather than silently dropping instances', warned.some(m => /drawing \d+ of 4096 instances/.test(m)));
+  const light = mk({ dim: 12 }); light.setRenderMode('wireframe'); light.setInstancerVisible(true); light.update(16);
+  check('built-in shapes are not capped', light._hInstancer.getMesh().count === 4096);
+
+  // Back to Geometry → the Model shape falls back
+  sm._importedModelName = null; sm._geoKey = null; sm.setGeometry('Torus'); frame();
+  check('Back to Geometry → Model shape falls back to a sphere', geoOf().type === 'SphereGeometry');
+  const opts = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8').match(/id:'hypercube\.inst\.geo'[^\n]*options:\[([^\]]*)\]/);
+  check("'Model' is the LAST Inst geo option (append-only: stored as an index)",
+    opts && opts[1].replace(/['\s]/g, '').split(',').at(-1) === 'Model' && opts[1].split(',').length === 14);
 }
 
 console.log(failures ? `\n${failures} FAILURE(S)\n` : '\nAll hypercube checks passed.\n');

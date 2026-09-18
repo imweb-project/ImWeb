@@ -9,6 +9,14 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **An imported model as the instance shape.** Hypercube **Inst geo** has a new
+  last entry, **Model**, which puts the 3D scene's imported model on every
+  vertex. The model is merged into one shape, sized like the built-in shapes
+  and coloured by Inst tex. It updates when you load another model, and
+  becomes a sphere after Back to Geometry. A detailed model is capped so it
+  never costs the GPU more than the default sphere does at 12D. The bundled
+  Harabara model draws 380 copies, the whole cube up to 8D; above that the
+  console says how many are drawn.
 - **Show geometry — instances and geometry together.** A new **Show geometry**
   switch for the Hypercube Instancer keeps the 3D scene's geometry or imported
   model visible alongside the instances. Transform (rotation, spin, scale,

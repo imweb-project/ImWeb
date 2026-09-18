@@ -17,6 +17,7 @@ import { STLLoader }  from 'three/addons/loaders/STLLoader.js';
 import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { GeometryFactory, GEOMETRY_NAMES } from './GeometryFactory.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 export class SceneManager {
   constructor(renderer, width, height) {
@@ -1298,6 +1299,9 @@ export class SceneManager {
       p.get('scene3d.light.dirY').value,
       p.get('scene3d.light.dirZ').value
     );
+    // Shape first: a Model rebuild replaces the instancer's mesh, and the
+    // adoption check that follows must see the new one this frame.
+    this._syncModelInstanceShape();
     this._syncInstancerAdoption(!!p.get('hypercube.inst.showGeo')?.value);
 
     // Instancer texture source — OPT_SOURCES, so 0 is None and value-1 is a
@@ -1440,6 +1444,72 @@ export class SceneManager {
     this._faceMaskCopy.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+  }
+
+  /**
+   * Give the instancer's 'Model' shape the imported model — recomputed only
+   * when the model's root object changes (identity), so a frame pays nothing.
+   * A pending import (setImportPending) names a model but has no mesh; the
+   * loaders mark a real one with _geoKey '__imported__'.
+   */
+  _syncModelInstanceShape() {
+    const hi = this._hypercube?._hInstancer;
+    if (!hi) return;
+    const root = this._geoKey === '__imported__'
+      ? (this._adoptedMesh ? this._ownMesh : this.mesh)
+      : null;
+    if (root === this._instModelRoot) return;
+    this._instModelRoot = root;
+    hi.setModelGeometry(root ? this._mergedModelGeometry(root) : null);
+  }
+
+  /**
+   * One BufferGeometry from every mesh under `root`, in root space, centred
+   * and scaled to size 1 like the built-in instance shapes. Only position,
+   * normal and uv survive, as plain Float32 — mergeGeometries refuses parts
+   * whose attribute sets or array types differ, and quantised (meshopt) or
+   * normalised GLTF attributes are exactly that.
+   */
+  _mergedModelGeometry(root) {
+    root.updateMatrixWorld(true);
+    const toRoot = new THREE.Matrix4().copy(root.matrixWorld).invert();
+    const f32 = (attr, size) => {
+      const out = new Float32Array(attr.count * size);
+      for (let i = 0; i < attr.count; i++) for (let k = 0; k < size; k++) out[i * size + k] = attr.getComponent(i, k);
+      return new THREE.BufferAttribute(out, size);
+    };
+    // Indices are KEPT: de-indexing the bundled Harabara model took it from
+    // 179k to 769k vertices, and the instancer multiplies that by up to 4096.
+    // mergeGeometries needs all parts indexed or none, so unindexed parts get
+    // a trivial 0..n index.
+    const parts = [];
+    root.traverse(c => {
+      if (!c.isMesh || !c.geometry?.attributes?.position) return;
+      const src = c.geometry;
+      const n = src.attributes.position.count;
+      const g = new THREE.BufferGeometry();
+      if (src.index) g.setIndex(Array.from(src.index.array));
+      else g.setIndex(Array.from({ length: n }, (_, i) => i));
+      g.setAttribute('position', f32(src.attributes.position, 3));
+      if (src.attributes.normal) g.setAttribute('normal', f32(src.attributes.normal, 3));
+      g.setAttribute('uv', src.attributes.uv ? f32(src.attributes.uv, 2)
+        : new THREE.BufferAttribute(new Float32Array(src.attributes.position.count * 2), 2));
+      g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(toRoot, c.matrixWorld));
+      if (!g.attributes.normal) g.computeVertexNormals();
+      parts.push(g);
+    });
+    if (!parts.length) return null;
+    const merged = mergeGeometries(parts, false);
+    parts.forEach(g => g.dispose());
+    if (!merged) return null;
+    merged.computeBoundingBox();
+    const size = merged.boundingBox.getSize(new THREE.Vector3());
+    const c    = merged.boundingBox.getCenter(new THREE.Vector3());
+    merged.translate(-c.x, -c.y, -c.z);
+    const m = Math.max(size.x, size.y, size.z);
+    if (m > 0) merged.scale(1 / m, 1 / m, 1 / m);
+    merged.computeBoundingSphere();
+    return merged;
   }
 
   /**
