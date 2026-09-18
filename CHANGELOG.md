@@ -28,6 +28,18 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   names the same source.
 
 ### Fixed
+- **The Hypercube costs a fraction of what it did per frame.** At the default
+  4D a frame took ~4 ms of CPU and uploaded 4.2 MB to the GPU to draw 24
+  faces. It now takes 0.18 ms and uploads 1.5 KB. At 8D it went from 4.7 ms
+  to 0.9 ms. Nothing drawn changes: the output was checked byte-for-byte
+  against the old code through morphs up and down.
+- **Orthographic stays orthographic.** Moving W distance while in
+  orthographic quietly switched the projection back to perspective, though Proj
+  still said orthographic. Choosing orthographic twice made perspective stay
+  flat afterwards. W distance and the projection no longer share one value.
+- **The Hypercube panel no longer piles up hidden listeners.** Every dimension
+  change left the old rotation rows' mouse listeners on the page for good
+  (24 → 48 in four changes). They now exist only while you drag.
 - **Face opacity now works in Multiply and Subtract.** Both ignored it — a
   face multiplied or subtracted at full strength whatever the slider said.
   Opacity now fades them to no effect at 0. Multiply also no longer punches
