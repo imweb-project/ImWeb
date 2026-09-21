@@ -25,7 +25,7 @@ export const MAX_STATES = 32;
 // ── IndexedDB storage ─────────────────────────────────────────────────────────
 
 const DB_NAME    = 'imweb';
-const DB_VERSION = 2;
+const DB_VERSION = 3;   // 3 adds the 'stills' store (see StillsAutosave)
 
 export function openDB() {
   return new Promise((resolve, reject) => {
@@ -38,6 +38,9 @@ export function openDB() {
       }
       if (!db.objectStoreNames.contains('tables')) db.createObjectStore('tables', { keyPath: 'name' });
       if (!db.objectStoreNames.contains('assets')) db.createObjectStore('assets', { keyPath: 'hash' });
+      // Additive, like the two above: an existing DB at version 2 gains this
+      // store and keeps its banks, tables and assets untouched.
+      if (!db.objectStoreNames.contains('stills')) db.createObjectStore('stills', { keyPath: 'id' });
     };
     req.onsuccess = e => resolve(e.target.result);
     req.onerror   = e => reject(e.target.error);

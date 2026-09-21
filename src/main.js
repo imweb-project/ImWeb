@@ -69,6 +69,7 @@ import { MovieInput, MAX_CLIPS } from "./inputs/MovieInput.js";
 import { MovieCues, CUE_SLOTS } from "./inputs/MovieCues.js";
 import { CueBank } from "./core/CueBank.js";
 import { MappingAutosave } from "./state/MappingAutosave.js";
+import { StillsAutosave } from "./state/StillsAutosave.js";
 
 /**
  * How many catalogue entries to rack into Deck A at boot.
@@ -3055,6 +3056,38 @@ async function main() {
     mappingAutosave.start();
   });
   if (import.meta.env.DEV) window.__mappings = mappingAutosave;
+
+  /**
+   * Protected stills across a reload. ProjectFile already persists them, but
+   * only into an exported project — a reload is not an export, so a still
+   * captured mid-session survived only as long as the tab.
+   *
+   * Chained to bootProject for the same reason the mappings are, and restored
+   * AFTER it deliberately: the boot project carries the stills saved with that
+   * project, the autosave carries what you had a moment ago, and "a moment
+   * ago" is what a reload should give you back.
+   */
+  const stillsAutosave = new StillsAutosave(stillsBuffer, {
+    onStatus: (msg) => {
+      // Same bounded-retry paint as the mappings above: restore() runs long
+      // before the Project panel exists, so resolve the element at call time.
+      const paint = () => {
+        const el = document.getElementById('project-file-status');
+        if (!el) return false;
+        el.textContent = msg;
+        el.style.color = 'var(--text-2)';
+        return true;
+      };
+      if (paint()) return;
+      let tries = 0;
+      const t = setInterval(() => { if (paint() || ++tries > 40) clearInterval(t); }, 100);
+    },
+  });
+  bootProject.then(async () => {
+    await stillsAutosave.restore();
+    stillsAutosave.start();
+  });
+  if (import.meta.env.DEV) window.__stillsAutosave = stillsAutosave;
 
   // ── MIDI Map Mode ─────────────────────────────────────────────────────────
   // Click the MIDI indicator to latch learn on. Then: click a row, move the

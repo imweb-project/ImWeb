@@ -28,6 +28,9 @@ export class StillsBuffer {
     this._hasFrame         = [];
     this._protected        = new Set(); // slot indices protected from auto-capture overwrite
     this.thumbnailCanvases = [];
+    // Bumped whenever the PIXELS of a slot change. StillsAutosave diffs on this
+    // instead of re-encoding every slot to JPEG just to discover nothing moved.
+    this.revision          = 0;
     this.writeIndex        = 0;
     this.readIndex         = 0;
     this.read2Index        = 0; // for fs2 / frame blend
@@ -127,6 +130,7 @@ export class StillsBuffer {
     this.renderer.render(this._scene, this._camera);
 
     this._hasFrame[this.writeIndex] = true;
+    this.revision++;
 
     // Generate thumbnail (cheap: render to 80×45, then readback)
     this._updateThumbnail(this.writeIndex);
@@ -199,6 +203,7 @@ export class StillsBuffer {
     this.renderer.setRenderTarget(this.frames[idx]);
     this.renderer.render(this._scene, this._camera);
     this._hasFrame[idx] = true;
+    this.revision++;
     this._updateThumbnail(idx);
     this.renderer.setRenderTarget(null);
     return idx;
@@ -353,6 +358,7 @@ export class StillsBuffer {
           this.renderer.setRenderTarget(this.frames[idx]);
           this.renderer.render(this._scene, this._camera);
           this._hasFrame[idx] = true;
+          this.revision++;
           this._updateThumbnail(idx);      // reads _mat, still bound to tex
           this.renderer.setRenderTarget(prev);
           tex.dispose();
