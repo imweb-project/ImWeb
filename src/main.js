@@ -585,6 +585,11 @@ async function main() {
   teletextSource.setMovieInput(movieInput);
   const warpMaps = buildWarpMaps(); // 8 procedural warp map textures (map1–map8)
   const warpEditor = new WarpMapEditor(); // interactive editor → warpMaps[8] (Custom)
+  // DEV-only handle, same convention as __decks/__pipeline/__presets. The warp
+  // map is otherwise unreadable from a console, which makes the editor-vs-canvas
+  // axis conventions arguable-about but not MEASURABLE — and this bug has
+  // already survived two rounds of arguing about it.
+  if (import.meta.env.DEV) window.__warp = warpEditor;
   // Previous displace.warpDrawX/warpDrawY position, in 0..1 UV — the param-driven brush
   // derives its direction from the delta. null until the first tick so a fresh
   // load never brushes from a phantom origin.
@@ -9730,6 +9735,14 @@ void main() {
         overlayCtx.lineWidth = 1;
         const cols = warpEditor.cols,
           rows = warpEditor.rows;
+        // Same scale the shader uses (Pipeline: uStrength = warpamt/100) and
+        // the same one the mini editor applies. An overlay drawn over the video
+        // at full amplitude while the video renders half of it is a lie about
+        // the thing it is superimposed on.
+        // warpamt/100 AND the shader's constant 0.3 gain (WARP in
+        // src/shaders/index.js: displacement = (rg-0.5) * uStrength * 0.3).
+        // Missing the 0.3 drew this overlay at 3.33x the real displacement.
+        const wamt = ((ps.get("displace.warpamt")?.value ?? 100) / 100) * 0.3;
         // Y is flipped (1 - v) to match the map: DataTexture defaults to
         // flipY:false, so control row 0 renders at the BOTTOM of the output.
         // Drawn y-down, this overlay was an upside-down picture of the warp it
@@ -9743,7 +9756,7 @@ void main() {
             const ni = i / (cols - 1),
               nj = j / (rows - 1);
             const { dx, dy } = warpEditor.dispAt(ni, nj);
-            overlayCtx.lineTo((ni + dx) * w, (1 - (nj + dy)) * h);
+            overlayCtx.lineTo((ni + dx * wamt) * w, (1 - (nj + dy * wamt)) * h);
           }
           overlayCtx.stroke();
         }
@@ -9754,7 +9767,7 @@ void main() {
             const ni = i / (cols - 1),
               nj = j / (rows - 1);
             const { dx, dy } = warpEditor.dispAt(ni, nj);
-            overlayCtx.lineTo((ni + dx) * w, (1 - (nj + dy)) * h);
+            overlayCtx.lineTo((ni + dx * wamt) * w, (1 - (nj + dy * wamt)) * h);
           }
           overlayCtx.stroke();
         }

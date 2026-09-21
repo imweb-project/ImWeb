@@ -3246,6 +3246,14 @@ export function buildWarpEditor(editor, ps, contextMenu) {
   // overlay, which draws unscaled: two views of one grid must not use two
   // scales, or neither can be trusted as a preview.
   const DISP_SCALE = 1.0;
+  // The shader's own displacement gain, from WARP in src/shaders/index.js:
+  //   displacement = (warp.rg - 0.5) * uStrength * 0.3
+  // uStrength is warpamt/100, and 0.3 is a second, constant factor. Applying
+  // only uStrength left both previews drawing 3.33x the displacement the video
+  // renders — which reads as "the dots move way more than the picture does".
+  // If that literal changes in the shader, it must change here and in the
+  // main-canvas overlay in the same commit.
+  const WARP_SHADER_GAIN = 0.3;
 
   // ── Canvas ────────────────────────────────────────────────────────────────
   const canvas = document.createElement('canvas');
@@ -3458,9 +3466,21 @@ export function buildWarpEditor(editor, ps, contextMenu) {
     // showed the mirror image of what the video actually did. This is a
     // display fix — dispAt and the stored arrays are unchanged, and the dot
     // colouring nearby uses magnitude only, so it is unaffected.
+    // Scaled by WarpAmt, because the SHADER is: Pipeline passes
+    // uStrength = displace.warpamt/100, so at 50% the video shows half of what
+    // the map holds. Drawing the raw map made this preview claim a deformation
+    // twice the one on screen — the same class of lie DISP_SCALE=2.5 was, and
+    // the same rule applies: a preview that does not apply what the renderer
+    // applies cannot be trusted as a preview. The main-canvas grid overlay
+    // scales identically; the two views must never use two scales.
+    const amt = ((ps.get('displace.warpamt')?.value ?? 100) / 100) * WARP_SHADER_GAIN;
+    // Node (ni,nj) is in map space = vUv, y-up. The image appears to move by
+    // -(dx,dy), so its displaced position is (ni - dx, nj - dy); converting
+    // vUv.y to a y-down canvas gives the 1 - (...) on y. Only y was wrong here:
+    // x was already negated correctly.
     return {
-      x: (ni - dx * DISP_SCALE) * CW,
-      y: (nj + dy * DISP_SCALE) * CH,
+      x: (ni - dx * DISP_SCALE * amt) * CW,
+      y: (1 - (nj - dy * DISP_SCALE * amt)) * CH,
     };
   }
 
@@ -3468,6 +3488,10 @@ export function buildWarpEditor(editor, ps, contextMenu) {
   // main-canvas drags, temporal decay, slot crossfades — not just local
   // interaction with this little canvas.
   editor.onRebuild = () => drawMesh();
+  // onRebuild covers changes to the MAP. WarpAmt changes what the shader does
+  // with an unchanged map, so without this the preview would only catch up on
+  // the next stroke and the scaling above would read as not working.
+  ps.get('displace.warpamt')?.onChange(() => drawMesh());
 
   function drawMesh() {
     ctx.clearRect(0, 0, CW, CH);
@@ -3537,7 +3561,12 @@ export function buildWarpEditor(editor, ps, contextMenu) {
     const rect = canvas.getBoundingClientRect();
     return {
       nx: (e.clientX - rect.left) / rect.width,
-      ny: (e.clientY - rect.top)  / rect.height,
+      // y-UP, to match the map. Grid row j is stored at nj = j/(rows-1), the
+      // packing writes texel row py at ny = (py+0.5)/TEX_SIZE, and the shader
+      // reads texture2D(uWarpMap, vUv) with no flip — so this ny IS vUv.y, and
+      // vUv.y points up. Handing brush() a raw y-down pointer put every stroke
+      // in the vertically mirrored place.
+      ny: 1 - (e.clientY - rect.top) / rect.height,
       cx: e.clientX - rect.left,
       cy: e.clientY - rect.top,
     };
@@ -3588,7 +3617,13 @@ export function buildWarpEditor(editor, ps, contextMenu) {
           // Byte-for-byte the main canvas's formula now (_warpStroke): the same
           // gain, the same per-event ceiling, the same amt multiplier.
           const s = Math.min(mag * 10, 0.4) * _amt();
-          editor.brush(nx, ny, _radius(), s, -ux * sign, uy * sign);
+          // BOTH negated, exactly as main.js/_warpStroke does it. The shader
+          // samples vUv + displacement, so apparent motion is -(dx,dy); to push
+          // the image along (ux,uy) the map stores (-ux,-uy). uy was previously
+          // left positive, which was CORRECT while ny above was y-down — the two
+          // errors cancelled in direction and showed up only in placement.
+          // Flipping either one alone moves the mirror instead of removing it.
+          editor.brush(nx, ny, _radius(), s, -ux * sign, -uy * sign);
         }
       } else if (activeTool === 'smooth') {
         // 0.075 / 0.15 are the old 0.015×5 and 0.015×10 with the unity point
