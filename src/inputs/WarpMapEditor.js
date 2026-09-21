@@ -15,6 +15,44 @@
 import * as THREE from 'three';
 
 const TEX_SIZE = 128;  // output displacement texture resolution
+
+// Brush accumulation limits. LIMIT is a hard requirement of the RGBA8 packing
+// ((0.5 + d) * 255 must stay inside a byte); KNEE is where a push stops being
+// linear and starts yielding.
+//
+// A plain Math.min(LIMIT, ...) is a WALL: once a region saturates, pushing does
+// nothing at all, which reads as the tool being broken rather than as a limit.
+//
+// The attenuation is applied to the INCREMENT, not to the accumulated total.
+// Saturating the total — d = LIMIT * tanh(d / LIMIT), or a knee'd tanh — looks
+// right and is not: it has a genuine FIXED POINT below the limit, where the
+// compression exactly cancels the step, so it still stalls dead. Measured, a
+// knee'd tanh froze at 0.4656 for a stroke of 0.0488, bit-identical thereafter
+// (0.35 + 0.14*tanh((0.4656+0.0488-0.35)/0.14) = 0.4656). Scaling the step by
+// the REMAINING ROOM instead gives exponential approach: strictly increasing
+// while |d| < LIMIT, never reaching it, no fixed point short of the limit.
+//
+// Only OUTWARD motion is attenuated — pulling a saturated region back has to
+// stay responsive, or the region becomes impossible to undo by hand.
+//
+// This changes how the ceiling FEELS, not where it is. Real extra travel needs
+// the stored range widened (encode dx/K, decode * K, and rescale WarpMaps'
+// makeMap by the same K in the same commit).
+const CLAMP_LIMIT = 0.49;
+const SOFT_KNEE   = 0.35;
+
+function accumulate(cur, delta) {
+  const next = cur + delta;
+  const a    = Math.abs(cur);
+  // Identity below the knee, and for any step that reduces the magnitude.
+  if (a < SOFT_KNEE || Math.abs(next) <= a) {
+    return Math.max(-CLAMP_LIMIT, Math.min(CLAMP_LIMIT, next));
+  }
+  const room   = CLAMP_LIMIT - SOFT_KNEE;
+  const factor = Math.max(0, (CLAMP_LIMIT - a) / room); // 1 at the knee, 0 at the limit
+  const out    = cur + delta * factor;
+  return Math.max(-CLAMP_LIMIT, Math.min(CLAMP_LIMIT, out));
+}
 const COLS     = 24;   // control point columns
 const ROWS     = 18;   // control point rows
 const STORAGE_KEY = 'imweb-warpmaps';
@@ -65,8 +103,8 @@ export class WarpMapEditor {
         const w = Math.exp(-dist2 * invR2); 
         
         const idx = j * this.cols + i;
-        this.dx[idx] = Math.max(-0.49, Math.min(0.49, this.dx[idx] + ddx * strength * w));
-        this.dy[idx] = Math.max(-0.49, Math.min(0.49, this.dy[idx] + ddy * strength * w));
+        this.dx[idx] = accumulate(this.dx[idx], ddx * strength * w);
+        this.dy[idx] = accumulate(this.dy[idx], ddy * strength * w);
 
         // Liquid Auto-Smooth: small Laplacian-like relaxation during brush to keep mesh clean
         if (i > 0 && i < this.cols - 1 && j > 0 && j < this.rows - 1) {

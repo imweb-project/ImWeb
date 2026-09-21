@@ -2018,7 +2018,16 @@ export function registerCoreParameters(ps) {
     // Raising the ceiling rather than the shader's 0.3 is what keeps every
     // saved map, preset and Display State rendering exactly as before: values
     // in the old range are untouched, there is simply more range above them.
-    max: 200,
+    //
+    // 400 since 2026-09-21, same reasoning again: 200 still ceilinged a fully
+    // saturated map at 0.49 * 2.0 * 0.3 ≈ 29% of the frame, which drawing
+    // straight on the canvas reaches quickly — the ±0.49 clamp is a limit of
+    // the RGBA8 packing ((0.5+dx)*255), not a creative choice, so the headroom
+    // has to come from the multiplier. 400 puts a saturated map at ~59%.
+    // NOTE for controllers: a MIDI/OSC fader maps 0..127 across min..max, so
+    // raising the ceiling changes what a given fader POSITION means for anyone
+    // who has warpamt mapped. Stored values, states and maps are unaffected.
+    max: 400,
     value: 50,
     unit: "%",
   });
