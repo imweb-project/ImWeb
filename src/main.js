@@ -2536,7 +2536,7 @@ async function main() {
   html,body{width:100%;height:100%;background:#000;overflow:hidden;touch-action:manipulation}
   canvas{display:block;position:absolute;top:0;left:0;transform-origin:0 0}
   #ho{position:fixed;inset:0;pointer-events:none;display:none;transition:opacity 0.4s}
-  .h{position:absolute;width:64px;height:64px;margin:-32px 0 0 -32px;border:3px solid #c8a020;border-radius:50%;background:rgba(0,0,0,0.45);cursor:crosshair;pointer-events:all;touch-action:none;box-shadow:0 0 12px rgba(0,0,0,0.9);transition:border-color .1s,background .1s}
+  .h{position:absolute;width:54px;height:54px;margin:-27px 0 0 -27px;border:3px solid #c8a020;border-radius:50%;background:rgba(0,0,0,0.45);cursor:crosshair;pointer-events:all;touch-action:none;box-shadow:0 0 12px rgba(0,0,0,0.9);transition:border-color .1s,background .1s}
   .h:active{border-color:#fff;background:rgba(255,255,255,0.15)}
   .h.sel{border-color:#fff;box-shadow:0 0 0 3px #c8a020,0 0 16px rgba(0,0,0,0.9)}
   #toolbar{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);display:none;gap:10px;align-items:center;pointer-events:all;transition:opacity 0.4s}

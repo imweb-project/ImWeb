@@ -312,6 +312,13 @@ export function buildMappingPanels(ps, contextMenu) {
     // Excluded: params that are group 'global' only to dodge Display State
     // capture, and that already have a home in their own feature panel. They
     // are 'global' for persistence reasons, not because they belong here.
+    // The four corner positions. #projmap-params has been in index.html all
+    // along with nothing building into it, so the only way to set a corner was
+    // to drag its handle in the output window — no typed values, no readout of
+    // where a corner actually is, and no way to map one to a controller.
+    // projmap.active is left out: it already has its own toolbar button
+    // (#btn-projmap) right beside this container.
+    'projmap-params':      ps.getGroup('projmap').filter(p => p.id !== 'projmap.active'),
     'global-params':       ps.getGroup('global').filter(p =>
       p.id !== 'glsl.preset' && p.id !== 'displace.warpSlot' &&
       // The MIDI mapping-page controls. 'global' so Display States cannot
