@@ -1499,7 +1499,7 @@ async function main() {
     }
   }
 
-  buildWarpEditor(warpEditor, ps, contextMenu);
+  buildWarpEditor(warpEditor, ps, contextMenu, warpMaps);
   const { refreshMovieLibrary } = buildMovieLibrary(movieLibrary, loadEntryToDeck);
   const { refreshClipGrid, setRecording } = buildClipLibrary(
     ps,
@@ -9743,6 +9743,17 @@ void main() {
         // src/shaders/index.js: displacement = (rg-0.5) * uStrength * 0.3).
         // Missing the 0.3 drew this overlay at 3.33x the real displacement.
         const wamt = ((ps.get("displace.warpamt")?.value ?? 100) / 100) * 0.3;
+        // ONE formula with the mini editor's warpedPos (UI.js) — two views of
+        // one grid must not use two conventions. A node sits at map coord
+        // (ni,nj) = vUv, y-up; the shader samples vUv + displacement, so the
+        // picture appears to move by -(dx,dy); converting vUv.y to this y-down
+        // canvas gives the 1 - (...). BOTH terms are negated: this overlay used
+        // +dx and +dy, so it bulged opposite to the video it is drawn on top of
+        // while looking plausible, and it disagreed with the mini editor on x
+        // with each file's comment claiming the other was the mirrored one.
+        // The mini editor is the verified reference (round-tripped pointer →
+        // map → preview, and confirmed against a test pattern on screen).
+        //
         // Y is flipped (1 - v) to match the map: DataTexture defaults to
         // flipY:false, so control row 0 renders at the BOTTOM of the output.
         // Drawn y-down, this overlay was an upside-down picture of the warp it
@@ -9756,7 +9767,7 @@ void main() {
             const ni = i / (cols - 1),
               nj = j / (rows - 1);
             const { dx, dy } = warpEditor.dispAt(ni, nj);
-            overlayCtx.lineTo((ni + dx * wamt) * w, (1 - (nj + dy * wamt)) * h);
+            overlayCtx.lineTo((ni - dx * wamt) * w, (1 - (nj - dy * wamt)) * h);
           }
           overlayCtx.stroke();
         }
@@ -9767,7 +9778,7 @@ void main() {
             const ni = i / (cols - 1),
               nj = j / (rows - 1);
             const { dx, dy } = warpEditor.dispAt(ni, nj);
-            overlayCtx.lineTo((ni + dx * wamt) * w, (1 - (nj + dy * wamt)) * h);
+            overlayCtx.lineTo((ni - dx * wamt) * w, (1 - (nj - dy * wamt)) * h);
           }
           overlayCtx.stroke();
         }

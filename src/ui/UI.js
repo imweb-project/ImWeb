@@ -3228,7 +3228,7 @@ export class DebugOverlay {
  * @param {WarpMapEditor} editor
  * @param {ParameterSystem} ps
  */
-export function buildWarpEditor(editor, ps, contextMenu) {
+export function buildWarpEditor(editor, ps, contextMenu, warpMaps = null) {
   const container = document.getElementById('warp-editor-container');
   if (!container) return;
 
@@ -3458,8 +3458,42 @@ export function buildWarpEditor(editor, ps, contextMenu) {
 
   // ── Canvas drawing ────────────────────────────────────────────────────────
 
+  // WARP_CUSTOM_IDX in main.js. displace.warp: 0 = off, 1..8 = the procedural
+  // DataTextures from buildWarpMaps(), 9 = the editor's own Custom map.
+  const CUSTOM_IDX = 9;
+
+  /**
+   * Sample whatever map is ACTUALLY rendering, not always Custom.
+   *
+   * The editor only ever owns warpMaps[8]; selecting Turb from the dropdown
+   * renders warpMaps[6] while this canvas faithfully drew an empty Custom map,
+   * so the preview answered a question nobody asked. The procedural maps are
+   * 256x256 DataTextures written as (0.5 + d) * 255 with row y at ny =
+   * y/(SIZE-1) — the same axis convention as the editor grid — so the same
+   * warpedPos formula reads them unchanged.
+   */
+  function sampleActive(ni, nj) {
+    const mode = Math.round(ps.get('displace.warp')?.value ?? 0);
+    if (mode === CUSTOM_IDX || !warpMaps) return editor.dispAt(ni, nj);
+    if (mode <= 0) return { dx: 0, dy: 0 };
+    const tex = warpMaps[mode - 1];
+    const img = tex?.image;
+    if (!img?.data) return { dx: 0, dy: 0 };
+    const N = img.width;
+    const px = Math.max(0, Math.min(N - 1, Math.round(ni * (N - 1))));
+    const py = Math.max(0, Math.min(N - 1, Math.round(nj * (N - 1))));
+    const off = (py * N + px) * 4;
+    return { dx: img.data[off] / 255 - 0.5, dy: img.data[off + 1] / 255 - 0.5 };
+  }
+
+  /** True when the active map is not the editable Custom one. */
+  function isReadOnly() {
+    const mode = Math.round(ps.get('displace.warp')?.value ?? 0);
+    return !!warpMaps && mode !== CUSTOM_IDX && mode > 0;
+  }
+
   function warpedPos(ni, nj) {
-    const { dx, dy } = editor.dispAt(ni, nj);
+    const { dx, dy } = sampleActive(ni, nj);
     // Negated for the same reason as the brush above: the shader samples at
     // vUv + displacement, so a positive map value pulls content from further
     // along and the picture moves the opposite way. Drawing the mesh at +dx
@@ -3492,6 +3526,9 @@ export function buildWarpEditor(editor, ps, contextMenu) {
   // with an unchanged map, so without this the preview would only catch up on
   // the next stroke and the scaling above would read as not working.
   ps.get('displace.warpamt')?.onChange(() => drawMesh());
+  // The active map can change without the map DATA changing, so onRebuild does
+  // not cover it — without this the preview keeps showing the previous mode.
+  ps.get('displace.warp')?.onChange(() => drawMesh());
 
   function drawMesh() {
     ctx.clearRect(0, 0, CW, CH);
@@ -3526,7 +3563,7 @@ export function buildWarpEditor(editor, ps, contextMenu) {
     // Control point dots at every intersection
     for (let j = 0; j < r; j++) {
       for (let i = 0; i < c; i++) {
-        const { dx, dy } = editor.dispAt(i / (c-1), j / (r-1));
+        const { dx, dy } = sampleActive(i / (c-1), j / (r-1));
         const mag = Math.sqrt(dx*dx + dy*dy) * 15; // normalize for color
         const { x, y } = warpedPos(i / (c-1), j / (r-1));
         
@@ -3538,6 +3575,17 @@ export function buildWarpEditor(editor, ps, contextMenu) {
         ctx.arc(x, y, 1.5, 0, Math.PI * 2);
         ctx.fill();
       }
+    }
+
+    // Say which map this is when it is not the editable one, so a flat or
+    // unfamiliar field reads as "you are looking at Turb" rather than "the
+    // editor is broken" — which is exactly how it was reported.
+    if (isReadOnly()) {
+      const p = ps.get('displace.warp');
+      const name = p?.options?.[Math.round(p.value)] ?? '';
+      ctx.font = '10px monospace';
+      ctx.fillStyle = 'rgba(232,200,64,0.85)';
+      ctx.fillText(`${name} — read only (draw to switch to Custom)`, 6, 13);
     }
 
     // Cursor circle
