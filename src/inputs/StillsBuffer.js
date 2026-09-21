@@ -283,6 +283,87 @@ export class StillsBuffer {
    * Render the current _mat texture to the small thumb target, read back pixels,
    * flip Y (GL origin is bottom-left), and paint into thumbnailCanvases[idx].
    */
+  // ── Persistence of full frames ────────────────────────────────────────────
+
+  /**
+   * Read one slot back as a JPEG data URL, or null if the slot is empty.
+   *
+   * Only PROTECTED slots are saved by ProjectFile, which is what keeps this
+   * bounded: the >100MB worry in that file is about 32 full-res PNG frames,
+   * not about the handful a performer deliberately pins. Capped width plus
+   * JPEG keeps a pinned frame in the low hundreds of KB.
+   *
+   * Row order follows _updateThumbnail exactly — GL y=0 is the bottom, canvas
+   * y=0 is the top — and the import path relies on THREE's default flipY:true
+   * for image textures to undo it, so the round trip is identity. Do not
+   * "simplify" one side of that pair without the other.
+   */
+  exportFrame(idx, maxW = 1280, quality = 0.85) {
+    if (!this._hasFrame[idx] || !this.frames[idx]) return null;
+
+    const aspect = this.height / this.width;
+    const w = Math.min(maxW, this.width);
+    const h = Math.max(1, Math.round(w * aspect));
+
+    if (!this._exportTarget || this._exportTarget.width !== w || this._exportTarget.height !== h) {
+      this._exportTarget?.dispose();
+      this._exportTarget = this._makeTarget(w, h);
+    }
+
+    const prev = this.renderer.getRenderTarget();
+    this._mat.uniforms.uTexture.value = this.frames[idx].texture;
+    this.renderer.setRenderTarget(this._exportTarget);
+    this.renderer.render(this._scene, this._camera);
+
+    const pixels = new Uint8Array(w * h * 4);
+    this.renderer.readRenderTargetPixels(this._exportTarget, 0, 0, w, h, pixels);
+    this.renderer.setRenderTarget(prev);
+
+    const cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    const ctx = cv.getContext('2d');
+    const img = ctx.createImageData(w, h);
+    for (let y = 0; y < h; y++) {
+      const srcRow = (h - 1 - y) * w * 4;
+      img.data.set(pixels.subarray(srcRow, srcRow + w * 4), y * w * 4);
+    }
+    ctx.putImageData(img, 0, 0);
+    return cv.toDataURL('image/jpeg', quality);
+  }
+
+  /**
+   * Restore one slot from a data URL produced by exportFrame.
+   * Resolves false when the slot is out of range or the image fails to decode —
+   * a broken frame must leave _hasFrame[idx] FALSE rather than claim a still
+   * that is not there, which is the bug this whole pair exists to fix.
+   */
+  importFrame(idx, dataURL) {
+    return new Promise(resolve => {
+      if (idx >= this.frameCount || !dataURL || !this.frames[idx]) return resolve(false);
+      const image = new Image();
+      image.onload = () => {
+        try {
+          const tex = new THREE.Texture(image);
+          tex.needsUpdate = true;          // flipY defaults true → undoes the export flip
+          tex.minFilter = THREE.LinearFilter;
+          tex.magFilter = THREE.LinearFilter;
+          tex.generateMipmaps = false;
+          const prev = this.renderer.getRenderTarget();
+          this._mat.uniforms.uTexture.value = tex;
+          this.renderer.setRenderTarget(this.frames[idx]);
+          this.renderer.render(this._scene, this._camera);
+          this._hasFrame[idx] = true;
+          this._updateThumbnail(idx);      // reads _mat, still bound to tex
+          this.renderer.setRenderTarget(prev);
+          tex.dispose();
+          resolve(true);
+        } catch { resolve(false); }
+      };
+      image.onerror = () => resolve(false);
+      image.src = dataURL;
+    });
+  }
+
   _updateThumbnail(idx) {
     this.renderer.setRenderTarget(this._thumbTarget);
     this.renderer.render(this._scene, this._camera);

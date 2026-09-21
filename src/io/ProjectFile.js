@@ -102,11 +102,20 @@ export class ProjectFile {
     let stillsMetadata = null;
     if (this.extras.stillsBuffer) {
       const sb = this.extras.stillsBuffer;
+      // PROTECTED slots are saved at full(ish) res; the rest keep thumbnail-only
+      // treatment. Protection is opt-in, so this stays bounded — the >100MB
+      // concern above is about saving all 32 slots, not the few a performer pins.
+      const frames = {};
+      Array.from(sb._protected).forEach(idx => {
+        const url = sb.exportFrame?.(idx);
+        if (url) frames[idx] = url;
+      });
       stillsMetadata = {
         frameCount: sb.frameCount,
         protected:  Array.from(sb._protected),
         thumbs:     sb.thumbnailCanvases.map(c => c.toDataURL('image/jpeg', 0.6)),
         hasFrame:   [...sb._hasFrame],
+        frames,
       };
     }
 
@@ -318,8 +327,19 @@ export class ProjectFile {
           }));
         });
       }
-      if (data.stills.hasFrame) {
-        sb._hasFrame = [...data.stills.hasFrame];
+      // _hasFrame is a CLAIM that frames[idx].texture holds an image, and
+      // StillsBuffer.texture acts on it. Restoring it wholesale from the file
+      // made the buffer vouch for full-res frames that were never saved: the
+      // thumbnail strip showed the still, the render showed nothing. Only the
+      // slots whose pixels actually came back may be marked present.
+      sb._hasFrame = sb._hasFrame.map(() => false);
+      if (data.stills.frames) {
+        Object.keys(data.stills.frames).forEach(k => {
+          stillsPromises.push(
+            sb.importFrame(Number(k), data.stills.frames[k])
+              .then(ok => { if (!ok) console.warn(`[Project] still slot ${k} failed to restore`); })
+          );
+        });
       }
     }
 
