@@ -7456,6 +7456,23 @@ export function registerCoreParameters(ps) {
     type: PARAM_TYPE.TOGGLE,
     value: 0,
   });
+  // Corner-pin geometry is a calibration to the PHYSICAL surface, not part of a
+  // look. Recalling a Display State saved at another site — or morphing between
+  // two — would slide the image off the object being projected onto, which on an
+  // irregular surface cannot be re-found by eye mid-performance. Locked, Display
+  // State recall and morph skip projmap.*; .imweb project files still carry the
+  // corners, because ProjectFile restores them directly (see Preset._stripLocked).
+  //
+  // Group 'global' so the lock itself is never captured: a state must not be able
+  // to switch it off. Default ON — losing alignment is unrecoverable in the field,
+  // while an uncaptured corner set is merely surprising.
+  ps.register({
+    id: "projmap.lock",
+    label: "Lock Mapping",
+    group: "global",
+    type: PARAM_TYPE.TOGGLE,
+    value: 1,
+  });
   ps.register({
     id: "projmap.tl_x",
     label: "TL X",

@@ -917,6 +917,11 @@ async function main() {
   // ── 6. Preset manager + Table manager ────────────────────────────────────
 
   const presetMgr = new PresetManager(ps, ctrl, pipeline);
+  // DEV-only handle, same convention as __decks/__pipeline/__projectFile above.
+  // Display-State recall is otherwise unreachable from a console, which means
+  // the projmap lock could only be checked by reimplementing recallState —
+  // a test of the reimplementation, not of the code (LEARNED 2026-08-13).
+  if (import.meta.env.DEV) window.__presets = presetMgr;
 
   // Dimension MORPHS over Morph Time when a hand or a controller moves it, and
   // JUMPS when the patch is recalled (owner, 2026-09-18) — a Display State

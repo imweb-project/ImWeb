@@ -320,12 +320,12 @@ export class PresetManager extends EventTarget {
     if (ds?.values && fade && this.ps.get('global.morphspeed')?.value > 0) {
       // Start a morph animation instead of snapping
       this._morphFrom   = this.ps.captureState();
-      this._morphTo     = { ...ds.values };
+      this._morphTo     = this._stripLocked(ds.values);
       this._morphT      = 0;
       this._morphActive = true;
       this.ps.set('global.morph', 0);
     } else if (ds?.values) {
-      this.ps.restoreState(ds.values);
+      this.ps.restoreState(this._stripLocked(ds.values));
       this.ctrl.retriggerLFOs();
       // Send MIDI feedback to motorized faders
       this.ps.getAll().forEach(p => this.ctrl.sendParamFeedback(p));
@@ -399,6 +399,32 @@ export class PresetManager extends EventTarget {
     });
   }
 
+  /**
+   * Copy a values bag, dropping projmap.* while the mapping lock is on.
+   *
+   * Display States and .imweb project files both go through ps.captureState()
+   * and ps.restoreState(), so the group-'global' exclusion cannot separate
+   * them — corners must survive a project load and must NOT be touched by a
+   * state recall. The split is made HERE, in the Display-State path only:
+   * ProjectFile calls ps.restoreState directly and never comes through this.
+   *
+   * All four state-application paths route through this — recallState and
+   * activatePreset, each with a morph and a snap branch. A new one must too.
+   *
+   * Always returns a copy, because the morph paths relied on `{ ...ds.values }`
+   * to avoid aliasing the stored state.
+   */
+  _stripLocked(values) {
+    if (!values) return values;
+    const locked = !!this.ps.get('projmap.lock')?.value;
+    const out = {};
+    for (const k in values) {
+      if (locked && k.startsWith('projmap.')) continue;
+      out[k] = values[k];
+    }
+    return out;
+  }
+
   async saveCurrentState(stateIndex = null) {
     const p = this.current;
     if (!p) return;
@@ -462,7 +488,7 @@ export class PresetManager extends EventTarget {
 
       // Start morph — tickMorph lerps values; restoreState + cleanup happen on completion
       this._morphFrom   = fromValues;
-      this._morphTo     = { ...ds.values };
+      this._morphTo     = this._stripLocked(ds.values);
       this._morphT      = 0;
       this._morphActive = true;
       this.ps.set('global.morph', 0);
@@ -478,7 +504,7 @@ export class PresetManager extends EventTarget {
       };
     } else {
       // Snap immediately — restore values AFTER controller setup so this always wins.
-      this.ps.restoreState(ds.values);
+      this.ps.restoreState(this._stripLocked(ds.values));
 
       // Sync Fixed controller configs to the just-restored values so future
       // saves and re-assigns use the correct normalized value.
