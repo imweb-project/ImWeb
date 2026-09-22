@@ -72,7 +72,8 @@ check('projmap.lock defaults ON', lock?.value === 1,
 //                       and audit-projmap-curve §14.
 const VIEW_STATE = new Set(['projmap.lock', 'projmap.edit', 'projmap.grid',
                             'projmap.meshSlot', 'projmap.meshStore',
-                            'projmap.meshHandlesClear']);
+                            'projmap.meshHandlesClear',
+                            'projmap.meshAllHandles']);
 const corners = ps.getAll().filter(p => p.id.startsWith('projmap.') && !VIEW_STATE.has(p.id));
 check('projmap corner params exist', corners.length >= 8, `found ${corners.length}`);
 const wronglyGlobal = corners.filter(p => p.group === 'global').map(p => p.id);

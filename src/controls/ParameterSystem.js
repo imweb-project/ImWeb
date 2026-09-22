@@ -7528,6 +7528,17 @@ export function registerCoreParameters(ps) {
   // Group 'global' like meshStore, and for the same reason: a TRIGGER captured
   // by a Display State would FIRE on recall, so recalling any state would wipe
   // the handles on a mesh that had nothing to do with it.
+  // Show the curve handles for every VISIBLE control point at once, rather
+  // than only for the selected one. Group 'global': like projmap.grid and
+  // projmap.edit this is a view state, and a Display State that switched the
+  // handles on mid-performance would be drawing furniture over the projection.
+  ps.register({
+    id: "projmap.meshAllHandles",
+    label: "All Handles",
+    group: "global",
+    type: PARAM_TYPE.TOGGLE,
+    value: 0,
+  });
   ps.register({
     id: "projmap.meshHandlesClear",
     label: "Clear Handles",

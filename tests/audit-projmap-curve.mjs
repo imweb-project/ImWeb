@@ -484,10 +484,27 @@ console.log('\n§9 registry and wiring');
     /class="th"/.test(main.replace(/\s+/g, ' ')) || /'th'/.test(main) ||
     /drawTanArms\(\)/.test(main),
     'no handle widget');
+  // Anchored on the PROPERTY — the message carries a vector — not on which
+  // variable holds the index. The first version pinned `i:selPt.i`, and went
+  // red the day handles learned to belong to a point other than the selected
+  // one, against correct code (LEARNED 2026-09-13: strict in the middle,
+  // open-ended at the ends).
   check('the output window sends the tangent VECTOR, not a screen position',
-    /type:'projmesh-tangent',i:selPt\.i,j:selPt\.j,[\s\S]{0,60}dx:dx,dy:dy/.test(main),
+    /type:'projmesh-tangent'[\s\S]{0,140}dx:dx,dy:dy/.test(main),
     'posting a position would put the 1/3 handle scale on both sides of the ' +
     'wire, and the two copies would drift');
+  check('a handle edits ITS OWN point, not whichever is selected',
+    /h\.i=t\.i; h\.j=t\.j;/.test(main) && /const hi=h\.i, hj=h\.j;/.test(main),
+    'with every point showing handles, reading selPt would send every drag to ' +
+    'the same point — the one you happened to click last');
+  check('showing all handles follows the control points visibility rule',
+    /isEdge\(i,j\)\|\|inSelCell\(i,j\)/.test(main) && /lastAllHandles/.test(main),
+    'all N*M points would be 1156 circles at 17x17; tied to the visible ring ' +
+    'the count grows with the perimeter instead');
+  check('the All Handles button posts to the opener rather than holding a boolean',
+    /projmap-handles-toggle/.test(main) && /projmap\.meshAllHandles/.test(main),
+    'a local copy and the panel row would drift, which this subsystem has ' +
+    'already paid for once');
   check('rebuilding the handle layer drops the curve handles with it',
     /ho\.innerHTML='';handles=\[\];tanHandles=\[\];/.test(main),
     'innerHTML= detaches the curve handles too, and an array still holding ' +

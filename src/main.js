@@ -2614,6 +2614,9 @@ async function main() {
   .th.on{background:rgba(200,160,32,0.5)}
   .th.v{border-color:rgba(120,190,255,0.85)}
   .th.v.on{background:rgba(120,190,255,0.5)}
+  /* Showing every point's handles must not cost you the ability to see which
+     point you are working on, so everything but the selected one recedes. */
+  .th.dim{opacity:0.4;width:22px;height:22px;margin:-11px 0 0 -11px}
   #toolbar{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);display:none;gap:10px;align-items:center;pointer-events:all;transition:opacity 0.4s}
   .tb-btn{background:rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.25);color:rgba(255,255,255,0.7);font:13px/1 monospace;padding:8px 16px;border-radius:20px;cursor:pointer;touch-action:manipulation;white-space:nowrap;-webkit-tap-highlight-color:transparent}
   .tb-btn:active,.tb-btn.on{border-color:#c8a020;color:#c8a020}
@@ -2625,6 +2628,7 @@ async function main() {
 <div id="ho"></div>
 <div id="toolbar">
   <button class="tb-btn" id="tb-grid">⊞ Grid</button>
+  <button class="tb-btn" id="tb-hnd">⌁ Handles</button>
   <button class="tb-btn" id="tb-fs">⛶ Full</button>
 </div>
 <script>
@@ -2632,6 +2636,7 @@ async function main() {
   const ho=document.getElementById('ho');
   const toolbar=document.getElementById('toolbar');
   const tbGrid=document.getElementById('tb-grid');
+  const tbHnd=document.getElementById('tb-hnd');
   const tbFs=document.getElementById('tb-fs');
   // Handles are generated from the mesh, not four fixed divs. At 2x2 that is
   // the same four corners as before; at 9x9 it would be 81 circles, which is
@@ -2652,7 +2657,7 @@ async function main() {
   // at 0, or the mesh is a bare 2x2 — and the handles stay hidden, because a
   // flat surface has no tangent to bend and a handle that does nothing is
   // worse than no handle.
-  var lastTans=null, tanHandles=[];
+  var lastTans=null, tanHandles=[], lastAllHandles=false;
   let gridActive=false;
 
   function drawGrid(){
@@ -2724,54 +2729,89 @@ async function main() {
     return {u:{x:t[0],y:t[1]},v:{x:t[2],y:t[3]},ue:!!(t[4]&1),ve:!!(t[4]&2)};
   }
 
-  function buildTanHandles(){
-    if(tanHandles.length)return;
-    const spec=[['u',1],['u',-1],['v',1],['v',-1]];
-    for(const sp of spec){
+  function buildTanHandles(){ ensureTanPool(1); }
+
+  /**
+   * Which control points get curve handles right now.
+   *
+   * Off: the selected point only. On: every control point that is CURRENTLY
+   * VISIBLE — the boundary ring plus the selected cell, the same rule the
+   * control points themselves already follow. Tying it to that rule rather
+   * than to "all N*M points" is what keeps a 17x17 from putting 1156 circles
+   * on the projection: the count grows with the PERIMETER, not the area. And
+   * a handle belonging to a point you cannot see would be a dot attached to
+   * nothing.
+   */
+  function tanTargets(){
+    if(!lastTans||!lastMesh||!lastEdit)return [];
+    if(!lastAllHandles)return selPt?[{i:selPt.i,j:selPt.j}]:[];
+    const C=meshC(),R=meshR(),out=[];
+    for(let j=0;j<R;j++)for(let i=0;i<C;i++)
+      if(isEdge(i,j)||inSelCell(i,j))out.push({i:i,j:j});
+    return out;
+  }
+
+  /** Grow the handle pool to cover n points. Four per point: u+, u-, v+, v-. */
+  function ensureTanPool(n){
+    while(tanHandles.length<n*4){
+      const k=tanHandles.length%4;
+      const axis=k<2?'u':'v', sign=(k%2===0)?1:-1;
       const el=document.createElement('div');
-      el.className='th'+(sp[0]==='v'?' v':'');
+      el.className='th'+(axis==='v'?' v':'');
       ho.appendChild(el);
-      const h={el:el,axis:sp[0],sign:sp[1]};
+      const h={el:el,axis:axis,sign:sign,i:0,j:0};
       tanHandles.push(h);
       attachTanHandle(h);
     }
   }
 
   function positionTanHandles(){
-    buildTanHandles();
-    const t=selPt?tanFor(selPt.i,selPt.j):null;
-    const P=(selPt&&lastMesh)?lastMesh.pts[selPt.j*lastMesh.cols+selPt.i]:null;
-    const show=!!(t&&P&&lastEdit);
-    for(const h of tanHandles)h.el.style.display=show?'block':'none';
-    if(!show)return;
+    const targets=tanTargets();
+    ensureTanPool(targets.length);
     const W=window.innerWidth,H=window.innerHeight;
-    for(const h of tanHandles){
-      const v=t[h.axis];
+    for(let n=0;n<tanHandles.length;n++){
+      const h=tanHandles[n], t=targets[Math.floor(n/4)];
+      if(!t){h.el.style.display='none';continue;}
+      // Each handle carries its OWN point. It used to read selPt, which was
+      // fine while only one point ever had handles and would edit the wrong
+      // point the moment several do.
+      h.i=t.i; h.j=t.j;
+      const P=lastMesh.pts[t.j*lastMesh.cols+t.i], tv=tanFor(t.i,t.j);
+      if(!P||!tv){h.el.style.display='none';continue;}
+      const v=tv[h.axis];
+      h.el.style.display='block';
       // A Hermite span's Bezier control point sits at P + T/3. That factor is
       // applied HERE and nowhere else: the opener is sent the tangent vector,
       // never the handle position, so the two windows cannot disagree about it.
       h.el.style.left=((P.x+v.x*h.sign/3)*W)+'px';
       h.el.style.top =((P.y+v.y*h.sign/3)*H)+'px';
-      h.el.classList.toggle('on',h.axis==='u'?t.ue:t.ve);
+      h.el.classList.toggle('on',h.axis==='u'?tv.ue:tv.ve);
+      // Showing them all must not cost you sight of the one you are working on.
+      h.el.classList.toggle('dim',!!selPt&&!(selPt.i===t.i&&selPt.j===t.j));
     }
   }
 
   /** The arms, drawn on the overlay canvas so a handle reads as attached. */
   function drawTanArms(){
-    const t=selPt?tanFor(selPt.i,selPt.j):null;
-    const P=(selPt&&lastMesh)?lastMesh.pts[selPt.j*lastMesh.cols+selPt.i]:null;
-    if(!t||!P||!lastEdit)return;
+    const targets=tanTargets();
+    if(!targets.length)return;
     const W=c.width,H=c.height;
     ctx.save();
     ctx.lineWidth=1.5;
-    const arms=[['u','rgba(200,160,32,0.85)'],['v','rgba(120,190,255,0.85)']];
-    for(const a of arms){
-      const v=t[a[0]];
-      ctx.strokeStyle=a[1];
-      ctx.beginPath();
-      ctx.moveTo((P.x-v.x/3)*W,(P.y-v.y/3)*H);
-      ctx.lineTo((P.x+v.x/3)*W,(P.y+v.y/3)*H);
-      ctx.stroke();
+    for(const t of targets){
+      const P=lastMesh.pts[t.j*lastMesh.cols+t.i], tv=tanFor(t.i,t.j);
+      if(!P||!tv)continue;
+      const sel=!selPt||(selPt.i===t.i&&selPt.j===t.j);
+      const arms=[['u',sel?'rgba(200,160,32,0.85)':'rgba(200,160,32,0.3)'],
+                  ['v',sel?'rgba(120,190,255,0.85)':'rgba(120,190,255,0.3)']];
+      for(const a of arms){
+        const v=tv[a[0]];
+        ctx.strokeStyle=a[1];
+        ctx.beginPath();
+        ctx.moveTo((P.x-v.x/3)*W,(P.y-v.y/3)*H);
+        ctx.lineTo((P.x+v.x/3)*W,(P.y+v.y/3)*H);
+        ctx.stroke();
+      }
     }
     ctx.restore();
   }
@@ -2780,9 +2820,13 @@ async function main() {
     h.el.addEventListener('pointerdown',e=>{
       e.preventDefault();e.stopPropagation();
       h.el.setPointerCapture(e.pointerId);
+      // Grabbing a handle also selects its point, so the arms you are pulling
+      // are the undimmed ones and the arrow keys act where you are looking.
+      if(!selPt||selPt.i!==h.i||selPt.j!==h.j)setSelected(h.i,h.j);
+      const hi=h.i, hj=h.j;
       const mv=ev=>{
-        if(!selPt||!lastMesh||!lastTans)return;
-        const C=lastMesh.cols,k=selPt.j*C+selPt.i,P=lastMesh.pts[k],t=lastTans[k];
+        if(!lastMesh||!lastTans)return;
+        const C=lastMesh.cols,k=hj*C+hi,P=lastMesh.pts[k],t=lastTans[k];
         if(!P||!t)return;
         // Invert the draw: the handle sits at P + sign*T/3, so T is the offset
         // times 3, un-signed. Applied locally too, so the handle tracks the
@@ -2799,7 +2843,7 @@ async function main() {
         if(!isFinite(dx)||!isFinite(dy))return;
         if(h.axis==='u'){t[0]=dx;t[1]=dy;t[4]|=1;}else{t[2]=dx;t[3]=dy;t[4]|=2;}
         positionTanHandles();draw();
-        window.opener?.postMessage({type:'projmesh-tangent',i:selPt.i,j:selPt.j,
+        window.opener?.postMessage({type:'projmesh-tangent',i:hi,j:hj,
                                     axis:h.axis,dx:dx,dy:dy},'*');
       };
       h.el.addEventListener('pointermove',mv);
@@ -2812,8 +2856,7 @@ async function main() {
     // and "put it back how it was" would mean reshaping by eye.
     h.el.addEventListener('dblclick',e=>{
       e.preventDefault();e.stopPropagation();
-      if(!selPt)return;
-      window.opener?.postMessage({type:'projmesh-tangent',i:selPt.i,j:selPt.j,
+      window.opener?.postMessage({type:'projmesh-tangent',i:h.i,j:h.j,
                                   axis:h.axis,clear:true},'*');
     });
   }
@@ -3219,6 +3262,11 @@ async function main() {
     window.opener?.postMessage({type:'projmap-grid-toggle'},'*');
   }
   tbGrid.addEventListener('click',toggleGrid);
+  // Posts to the opener rather than holding a local boolean, for the same
+  // reason the grid button does: one switch, two entrances.
+  tbHnd.addEventListener('click',()=>{
+    window.opener?.postMessage({type:'projmap-handles-toggle'},'*');
+  });
   // documentElement, not body. Fullscreening BODY leaves the html element
   // behind it visible as a strip along the top in Chromium — reported on Brave
   // and Zen, while Safari happened to tolerate it, which is exactly the shape
@@ -3313,6 +3361,8 @@ async function main() {
     // ~2400 points does not need reposting on a frame where nothing moved.
     if('renderMesh' in e.data)lastRenderMesh=e.data.renderMesh||null;
     if('tans' in e.data)lastTans=e.data.tans||null;
+    lastAllHandles=!!e.data.allHandles;
+    tbHnd.classList.toggle('on',lastAllHandles);
     lastGridLines=e.data.gridLines||null;
     lastEdit=e.data.edit!==false;
     // Mapping active and EDITING it are separate. With edit off the geometry
@@ -3440,6 +3490,14 @@ async function main() {
       // written here on purpose — four numbers cannot describe a bigger grid,
       // and writing them would make two sources of truth for one shape.
       projMesh.setPoint(e.data.i | 0, e.data.j | 0, +e.data.x, +e.data.y);
+      return;
+    }
+    if (e.data?.type === "projmap-handles-toggle") {
+      // Flip the PARAM, the way the grid button and the h key already do, so
+      // the toolbar button and the panel row are one switch rather than two
+      // that drift (LEARNED 2026-09-22).
+      const p = ps.get("projmap.meshAllHandles");
+      if (p) ps.set("projmap.meshAllHandles", p.value ? 0 : 1);
       return;
     }
     if (e.data?.type === "projmesh-tangent") {
@@ -10496,6 +10554,7 @@ void main() {
           // `edit` is view state, not geometry: the mapping applies either way.
           const _pmEdit = !!ps.get("projmap.edit")?.value;
           const _pmGrid = !!ps.get("projmap.grid")?.value;
+          const _pmAllH = !!ps.get("projmap.meshAllHandles")?.value;
           // At 2x2 the params are the source of truth and the mesh mirrors
           // them, so dragging a handle or typing a corner still drives
           // everything. Above 2x2 the mesh owns its own points and the params
@@ -10578,7 +10637,7 @@ void main() {
           }
           const _pmMsg = { bitmap, corners: _pmCorners, mesh: _pmMesh,
                            gridLines: _pmGridLines,
-                           edit: _pmEdit, grid: _pmGrid };
+                           edit: _pmEdit, grid: _pmGrid, allHandles: _pmAllH };
           if (_pmRenderMesh !== undefined) _pmMsg.renderMesh = _pmRenderMesh;
           if (_pmTans !== undefined) _pmMsg.tans = _pmTans;
           _outWin.postMessage(_pmMsg, "*", [bitmap]);

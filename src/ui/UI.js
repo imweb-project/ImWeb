@@ -322,13 +322,13 @@ export function buildMappingPanels(ps, contextMenu) {
     // HERE beside the corners, not in the auto-built global list — so it is
     // appended by id, the same stated exception glsl.preset and warpSlot use.
     'projmap-params':      ps.getGroup('projmap').filter(p => p.id !== 'projmap.active')
-                             .concat(['projmap.edit','projmap.grid','projmap.meshSlot','projmap.meshStore','projmap.meshHandlesClear']
+                             .concat(['projmap.edit','projmap.grid','projmap.meshSlot','projmap.meshStore','projmap.meshAllHandles','projmap.meshHandlesClear']
                                .map(id => ps.get(id)).filter(Boolean)),
     'global-params':       ps.getGroup('global').filter(p =>
       p.id !== 'glsl.preset' && p.id !== 'displace.warpSlot' &&
       p.id !== 'projmap.edit' && p.id !== 'projmap.grid' &&
       p.id !== 'projmap.meshSlot' && p.id !== 'projmap.meshStore' &&
-      p.id !== 'projmap.meshHandlesClear' &&
+      p.id !== 'projmap.meshHandlesClear' && p.id !== 'projmap.meshAllHandles' &&
       // The MIDI mapping-page controls. 'global' so Display States cannot
       // capture them, but they belong beside the monitor in Sources > I/O:
       // binding TRACK -/+ means clicking these rows, and a control you have to

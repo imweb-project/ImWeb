@@ -74,6 +74,15 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   image is not going, and the control points themselves stay exactly where
   you put them however far a handle is pulled.
 
+  **All Handles** shows the curve handles for every visible control point at
+  once, instead of only the selected one — so a silhouette can be shaped
+  without clicking point by point. It is a row in the Mapping panel and a
+  **⌁ Handles** button on the output window's toolbar, and the two are one
+  switch. Everything but the point you have selected is dimmed, so showing
+  them all does not cost you sight of the one you are working on. It follows
+  the control points' own visibility rule — the boundary ring plus the
+  selected cell — so the count grows with the edge of the mesh, not its area.
+
   **Clear Handles** (Mapping panel) puts every handle on the mesh back to
   derived in one press, and can be mapped to a button like anything else.
 
