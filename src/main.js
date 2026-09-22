@@ -3284,7 +3284,15 @@ async function main() {
 
   ps.get("projmap.active").onChange((v) => {
     document.getElementById("btn-projmap")?.classList.toggle("active", !!v);
-    if (v && _outWin && !_outWin.closed) _outWin.focus();
+    // Bring the output window forward so its handles can be grabbed — but NOT
+    // while it is fullscreen. focus() on a fullscreen window makes Chromium
+    // raise and restore it, dropping the projection out of fullscreen the
+    // moment you enable mapping from the main window's toolbar.
+    if (v && _outWin && !_outWin.closed) {
+      let fs = false;
+      try { fs = !!_outWin.document?.fullscreenElement; } catch { fs = true; }
+      if (!fs) _outWin.focus();
+    }
   });
   document.getElementById("btn-projmap")?.addEventListener("click", () => {
     ps.set("projmap.active", ps.get("projmap.active").value ? 0 : 1);
