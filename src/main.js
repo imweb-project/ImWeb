@@ -2617,6 +2617,9 @@ async function main() {
   /* Showing every point's handles must not cost you the ability to see which
      point you are working on, so everything but the selected one recedes. */
   .th.dim{opacity:0.4;width:22px;height:22px;margin:-11px 0 0 -11px}
+  /* The handle the arrow keys will move. A control point marks itself the same
+     way, so "selected" reads identically whichever kind of thing it is. */
+  .th.sel{border-color:#fff;box-shadow:0 0 0 2px rgba(255,255,255,0.5)}
   #toolbar{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);display:none;gap:10px;align-items:center;pointer-events:all;transition:opacity 0.4s}
   .tb-btn{background:rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.25);color:rgba(255,255,255,0.7);font:13px/1 monospace;padding:8px 16px;border-radius:20px;cursor:pointer;touch-action:manipulation;white-space:nowrap;-webkit-tap-highlight-color:transparent}
   .tb-btn:active,.tb-btn.on{border-color:#c8a020;color:#c8a020}
@@ -2658,6 +2661,9 @@ async function main() {
   // flat surface has no tangent to bend and a handle that does nothing is
   // worse than no handle.
   var lastTans=null, tanHandles=[], lastAllHandles=false;
+  // The curve handle the arrow keys act on, set by clicking one. Null means
+  // the arrows nudge the control POINT, which is what they have always done.
+  var selTan=null;
   let gridActive=false;
 
   function drawGrid(){
@@ -2712,7 +2718,34 @@ async function main() {
 
   function setSelected(i,j){
     selPt=(i===null)?null:{i:i,j:j};
+    // A handle belongs to a point, so moving the selection to a point drops
+    // any handle selection with it — otherwise the arrow keys would keep
+    // editing a curve belonging to somewhere you are no longer looking.
+    selTan=null;
     positionHandles();
+  }
+
+  /**
+   * Nudge the SELECTED curve handle by dx,dy screen pixels.
+   *
+   * The handle sits at P + sign*T/3, so a pixel of handle is three pixels of
+   * tangent — which is exactly why this exists. Dragging gives you coarse
+   * control of the most delicate thing on the mesh; the control points have
+   * had arrow keys since they existed and the handles did not.
+   */
+  function nudgeTangent(dx,dy){
+    if(!selTan||!lastMesh||!lastTans)return;
+    const C=lastMesh.cols,k=selTan.j*C+selTan.i;
+    const P=lastMesh.pts[k],t=lastTans[k];
+    if(!P||!t)return;
+    const W=window.innerWidth||1,H=window.innerHeight||1;
+    const cx=selTan.axis==='u'?t[0]:t[2], cy=selTan.axis==='u'?t[1]:t[3];
+    const nx=cx+(dx/W)*3/selTan.sign, ny=cy+(dy/H)*3/selTan.sign;
+    if(!isFinite(nx)||!isFinite(ny))return;
+    if(selTan.axis==='u'){t[0]=nx;t[1]=ny;t[4]|=1;}else{t[2]=nx;t[3]=ny;t[4]|=2;}
+    positionTanHandles();draw();
+    window.opener?.postMessage({type:'projmesh-tangent',i:selTan.i,j:selTan.j,
+                                axis:selTan.axis,dx:nx,dy:ny},'*');
   }
 
   // ── Curve handles ────────────────────────────────────────────────────────
@@ -2788,6 +2821,8 @@ async function main() {
       h.el.classList.toggle('on',h.axis==='u'?tv.ue:tv.ve);
       // Showing them all must not cost you sight of the one you are working on.
       h.el.classList.toggle('dim',!!selPt&&!(selPt.i===t.i&&selPt.j===t.j));
+      h.el.classList.toggle('sel',!!selTan&&selTan.i===t.i&&selTan.j===t.j&&
+                                  selTan.axis===h.axis&&selTan.sign===h.sign);
     }
   }
 
@@ -2822,7 +2857,11 @@ async function main() {
       h.el.setPointerCapture(e.pointerId);
       // Grabbing a handle also selects its point, so the arms you are pulling
       // are the undimmed ones and the arrow keys act where you are looking.
+      // setSelected FIRST: it clears selTan, so choosing the handle has to
+      // come after it or the click would deselect what it just selected.
       if(!selPt||selPt.i!==h.i||selPt.j!==h.j)setSelected(h.i,h.j);
+      selTan={i:h.i,j:h.j,axis:h.axis,sign:h.sign};
+      positionTanHandles();
       const hi=h.i, hj=h.j;
       const mv=ev=>{
         if(!lastMesh||!lastTans)return;
@@ -2907,7 +2946,7 @@ async function main() {
     // go on holding elements that are no longer in the document — so the curve
     // handles would be positioned forever after and never seen again. Nothing
     // errors; they simply stop appearing once the grid size changes.
-    ho.innerHTML='';handles=[];tanHandles=[];selPt=null;
+    ho.innerHTML='';handles=[];tanHandles=[];selPt=null;selTan=null;
     if(!(selCell&&selCell.i<C-1&&selCell.j<R-1))selCell=null;
     for(let j=0;j<R;j++)for(let i=0;i<C;i++){
       const el=document.createElement('div');
@@ -3341,13 +3380,16 @@ async function main() {
       window.opener?.postMessage({type:'projmap-edit-toggle'},'*');
       return;
     }
-    if(!selPt||!lastMesh)return;
+    if((!selPt&&!selTan)||!lastMesh)return;
     const step=e.shiftKey?10:1;
     const map={ArrowLeft:[-step,0],ArrowRight:[step,0],ArrowUp:[0,-step],ArrowDown:[0,step]};
     const d=map[e.key];
     if(!d)return;
     e.preventDefault();
-    nudgePoint(d[0],d[1]);
+    // A selected handle takes the keys; otherwise they move the point, which
+    // is what they have always done and what they do again the moment you
+    // click the point itself.
+    if(selTan)nudgeTangent(d[0],d[1]); else nudgePoint(d[0],d[1]);
   });
 
   // Anything this window does NOT own goes to the opener. While you are working

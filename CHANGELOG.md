@@ -9,6 +9,24 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Fixed
+- **Dragging a point too far no longer smears the picture across the screen.**
+  Push a control point far enough inside its own cell and the perspective
+  maths for that cell runs out of room — past a certain point it folds through
+  infinity, which showed up as a fan of lines and a torn image. There was a
+  safety net, but it only caught the case where the arithmetic had already
+  failed completely, by which time the picture was seventeen screen-widths
+  across. It now measures how much room a cell has left and eases over to a
+  simpler mapping as that runs out, smoothly, so nothing jumps while you drag
+  through it. Measured: the image stayed fully on screen at every depth of
+  the drag that used to break it. Healthy mappings are untouched — the
+  threshold sits well below anything a working mesh reaches.
+
+- **Arrow keys now nudge a curve handle**, not only a control point. Click a
+  handle and the arrows move it a pixel at a time (Shift for ten); click a
+  point, or anywhere else, and they go back to moving the point. The handle
+  was the one thing on the mesh with no fine adjustment, and it is the most
+  delicate — a pixel of drag is three pixels of curve.
+
 - **A bowed edge now bows, instead of bending all in one place.** Raising the
   middle of an edge gave a shape that ran almost straight out of each corner
   and did its turning in the middle — a bow with a corner in it. The cause was

@@ -1071,5 +1071,114 @@ console.log('\n§17 the edge fade');
     `${ramp(0.0625, 0.25, 2)} / ${ramp(0.125, 0.25, 2)}`);
 }
 
+// ── 18. The fold guard ───────────────────────────────────────────────────
+console.log('\n§18 a cell cannot fold the picture across the screen');
+{
+  // `w = g*u + h*v + 1` is affine, so its extremes are the four corners and
+  // the minimum IS the margin before the cell folds through infinity. The old
+  // guard tested |w| < 1e-12, which is arithmetic that has already failed
+  // rather than geometry about to: at |w| = 1e-3 the surface was already
+  // seventeen screen-widths across, so it could never fire before the damage.
+  const W = 1769, H = 996;
+  const OWNER = [[415,163],[869,168],[1230,172],[318,349],[940,327],
+                 [1394,313],[105,770],[1220,440],[1695,560]];
+  const owner = (dy) => {
+    const m = new ProjMapMesh(3, 3);
+    OWNER.forEach((p, i) => { m.pts[i] = { x: p[0]/W, y: (p[1] + (i===7?dy:0))/H }; });
+    return m;
+  };
+  const reach = (m) => {
+    let f = 0, bad = 0, n = 0;
+    for (let a = 0; a <= 40; a++) for (let b = 0; b <= 40; b++) {
+      const p = m.sample(a/40, b/40);
+      if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) bad++;
+      f = Math.max(f, Math.abs(p.x-0.5)*2, Math.abs(p.y-0.5)*2);
+      n++;
+    }
+    return { f, bad, n };
+  };
+
+  // Healthy meshes must be untouched — the guard is worthless if it costs the
+  // normal case anything, and every fixture in this file is a normal case.
+  const healthy = [
+    ['default 2x2', new ProjMapMesh()],
+    ['regular 5x5', new ProjMapMesh(5, 5)],
+    ['keystone 2x2', (() => { const m = new ProjMapMesh(); m.setCorners(KEYSTONE); return m; })()],
+    ['keystone 17x17', (() => { const m = new ProjMapMesh(); m.setCorners(KEYSTONE); m.setGrid(17,17); return m; })()],
+    ["owner's warped 3x3", owner(0)],
+  ];
+  let margins = 0;
+  for (const [label, m] of healthy) {
+    const mg = m.worstMargin();
+    margins++;
+    check(`${label} stays clear of the knee`, mg >= 0.15,
+      `margin ${mg.toFixed(4)} — the guard must not reach a working mesh`);
+    check(`${label} still draws untessellated`, m.renderSub() === 1,
+      `sub ${m.renderSub()}`);
+  }
+  check('measured a non-empty set of healthy meshes', margins === 5, `${margins}`);
+
+  // And the pathological case must stay on screen at every depth.
+  let worstReach = 0, probes = 0, nonFinite = 0, tessellated = 0;
+  for (const dy of [-20, -25, -30, -40, -60, -80]) {
+    const m = owner(dy);
+    const r = reach(m);
+    worstReach = Math.max(worstReach, r.f);
+    nonFinite += r.bad; probes += r.n;
+    if (m.renderSub() > 1) tessellated++;
+  }
+  console.log(`       folded-mesh worst reach ${worstReach.toFixed(2)} of the screen over ${probes} probes`);
+  check('probed a non-empty set of folded meshes', probes > 5000, `${probes}`);
+  check('a folded cell no longer throws the picture off screen', worstReach < 1.5,
+    `${worstReach.toFixed(2)} screen-widths — it reached 17.30 before this`);
+  check('a folded cell produces no non-finite sample', nonFinite === 0, `${nonFinite}`);
+  check('every near-folding mesh is tessellated so the guard actually runs',
+    tessellated === 6, `${tessellated} of 6 — the output window draws the raw ` +
+    'control cells at sub 1, where homographyAt is never asked to sample and ' +
+    'the guard cannot fire');
+
+  // The blend must be continuous, or the picture pops the frame a cell crosses
+  // the knee — and that is a threshold a performer drags through.
+  let jump = 0;
+  for (let n = 0; n < 200; n++) {
+    const a = owner(-19.9 - n*0.05), b = owner(-19.9 - (n+1)*0.05);
+    for (const [u, v] of [[0.5,0.5],[0.75,0.4],[0.9,0.6]]) {
+      const p = a.sample(u,v), q = b.sample(u,v);
+      jump = Math.max(jump, Math.hypot(q.x-p.x, q.y-p.y));
+    }
+  }
+  check('the guard blends in smoothly rather than switching', jump < 0.02,
+    `worst step ${jump.toExponential(2)} of the frame per 0.05px of drag`);
+}
+
+// ── 19. Arrow keys reach the handles ─────────────────────────────────────
+console.log('\n§19 the keys nudge whichever thing is selected');
+{
+  const main19 = sanitizeSource(readFileSync('src/main.js', 'utf8'), false);
+  check('the output window tracks a selected curve handle',
+    /var selTan=null;/.test(main19) && /selTan=\{i:h\.i,j:h\.j,axis:h\.axis,sign:h\.sign\}/.test(main19),
+    'without one there is nothing for the keys to act on');
+  check('the keys dispatch to the handle when one is selected',
+    /if\(selTan\)nudgeTangent\(d\[0\],d\[1\]\); else nudgePoint\(d\[0\],d\[1\]\);/.test(main19),
+    'the points must keep the keys when no handle is chosen');
+  check('selecting a point releases the handle',
+    /selPt=\(i===null\)\?null:\{i:i,j:j\};[\s\S]{0,400}selTan=null;/.test(main19),
+    'the arrows would go on editing a curve belonging to a point you have ' +
+    'navigated away from');
+  check('the handle is chosen AFTER the point, not before',
+    /setSelected\(h\.i,h\.j\);\n      selTan=\{/.test(main19),
+    'setSelected clears selTan, so choosing first would deselect it again');
+  check('a rebuilt net drops the handle selection with the point selection',
+    /selPt=null;selTan=null;/.test(main19),
+    'a stale index would nudge whatever point inherits it');
+  check('the nudge applies the same 1/3 handle scale, inverted',
+    /\(dx\/W\)\*3\/selTan\.sign/.test(main19),
+    'a different factor here and in the drag is two sources of truth for ' +
+    'where a handle sits');
+  check('the nudge refuses a non-finite result like the drag does',
+    /if\(!isFinite\(nx\)\|\|!isFinite\(ny\)\)return;/.test(main19),
+    'the keys reach setTangent by the same road, and a NaN there faults the GPU');
+}
+
 console.log(`\n${failures === 0 ? 'PASS' : `FAILED: ${failures}`}`);
 process.exit(failures === 0 ? 0 : 1);

@@ -28,12 +28,55 @@ function quadAt(tl, tr, br, bl, u, v) {
 }
 
 /**
+ * How much room a quad's projective map has before it FOLDS, as the smallest
+ * value its perspective divisor takes anywhere on the cell.
+ *
+ * `w = g*u + h*v + 1` is affine in u,v, so its extremes are at the four
+ * corners — where it is 1, g+1, h+1 and g+h+1. If they are not all the same
+ * sign, w passes through zero somewhere inside the cell: the map's horizon
+ * crosses the quad, points fold through infinity and come back mirrored, and
+ * there is no meaningful picture there at all. Since w(0,0) is exactly 1, "all
+ * positive" is the whole test and the minimum IS the margin.
+ *
+ * Measured, because the numbers are what make the guard safe rather than
+ * arbitrary. Healthy meshes: a full-frame 2x2 and a regular 5x5 are 1.00, a
+ * hard keystone 0.80, that keystone subdivided 0.89-0.98, a dome 0.56, a
+ * hand-edited centre 0.62. The owner's heavily warped but perfectly usable
+ * 3x3 measured 0.247. The mesh that smeared across the screen measured 0.066,
+ * then 0.005, then folded. So there is a clean gap between working and
+ * broken, and the knee sits in it.
+ */
+const W_KNEE = 0.15;   // above this, untouched — every healthy mesh above
+const W_FLOOR = 0.02;  // at or below this, no projective content is left
+
+function foldMargin(g, h) {
+  return Math.min(1, g + 1, h + 1, g + h + 1);
+}
+
+/** The fold margin of one quad, from its four corners. 1 when degenerate. */
+function quadMargin(tl, tr, br, bl) {
+  const dx1 = tr.x - br.x, dx2 = bl.x - br.x, dx3 = tl.x - tr.x + br.x - bl.x;
+  const dy1 = tr.y - br.y, dy2 = bl.y - br.y, dy3 = tl.y - tr.y + br.y - bl.y;
+  const den = dx1 * dy2 - dx2 * dy1;
+  if (Math.abs(den) < 1e-12) return 1;
+  return foldMargin((dx3 * dy2 - dx2 * dy3) / den, (dx1 * dy3 - dx3 * dy1) / den);
+}
+
+/**
  * Projective sample of a 4-corner quad (unit square -> quad), u/v in 0..1.
  *
  * Subdividing must not change the picture, and bilinear subdivision WOULD:
  * the renderer maps each cell projectively, so interior points have to be
  * placed where the projective map puts them, not where a straight-line average
  * does. On a keystoned quad those differ by a third of the frame.
+ *
+ * A cell whose margin has run out blends to the bilinear map instead. The old
+ * guard was `|w| < 1e-12`, which is a test for arithmetic that has already
+ * failed rather than for geometry that is about to: by |w| = 1e-3 the surface
+ * is seventeen screen-widths across, so the guard could never fire before the
+ * damage. It is a SMOOTH blend over the margin, not a switch, because a switch
+ * would pop the picture the frame a cell crossed the threshold — and the
+ * threshold is somewhere a performer may well be dragging through.
  */
 function homographyAt(tl, tr, br, bl, u, v) {
   const x0 = tl.x, y0 = tl.y, x1 = tr.x, y1 = tr.y;
@@ -44,11 +87,18 @@ function homographyAt(tl, tr, br, bl, u, v) {
   if (Math.abs(den) < 1e-12) return quadAt(tl, tr, br, bl, u, v); // degenerate
   const g = (dx3 * dy2 - dx2 * dy3) / den;
   const h = (dx1 * dy3 - dx3 * dy1) / den;
+  const m = foldMargin(g, h);
+  if (m <= W_FLOOR) return quadAt(tl, tr, br, bl, u, v);
   const a = x1 - x0 + g * x1, b = x3 - x0 + h * x3, c = x0;
   const d = y1 - y0 + g * y1, e = y3 - y0 + h * y3, f = y0;
   const w = g * u + h * v + 1;
   if (Math.abs(w) < 1e-12) return quadAt(tl, tr, br, bl, u, v);
-  return { x: (a * u + b * v + c) / w, y: (d * u + e * v + f) / w };
+  const px = (a * u + b * v + c) / w, py = (d * u + e * v + f) / w;
+  if (m >= W_KNEE) return { x: px, y: py };   // the normal case, untouched
+  const q = quadAt(tl, tr, br, bl, u, v);
+  const t = (m - W_FLOOR) / (W_KNEE - W_FLOOR);
+  const s = t * t * (3 - 2 * t);              // smoothstep: C1 at both ends
+  return { x: q.x + (px - q.x) * s, y: q.y + (py - q.y) * s };
 }
 
 /**
@@ -438,14 +488,42 @@ export class ProjMapMesh {
   }
 
   /**
-   * How finely a cell must be cut for the curve to read as a curve rather than
-   * as a fan of chords. 1 while flat — there is nothing to approximate, and a
-   * flat net drawn at sub 1 is the path every existing measurement was made
-   * against. Above that the budget is fixed in TOTAL vertices, not per cell,
-   * so a 17x17 net does not multiply into a quarter of a million points.
+   * The worst fold margin over every cell — 1 when nothing is near folding.
+   * See `foldMargin`: healthy meshes measure 0.25 and up, a smeared one 0.066.
+   */
+  worstMargin() {
+    if (this.isQuad) {
+      const c = this.corners();
+      return quadMargin(c.tl, c.tr, c.br, c.bl);
+    }
+    let m = 1;
+    for (let j = 0; j < this.rows - 1; j++) {
+      for (let i = 0; i < this.cols - 1; i++) {
+        m = Math.min(m, quadMargin(this.get(i, j), this.get(i + 1, j),
+                                   this.get(i + 1, j + 1), this.get(i, j + 1)));
+      }
+    }
+    return m;
+  }
+
+  /**
+   * How finely a cell must be cut. 1 while flat and healthy — there is nothing
+   * to approximate, and a flat net drawn at sub 1 is the path every existing
+   * measurement was made against. Above that the budget is fixed in TOTAL
+   * vertices, not per cell, so a 17x17 net does not multiply into a quarter of
+   * a million points.
+   *
+   * A near-folding cell subdivides TOO, even at curve 0, and that is the whole
+   * point rather than a bonus. The output window draws whatever net it is
+   * handed with its own per-quad perspective correction — so at sub 1 it draws
+   * the raw control cells and `homographyAt`'s fold guard never runs, because
+   * the mesh never gets asked to sample anything. Tessellating routes the
+   * drawing back through `sample()`, which is where the guard lives. One
+   * mechanism, not a second copy of the maths in the popup.
    */
   renderSub() {
-    if (!(this.curve > 0) || this.isQuad) return 1;
+    const risky = this.worstMargin() < W_KNEE;
+    if (!risky && (!(this.curve > 0) || this.isQuad)) return 1;
     const span = Math.max(this.cols - 1, this.rows - 1);
     return Math.max(1, Math.min(12, Math.floor(48 / span)));
   }
