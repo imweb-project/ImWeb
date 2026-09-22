@@ -198,21 +198,35 @@ export class ProjMapMesh {
    * a controller-driven recall of a slot that holds nothing does not blank the
    * mapping mid-performance.
    *
-   * A morph only runs between meshes of the SAME grid size; otherwise there is
-   * no correspondence between control points to interpolate. Different sizes
-   * snap, which is honest — a silent half-interpolated grid would be worse.
+   * Meshes of DIFFERENT grid sizes morph too. An earlier version snapped,
+   * on the reasoning that there is no correspondence between a 3x3 and a 5x5
+   * control net — but that was wrong, and in practice it meant the fade
+   * "did not work" for anyone whose slots were not all the same size.
+   *
+   * setGrid resamples EXACTLY (measured 3.3e-16), so both meshes can be
+   * expressed on a common net losslessly and then interpolated point by point.
+   * The common net is the FINER of the two in each axis: coarsening the finer
+   * one would throw away its interior detail, so the maximum is the only
+   * choice that loses nothing.
    */
   beginMorph(slot, secs = 0) {
     let data = null;
     try { data = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}')[slot] ?? null; }
     catch { data = null; }
     if (!data) return false;
-    if (!(secs > 0) || data.cols !== this.cols || data.rows !== this.rows) {
-      return this.deserialize(data);
-    }
+    if (!(secs > 0)) return this.deserialize(data);
+
+    // Express the TARGET on a net at least as fine as either side.
+    const target = new ProjMapMesh();
+    if (!target.deserialize(data)) return false;
+    const C = Math.max(this.cols, target.cols);
+    const R = Math.max(this.rows, target.rows);
+    target.setGrid(C, R);
+    this.setGrid(C, R);          // shape-preserving on this side too
+
     this._morph = {
       from: this.pts.map(p => ({ x: p.x, y: p.y })),
-      to:   data.pts.map(p => ({ x: p[0], y: p[1] })),
+      to:   target.pts.map(p => ({ x: p.x, y: p.y })),
       t: 0, dur: secs,
     };
     return true;
