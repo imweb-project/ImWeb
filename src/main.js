@@ -2603,12 +2603,7 @@ async function main() {
 <body>
 <canvas id="gl"></canvas>
 <canvas id="out"></canvas>
-<div id="ho">
-  <div class="h" id="h-tl"></div>
-  <div class="h" id="h-tr"></div>
-  <div class="h" id="h-br"></div>
-  <div class="h" id="h-bl"></div>
-</div>
+<div id="ho"></div>
 <div id="toolbar">
   <button class="tb-btn" id="tb-grid">⊞ Grid</button>
   <button class="tb-btn" id="tb-fs">⛶ Full</button>
@@ -2619,9 +2614,14 @@ async function main() {
   const toolbar=document.getElementById('toolbar');
   const tbGrid=document.getElementById('tb-grid');
   const tbFs=document.getElementById('tb-fs');
-  const hs={tl:document.getElementById('h-tl'),tr:document.getElementById('h-tr'),br:document.getElementById('h-br'),bl:document.getElementById('h-bl')};
+  // Handles are generated from the mesh, not four fixed divs. At 2x2 that is
+  // the same four corners as before; at 9x9 it would be 81 circles, which is
+  // why only the BOUNDARY is shown by default and a cell reveals its own four
+  // points on click.
+  var handles=[], selCell=null, selPt=null;
+  const CORNER_OF={'0,0':'tl','1,0':'tr','1,1':'br','0,1':'bl'};
   let lastBitmap=null,lastCorners=null,lastMesh=null,lastEdit=true,_wantFs=false;
-  let gridActive=false,selectedCorner=null;
+  let gridActive=false;
 
   function drawGrid(){
     if(!gridActive||!lastCorners)return;
@@ -2641,20 +2641,31 @@ async function main() {
     ctx.restore();
   }
 
-  function setSelected(corner){
-    selectedCorner=corner;
-    for(const[k,h]of Object.entries(hs))h.classList.toggle('sel',k===corner);
+  function setSelected(i,j){
+    selPt=(i===null)?null:{i:i,j:j};
+    positionHandles();
   }
 
-  function nudgeCorner(corner,dx,dy){
-    if(!lastCorners||!lastCorners[corner])return;
-    const x=Math.max(0,Math.min(1,lastCorners[corner].x+dx/window.innerWidth));
-    const y=Math.max(0,Math.min(1,lastCorners[corner].y+dy/window.innerHeight));
-    lastCorners[corner]={x,y};
-    hs[corner].style.left=(x*window.innerWidth)+'px';
-    hs[corner].style.top=(y*window.innerHeight)+'px';
-    applyTransform();
-    window.opener?.postMessage({type:'projmap',corner,x,y},'*');
+  function nudgePoint(dx,dy){
+    if(!selPt||!lastMesh)return;
+    const C=lastMesh.cols,p=lastMesh.pts[selPt.j*C+selPt.i];
+    if(!p)return;
+    const x=Math.max(0,Math.min(1,p.x+dx/window.innerWidth));
+    const y=Math.max(0,Math.min(1,p.y+dy/window.innerHeight));
+    p.x=x;p.y=y;
+    positionHandles();applyTransform();draw();
+    sendPoint(selPt.i,selPt.j,x,y);
+  }
+  /**
+   * One channel for a moved point. At 2x2 the opener writes the projmap.*
+   * corner params — they stay authoritative there, so typing a corner, the
+   * lock and controller mappings all keep working. Above 2x2 it writes the
+   * mesh, because four numbers cannot describe a bigger grid.
+   */
+  function sendPoint(i,j,x,y){
+    const corner=(meshC()===2&&meshR()===2)?CORNER_OF[i+','+j]:null;
+    if(corner)window.opener?.postMessage({type:'projmap',corner:corner,x:x,y:y},'*');
+    else window.opener?.postMessage({type:'projmesh-point',i:i,j:j,x:x,y:y},'*');
   }
 
   function computeProjectiveMatrix(x0,y0,x1,y1,x2,y2,x3,y3){
@@ -2668,12 +2679,36 @@ async function main() {
     return [h00,h10,0,h20,h01,h11,0,h21,0,0,1,0,h02,h12,0,1].join(',');
   }
 
+  function meshC(){return lastMesh?lastMesh.cols:2;}
+  function meshR(){return lastMesh?lastMesh.rows:2;}
+  function isEdge(i,j){return i===0||j===0||i===meshC()-1||j===meshR()-1;}
+  function inSelCell(i,j){
+    return !!selCell&&(i===selCell.i||i===selCell.i+1)&&(j===selCell.j||j===selCell.j+1);
+  }
+  function rebuildHandles(){
+    const C=meshC(),R=meshR();
+    if(handles.length===C*R)return positionHandles();
+    ho.innerHTML='';handles=[];selPt=null;
+    if(!(selCell&&selCell.i<C-1&&selCell.j<R-1))selCell=null;
+    for(let j=0;j<R;j++)for(let i=0;i<C;i++){
+      const el=document.createElement('div');
+      el.className='h';
+      ho.appendChild(el);
+      handles.push({el:el,i:i,j:j});
+      attachHandle(el,i,j);
+    }
+    positionHandles();
+  }
   function positionHandles(){
-    if(!lastCorners)return;
-    const W=window.innerWidth,H=window.innerHeight;
-    for(const[k,h]of Object.entries(hs)){
-      h.style.left=(lastCorners[k].x*W)+'px';
-      h.style.top=(lastCorners[k].y*H)+'px';
+    if(!lastMesh)return;
+    const C=lastMesh.cols,W=window.innerWidth,H=window.innerHeight;
+    for(const h of handles){
+      const p=lastMesh.pts[h.j*C+h.i];
+      if(!p)continue;
+      h.el.style.left=(p.x*W)+'px';
+      h.el.style.top=(p.y*H)+'px';
+      h.el.style.display=(isEdge(h.i,h.j)||inSelCell(h.i,h.j))?'block':'none';
+      h.el.classList.toggle('sel',!!selPt&&selPt.i===h.i&&selPt.j===h.j);
     }
   }
 
@@ -2924,26 +2959,60 @@ async function main() {
     drawGrid();
   }
 
-  // Drag handles — send corner updates back to main window; click to select for nudge
-  for(const[corner,h]of Object.entries(hs)){
-    h.addEventListener('pointerdown',e=>{
-      e.preventDefault();h.setPointerCapture(e.pointerId);
-      setSelected(corner);
-      let moved=false;
-      const mv=e=>{
-        moved=true;
-        const x=Math.max(0,Math.min(1,e.clientX/window.innerWidth));
-        const y=Math.max(0,Math.min(1,e.clientY/window.innerHeight));
-        if(lastCorners)lastCorners[corner]={x,y};
-        h.style.left=(x*window.innerWidth)+'px';
-        h.style.top=(y*window.innerHeight)+'px';
-        applyTransform();
-        window.opener?.postMessage({type:'projmap',corner,x,y},'*');
+  // Drag a control point; click selects it for arrow-key nudging.
+  function attachHandle(el,i,j){
+    el.addEventListener('pointerdown',e=>{
+      e.preventDefault();e.stopPropagation();
+      el.setPointerCapture(e.pointerId);
+      setSelected(i,j);
+      const mv=ev=>{
+        if(!lastMesh)return;
+        const x=Math.max(0,Math.min(1,ev.clientX/window.innerWidth));
+        const y=Math.max(0,Math.min(1,ev.clientY/window.innerHeight));
+        const p=lastMesh.pts[j*lastMesh.cols+i];
+        if(p){p.x=x;p.y=y;}
+        el.style.left=(x*window.innerWidth)+'px';
+        el.style.top=(y*window.innerHeight)+'px';
+        applyTransform();draw();
+        sendPoint(i,j,x,y);
       };
-      h.addEventListener('pointermove',mv);
-      h.addEventListener('pointerup',()=>h.removeEventListener('pointermove',mv),{once:true});
+      el.addEventListener('pointermove',mv);
+      // pointercancel as well as pointerup: a cancelled gesture used to leave
+      // the listener attached, so the point kept following the cursor.
+      const end=()=>{el.removeEventListener('pointermove',mv);};
+      el.addEventListener('pointerup',end,{once:true});
+      el.addEventListener('pointercancel',end,{once:true});
     });
   }
+
+  /** Which cell contains this point? Two-triangle test, cheap at these sizes. */
+  function cellAt(fx,fy){
+    if(!lastMesh)return null;
+    const C=lastMesh.cols,R=lastMesh.rows,P=lastMesh.pts;
+    const sign=(ax,ay,bx,by,cx,cy)=>(ax-cx)*(by-cy)-(bx-cx)*(ay-cy);
+    const inTri=(px,py,a,b,c)=>{
+      const d1=sign(px,py,a.x,a.y,b.x,b.y),d2=sign(px,py,b.x,b.y,c.x,c.y),
+            d3=sign(px,py,c.x,c.y,a.x,a.y);
+      const neg=(d1<0)||(d2<0)||(d3<0), pos=(d1>0)||(d2>0)||(d3>0);
+      return !(neg&&pos);
+    };
+    for(let j=0;j<R-1;j++)for(let i=0;i<C-1;i++){
+      const a=P[j*C+i],b=P[j*C+i+1],c=P[(j+1)*C+i+1],d2=P[(j+1)*C+i];
+      if(inTri(fx,fy,a,b,c)||inTri(fx,fy,a,c,d2))return {i:i,j:j};
+    }
+    return null;
+  }
+
+  // Click the image to reveal that cell's points; click outside any cell to
+  // go back to boundary-only. Interior handles stop propagation, so this never
+  // fires from a handle drag.
+  window.addEventListener('pointerdown',e=>{
+    if(!lastMesh||!lastEdit)return;
+    if(e.target&&e.target.closest&&e.target.closest('.h,#toolbar'))return;
+    const c=cellAt(e.clientX/window.innerWidth,e.clientY/window.innerHeight);
+    selCell=c;
+    setSelected(null);
+  });
 
   // Toolbar buttons (touch-friendly grid + fullscreen)
   function toggleGrid(){
@@ -3001,13 +3070,13 @@ async function main() {
       window.opener?.postMessage({type:'projmap-edit-toggle'},'*');
       return;
     }
-    if(!selectedCorner||!lastCorners)return;
+    if(!selPt||!lastMesh)return;
     const step=e.shiftKey?10:1;
     const map={ArrowLeft:[-step,0],ArrowRight:[step,0],ArrowUp:[0,-step],ArrowDown:[0,step]};
     const d=map[e.key];
     if(!d)return;
     e.preventDefault();
-    nudgeCorner(selectedCorner,d[0],d[1]);
+    nudgePoint(d[0],d[1]);
   });
 
   // Anything this window does NOT own goes to the opener. While you are working
@@ -3052,7 +3121,7 @@ async function main() {
     gridActive=!!e.data.grid&&lastEdit;
     tbGrid.classList.toggle('on',gridActive);
     _syncChrome();
-    applyTransform();positionHandles();draw();
+    applyTransform();rebuildHandles();draw();
     if(showUI)_showUI();
   });
 
@@ -3161,6 +3230,13 @@ async function main() {
       // key are the same switch rather than two that can drift apart.
       const p = ps.get("projmap.edit");
       if (p) ps.set("projmap.edit", p.value ? 0 : 1);
+      return;
+    }
+    if (e.data?.type === "projmesh-point") {
+      // Interior/boundary point of a mesh above 2x2. The corner params are not
+      // written here on purpose — four numbers cannot describe a bigger grid,
+      // and writing them would make two sources of truth for one shape.
+      projMesh.setPoint(e.data.i | 0, e.data.j | 0, +e.data.x, +e.data.y);
       return;
     }
     if (e.data?.type === "projmap" && e.data.corner) {
