@@ -62,8 +62,17 @@ check('projmap.lock defaults ON', lock?.value === 1,
 //   projmap.grid — the calibration grid overlay; view state, same as edit
 //   projmap.meshSlot — an index into PER-ORIGIN localStorage, like warpSlot;
 //                      capturing it would recall a different mesh elsewhere
+//   projmap.meshStore — a TRIGGER; capturing it means recalling a state FIRES
+//                       it, overwriting a slot nobody asked to overwrite
+//   projmap.meshHandlesClear — a TRIGGER, same reasoning: captured, every
+//                       Display State recall would reset the curve handles of
+//                       whatever mesh happened to be loaded. The handles
+//                       themselves are geometry and DO travel, but they live
+//                       in the mesh, not in a parameter — see ProjMapMesh.tans
+//                       and audit-projmap-curve §14.
 const VIEW_STATE = new Set(['projmap.lock', 'projmap.edit', 'projmap.grid',
-                            'projmap.meshSlot', 'projmap.meshStore']);
+                            'projmap.meshSlot', 'projmap.meshStore',
+                            'projmap.meshHandlesClear']);
 const corners = ps.getAll().filter(p => p.id.startsWith('projmap.') && !VIEW_STATE.has(p.id));
 check('projmap corner params exist', corners.length >= 8, `found ${corners.length}`);
 const wronglyGlobal = corners.filter(p => p.group === 'global').map(p => p.id);

@@ -822,5 +822,79 @@ console.log('\n§14 handles survive a save, and do not survive a resize');
   delete globalThis.localStorage;
 }
 
+// ── 15. Nothing non-finite may ever reach a vertex buffer ────────────────
+console.log('\n§15 a bad tangent cannot fault the GPU');
+{
+  // This is not hypothetical and not defensive tidiness. An unvalidated NaN
+  // tangent put 456 of 625 render-net vertices non-finite; a Float32Array of
+  // NaN handed to drawArrays is a driver fault, and Chrome runs ONE GPU
+  // process for every window — so the output window taking that fault lost
+  // the MAIN window's WebGL context and the whole instrument went black from
+  // a single handle drag. The popup divides by `window.innerWidth`, which is
+  // 0 for a frame while a window goes fullscreen, so Infinity was one resize
+  // away the entire time this shipped.
+  const build = () => {
+    const m = new ProjMapMesh(3, 3);
+    m.setPoint(1, 1, 0.42, 0.30);
+    m.setCurve(1);
+    return m;
+  };
+
+  const rejected = [];
+  for (const [dx, dy, label] of [
+    [NaN, 0, 'NaN'], [0, NaN, 'NaN in y'],
+    [Infinity, 0, 'Infinity'], [0, -Infinity, '-Infinity'],
+    [undefined, 0, 'undefined'],
+  ]) {
+    const m = build();
+    rejected.push([label, m.setTangent(1, 0, 'u', dx, dy) === false && m.tangentCount === 0]);
+  }
+  check('probed a non-empty set of bad tangents', rejected.length === 5, `${rejected.length}`);
+  check('setTangent refuses every non-finite vector',
+    rejected.every(r => r[1]),
+    `accepted: ${rejected.filter(r => !r[1]).map(r => r[0]).join(', ')}`);
+
+  // Huge but finite is clamped rather than refused — a drag can legitimately
+  // leave the window, and refusing would make the handle stick.
+  const big = build();
+  check('a huge finite tangent is accepted', big.setTangent(1, 0, 'u', 900, -900) === true);
+  const t = big.tangent(1, 0, 'u');
+  check('a huge finite tangent is CLAMPED, not stored raw',
+    Math.hypot(t.x, t.y) <= 4 + 1e-9 && Math.hypot(t.x, t.y) > 3,
+    `|T| = ${Math.hypot(t.x, t.y)}`);
+
+  // The vertex boundary holds even against a mesh corrupted past the setters.
+  const forced = build();
+  forced.tans[forced.idx(1, 0)] = { u: [NaN, 0] };
+  const net = forced.renderNet(forced.renderSub());
+  const bad = net.pts.filter(p => !Number.isFinite(p.x) || !Number.isFinite(p.y)).length;
+  check('renderNet emits a non-empty net', net.pts.length > 100, `${net.pts.length}`);
+  check('renderNet emits NO non-finite vertex even from a corrupted mesh',
+    bad === 0, `${bad} of ${net.pts.length} — this is the line the GPU is behind`);
+  // ...and prove the corruption was real, or the check above is vacuous.
+  check('the forced corruption does reach sample(), so §15 is not vacuous',
+    !Number.isFinite(forced.sample(0.25, 0.0).x),
+    'the planted NaN never affected the surface, so nothing was guarded');
+
+  const loaded = new ProjMapMesh();
+  loaded.deserialize({ cols: 3, rows: 3,
+    pts: [[0,0],[0.5,0],[1,0],[0,0.5],[0.5,0.5],[1,0.5],[0,1],[0.5,1],[1,1]],
+    tans: { 1: { u: [NaN, 0] }, 3: { v: [1e400, 0] }, 4: { u: [0.1, 0.1] } } });
+  check('deserialize drops non-finite tangents and keeps the good one',
+    loaded.tangentCount === 1, `${loaded.tangentCount} — a file, a hand edit ` +
+    'or an in-memory copy that never went through JSON can all carry one');
+
+  const main15 = sanitizeSource(readFileSync('src/main.js', 'utf8'), false);
+  check('the output window refuses to draw a net it cannot trust',
+    /if\(!isFinite\(pos\[n\]\)\)/.test(main15),
+    'the CSS fallback is a worse picture; a driver fault is a dead browser');
+  check('the popup never divides by a zero viewport',
+    /window\.innerWidth\|\|1/.test(main15),
+    'innerWidth is 0 for a frame during a fullscreen transition');
+  check('there is a way back from a mesh whose handles are wrong',
+    /projmap\.meshHandlesClear/.test(main15) && /clearTangents\(\)/.test(main15),
+    'otherwise recovery means resizing the grid and losing the shape');
+}
+
 console.log(`\n${failures === 0 ? 'PASS' : `FAILED: ${failures}`}`);
 process.exit(failures === 0 ? 0 : 1);

@@ -8,6 +8,19 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Fixed
+- **Adjusting a curve handle could black out the whole instrument.** A handle
+  drag divides by the output window's width, and a window reports width 0 for
+  one frame as it goes fullscreen — so a tangent could come out infinite.
+  Nothing rejected it, and the surface then produced hundreds of non-finite
+  points, which is not a wrong picture but a graphics-driver fault. The
+  browser runs one graphics process for every window, so the output window
+  faulting took the main window's canvas down with it and everything went
+  black. Bad values are now refused where they are made, where they are
+  received, where they are loaded from a file, and again at the last step
+  before the graphics card — and an over-large handle is limited rather than
+  refused, so a drag that leaves the window still works.
+
 ### Added
 - **Mesh Curve — projection mapping onto curved surfaces.** Until now the
   mapping mesh joined its control points with straight lines, so a cylinder, a
@@ -52,6 +65,9 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   same numbers the renderer reads, so a handle can never point somewhere the
   image is not going, and the control points themselves stay exactly where
   you put them however far a handle is pulled.
+
+  **Clear Handles** (Mapping panel) puts every handle on the mesh back to
+  derived in one press, and can be mapped to a button like anything else.
 
   They save with the mesh, into slots and into a project, and they crossfade
   with everything else when you fade between mesh slots. Changing Mesh Cols

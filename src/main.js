@@ -2787,8 +2787,16 @@ async function main() {
         // Invert the draw: the handle sits at P + sign*T/3, so T is the offset
         // times 3, un-signed. Applied locally too, so the handle tracks the
         // pointer instead of waiting a frame for the opener to answer.
-        const dx=((ev.clientX/window.innerWidth)-P.x)*3/h.sign;
-        const dy=((ev.clientY/window.innerHeight)-P.y)*3/h.sign;
+        // A window reports innerWidth 0 for a frame as it goes fullscreen, and
+        // dividing by it gave Infinity — which reached the mesh, produced NaN
+        // vertices, and faulted the GPU hard enough to take the MAIN window's
+        // WebGL context down with it. Guard the divisor AND refuse to send a
+        // vector that is not finite: the receiver validates too, but nothing
+        // should be putting garbage on the wire in the first place.
+        const W=window.innerWidth||1,H=window.innerHeight||1;
+        const dx=((ev.clientX/W)-P.x)*3/h.sign;
+        const dy=((ev.clientY/H)-P.y)*3/h.sign;
+        if(!isFinite(dx)||!isFinite(dy))return;
         if(h.axis==='u'){t[0]=dx;t[1]=dy;t[4]|=1;}else{t[2]=dx;t[3]=dy;t[4]|=2;}
         positionTanHandles();draw();
         window.opener?.postMessage({type:'projmesh-tangent',i:selPt.i,j:selPt.j,
@@ -3081,6 +3089,16 @@ async function main() {
             uv.push(UV[t][0]*q[t],UV[t][1]*q[t],q[t]);
           }
         }
+      }
+      // Last gate before the driver. A NaN or Infinity in a vertex buffer is
+      // not a wrong picture, it is a GPU fault — and Chrome runs ONE GPU
+      // process for every window, so a fault here killed the main window's
+      // context as collateral and the whole instrument went black. Refusing
+      // falls back to the CSS path, which is a worse picture and not a dead
+      // one. The scan is a few thousand floats at 30fps; the alternative cost
+      // a session.
+      for(var n=0;n<pos.length;n++){
+        if(!isFinite(pos[n])){ note('non-finite-vertex'); return false; }
       }
       gl.useProgram(prog);
       gl.bindBuffer(gl.ARRAY_BUFFER,bufPos);
@@ -3533,6 +3551,10 @@ async function main() {
   // lifting the knob off 0 takes it there rather than doing nothing. Dropping
   // back to 0 leaves the 3x3 in place, which is harmless: at curve 0 a 3x3 and
   // a 2x2 draw the same picture.
+  ps.get("projmap.meshHandlesClear")?.onChange(() => {
+    const n = projMesh.tangentCount;
+    if (projMesh.clearTangents()) console.info(`[ProjMap] ${n} curve handle(s) reset`);
+  });
   ps.get("projmap.meshCurve")?.onChange((v) => {
     const a = (+v || 0) / 100;
     if (a > 0 && projMesh.isQuad) {

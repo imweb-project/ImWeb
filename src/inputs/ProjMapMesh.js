@@ -246,11 +246,30 @@ export class ProjMapMesh {
     return { x: (a.x - b.x - c.x + d.x) / 4, y: (a.y - b.y - c.y + d.y) / 4 };
   }
 
-  /** Override a tangent. Pass the VECTOR, not the handle position. */
+  /**
+   * Override a tangent. Pass the VECTOR, not the handle position.
+   *
+   * REFUSES anything non-finite, and clamps the magnitude. This is not
+   * defensive tidiness — an unvalidated NaN here put 456 of 625 render-net
+   * vertices non-finite, and a Float32Array of NaN handed to drawArrays is a
+   * driver fault. Chrome runs one GPU process for every window, so the output
+   * window taking that fault lost the MAIN window's context too: the whole
+   * instrument went black from one handle drag. The popup divides by
+   * `window.innerWidth`, which is 0 for a frame while a window goes
+   * fullscreen, so Infinity was one resize away the entire time.
+   *
+   * TAN_MAX is 4 screen-widths. A tangent that large is already meaningless —
+   * the span it governs is at most one cell — so clamping costs nothing real
+   * and keeps every sample bounded.
+   */
   setTangent(i, j, axis, dx, dy) {
     if (axis !== 'u' && axis !== 'v') return false;
     const k = this.idx(i, j);
     if (!this.pts[k]) return false;
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return false;
+    const TAN_MAX = 4;
+    const mag = Math.hypot(dx, dy);
+    if (mag > TAN_MAX) { dx = dx / mag * TAN_MAX; dy = dy / mag * TAN_MAX; }
     (this.tans[k] ??= {})[axis] = [dx, dy];
     this._changed();
     return true;
@@ -361,12 +380,28 @@ export class ProjMapMesh {
     }
     const C = (this.cols - 1) * sub + 1, R = (this.rows - 1) * sub + 1;
     const pts = [];
+    let bad = 0;
     for (let j = 0; j < R; j++) {
       for (let i = 0; i < C; i++) {
-        const p = this.sample(i / (C - 1), j / (R - 1));
-        pts.push({ x: p.x, y: p.y });
+        const u = i / (C - 1), v = j / (R - 1);
+        const p = this.sample(u, v);
+        // The LAST line before a GPU buffer. Every producer upstream is
+        // guarded, and this is here anyway, because a non-finite vertex is
+        // not a wrong picture — it is a driver fault that takes every WebGL
+        // context in the browser with it. Falling back to the flat sample
+        // keeps the surface drawable; a vertex that still will not resolve is
+        // pinned to the quad, which is always finite.
+        if (Number.isFinite(p.x) && Number.isFinite(p.y)) {
+          pts.push({ x: p.x, y: p.y });
+        } else {
+          bad++;
+          const f = this._sampleFlat(u, v);
+          pts.push(Number.isFinite(f.x) && Number.isFinite(f.y)
+            ? { x: f.x, y: f.y } : { x: u, y: v });
+        }
       }
     }
+    if (bad) console.warn(`[ProjMesh] ${bad} non-finite vertices replaced — a tangent or control point is out of range`);
     return { cols: C, rows: R, pts };
   }
 
@@ -475,9 +510,16 @@ export class ProjMapMesh {
       for (const [k, e] of Object.entries(d.tans)) {
         const i = +k;
         if (!Number.isInteger(i) || i < 0 || i >= n || !e) continue;
+        // Finite check on the way IN as well as on the way out. JSON has no
+        // NaN, so a bad tangent serializes as `null` and reads back as 0 —
+        // but a file written by hand, a future format, or an in-memory copy
+        // that never went through JSON all can carry one, and a single
+        // non-finite tangent is enough to fault the GPU.
+        const fin = (a) => Array.isArray(a) && a.length === 2 &&
+                           Number.isFinite(+a[0]) && Number.isFinite(+a[1]);
         const o = {};
-        if (Array.isArray(e.u) && e.u.length === 2) o.u = [+e.u[0], +e.u[1]];
-        if (Array.isArray(e.v) && e.v.length === 2) o.v = [+e.v[0], +e.v[1]];
+        if (fin(e.u)) o.u = [+e.u[0], +e.u[1]];
+        if (fin(e.v)) o.v = [+e.v[0], +e.v[1]];
         if (o.u || o.v) this.tans[i] = o;
       }
     }

@@ -7524,6 +7524,17 @@ export function registerCoreParameters(ps) {
     type: PARAM_TYPE.TRIGGER,
     value: 0,
   });
+  // Put every curve handle back to its derived tangent, in one press.
+  // Group 'global' like meshStore, and for the same reason: a TRIGGER captured
+  // by a Display State would FIRE on recall, so recalling any state would wipe
+  // the handles on a mesh that had nothing to do with it.
+  ps.register({
+    id: "projmap.meshHandlesClear",
+    label: "Clear Handles",
+    group: "global",
+    type: PARAM_TYPE.TRIGGER,
+    value: 0,
+  });
   ps.register({
     id: "projmap.meshFade",
     label: "Mesh Fade",
