@@ -2663,31 +2663,48 @@ async function main() {
   // fragment shader.
   var GL=(function(){
     var cvs=document.getElementById('gl'), gl=null, prog=null, tex=null,
-        bufPos=null, bufUV=null, locPos=-1, locUV=-1, locTex=null, ok=false;
+        bufPos=null, bufUV=null, locPos=-1, locUV=-1, locTex=null, ok=false,
+        dead=false, trail=[];
     function sh(type,src){
       var o=gl.createShader(type); gl.shaderSource(o,src); gl.compileShader(o);
       if(!gl.getShaderParameter(o,gl.COMPILE_STATUS)){
         console.warn('[out] shader',gl.getShaderInfoLog(o)); return null; }
       return o;
     }
+    // A short TRAIL, not a single value: the first failure is the informative
+    // one, and a naive single slot gets overwritten by whatever the next frame
+    // trips over. A forced context loss recorded 'context-lost' and then
+    // immediately 'shader-fail' from the re-init, which reads like a shader bug.
+    function note(v){
+      try{
+        if(trail[trail.length-1]!==v){ trail.push(v); if(trail.length>6)trail.shift(); }
+        document.body.dataset.glstate=trail.join(' > ');
+      }catch(e){}
+    }
     function init(){
-      if(ok||gl===null&&cvs===null)return ok;
+      if(ok)return true;
+      // Do NOT retry every frame. Re-initialising on a dead context recompiles
+      // both shaders and relinks the program ~30 times a second and fails every
+      // time; only a contextrestored event clears this.
+      if(dead)return false;
+      if(!cvs){dead=true;note('no-canvas');return false;}
+      try{
       // preserveDrawingBuffer so the output can be read back — for verification,
       // and so a screenshot of the projected image is possible at all. The cost
       // is bounded: this canvas draws at most every 2nd frame (~30fps).
       gl=cvs.getContext('webgl',{alpha:true,premultipliedAlpha:false,preserveDrawingBuffer:true});
-      if(!gl)return false;
+      if(!gl){dead=true;note('no-webgl');return false;}
       var vs=sh(gl.VERTEX_SHADER,
         'attribute vec2 aPos;attribute vec3 aUV;varying vec3 vUV;'+
         'void main(){vUV=aUV;gl_Position=vec4(aPos,0.0,1.0);}');
       var fs=sh(gl.FRAGMENT_SHADER,
         'precision mediump float;varying vec3 vUV;uniform sampler2D uTex;'+
         'void main(){gl_FragColor=texture2D(uTex,vUV.xy/vUV.z);}');
-      if(!vs||!fs)return false;
+      if(!vs||!fs){dead=true;note('shader-fail');return false;}
       prog=gl.createProgram(); gl.attachShader(prog,vs); gl.attachShader(prog,fs);
       gl.linkProgram(prog);
       if(!gl.getProgramParameter(prog,gl.LINK_STATUS)){
-        console.warn('[out] link',gl.getProgramInfoLog(prog)); return false; }
+        console.warn('[out] link',gl.getProgramInfoLog(prog)); dead=true; note('link-fail'); return false; }
       locPos=gl.getAttribLocation(prog,'aPos');
       locUV =gl.getAttribLocation(prog,'aUV');
       locTex=gl.getUniformLocation(prog,'uTex');
@@ -2698,7 +2715,21 @@ async function main() {
       gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-      ok=true; return true;
+      // A context lost while a freshly opened popup is still settling is the
+      // classic way this goes black. Mark it unusable so draw() falls back to
+      // the CSS path, and re-init when it comes back — previously render()
+      // reported success regardless, so ANY failure here was a permanent black
+      // output with the fallback never engaging. That is the bug the owner hit
+      // on a first open: it stayed black, where a transient would have healed
+      // within a frame or two.
+      cvs.addEventListener('webglcontextlost',function(ev){
+        ev.preventDefault(); ok=false; dead=true; note('context-lost');
+      },false);
+      cvs.addEventListener('webglcontextrestored',function(){
+        ok=false; dead=false; note('context-restored'); init();
+      },false);
+      ok=true; note('ok'); return true;
+      }catch(err){ dead=true; note('init-threw:'+(err&&err.message||err)); return false; }
     }
     // q per corner from the diagonal intersection. Falls back to 1 for a
     // degenerate quad (collinear corners), which renders affine rather than
@@ -2717,6 +2748,7 @@ async function main() {
     }
     function upload(bmp){
       if(!ok&&!init())return false;
+      if(gl.isContextLost()){ok=false;note('lost-on-upload');return false;}
       gl.bindTexture(gl.TEXTURE_2D,tex);
       // NO flip. With UNPACK_FLIP_Y_WEBGL false, texture v=0 is the FIRST row
       // of the ImageBitmap, i.e. the image's top — which is exactly what the
@@ -2730,6 +2762,7 @@ async function main() {
     }
     function render(c){
       if(!ok)return false;
+      if(gl.isContextLost()){ok=false;note('lost-on-render');return false;}
       var W=cvs.width,H=cvs.height;
       gl.viewport(0,0,W,H);
       gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT);
@@ -2756,11 +2789,16 @@ async function main() {
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,tex);
       gl.uniform1i(locTex,0);
       gl.drawArrays(gl.TRIANGLES,0,6);
+      // Report the truth: a draw that errored must return false so draw()
+      // falls back rather than leaving a black output on screen.
+      var err=gl.getError();
+      if(err!==gl.NO_ERROR){ note('gl-error:'+err); return false; }
       return true;
     }
     function size(w,h){ if(cvs){cvs.width=w;cvs.height=h;} }
     return {init:init,upload:upload,render:render,size:size,
-            available:function(){return ok;}};
+            available:function(){return ok;},
+            state:function(){return trail.join(' > ');}};
   })();
 
   var glc=document.getElementById('gl');
