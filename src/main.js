@@ -3253,20 +3253,65 @@ async function main() {
    * snap, because there is no correspondence between a 3x3 and a 5x5 set of
    * control points.
    */
+  /**
+   * While a recall is in flight the MESH drives the corner params, not the
+   * other way round. Without this a 2x2 recall was overwritten on the very
+   * next frame by the per-frame "params are authoritative at 2x2" sync — the
+   * slot loaded correctly and vanished before it could be seen.
+   */
+  let _meshRecallActive = false;
+  const _pushMeshCorners = () => {
+    const c = projMesh.corners();
+    ps.set("projmap.tl_x", c.tl.x); ps.set("projmap.tl_y", c.tl.y);
+    ps.set("projmap.tr_x", c.tr.x); ps.set("projmap.tr_y", c.tr.y);
+    ps.set("projmap.br_x", c.br.x); ps.set("projmap.br_y", c.br.y);
+    ps.set("projmap.bl_x", c.bl.x); ps.set("projmap.bl_y", c.bl.y);
+  };
   const _recallMeshSlot = (i) => {
     if (!(i >= 1 && i <= 8)) return false;
     const secs = ps.get("projmap.meshFade")?.value ?? 0;
     if (!projMesh.beginMorph(String(i), secs)) return false;
+    _meshRecallActive = true;
+    if (!projMesh.morphing && projMesh.isQuad) {
+      _pushMeshCorners();            // snap recall: hand it straight over
+      _meshRecallActive = false;
+    }
     // Keep the resolution rows honest about what was just loaded.
     ps.set("projmap.meshCols", projMesh.cols);
     ps.set("projmap.meshRows", projMesh.rows);
     return true;
   };
+  /**
+   * Mark which slots hold a mesh, so you are not guessing which of eight is
+   * empty while standing at a projector. Labels only — the option COUNT and
+   * ORDER never change, so the stored SELECT index keeps meaning what it did.
+   */
+  const _refreshMeshSlotLabels = () => {
+    const p = ps.get("projmap.meshSlot");
+    if (!p) return;
+    const saved = new Set(projMesh.getSavedSlots());
+    for (let i = 1; i <= 8; i++) {
+      p.options[i] = saved.has(String(i)) ? `${i} \u25cf` : String(i);
+    }
+    const sel = document.querySelector('[data-param-id="projmap.meshSlot"] select')
+             ?? document.querySelector('select[data-param-id="projmap.meshSlot"]');
+    if (sel) {
+      const keep = sel.value;
+      [...sel.options].forEach((o, i) => { if (p.options[i]) o.textContent = p.options[i]; });
+      sel.value = keep;
+    }
+  };
+
+  // Mark slots saved in a previous session too, not only ones stored just now.
+  // Deferred: the panel that owns the <select> is built later in boot.
+  setTimeout(() => _refreshMeshSlotLabels(), 0);
+
   ps.get("projmap.meshStore")?.onChange(() => {
     const i = Math.round(ps.get("projmap.meshSlot")?.value ?? 0);
     if (i < 1 || i > 8) { showToast("Pick a MeshSlot first", 1800); return; }
-    showToast(projMesh.save(String(i))
-      ? `Mesh stored in slot ${i}` : "Mesh store failed", 1800);
+    const ok = projMesh.save(String(i));
+    if (ok) _refreshMeshSlotLabels();
+    showToast(ok ? `Mesh stored in slot ${i}` : "Mesh store failed", 1800);
   });
   ps.get("projmap.meshSlot")?.onChange((v) => {
     const i = Math.round(v);
@@ -9303,6 +9348,12 @@ void main() {
     // Mesh slot crossfade (projmap.meshFade > 0). Unconditional, unlike the
     // warp editor's tick, which sits inside the drawing block.
     projMesh.tickMorph(dt);
+    if (_meshRecallActive) {
+      // Keep the params following the mesh for the whole fade, then hand
+      // authority back so dragging a corner works again.
+      if (projMesh.isQuad) _pushMeshCorners();
+      if (!projMesh.morphing) _meshRecallActive = false;
+    }
 
     // Tick automation playback
     automation.tick(dt);
@@ -10214,7 +10265,9 @@ void main() {
           // describe a 5x5 grid.
           let _pmMesh = null;
           if (_pmActive) {
-            if (projMesh.isQuad && _pmCorners) projMesh.setCorners(_pmCorners);
+            if (projMesh.isQuad && _pmCorners && !_meshRecallActive) {
+              projMesh.setCorners(_pmCorners);
+            }
             _pmMesh = { cols: projMesh.cols, rows: projMesh.rows,
                         pts: projMesh.pts.map(p => ({ x: p.x, y: p.y })) };
           }
