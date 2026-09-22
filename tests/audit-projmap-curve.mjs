@@ -171,7 +171,7 @@ console.log('\n§3 four corners carry no curvature, so they stay projective');
 }
 
 // ── 4. End condition: extrapolated ghosts, not clamped ────────────────────
-console.log('\n§4 the border does not go slack (linear extrapolation, not clamping)');
+console.log('\n§4 the border does not go slack (extrapolated ghosts, not clamped)');
 {
   // A regular net on the unit square IS the identity map. Both models must
   // reproduce it exactly; a clamped end tangent does not, and misses by ~0.03
@@ -303,10 +303,18 @@ console.log('\n§7 subdivision preserves the shape');
               `->9x9 ${c9.worst.toExponential(2)}, ->17x17 ${c17.worst.toExponential(2)}`);
   check('curved subdivision shifts the surface only slightly',
     c5.worst < 0.01, `worst ${c5.worst.toExponential(2)} of the frame`);
-  check('curved subdivision converges as the net gets finer',
-    c17.worst < c9.worst && c9.worst < c5.worst,
+  // Exact OR converging. Demanding a strict decrease was wrong: with the
+  // quadratic end condition this case became exact, and three values sitting
+  // at float noise are not ordered — so the check went red on code that had
+  // just got better, which is the direction that teaches people to edit
+  // audits (2026-09-13).
+  const EXACT = 1e-12;
+  check('curved subdivision is exact, or converges as the net gets finer',
+    c5.worst < EXACT
+      ? (c9.worst < EXACT && c17.worst < EXACT)
+      : (c17.worst < c9.worst && c9.worst < c5.worst),
     `${c5.worst.toExponential(2)} -> ${c9.worst.toExponential(2)} -> ` +
-    `${c17.worst.toExponential(2)} is not decreasing`);
+    `${c17.worst.toExponential(2)}`);
 
   // A HAND-EDITED net is a different question, and the answer is not exact —
   // it never was. Measured against the pre-feature ProjMapMesh over this exact
@@ -894,6 +902,91 @@ console.log('\n§15 a bad tangent cannot fault the GPU');
   check('there is a way back from a mesh whose handles are wrong',
     /projmap\.meshHandlesClear/.test(main15) && /clearTangents\(\)/.test(main15),
     'otherwise recovery means resizing the grid and losing the shape');
+}
+
+// ── 16. The end condition, measured the way it was chosen ────────────────
+console.log('\n§16 a bow is a bow, not two straights and a corner');
+{
+  // The owner's report was "it is not making a perfect bow when wanted, has a
+  // bit of a corner to it". The number behind that is how much the TURN RATE
+  // varies along a bowed edge: a true circular arc is 1.0x, and the shipped
+  // linear end condition gave 12.2x — the edge left each corner aimed straight
+  // at the next point and did all its bending in the middle. That is not a
+  // matter of taste, it is a measurable property of the end tangent, so it is
+  // asserted rather than eyeballed.
+  const bowed = () => {
+    const m = new ProjMapMesh(3, 3);
+    m.setCurve(1);
+    m.pts[1] = { x: 0.5, y: -0.18 };      // raise the top-middle point
+    return m;
+  };
+  const turnRatio = (m) => {
+    const dir = (u) => {
+      const e = 1e-4;
+      const a = m.sample(u - e, 0), b = m.sample(u + e, 0);
+      return Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
+    };
+    const rates = [];
+    for (let i = 1; i < 10; i++) {
+      const u = i / 10;
+      rates.push(Math.abs(dir(u + 0.005) - dir(u - 0.005)));
+    }
+    return { ratio: Math.max(...rates) / Math.min(...rates), n: rates.length };
+  };
+  const r = turnRatio(bowed());
+  console.log(`       turn-rate variation along a bowed edge: ${r.ratio.toFixed(2)}x (a circle is 1.00x)`);
+  check('sampled a non-empty set of points along the edge', r.n === 9, `${r.n}`);
+  check('a bowed edge turns at a nearly constant rate', r.ratio < 3,
+    `${r.ratio.toFixed(2)}x — the chord end condition scored 12.2x and was ` +
+    'reported as "a bit of a corner"; anything near that is the same defect');
+
+  // The quadratic ghost must not cost the flat case anything.
+  const reg = new ProjMapMesh(3, 3); reg.setCurve(1);
+  let idw = 0;
+  for (const [u, v] of PROBES) {
+    const p = reg.sample(u, v);
+    idw = Math.max(idw, Math.abs(p.x - u), Math.abs(p.y - v));
+  }
+  check('a regular net is still exactly the identity map', idw < 1e-12,
+    `worst ${idw.toExponential(2)}`);
+
+  // Two points on an axis cannot fit a parabola, so that axis must fall back.
+  const thin = new ProjMapMesh(2, 5);
+  thin.setCurve(1);
+  let thinBad = 0, thinW = 0;
+  for (const [u, v] of PROBES) {
+    const p = thin.sample(u, v);
+    if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) thinBad++;
+    thinW = Math.max(thinW, Math.abs(p.x - u), Math.abs(p.y - v));
+  }
+  check('a 2-wide net falls back to the linear ghost instead of reading past the end',
+    thinBad === 0 && thin.cols === 2 && thin.rows === 5,
+    `${thinBad} non-finite — _ctl(-1) would otherwise want a third column`);
+  // And the fallback must be an EXTRAPOLATION, not a clamp. A clamped ghost
+  // halves the end tangent, so the surface goes slack along that axis — on a
+  // 2-wide net that is the whole of the u direction, and it would not show up
+  // anywhere else in this file, because every other fixture has 3+ columns.
+  check('the 2-wide fallback keeps a regular net the exact identity map',
+    thinW < 1e-12, `worst ${thinW.toExponential(2)} — a clamped ghost gives ` +
+    'half the chord, and the image compresses toward the border');
+
+  // The docstring claims the axes commute. Assert it rather than assuming.
+  const com = new ProjMapMesh(4, 4);
+  com.setPoint(1, 1, 0.40, 0.28); com.setPoint(2, 2, 0.62, 0.71);
+  const corner = com._ctl(-1, -1);
+  const byRowsThenCols = (() => {
+    const g = (i, j) => com._ctl(i, j);
+    // extrapolate along j first, then along i, by hand
+    const col = (i) => _q3(g(i, 0), g(i, 1), g(i, 2));
+    return _q3(col(0), col(1), col(2));
+  })();
+  function _q3(a, b, c) {
+    return { x: 3 * a.x - 3 * b.x + c.x, y: 3 * a.y - 3 * b.y + c.y };
+  }
+  check('a corner ghost is the same value whichever axis is extrapolated first',
+    Math.abs(corner.x - byRowsThenCols.x) < 1e-12 &&
+    Math.abs(corner.y - byRowsThenCols.y) < 1e-12,
+    `${corner.x},${corner.y} vs ${byRowsThenCols.x},${byRowsThenCols.y}`);
 }
 
 console.log(`\n${failures === 0 ? 'PASS' : `FAILED: ${failures}`}`);

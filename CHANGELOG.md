@@ -9,6 +9,14 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Fixed
+- **A bowed edge now bows, instead of bending all in one place.** Raising the
+  middle of an edge gave a shape that ran almost straight out of each corner
+  and did its turning in the middle — a bow with a corner in it. The cause was
+  the rule for how the curve leaves the LAST point of the mesh, which aimed it
+  straight at its neighbour. It now continues the curve instead. Measured as
+  how much the turn rate varies along the edge, where a true circle is 1.0:
+  it was 12.2, it is now 1.3. A straight mesh is completely unaffected.
+
 - **Adjusting a curve handle could black out the whole instrument.** A handle
   drag divides by the output window's width, and a window reports width 0 for
   one frame as it goes fullscreen — so a tangent could come out infinite.

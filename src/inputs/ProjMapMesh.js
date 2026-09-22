@@ -82,6 +82,19 @@ function hermiteT(t) {
   return [t3 - 2 * t2 + t, t3 - t2];
 }
 
+/**
+ * Ghost control points one step outside the net, for the spline's end tangents.
+ * `_ctl` documents why there are two and which is used when.
+ */
+/** Linear: continues the chord. The only option when an axis has 2 points. */
+function _ghostL(a, b) {
+  return { x: 2 * a.x - b.x, y: 2 * a.y - b.y };
+}
+/** Quadratic: continues the CURVATURE through the first three points. */
+function _ghostQ(a, b, c) {
+  return { x: 3 * a.x - 3 * b.x + c.x, y: 3 * a.y - 3 * b.y + c.y };
+}
+
 export class ProjMapMesh {
   constructor(cols = 2, rows = 2) {
     this.cols = 2;
@@ -179,36 +192,55 @@ export class ProjMapMesh {
   }
 
   /**
-   * Control point with one step of LINEAR EXTRAPOLATION outside the net, which
-   * is what a Catmull-Rom needs for its end tangents.
+   * Control point, with one step of EXTRAPOLATION outside the net — which is
+   * where a spline's end tangents come from, and therefore what decides the
+   * shape of every bow drawn across a border of the mesh.
    *
-   * Extrapolation, not clamping. Clamping (`P[-1] = P[0]`) gives a zero end
-   * tangent, so the surface flattens into every border of the net — on a
-   * cylinder mapped across three columns that is visible as the image going
-   * slack at the left and right edges, exactly where alignment matters most.
-   * `2*P0 - P1` instead continues the curve, and has the property the flat
-   * case needs: over collinear points it reproduces the straight line.
+   * Quadratic where there are three points to fit, linear where there are only
+   * two. Three end conditions were measured on a bowed edge, by how much the
+   * TURN RATE varies along it — a true circular arc is 1.0x, and the eye reads
+   * a high ratio as a corner rather than as a curve:
    *
-   * The two axes are independent linear operators, so a corner ghost is the
-   * same value whichever axis is extrapolated first.
+   *   clamped   (`P[-1] = P[0]`)          zero end tangent; the surface goes
+   *                                       slack into every border
+   *   linear    (`2*P0 - P1`)             12.2x — the end tangent is the CHORD
+   *                                       to the neighbour, so the edge leaves
+   *                                       each corner aimed straight at the
+   *                                       next point and does all its bending
+   *                                       in the middle. Shipped first, and
+   *                                       reported as "not a perfect bow, has
+   *                                       a bit of a corner to it", which is
+   *                                       exactly what 12x is.
+   *   quadratic (`3*P0 - 3*P1 + P2`)      1.3x — the tangent of the parabola
+   *                                       through the first three points, so
+   *                                       the curve leaves the corner already
+   *                                       turning. 3.0x on a 5x5.
+   *
+   * The flat case is unharmed: over collinear, evenly spaced points the
+   * quadratic IS the line, so a regular net still samples as the exact
+   * identity map (measured 2.2e-16, asserted in §4).
+   *
+   * Both forms are fixed linear combinations of points along one axis, so the
+   * two axes commute and a corner ghost is the same value whichever axis is
+   * extrapolated first — asserted in §16 rather than assumed.
    */
   _ctl(i, j) {
     const C = this.cols, R = this.rows;
     if (i < 0) {
-      const a = this._ctl(0, j), b = this._ctl(1, j);
-      return { x: 2 * a.x - b.x, y: 2 * a.y - b.y };
+      return C >= 3 ? _ghostQ(this._ctl(0, j), this._ctl(1, j), this._ctl(2, j))
+                    : _ghostL(this._ctl(0, j), this._ctl(1, j));
     }
     if (i > C - 1) {
-      const a = this._ctl(C - 1, j), b = this._ctl(C - 2, j);
-      return { x: 2 * a.x - b.x, y: 2 * a.y - b.y };
+      return C >= 3 ? _ghostQ(this._ctl(C - 1, j), this._ctl(C - 2, j), this._ctl(C - 3, j))
+                    : _ghostL(this._ctl(C - 1, j), this._ctl(C - 2, j));
     }
     if (j < 0) {
-      const a = this._ctl(i, 0), b = this._ctl(i, 1);
-      return { x: 2 * a.x - b.x, y: 2 * a.y - b.y };
+      return R >= 3 ? _ghostQ(this._ctl(i, 0), this._ctl(i, 1), this._ctl(i, 2))
+                    : _ghostL(this._ctl(i, 0), this._ctl(i, 1));
     }
     if (j > R - 1) {
-      const a = this._ctl(i, R - 1), b = this._ctl(i, R - 2);
-      return { x: 2 * a.x - b.x, y: 2 * a.y - b.y };
+      return R >= 3 ? _ghostQ(this._ctl(i, R - 1), this._ctl(i, R - 2), this._ctl(i, R - 3))
+                    : _ghostL(this._ctl(i, R - 1), this._ctl(i, R - 2));
     }
     return this.pts[j * C + i];
   }
