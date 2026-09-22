@@ -1765,11 +1765,19 @@ export const MUTATIONS = [
     replace: '',
   },
   {
+    name: 'projmesh: the repost gate ignores edit mode',
+    audit: 'audit-projmap-curve.mjs',
+    file: 'src/main.js',
+    why: 'THE SHIPPED DEFECT. The payload\'s tangents are only built while edit mode is on, so gating on the mesh alone meant entering edit mode on a settled mesh reposted nothing and the curve handles simply did not appear — until you happened to nudge a point, at which point they arrived and it looked like they had been there all along',
+    find: '            if (projMesh._rev !== _pmNetRev || _sub !== _pmNetSub ||\n                _pmEdit !== _pmNetEdit) {',
+    replace: '            if (projMesh._rev !== _pmNetRev || _sub !== _pmNetSub) {',
+  },
+  {
     name: 'projmesh: the render net is reposted on every frame',
     audit: 'audit-projmap-curve.mjs',
     file: 'src/main.js',
     why: 'a curved 17x17 net is 2401 points, so an ungated repost structured-clones ~72,000 points a second into the output window while nothing is moving — the sender sees no cost at all and the projector is where it lands',
-    find: '            if (projMesh._rev !== _pmNetRev || _sub !== _pmNetSub) {',
+    find: '            if (projMesh._rev !== _pmNetRev || _sub !== _pmNetSub ||\n                _pmEdit !== _pmNetEdit) {',
     replace: '            if (true) {',
   },
   {

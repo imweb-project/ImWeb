@@ -2506,7 +2506,7 @@ async function main() {
   // changes, and the key is OMITTED otherwise (absent = keep what you have,
   // explicit null = there is none). Counted rather than assumed: a dirty-check
   // that silently never fires reads exactly like one that works.
-  let _pmNetRev = -1, _pmNetSub = -1;
+  let _pmNetRev = -1, _pmNetSub = -1, _pmNetEdit = null;
   const _pmNetStats = { ticks: 0, sends: 0 };
   if (import.meta.env.DEV) window.__pmNetStats = _pmNetStats;
   (() => {
@@ -10661,8 +10661,15 @@ void main() {
             // curve has to arrive already tessellated.
             const _sub = projMesh.renderSub();
             _pmNetStats.ticks++;
-            if (projMesh._rev !== _pmNetRev || _sub !== _pmNetSub) {
-              _pmNetRev = projMesh._rev; _pmNetSub = _sub;
+            // EDIT is part of the gate, not just of the payload. The tangents
+            // below are only built while edit mode is on, so gating on the
+            // mesh alone meant entering edit mode on a settled mesh reposted
+            // nothing and the curve handles simply did not appear until you
+            // happened to move a point. A dirty-check has to compare every
+            // input its output depends on, not only the obvious one.
+            if (projMesh._rev !== _pmNetRev || _sub !== _pmNetSub ||
+                _pmEdit !== _pmNetEdit) {
+              _pmNetRev = projMesh._rev; _pmNetSub = _sub; _pmNetEdit = _pmEdit;
               _pmRenderMesh = projMesh.renderNet(_sub);
               // Tangents ride the same gate, and only while they could be
               // shown: handles need Mesh Curve up (a flat surface has no
@@ -10708,7 +10715,8 @@ void main() {
           } else if (_pmNetRev !== -1) {
             // Mapping switched off: drop the popup's net rather than leaving it
             // holding a shape nothing is maintaining any more.
-            _pmNetRev = -1; _pmNetSub = -1; _pmRenderMesh = null; _pmTans = null;
+            _pmNetRev = -1; _pmNetSub = -1; _pmNetEdit = null;
+            _pmRenderMesh = null; _pmTans = null;
           }
           const _pmMsg = { bitmap, corners: _pmCorners, mesh: _pmMesh,
                            gridLines: _pmGridLines,

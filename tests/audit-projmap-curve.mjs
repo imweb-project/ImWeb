@@ -574,14 +574,19 @@ console.log('\n§11 the render net is reposted only when it changes');
   // and that `renderSub()` is stable. It is a replica of the comparison, not
   // the comparison main.js makes — so §9 anchors that call site separately,
   // and neither check is sufficient alone.
-  const replay = (mesh, frames, onFrame) => {
-    let rev = -1, sub = -1, sends = 0, ticks = 0, lastN = 0;
+  // The replay carries EDIT as well as the mesh, because the payload's
+  // tangents are only built while edit mode is on — so edit is an input the
+  // gate has to compare, and leaving it out is a guard that cannot fire for
+  // the one change that matters.
+  const replay = (mesh, frames, onFrame, editAt) => {
+    let rev = -1, sub = -1, edit = null, sends = 0, ticks = 0, lastN = 0;
     for (let f = 0; f < frames; f++) {
       onFrame?.(f);
+      const ed = editAt ? editAt(f) : true;
       const sb = mesh.renderSub();
       ticks++;
-      if (mesh._rev !== rev || sb !== sub) {
-        rev = mesh._rev; sub = sb;
+      if (mesh._rev !== rev || sb !== sub || ed !== edit) {
+        rev = mesh._rev; sub = sb; edit = ed;
         lastN = mesh.renderNet(sb).pts.length;
         sends++;
       }
@@ -618,6 +623,21 @@ console.log('\n§11 the render net is reposted only when it changes');
   check('the 2x2 path reposts every frame, and its net is four points',
     r3.sends === r3.ticks && r3.lastN === 4,
     `${r3.sends}/${r3.ticks} sends, ${r3.lastN} pts`);
+
+  // Entering edit mode on a mesh that is sitting still must repost, or the
+  // curve handles never arrive. Measured, not read.
+  const settled = new ProjMapMesh(3, 3);
+  settled.setPoint(1, 1, 0.42, 0.30);
+  settled.setCurve(1);
+  const r5 = replay(settled, 30, null, (f) => f >= 15);
+  console.log(`       settled mesh, edit toggled at frame 15: ${r5.sends} send(s) over ${r5.ticks} frames`);
+  check('entering edit mode reposts even though the mesh did not move',
+    r5.sends === 2, `${r5.sends} — 1 initial + 1 for the edit toggle; a gate ` +
+    'on the mesh alone gives 1, and the handles never appear');
+  check('the real gate compares edit, not only the mesh',
+    /projMesh\._rev !== _pmNetRev \|\| _sub !== _pmNetSub \|\|[\s\S]{0,40}_pmEdit !== _pmNetEdit/
+      .test(sanitizeSource(readFileSync('src/main.js', 'utf8'), false)),
+    '\u00a711 replays the comparison; this pins the one main.js actually makes');
 
   const big = new ProjMapMesh(17, 17); big.setCurve(1);
   const r4 = replay(big, 30);

@@ -9,6 +9,13 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Fixed
+- **Entering edit mode showed no curve handles until you moved something.**
+  The handles are only sent to the output window while edit mode is on, but
+  the check deciding whether to send them looked at the mesh and not at edit
+  mode — so on a mesh that was sitting still, switching edit on sent nothing
+  and the handles simply did not appear. Nudging any point made them show up,
+  which made it look as though they had been there all along.
+
 - **Dragging a point too far no longer smears the picture across the screen.**
   Push a control point far enough inside its own cell and the perspective
   maths for that cell runs out of room — past a certain point it folds through
