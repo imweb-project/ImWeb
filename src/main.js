@@ -2921,9 +2921,9 @@ async function main() {
 
   // Toolbar buttons (touch-friendly grid + fullscreen)
   function toggleGrid(){
-    gridActive=!gridActive;
-    tbGrid.classList.toggle('on',gridActive);
-    draw();
+    // Flip the PARAM via the opener, like 'h' does — the button, the 'g' key
+    // and the Map Grid row are then one switch rather than three that drift.
+    window.opener?.postMessage({type:'projmap-grid-toggle'},'*');
   }
   tbGrid.addEventListener('click',toggleGrid);
   // documentElement, not body. Fullscreening BODY leaves the html element
@@ -2984,12 +2984,12 @@ async function main() {
     nudgeCorner(selectedCorner,d[0],d[1]);
   });
 
-  // In fullscreen the toolbar is projected onto the surface along with the
-  // image, so ⊞ Grid and ⛶ Full have to go. Both remain reachable: 'g'
-  // toggles the grid and Escape leaves fullscreen.
+  // The toolbar follows EDIT MODE, and nothing else. It used to hide in
+  // fullscreen as well, which was one condition too many: edit-off already
+  // gives a clean projection, and the extra rule took ⊞ Grid away in exactly
+  // the case that needs it — calibrating fullscreen on the surface itself.
   function _syncChrome(){
-    var fs=!!(document.fullscreenElement||document.webkitFullscreenElement);
-    toolbar.style.visibility=fs?'hidden':'visible';
+    toolbar.style.visibility=lastEdit?'visible':'hidden';
   }
   document.addEventListener('fullscreenchange',_syncChrome);
   document.addEventListener('webkitfullscreenchange',_syncChrome);
@@ -3011,7 +3011,9 @@ async function main() {
     const showUI=!!lastCorners&&lastEdit;
     ho.style.display=showUI?'block':'none';
     toolbar.style.display=showUI?'flex':'none';
-    if(!lastEdit&&gridActive){gridActive=false;tbGrid.classList.remove('on');}
+    gridActive=!!e.data.grid&&lastEdit;
+    tbGrid.classList.toggle('on',gridActive);
+    _syncChrome();
     applyTransform();positionHandles();draw();
     if(showUI)_showUI();
   });
@@ -3100,6 +3102,11 @@ async function main() {
   // ── Projection Mapping ────────────────────────────────────────────────────
   // Corner handles live on the second screen. It sends updates back here.
   window.addEventListener("message", (e) => {
+    if (e.data?.type === "projmap-grid-toggle") {
+      const g = ps.get("projmap.grid");
+      if (g) ps.set("projmap.grid", g.value ? 0 : 1);
+      return;
+    }
     if (e.data?.type === "projmap-edit-toggle") {
       // 'h' in the output window. Flips the param, so the row in Output and the
       // key are the same switch rather than two that can drift apart.
@@ -10024,7 +10031,9 @@ void main() {
             : null;
           // `edit` is view state, not geometry: the mapping applies either way.
           const _pmEdit = !!ps.get("projmap.edit")?.value;
-          _outWin.postMessage({ bitmap, corners: _pmCorners, edit: _pmEdit }, "*", [bitmap]);
+          const _pmGrid = !!ps.get("projmap.grid")?.value;
+          _outWin.postMessage({ bitmap, corners: _pmCorners, edit: _pmEdit, grid: _pmGrid },
+                              "*", [bitmap]);
         } else {
           bitmap.close();
         }

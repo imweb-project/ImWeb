@@ -7491,6 +7491,17 @@ export function registerCoreParameters(ps) {
     type: PARAM_TYPE.TOGGLE,
     value: 1,
   });
+  // The calibration grid drawn over the mapped output. Group 'global' for the
+  // same reason as projmap.edit — a view state, not part of a look — and here
+  // so it can be reached from the panel and mapped to a controller, not only
+  // from the output window's own button.
+  ps.register({
+    id: "projmap.grid",
+    label: "Map Grid",
+    group: "global",
+    type: PARAM_TYPE.TOGGLE,
+    value: 0,
+  });
   ps.register({
     id: "projmap.lock",
     label: "Lock Mapping",
