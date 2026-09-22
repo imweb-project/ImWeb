@@ -2971,6 +2971,7 @@ async function main() {
   var GL=(function(){
     var cvs=document.getElementById('gl'), gl=null, prog=null, tex=null,
         bufPos=null, bufUV=null, locPos=-1, locUV=-1, locTex=null, ok=false,
+        locFade=null, locGamma=null, fade=0, gamma=1,
         dead=false, trail=[];
     function sh(type,src){
       var o=gl.createShader(type); gl.shaderSource(o,src); gl.compileShader(o);
@@ -3004,9 +3005,27 @@ async function main() {
       var vs=sh(gl.VERTEX_SHADER,
         'attribute vec2 aPos;attribute vec3 aUV;varying vec3 vUV;'+
         'void main(){vUV=aUV;gl_Position=vec4(aPos,0.0,1.0);}');
+      // Soft edge. The falloff is computed in UV space, which IS the mesh's
+      // own parameter domain — so the band is a fixed fraction of the image
+      // and follows the surface wherever the mesh is dragged, instead of
+      // being a rectangle in screen space that would cut across a warped
+      // shape. min() of the two axes rather than a product of four edges: a
+      // product darkens the corners twice, which reads as vignetting.
+      // Multiplies RGB, not alpha — a projector blends by emitting less
+      // light, and fading alpha would leave the compositing to the page
+      // background instead.
       var fs=sh(gl.FRAGMENT_SHADER,
         'precision mediump float;varying vec3 vUV;uniform sampler2D uTex;'+
-        'void main(){gl_FragColor=texture2D(uTex,vUV.xy/vUV.z);}');
+        'uniform float uFade;uniform float uGamma;'+
+        'void main(){'+
+        'vec2 uv=vUV.xy/vUV.z;'+
+        'vec4 c=texture2D(uTex,uv);'+
+        'if(uFade>0.0){'+
+        'vec2 d=min(uv,1.0-uv)/uFade;'+
+        'float a=clamp(min(d.x,d.y),0.0,1.0);'+
+        'c.rgb*=pow(a,uGamma);'+
+        '}'+
+        'gl_FragColor=c;}');
       if(!vs||!fs){dead=true;note('shader-fail');return false;}
       prog=gl.createProgram(); gl.attachShader(prog,vs); gl.attachShader(prog,fs);
       gl.linkProgram(prog);
@@ -3015,6 +3034,8 @@ async function main() {
       locPos=gl.getAttribLocation(prog,'aPos');
       locUV =gl.getAttribLocation(prog,'aUV');
       locTex=gl.getUniformLocation(prog,'uTex');
+      locFade=gl.getUniformLocation(prog,'uFade');
+      locGamma=gl.getUniformLocation(prog,'uGamma');
       bufPos=gl.createBuffer(); bufUV=gl.createBuffer();
       tex=gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D,tex);
@@ -3095,6 +3116,7 @@ async function main() {
       gl.vertexAttribPointer(locUV,3,gl.FLOAT,false,0,0);
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,tex);
       gl.uniform1i(locTex,0);
+      gl.uniform1f(locFade,fade); gl.uniform1f(locGamma,gamma);
       gl.drawArrays(gl.TRIANGLES,0,6);
       // Report the truth: a draw that errored must return false so draw()
       // falls back rather than leaving a black output on screen.
@@ -3154,13 +3176,16 @@ async function main() {
       gl.vertexAttribPointer(locUV,3,gl.FLOAT,false,0,0);
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,tex);
       gl.uniform1i(locTex,0);
+      gl.uniform1f(locFade,fade); gl.uniform1f(locGamma,gamma);
       gl.drawArrays(gl.TRIANGLES,0,pos.length/2);
       var e2=gl.getError();
       if(e2!==gl.NO_ERROR){ note('gl-error:'+e2); return false; }
       return true;
     }
     function size(w,h){ if(cvs){cvs.width=w;cvs.height=h;} }
+    function setEdge(f,g){ fade=f; gamma=g; }
     return {init:init,upload:upload,render:render,renderMesh:renderMesh,size:size,
+            setEdge:setEdge,
             available:function(){return ok;},
             state:function(){return trail.join(' > ');}};
   })();
@@ -3362,6 +3387,12 @@ async function main() {
     if('renderMesh' in e.data)lastRenderMesh=e.data.renderMesh||null;
     if('tans' in e.data)lastTans=e.data.tans||null;
     lastAllHandles=!!e.data.allHandles;
+    // Half of the posted percentage: the band runs from each edge inward, so
+    // 50% from both sides meets in the middle and is the most that can mean
+    // anything. Clamped here rather than trusted, because it divides in the
+    // shader.
+    GL.setEdge(Math.max(0,Math.min(0.5,(+e.data.edgeFade||0)/100)),
+               Math.max(0.05,+e.data.edgeGamma||1));
     tbHnd.classList.toggle('on',lastAllHandles);
     lastGridLines=e.data.gridLines||null;
     lastEdit=e.data.edit!==false;
@@ -10555,6 +10586,8 @@ void main() {
           const _pmEdit = !!ps.get("projmap.edit")?.value;
           const _pmGrid = !!ps.get("projmap.grid")?.value;
           const _pmAllH = !!ps.get("projmap.meshAllHandles")?.value;
+          const _pmFade = +ps.get("projmap.edgeFade")?.value || 0;
+          const _pmGam  = +ps.get("projmap.edgeGamma")?.value || 1;
           // At 2x2 the params are the source of truth and the mesh mirrors
           // them, so dragging a handle or typing a corner still drives
           // everything. Above 2x2 the mesh owns its own points and the params
@@ -10637,7 +10670,8 @@ void main() {
           }
           const _pmMsg = { bitmap, corners: _pmCorners, mesh: _pmMesh,
                            gridLines: _pmGridLines,
-                           edit: _pmEdit, grid: _pmGrid, allHandles: _pmAllH };
+                           edit: _pmEdit, grid: _pmGrid, allHandles: _pmAllH,
+                           edgeFade: _pmFade, edgeGamma: _pmGam };
           if (_pmRenderMesh !== undefined) _pmMsg.renderMesh = _pmRenderMesh;
           if (_pmTans !== undefined) _pmMsg.tans = _pmTans;
           _outWin.postMessage(_pmMsg, "*", [bitmap]);

@@ -61,6 +61,24 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   a smeared image. Raising the curve removes that — a curve has no vanishing
   line to cross.
 
+- **Edge Fade** and **Edge Gamma** (Mapping panel). Fades the projected image
+  out toward the border of the mesh, so a mapping ends by melting into the
+  surface instead of on a hard rectangle edge — and so two projectors can be
+  overlapped and blended into one image. **Edge Fade** is the width of the
+  band as a percentage of the image, from each edge inward; **Edge Gamma**
+  shapes the falloff, which is what lets two overlapping projectors add up to
+  even brightness rather than a bright seam. Both start at off.
+
+  The fade is measured in the mesh's own coordinates, so the band follows the
+  surface wherever the points are dragged rather than sitting in a fixed
+  rectangle on the screen. Corners fade once, not twice, so there is no
+  vignette. Saved with the project like the rest of the mapping, and left
+  alone by Display State recall while the mapping lock is on.
+
+  One limit worth knowing: if the output window ever falls back from WebGL to
+  its plain-canvas path — which only happens when the graphics context is
+  lost — the fade is not applied, and the edge is hard until it recovers.
+
 - **Curve handles.** With Mesh Curve up, clicking a control point now shows
   four small handles — gold for across, blue for down — with an arm through
   the point. Drag one to set how the surface leaves that point, instead of

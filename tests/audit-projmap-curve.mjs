@@ -1006,5 +1006,70 @@ console.log('\n§16 a bow is a bow, not two straights and a corner');
     `${corner.x},${corner.y} vs ${byRowsThenCols.x},${byRowsThenCols.y}`);
 }
 
+// ── 17. Soft edge ────────────────────────────────────────────────────────
+console.log('\n§17 the edge fade');
+{
+  const ps17 = new ParameterSystem();
+  registerCoreParameters(ps17);
+  const f = ps17.get('projmap.edgeFade'), g = ps17.get('projmap.edgeGamma');
+  check('projmap.edgeFade is registered', !!f);
+  check('projmap.edgeGamma is registered', !!g);
+  check('both default to OFF', f?.value === 0 && g?.value === 1,
+    `${f?.value} / ${g?.value} — any other default changes every saved project`);
+  check('both are group "projmap"', f?.group === 'projmap' && g?.group === 'projmap',
+    `${f?.group} / ${g?.group} — an edge blend is part of calibrating a ` +
+    'physical install, so it belongs in a project file and must be stripped ' +
+    'from Display State recall by the mapping lock');
+  check('the fade cannot exceed half the image', f?.max <= 50,
+    `max ${f?.max} — the band runs inward from each edge, so 50 from both ` +
+    'sides already meets in the middle');
+
+  const main17 = sanitizeSource(readFileSync('src/main.js', 'utf8'), false);
+  // The falloff must be computed from UV — the mesh's own parameter domain —
+  // not from screen position, or the band becomes a rectangle cutting across
+  // a warped shape instead of following its border.
+  check('the falloff is computed in uv space',
+    /vec2 d=min\(uv,1\.0-uv\)\/uFade/.test(main17),
+    'a screen-space band would not follow the mesh');
+  check('the falloff is gamma-shaped and multiplies light, not alpha',
+    /c\.rgb\*=pow\(a,uGamma\)/.test(main17),
+    'two overlapping projectors only sum to even brightness with a gamma ramp');
+  check('min() of the two axes, so corners do not darken twice',
+    /float a=clamp\(min\(d\.x,d\.y\)/.test(main17),
+    'a product of four edges vignettes the corners');
+  // BOTH draw paths share one program, so both must set the uniforms. This is
+  // the classic shape where one path is updated and the other quietly is not —
+  // here it would mean the fade works on a mesh and not on a bare 4-corner pin.
+  const sets = (main17.match(/gl\.uniform1f\(locFade,fade\)/g) ?? []).length;
+  check('every draw path sets the edge uniforms', sets === 2,
+    `${sets} of 2 — render() and renderMesh() share one program`);
+  check('the receiver clamps the fade rather than trusting it',
+    /Math\.min\(0\.5,\(\+e\.data\.edgeFade\|\|0\)\/100\)/.test(main17),
+    'it divides in the shader, so a 0 or a negative would not stay bounded');
+  check('the receiver floors the gamma above zero',
+    /Math\.max\(0\.05,\+e\.data\.edgeGamma\|\|1\)/.test(main17),
+    'pow(a, 0) is 1 everywhere, which silently disables the fade');
+
+  // Measured on a real GPU (WebGL, 256x64 readback of a white quad) at the
+  // time this shipped, recorded here so a later change to the formula has a
+  // reference to fail against rather than an opinion:
+  //   fade 0            255 flat across          — off is off
+  //   fade 0.25 gamma 1   2  66 129 193 255 ...  — linear over the outer 1/4
+  //   fade 0.25 gamma 2   0  17  66 146 255 ...  — 0.25^2=.0625->16, 0.5^2->64
+  // The maths behind those three rows is asserted here in JS, so the shape is
+  // guarded even though the compile itself needs a browser.
+  const ramp = (t, fade, gamma) => {
+    const d = Math.min(t, 1 - t) / fade;
+    return Math.round(Math.pow(Math.min(1, Math.max(0, d)), gamma) * 255);
+  };
+  check('the recorded linear ramp matches the formula',
+    ramp(0.0625, 0.25, 1) === 64 && ramp(0.125, 0.25, 1) === 128 &&
+    ramp(0.5, 0.25, 1) === 255,
+    `${ramp(0.0625, 0.25, 1)} / ${ramp(0.125, 0.25, 1)} / ${ramp(0.5, 0.25, 1)}`);
+  check('the recorded gamma ramp matches the formula',
+    ramp(0.0625, 0.25, 2) === 16 && ramp(0.125, 0.25, 2) === 64,
+    `${ramp(0.0625, 0.25, 2)} / ${ramp(0.125, 0.25, 2)}`);
+}
+
 console.log(`\n${failures === 0 ? 'PASS' : `FAILED: ${failures}`}`);
 process.exit(failures === 0 ? 0 : 1);

@@ -7532,6 +7532,34 @@ export function registerCoreParameters(ps) {
   // than only for the selected one. Group 'global': like projmap.grid and
   // projmap.edit this is a view state, and a Display State that switched the
   // handles on mid-performance would be drawing furniture over the projection.
+  // Soft edge. Fades the projected image out toward the border of the MESH, so
+  // a mapping ends by melting into the surface instead of on a hard rectangle
+  // edge — and so two projectors can be overlapped and blended.
+  //
+  // Group 'projmap' with the geometry, not 'global': an edge blend is part of
+  // calibrating a physical install, exactly like the corner positions, so it
+  // belongs in a project file and must be stripped from Display State recall
+  // by the mapping lock. A state that changed the blend mid-show would break
+  // the seam between two projectors.
+  ps.register({
+    id: "projmap.edgeFade",
+    label: "Edge Fade",
+    group: "projmap",
+    min: 0, max: 50, step: 0.5,
+    value: 0,
+    unit: "%",
+  });
+  // The falloff SHAPE. Linear light does not look linear and, more to the
+  // point, two overlapping projectors only sum to even brightness when each
+  // one's ramp is gamma-shaped — which is why this is a real control and not
+  // a constant someone picked.
+  ps.register({
+    id: "projmap.edgeGamma",
+    label: "Edge Gamma",
+    group: "projmap",
+    min: 0.2, max: 4, step: 0.05,
+    value: 1,
+  });
   ps.register({
     id: "projmap.meshAllHandles",
     label: "All Handles",
