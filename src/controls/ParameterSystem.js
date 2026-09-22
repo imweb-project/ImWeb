@@ -7475,6 +7475,22 @@ export function registerCoreParameters(ps) {
   // Group 'global' so the lock itself is never captured: a state must not be able
   // to switch it off. Default ON — losing alignment is unrecoverable in the field,
   // while an uncaptured corner set is merely surprising.
+  // Mapping being ACTIVE and editing it are different things, and conflating
+  // them meant the corner rings were on screen whenever the mapping was — i.e.
+  // projected onto the surface during a performance, with no way to keep the
+  // geometry and drop the UI. Off = the mapping still applies, the rings, the
+  // grid and the toolbar are gone.
+  //
+  // Group 'global', like global.showwarpgrid: this is a view state, not part of
+  // a look, so no Display State should capture it. Listed explicitly in the
+  // projmap panel (UI.js) rather than the auto-built global one.
+  ps.register({
+    id: "projmap.edit",
+    label: "Edit Mapping",
+    group: "global",
+    type: PARAM_TYPE.TOGGLE,
+    value: 1,
+  });
   ps.register({
     id: "projmap.lock",
     label: "Lock Mapping",

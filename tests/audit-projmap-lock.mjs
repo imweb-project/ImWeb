@@ -52,10 +52,24 @@ check('projmap.lock is group "global"', lock?.group === 'global',
 check('projmap.lock defaults ON', lock?.value === 1,
   'losing alignment in the field is unrecoverable; an uncaptured corner set is not');
 
-const corners = ps.getAll().filter(p => p.id.startsWith('projmap.') && p.id !== 'projmap.lock');
+// Params in the projmap namespace that are deliberately NOT geometry, and so
+// are deliberately group 'global' (never captured, never recalled):
+//   projmap.lock — the calibration lock itself; a state must not switch it off
+//   projmap.edit — whether the rings/grid/toolbar are shown; a view state, the
+//                  same treatment global.showwarpgrid gets
+// Everything else under projmap. IS geometry and must stay capturable, or
+// .imweb project files stop carrying the site alignment.
+const VIEW_STATE = new Set(['projmap.lock', 'projmap.edit']);
+const corners = ps.getAll().filter(p => p.id.startsWith('projmap.') && !VIEW_STATE.has(p.id));
 check('projmap corner params exist', corners.length >= 8, `found ${corners.length}`);
 const wronglyGlobal = corners.filter(p => p.group === 'global').map(p => p.id);
-check('corner params are NOT group "global"', wronglyGlobal.length === 0,
+const edit = ps.get('projmap.edit');
+check('projmap.edit is registered', !!edit, 'the rings/grid/toolbar switch');
+check('projmap.edit is group "global"', edit?.group === 'global',
+  `is "${edit?.group}" — a capturable view state means recalling a look could ` +
+  'switch the corner rings back on in the middle of a performance');
+
+check('geometry params are NOT group "global"', wronglyGlobal.length === 0,
   `${wronglyGlobal.join(', ')} — 'global' would drop them from captureState(), ` +
   'so .imweb project files would stop carrying the site alignment');
 

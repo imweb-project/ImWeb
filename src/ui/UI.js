@@ -318,9 +318,14 @@ export function buildMappingPanels(ps, contextMenu) {
     // where a corner actually is, and no way to map one to a controller.
     // projmap.active is left out: it already has its own toolbar button
     // (#btn-projmap) right beside this container.
-    'projmap-params':      ps.getGroup('projmap').filter(p => p.id !== 'projmap.active'),
+    // projmap.edit is group 'global' (a view state, uncapturable) but belongs
+    // HERE beside the corners, not in the auto-built global list — so it is
+    // appended by id, the same stated exception glsl.preset and warpSlot use.
+    'projmap-params':      ps.getGroup('projmap').filter(p => p.id !== 'projmap.active')
+                             .concat(ps.get('projmap.edit') ? [ps.get('projmap.edit')] : []),
     'global-params':       ps.getGroup('global').filter(p =>
       p.id !== 'glsl.preset' && p.id !== 'displace.warpSlot' &&
+      p.id !== 'projmap.edit' &&
       // The MIDI mapping-page controls. 'global' so Display States cannot
       // capture them, but they belong beside the monitor in Sources > I/O:
       // binding TRACK -/+ means clicking these rows, and a control you have to

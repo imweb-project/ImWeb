@@ -2544,7 +2544,15 @@ async function main() {
           // button and double-click stay as the fallback, so a refusal costs
           // a click rather than the feature.
           const de = _outWin.document?.documentElement;
-          await de?.requestFullscreen?.({ navigationUI: 'hide' });
+          try {
+            await de?.requestFullscreen?.({ navigationUI: 'hide' });
+          } catch {
+            // Expected more often than not: the click that opened the window
+            // has expired by now, and Chromium wants a live gesture. Hand the
+            // job to the output window, which completes it on the next click
+            // on its background.
+            _outWin.postMessage({ type: 'want-fullscreen' }, '*');
+          }
         } catch { /* permission denied, one screen, or no gesture — fine */ }
       })();
 
@@ -2590,7 +2598,7 @@ async function main() {
   const tbGrid=document.getElementById('tb-grid');
   const tbFs=document.getElementById('tb-fs');
   const hs={tl:document.getElementById('h-tl'),tr:document.getElementById('h-tr'),br:document.getElementById('h-br'),bl:document.getElementById('h-bl')};
-  let lastBitmap=null,lastCorners=null;
+  let lastBitmap=null,lastCorners=null,lastEdit=true,_wantFs=false;
   let gridActive=false,selectedCorner=null;
 
   function drawGrid(){
@@ -2943,12 +2951,29 @@ async function main() {
   }
   window.addEventListener('pointermove',_showUI,{passive:true});
   window.addEventListener('pointerdown',_showUI,{passive:true});
+  // The opener asks for fullscreen after moving this window to the second
+  // screen, but by then the click that opened it has expired and Chromium
+  // refuses. A click on the BACKGROUND (never on a handle, so it cannot
+  // hijack a drag) carries a fresh gesture and completes the job once.
+  window.addEventListener('pointerdown',ev=>{
+    if(!_wantFs)return;
+    if(ev.target&&ev.target.closest&&ev.target.closest('.h,#toolbar'))return;
+    _wantFs=false;
+    if(!document.fullscreenElement)document.documentElement.requestFullscreen?.();
+  },true);
   _hideUI(); // start hidden; message handler calls _showUI on first active frame
 
   // Arrow-key nudge for selected corner; G = toggle calibration grid (desktop)
   document.addEventListener('keydown',e=>{
     if(e.key==='g'||e.key==='G'){
       toggleGrid();return;
+    }
+    if(e.key==='h'||e.key==='H'){
+      // Ask the OPENER to flip projmap.edit rather than keeping a local
+      // override: one source of truth, over the channel corner drags already
+      // use, so the param row and this key can never disagree.
+      window.opener?.postMessage({type:'projmap-edit-toggle'},'*');
+      return;
     }
     if(!selectedCorner||!lastCorners)return;
     const step=e.shiftKey?10:1;
@@ -2974,15 +2999,21 @@ async function main() {
   _syncChrome();
 
   window.addEventListener('message',e=>{
+    if(e.data&&e.data.type==='want-fullscreen'){_wantFs=true;return;}
     if(!e.data?.bitmap)return;
     if(lastBitmap)lastBitmap.close();
     lastBitmap=e.data.bitmap;
     lastCorners=e.data.corners||null;
-    const active=!!lastCorners;
-    ho.style.display=active?'block':'none';
-    toolbar.style.display=active?'flex':'none';
+    lastEdit=e.data.edit!==false;
+    // Mapping active and EDITING it are separate. With edit off the geometry
+    // still applies and the rings, grid and toolbar are gone — which is what
+    // you want once the thing is aligned and pointed at a rock.
+    const showUI=!!lastCorners&&lastEdit;
+    ho.style.display=showUI?'block':'none';
+    toolbar.style.display=showUI?'flex':'none';
+    if(!lastEdit&&gridActive){gridActive=false;tbGrid.classList.remove('on');}
     applyTransform();positionHandles();draw();
-    if(active)_showUI();
+    if(showUI)_showUI();
   });
 
   // Fullscreen on double-click (desktop fallback — toolbar ⛶ button used on touch)
@@ -3069,6 +3100,13 @@ async function main() {
   // ── Projection Mapping ────────────────────────────────────────────────────
   // Corner handles live on the second screen. It sends updates back here.
   window.addEventListener("message", (e) => {
+    if (e.data?.type === "projmap-edit-toggle") {
+      // 'h' in the output window. Flips the param, so the row in Output and the
+      // key are the same switch rather than two that can drift apart.
+      const p = ps.get("projmap.edit");
+      if (p) ps.set("projmap.edit", p.value ? 0 : 1);
+      return;
+    }
     if (e.data?.type === "projmap" && e.data.corner) {
       ps.set(`projmap.${e.data.corner}_x`, e.data.x);
       ps.set(`projmap.${e.data.corner}_y`, e.data.y);
@@ -9984,7 +10022,9 @@ void main() {
                 },
               }
             : null;
-          _outWin.postMessage({ bitmap, corners: _pmCorners }, "*", [bitmap]);
+          // `edit` is view state, not geometry: the mapping applies either way.
+          const _pmEdit = !!ps.get("projmap.edit")?.value;
+          _outWin.postMessage({ bitmap, corners: _pmCorners, edit: _pmEdit }, "*", [bitmap]);
         } else {
           bitmap.close();
         }
