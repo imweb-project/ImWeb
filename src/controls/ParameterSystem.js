@@ -7495,6 +7495,25 @@ export function registerCoreParameters(ps) {
   // same reason as projmap.edit — a view state, not part of a look — and here
   // so it can be reached from the panel and mapped to a controller, not only
   // from the output window's own button.
+  // Mesh resolution. Group 'projmap' — this IS geometry, so it is captured by
+  // project files and stripped from Display State recall by the lock, exactly
+  // like the corner positions. Raising it subdivides the CURRENT shape without
+  // moving a pixel (ProjMapMesh.setGrid resamples projectively), so changing
+  // resolution never costs you an alignment.
+  ps.register({
+    id: "projmap.meshCols",
+    label: "Mesh Cols",
+    group: "projmap",
+    min: 2, max: 17, step: 1,
+    value: 2,
+  });
+  ps.register({
+    id: "projmap.meshRows",
+    label: "Mesh Rows",
+    group: "projmap",
+    min: 2, max: 17, step: 1,
+    value: 2,
+  });
   ps.register({
     id: "projmap.grid",
     label: "Map Grid",

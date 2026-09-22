@@ -70,6 +70,7 @@ import { MovieCues, CUE_SLOTS } from "./inputs/MovieCues.js";
 import { CueBank } from "./core/CueBank.js";
 import { MappingAutosave } from "./state/MappingAutosave.js";
 import { StillsAutosave } from "./state/StillsAutosave.js";
+import { ProjMapMesh } from "./inputs/ProjMapMesh.js";
 
 /**
  * How many catalogue entries to rack into Deck A at boot.
@@ -585,6 +586,12 @@ async function main() {
   const teletextSource = new TeletextSource();
   teletextSource.setMovieInput(movieInput);
   const warpMaps = buildWarpMaps(); // 8 procedural warp map textures (map1–map8)
+  // Projection mesh. At 2x2 the projmap.* corner params stay authoritative and
+  // this just mirrors them, so every saved project, the lock and any controller
+  // mapping keep working untouched. Above 2x2 the mesh owns the geometry.
+  const projMesh = new ProjMapMesh();
+  if (import.meta.env.DEV) window.__projmesh = projMesh;
+
   const warpEditor = new WarpMapEditor(); // interactive editor → warpMaps[8] (Custom)
   // DEV-only handle, same convention as __decks/__pipeline/__presets. The warp
   // map is otherwise unreadable from a console, which makes the editor-vs-canvas
@@ -2487,6 +2494,9 @@ async function main() {
   });
 
   // ── Second screen output ──────────────────────────────────────────────────
+  // Cached getScreenDetails() promise. Requested inside the click that opens
+  // the output window, never later.
+  let _screenDetails = null;
   let _outWin = null;
   let _outWinReady = false;
   let _outFrameTick = 0;
@@ -2506,6 +2516,17 @@ async function main() {
         document.body.classList.remove("ghost-mode");
         document.getElementById("btn-ghost-mode")?.classList.remove("active");
         return;
+      }
+
+      // Ask for screen details BEFORE window.open, while the click's transient
+      // activation is still fresh: window.open CONSUMES that activation, so
+      // calling this afterwards means the permission prompt never appears, the
+      // promise rejects, and the window silently opens on the main display.
+      // That is exactly what happened — the permission sat at "prompt" and the
+      // catch below swallowed the rejection.
+      // Cached across opens: once granted, no further prompt.
+      if (!_screenDetails && window.getScreenDetails) {
+        try { _screenDetails = window.getScreenDetails(); } catch { _screenDetails = null; }
       }
 
       // Open borderless output window
@@ -2533,10 +2554,11 @@ async function main() {
       // Every step degrades to the previous behaviour on its own.
       (async () => {
         try {
-          if (!window.getScreenDetails) return;           // not supported
-          const det = await window.getScreenDetails();    // may prompt once
+          if (!_screenDetails) return;                    // unsupported or denied
+          const det = await _screenDetails;
           const other = det.screens.find(s => s !== det.currentScreen)
                      ?? det.screens.find(s => !s.isPrimary);
+          if (!other) console.info('[Output] only one screen reported');
           if (!other || !_outWin || _outWin.closed) return;
           _outWin.moveTo(other.availLeft, other.availTop);
           _outWin.resizeTo(other.availWidth, other.availHeight);
@@ -2598,7 +2620,7 @@ async function main() {
   const tbGrid=document.getElementById('tb-grid');
   const tbFs=document.getElementById('tb-fs');
   const hs={tl:document.getElementById('h-tl'),tr:document.getElementById('h-tr'),br:document.getElementById('h-br'),bl:document.getElementById('h-bl')};
-  let lastBitmap=null,lastCorners=null,lastEdit=true,_wantFs=false;
+  let lastBitmap=null,lastCorners=null,lastMesh=null,lastEdit=true,_wantFs=false;
   let gridActive=false,selectedCorner=null;
 
   function drawGrid(){
@@ -2886,7 +2908,11 @@ async function main() {
     // a shader that would not compile, a degenerate quad — falls straight back
     // to the CSS path below, because a black projector is worse than a
     // wrong-looking one.
-    var useGL=!!lastCorners&&GL.upload(lastBitmap)&&GL.render(lastCorners);
+    // Mesh first when there is one; a 2x2 mesh renders byte-identically to the
+    // corners path, so this is not a second way of drawing the same thing.
+    var useGL=false;
+    if(lastMesh&&GL.upload(lastBitmap)) useGL=GL.renderMesh(lastMesh);
+    else if(lastCorners&&GL.upload(lastBitmap)) useGL=GL.render(lastCorners);
     if(glc)glc.style.display=useGL?'block':'none';
     if(lastCorners){
       if(!useGL)ctx.drawImage(lastBitmap,0,0,c.width,c.height);
@@ -3004,6 +3030,7 @@ async function main() {
     if(lastBitmap)lastBitmap.close();
     lastBitmap=e.data.bitmap;
     lastCorners=e.data.corners||null;
+    lastMesh=e.data.mesh||null;
     lastEdit=e.data.edit!==false;
     // Mapping active and EDITING it are separate. With edit off the geometry
     // still applies and the rings, grid and toolbar are gone — which is what
@@ -3119,6 +3146,15 @@ async function main() {
       ps.set(`projmap.${e.data.corner}_y`, e.data.y);
     }
   });
+  const _syncMeshGrid = () => {
+    projMesh.setGrid(
+      Math.round(ps.get("projmap.meshCols")?.value ?? 2),
+      Math.round(ps.get("projmap.meshRows")?.value ?? 2),
+    );
+  };
+  ps.get("projmap.meshCols")?.onChange(_syncMeshGrid);
+  ps.get("projmap.meshRows")?.onChange(_syncMeshGrid);
+
   ps.get("projmap.active").onChange((v) => {
     document.getElementById("btn-projmap")?.classList.toggle("active", !!v);
     if (v && _outWin && !_outWin.closed) _outWin.focus();
@@ -10032,8 +10068,19 @@ void main() {
           // `edit` is view state, not geometry: the mapping applies either way.
           const _pmEdit = !!ps.get("projmap.edit")?.value;
           const _pmGrid = !!ps.get("projmap.grid")?.value;
-          _outWin.postMessage({ bitmap, corners: _pmCorners, edit: _pmEdit, grid: _pmGrid },
-                              "*", [bitmap]);
+          // At 2x2 the params are the source of truth and the mesh mirrors
+          // them, so dragging a handle or typing a corner still drives
+          // everything. Above 2x2 the mesh owns its own points and the params
+          // are left alone — there is no sensible way for four numbers to
+          // describe a 5x5 grid.
+          let _pmMesh = null;
+          if (_pmActive) {
+            if (projMesh.isQuad && _pmCorners) projMesh.setCorners(_pmCorners);
+            _pmMesh = { cols: projMesh.cols, rows: projMesh.rows,
+                        pts: projMesh.pts.map(p => ({ x: p.x, y: p.y })) };
+          }
+          _outWin.postMessage({ bitmap, corners: _pmCorners, mesh: _pmMesh,
+                                edit: _pmEdit, grid: _pmGrid }, "*", [bitmap]);
         } else {
           bitmap.close();
         }
