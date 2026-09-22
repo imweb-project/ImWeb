@@ -2604,6 +2604,16 @@ async function main() {
   .h{position:absolute;width:54px;height:54px;margin:-27px 0 0 -27px;border:3px solid #c8a020;border-radius:50%;background:rgba(0,0,0,0.45);cursor:crosshair;pointer-events:all;touch-action:none;box-shadow:0 0 12px rgba(0,0,0,0.9);transition:border-color .1s,background .1s}
   .h:active{border-color:#fff;background:rgba(255,255,255,0.15)}
   .h.sel{border-color:#fff;box-shadow:0 0 0 3px #c8a020,0 0 16px rgba(0,0,0,0.9)}
+  /* Curve handles. Deliberately smaller than a control point: a control point
+     is WHERE the image goes and a curve handle only says how it leaves, so the
+     one you grab by accident should be the one that matters less. Hollow while
+     derived, filled once dragged, so "this curve is mine" is visible at a
+     glance across a dark room. u gold, v blue — the two axes are otherwise
+     indistinguishable once the surface is turned. */
+  .th{position:absolute;width:28px;height:28px;margin:-14px 0 0 -14px;border:2px solid rgba(200,160,32,0.85);border-radius:50%;background:rgba(0,0,0,0.3);cursor:crosshair;pointer-events:all;touch-action:none;display:none}
+  .th.on{background:rgba(200,160,32,0.5)}
+  .th.v{border-color:rgba(120,190,255,0.85)}
+  .th.v.on{background:rgba(120,190,255,0.5)}
   #toolbar{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);display:none;gap:10px;align-items:center;pointer-events:all;transition:opacity 0.4s}
   .tb-btn{background:rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.25);color:rgba(255,255,255,0.7);font:13px/1 monospace;padding:8px 16px;border-radius:20px;cursor:pointer;touch-action:manipulation;white-space:nowrap;-webkit-tap-highlight-color:transparent}
   .tb-btn:active,.tb-btn.on{border-color:#c8a020;color:#c8a020}
@@ -2637,6 +2647,12 @@ async function main() {
   // Sampled in the opener and posted, never recomputed here: this window must
   // not hold a second opinion about the surface (LEARNED 2026-09-22).
   let lastBitmap=null,lastCorners=null,lastMesh=null,lastRenderMesh=null,lastGridLines=null,lastEdit=true,_wantFs=false;
+  // Effective tangents for every control point, [ux,uy,vx,vy,flags] each, sent
+  // only while they could be shown. null means there are none — Mesh Curve is
+  // at 0, or the mesh is a bare 2x2 — and the handles stay hidden, because a
+  // flat surface has no tangent to bend and a handle that does nothing is
+  // worse than no handle.
+  var lastTans=null, tanHandles=[];
   let gridActive=false;
 
   function drawGrid(){
@@ -2694,6 +2710,106 @@ async function main() {
     positionHandles();
   }
 
+  // ── Curve handles ────────────────────────────────────────────────────────
+  // Four per SELECTED point — u and v, each side — and none otherwise. A 9x9
+  // mesh has 324 tangents; showing them all would bury the control points the
+  // handles are attached to. Selection is the filter that already exists for
+  // interior points, reused rather than reinvented.
+
+  /** Effective tangents at one control point, or null if none were sent. */
+  function tanFor(i,j){
+    if(!lastTans||!lastMesh)return null;
+    const t=lastTans[j*lastMesh.cols+i];
+    if(!t)return null;
+    return {u:{x:t[0],y:t[1]},v:{x:t[2],y:t[3]},ue:!!(t[4]&1),ve:!!(t[4]&2)};
+  }
+
+  function buildTanHandles(){
+    if(tanHandles.length)return;
+    const spec=[['u',1],['u',-1],['v',1],['v',-1]];
+    for(const sp of spec){
+      const el=document.createElement('div');
+      el.className='th'+(sp[0]==='v'?' v':'');
+      ho.appendChild(el);
+      const h={el:el,axis:sp[0],sign:sp[1]};
+      tanHandles.push(h);
+      attachTanHandle(h);
+    }
+  }
+
+  function positionTanHandles(){
+    buildTanHandles();
+    const t=selPt?tanFor(selPt.i,selPt.j):null;
+    const P=(selPt&&lastMesh)?lastMesh.pts[selPt.j*lastMesh.cols+selPt.i]:null;
+    const show=!!(t&&P&&lastEdit);
+    for(const h of tanHandles)h.el.style.display=show?'block':'none';
+    if(!show)return;
+    const W=window.innerWidth,H=window.innerHeight;
+    for(const h of tanHandles){
+      const v=t[h.axis];
+      // A Hermite span's Bezier control point sits at P + T/3. That factor is
+      // applied HERE and nowhere else: the opener is sent the tangent vector,
+      // never the handle position, so the two windows cannot disagree about it.
+      h.el.style.left=((P.x+v.x*h.sign/3)*W)+'px';
+      h.el.style.top =((P.y+v.y*h.sign/3)*H)+'px';
+      h.el.classList.toggle('on',h.axis==='u'?t.ue:t.ve);
+    }
+  }
+
+  /** The arms, drawn on the overlay canvas so a handle reads as attached. */
+  function drawTanArms(){
+    const t=selPt?tanFor(selPt.i,selPt.j):null;
+    const P=(selPt&&lastMesh)?lastMesh.pts[selPt.j*lastMesh.cols+selPt.i]:null;
+    if(!t||!P||!lastEdit)return;
+    const W=c.width,H=c.height;
+    ctx.save();
+    ctx.lineWidth=1.5;
+    const arms=[['u','rgba(200,160,32,0.85)'],['v','rgba(120,190,255,0.85)']];
+    for(const a of arms){
+      const v=t[a[0]];
+      ctx.strokeStyle=a[1];
+      ctx.beginPath();
+      ctx.moveTo((P.x-v.x/3)*W,(P.y-v.y/3)*H);
+      ctx.lineTo((P.x+v.x/3)*W,(P.y+v.y/3)*H);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function attachTanHandle(h){
+    h.el.addEventListener('pointerdown',e=>{
+      e.preventDefault();e.stopPropagation();
+      h.el.setPointerCapture(e.pointerId);
+      const mv=ev=>{
+        if(!selPt||!lastMesh||!lastTans)return;
+        const C=lastMesh.cols,k=selPt.j*C+selPt.i,P=lastMesh.pts[k],t=lastTans[k];
+        if(!P||!t)return;
+        // Invert the draw: the handle sits at P + sign*T/3, so T is the offset
+        // times 3, un-signed. Applied locally too, so the handle tracks the
+        // pointer instead of waiting a frame for the opener to answer.
+        const dx=((ev.clientX/window.innerWidth)-P.x)*3/h.sign;
+        const dy=((ev.clientY/window.innerHeight)-P.y)*3/h.sign;
+        if(h.axis==='u'){t[0]=dx;t[1]=dy;t[4]|=1;}else{t[2]=dx;t[3]=dy;t[4]|=2;}
+        positionTanHandles();draw();
+        window.opener?.postMessage({type:'projmesh-tangent',i:selPt.i,j:selPt.j,
+                                    axis:h.axis,dx:dx,dy:dy},'*');
+      };
+      h.el.addEventListener('pointermove',mv);
+      const end=()=>{h.el.removeEventListener('pointermove',mv);};
+      h.el.addEventListener('pointerup',end,{once:true});
+      h.el.addEventListener('pointercancel',end,{once:true});
+    });
+    // Double-click returns this tangent to the derived one. There is no other
+    // way back: once dragged, a handle would otherwise hold its value for good
+    // and "put it back how it was" would mean reshaping by eye.
+    h.el.addEventListener('dblclick',e=>{
+      e.preventDefault();e.stopPropagation();
+      if(!selPt)return;
+      window.opener?.postMessage({type:'projmesh-tangent',i:selPt.i,j:selPt.j,
+                                  axis:h.axis,clear:true},'*');
+    });
+  }
+
   function nudgePoint(dx,dy){
     if(!selPt||!lastMesh)return;
     const C=lastMesh.cols,p=lastMesh.pts[selPt.j*C+selPt.i];
@@ -2736,7 +2852,11 @@ async function main() {
   function rebuildHandles(){
     const C=meshC(),R=meshR();
     if(handles.length===C*R)return positionHandles();
-    ho.innerHTML='';handles=[];selPt=null;
+    // tanHandles too: innerHTML='' detaches THEM as well, and the array would
+    // go on holding elements that are no longer in the document — so the curve
+    // handles would be positioned forever after and never seen again. Nothing
+    // errors; they simply stop appearing once the grid size changes.
+    ho.innerHTML='';handles=[];tanHandles=[];selPt=null;
     if(!(selCell&&selCell.i<C-1&&selCell.j<R-1))selCell=null;
     for(let j=0;j<R;j++)for(let i=0;i<C;i++){
       const el=document.createElement('div');
@@ -2758,6 +2878,7 @@ async function main() {
       h.el.style.display=(isEdge(h.i,h.j)||inSelCell(h.i,h.j))?'block':'none';
       h.el.classList.toggle('sel',!!selPt&&selPt.i===h.i&&selPt.j===h.j);
     }
+    positionTanHandles();
   }
 
   function applyTransform(){
@@ -3000,7 +3121,12 @@ async function main() {
     // Posted grid lines are already in surface space, so this canvas must NOT
     // also be warped by CSS — that would apply the mapping twice. The
     // matrix3d is only for the 2D fallback, where the canvas carries the image.
-    if(useGL&&lastGridLines&&lastGridLines.length)c.style.transform='none';
+    // Whenever GL owns the image this canvas is a SCREEN-SPACE overlay, so it
+    // must not also carry the matrix3d — that would apply the mapping twice.
+    // This used to be conditional on there being grid lines, which was enough
+    // while the grid was the only thing drawn here; the curve arms are drawn
+    // here too now, and with the grid off they would have been warped.
+    if(useGL)c.style.transform='none';
     if(glc)glc.style.display=useGL?'block':'none';
     if(lastCorners){
       if(!useGL)ctx.drawImage(lastBitmap,0,0,c.width,c.height);
@@ -3010,6 +3136,7 @@ async function main() {
       ctx.drawImage(lastBitmap,0,0,iw,ih,(sw-dw)/2,(sh-dh)/2,dw,dh);
     }
     drawGrid();
+    drawTanArms();
   }
 
   // Drag a control point; click selects it for arrow-key nudging.
@@ -3061,7 +3188,7 @@ async function main() {
   // fires from a handle drag.
   window.addEventListener('pointerdown',e=>{
     if(!lastMesh||!lastEdit)return;
-    if(e.target&&e.target.closest&&e.target.closest('.h,#toolbar'))return;
+    if(e.target&&e.target.closest&&e.target.closest('.h,.th,#toolbar'))return;
     const c=cellAt(e.clientX/window.innerWidth,e.clientY/window.innerHeight);
     selCell=c;
     setSelected(null);
@@ -3105,7 +3232,7 @@ async function main() {
   // hijack a drag) carries a fresh gesture and completes the job once.
   window.addEventListener('pointerdown',ev=>{
     if(!_wantFs)return;
-    if(ev.target&&ev.target.closest&&ev.target.closest('.h,#toolbar'))return;
+    if(ev.target&&ev.target.closest&&ev.target.closest('.h,.th,#toolbar'))return;
     _wantFs=false;
     if(!document.fullscreenElement)document.documentElement.requestFullscreen?.();
   },true);
@@ -3167,6 +3294,7 @@ async function main() {
     // ABSENT means unchanged; an explicit null means there is no net. A net of
     // ~2400 points does not need reposting on a frame where nothing moved.
     if('renderMesh' in e.data)lastRenderMesh=e.data.renderMesh||null;
+    if('tans' in e.data)lastTans=e.data.tans||null;
     lastGridLines=e.data.gridLines||null;
     lastEdit=e.data.edit!==false;
     // Mapping active and EDITING it are separate. With edit off the geometry
@@ -3294,6 +3422,19 @@ async function main() {
       // written here on purpose — four numbers cannot describe a bigger grid,
       // and writing them would make two sources of truth for one shape.
       projMesh.setPoint(e.data.i | 0, e.data.j | 0, +e.data.x, +e.data.y);
+      return;
+    }
+    if (e.data?.type === "projmesh-tangent") {
+      // A dragged curve handle. The popup sends the VECTOR, not the handle's
+      // screen position, so the two windows do not have to agree on the 1/3
+      // scale the handle is drawn at — that factor lives in one place, at the
+      // point of drawing, and never round-trips.
+      if (e.data.clear) {
+        projMesh.clearTangent(e.data.i | 0, e.data.j | 0, e.data.axis);
+      } else {
+        projMesh.setTangent(e.data.i | 0, e.data.j | 0, e.data.axis,
+                            +e.data.dx, +e.data.dy);
+      }
       return;
     }
     if (e.data?.type === "projmap" && e.data.corner) {
@@ -10348,6 +10489,9 @@ void main() {
           // undefined on purpose: an absent key tells the output window the net
           // it already holds is still current.
           let _pmRenderMesh;
+          // Rides with the render net: absent means "unchanged", null means
+          // "there are none to show".
+          let _pmTans;
           if (_pmActive) {
             if (projMesh.isQuad && _pmCorners && !_meshRecallActive) {
               projMesh.setCorners(_pmCorners);
@@ -10364,6 +10508,25 @@ void main() {
             if (projMesh._rev !== _pmNetRev || _sub !== _pmNetSub) {
               _pmNetRev = projMesh._rev; _pmNetSub = _sub;
               _pmRenderMesh = projMesh.renderNet(_sub);
+              // Tangents ride the same gate, and only while they could be
+              // shown: handles need Mesh Curve up (a flat surface has no
+              // tangent to bend) and edit mode on. Five numbers per control
+              // point — the two vectors, then a bit each for "this one was
+              // dragged", which is what lets the popup draw an overridden
+              // handle differently without deciding for itself what counts
+              // as overridden.
+              _pmTans = null;
+              if (_pmEdit && projMesh.curve > 0 && !projMesh.isQuad) {
+                _pmTans = [];
+                for (let j = 0; j < projMesh.rows; j++) {
+                  for (let i = 0; i < projMesh.cols; i++) {
+                    const tu = projMesh.tangent(i, j, "u");
+                    const tv = projMesh.tangent(i, j, "v");
+                    _pmTans.push([tu.x, tu.y, tv.x, tv.y,
+                                  (tu.explicit ? 1 : 0) | (tv.explicit ? 2 : 0)]);
+                  }
+                }
+              }
               _pmNetStats.sends++;
             }
             if (_pmGrid && _pmEdit) {
@@ -10389,12 +10552,13 @@ void main() {
           } else if (_pmNetRev !== -1) {
             // Mapping switched off: drop the popup's net rather than leaving it
             // holding a shape nothing is maintaining any more.
-            _pmNetRev = -1; _pmNetSub = -1; _pmRenderMesh = null;
+            _pmNetRev = -1; _pmNetSub = -1; _pmRenderMesh = null; _pmTans = null;
           }
           const _pmMsg = { bitmap, corners: _pmCorners, mesh: _pmMesh,
                            gridLines: _pmGridLines,
                            edit: _pmEdit, grid: _pmGrid };
           if (_pmRenderMesh !== undefined) _pmMsg.renderMesh = _pmRenderMesh;
+          if (_pmTans !== undefined) _pmMsg.tans = _pmTans;
           _outWin.postMessage(_pmMsg, "*", [bitmap]);
         } else {
           bitmap.close();

@@ -52,20 +52,34 @@ function homographyAt(tl, tr, br, bl, u, v) {
 }
 
 /**
- * Catmull-Rom basis at t over four consecutive control values.
+ * Hermite basis. Position weights for the two ends of a span, then the two
+ * TANGENT weights — which is the whole reason the sampler is written this way
+ * rather than in the Catmull-Rom basis it started in.
  *
- * Interpolating, not approximating: the curve passes THROUGH p1 at t=0 and
- * through p2 at t=1. That is the property this instrument needs — a control
- * point is dragged to where the image should land, so the image has to land
- * there. A Bezier control polygon, whose handles sit off the surface, would
- * be the wrong tool for calibrating against a physical object.
+ * Interpolating, not approximating: the span passes THROUGH its endpoints.
+ * That is the property this instrument needs — a control point is dragged to
+ * where the image should land, so the image has to land there. A Bezier
+ * control polygon, whose defining points sit off the surface, would be the
+ * wrong tool for calibrating against a physical object; the curve HANDLES are
+ * a view on the tangents, and the points they belong to stay on the surface.
+ *
+ * Catmull-Rom hides its tangents: they are `(P[i+1] - P[i-1]) / 2`, implied by
+ * the neighbours and unreachable. Hermite names them, so a handle can replace
+ * one. With the derived values substituted the two bases agree to 2 ulps
+ * (measured 4.4e-16 over four net sizes), which is what made it safe to swap
+ * the basis under a shipped surface — see §12 of the audit, which asserts it
+ * against a reference Catmull-Rom kept in the test for exactly that purpose.
+ * That reference is the ONLY copy now: the Catmull-Rom helper that used to
+ * live here was left behind by the rewrite with no caller at all, and a
+ * mutation run found it by breaking it and watching nothing fail.
  */
-function catmull(p0, p1, p2, p3, t) {
+function hermiteP(t) {
   const t2 = t * t, t3 = t2 * t;
-  return 0.5 * ((2 * p1)
-    + (-p0 + p2) * t
-    + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2
-    + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+  return [2 * t3 - 3 * t2 + 1, -2 * t3 + 3 * t2];
+}
+function hermiteT(t) {
+  const t2 = t * t, t3 = t2 * t;
+  return [t3 - 2 * t2 + t, t3 - t2];
 }
 
 export class ProjMapMesh {
@@ -84,6 +98,19 @@ export class ProjMapMesh {
      * it was dragged, whatever it does between them.
      */
     this.curve = 0;
+    /**
+     * Explicit tangent overrides, sparse: `{ <pointIndex>: { u: [dx,dy],
+     * v: [dx,dy] } }`, either axis optionally absent.
+     *
+     * Sparse and absent-by-default on purpose. A point with no entry uses the
+     * derived Catmull-Rom tangent, so an untouched mesh — including every mesh
+     * ever saved before handles existed — samples exactly as it did, and a
+     * `.imweb` written today stays readable by a build that predates this.
+     * One tangent per point per AXIS, not two per edge: this is a tensor
+     * product surface, and two independent handles on one edge would tear the
+     * patch away from its neighbour rather than bend it.
+     */
+    this.tans = {};
     /** Bumped by every mutation, so a consumer can skip rebuilding. */
     this._rev = 0;
     this._morph = null;
@@ -186,22 +213,103 @@ export class ProjMapMesh {
     return this.pts[j * C + i];
   }
 
-  /** Tensor-product Catmull-Rom through the control net. */
+  // ── Tangents ──────────────────────────────────────────────────────────────
+
+  /**
+   * The tangent at a control point along one axis — the explicit override if
+   * one has been dragged, otherwise the Catmull-Rom value derived from the
+   * neighbours.
+   *
+   * This is the ONE place the two answers meet. A handle is a view on this
+   * number, and the renderer reads the same call, so a dragged handle and the
+   * drawn surface cannot describe different curves.
+   */
+  tangent(i, j, axis) {
+    const t = this.tans[this.idx(i, j)]?.[axis];
+    if (t) return { x: t[0], y: t[1], explicit: true };
+    const a = axis === 'u' ? this._ctl(i + 1, j) : this._ctl(i, j + 1);
+    const b = axis === 'u' ? this._ctl(i - 1, j) : this._ctl(i, j - 1);
+    return { x: (a.x - b.x) / 2, y: (a.y - b.y) / 2, explicit: false };
+  }
+
+  /**
+   * The twist term, always derived. It has no handle and is not meant to: a
+   * twist is the second cross-derivative, it has no legible position on screen,
+   * and leaving it derived keeps a dragged u-handle from silently reshaping the
+   * v direction. Zeroing it instead would be the usual shortcut (a Ferguson
+   * patch) and would NOT reproduce Catmull-Rom, which is the property §12
+   * exists to hold.
+   */
+  _twist(i, j) {
+    const a = this._ctl(i + 1, j + 1), b = this._ctl(i - 1, j + 1);
+    const c = this._ctl(i + 1, j - 1), d = this._ctl(i - 1, j - 1);
+    return { x: (a.x - b.x - c.x + d.x) / 4, y: (a.y - b.y - c.y + d.y) / 4 };
+  }
+
+  /** Override a tangent. Pass the VECTOR, not the handle position. */
+  setTangent(i, j, axis, dx, dy) {
+    if (axis !== 'u' && axis !== 'v') return false;
+    const k = this.idx(i, j);
+    if (!this.pts[k]) return false;
+    (this.tans[k] ??= {})[axis] = [dx, dy];
+    this._changed();
+    return true;
+  }
+
+  /** Drop an override, returning that tangent to the derived value. */
+  clearTangent(i, j, axis) {
+    const k = this.idx(i, j), e = this.tans[k];
+    if (!e || !e[axis]) return false;
+    delete e[axis];
+    if (!e.u && !e.v) delete this.tans[k];
+    this._changed();
+    return true;
+  }
+
+  /** Drop every override. */
+  clearTangents() {
+    if (!Object.keys(this.tans).length) return false;
+    this.tans = {};
+    this._changed();
+    return true;
+  }
+
+  /** How many tangents are currently overridden (both axes counted). */
+  get tangentCount() {
+    return Object.values(this.tans).reduce((n, e) => n + (e.u ? 1 : 0) + (e.v ? 1 : 0), 0);
+  }
+
+  /**
+   * Bicubic Hermite over the containing cell.
+   *
+   * Reproduces the tensor-product Catmull-Rom this started as, to 2 ulps, as
+   * long as every tangent is derived — that equality is asserted in §12 and is
+   * what makes an existing mesh sample identically. What it adds is a seam
+   * where a handle can substitute one tangent without touching anything else.
+   */
   _sampleSpline(u, v) {
     const C = this.cols, R = this.rows;
     const gu = u * (C - 1), gv = v * (R - 1);
     const cu = Math.max(0, Math.min(C - 2, Math.floor(gu)));
     const cv = Math.max(0, Math.min(R - 2, Math.floor(gv)));
     const lu = gu - cu, lv = gv - cv;
-    const rx = [], ry = [];
-    for (let n = -1; n <= 2; n++) {
-      const a = this._ctl(cu - 1, cv + n), b = this._ctl(cu,     cv + n);
-      const c = this._ctl(cu + 1, cv + n), d = this._ctl(cu + 2, cv + n);
-      rx.push(catmull(a.x, b.x, c.x, d.x, lu));
-      ry.push(catmull(a.y, b.y, c.y, d.y, lu));
+    const pu = hermiteP(lu), tu = hermiteT(lu);
+    const pv = hermiteP(lv), tv = hermiteT(lv);
+    let x = 0, y = 0;
+    for (let a = 0; a < 2; a++) {
+      for (let b = 0; b < 2; b++) {
+        const i = cu + a, j = cv + b;
+        const P = this._ctl(i, j);
+        const Tu = this.tangent(i, j, 'u');
+        const Tv = this.tangent(i, j, 'v');
+        const Tw = this._twist(i, j);
+        const pp = pu[a] * pv[b], tp = tu[a] * pv[b];
+        const pt = pu[a] * tv[b], tt = tu[a] * tv[b];
+        x += pp * P.x + tp * Tu.x + pt * Tv.x + tt * Tw.x;
+        y += pp * P.y + tp * Tu.y + pt * Tv.y + tt * Tw.y;
+      }
     }
-    return { x: catmull(rx[0], rx[1], rx[2], rx[3], lv),
-             y: catmull(ry[0], ry[1], ry[2], ry[3], lv) };
+    return { x, y };
   }
 
   /**
@@ -302,6 +410,13 @@ export class ProjMapMesh {
       }
     }
     this.cols = cols; this.rows = rows; this.pts = next;
+    // Overrides are keyed by an index into the OLD net, so they cannot survive
+    // a resize — index 4 of a 3x3 and of a 5x5 are different places on the
+    // surface, and carrying them over would move handles the user never
+    // touched. Dropping them costs little: the new net is sampled from the
+    // curved surface, so the shape the handles produced is already in the
+    // points. Said out loud because silently re-keying would be worse.
+    this.tans = {};
     this._changed();
     return true;
   }
@@ -320,14 +435,28 @@ export class ProjMapMesh {
     const c = this.cols, r = this.rows;
     this.cols = 2; this.rows = 2;
     this.pts = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }];
+    this.tans = {};
     if (c !== 2 || r !== 2) this.setGrid(c, r); else this._changed();
   }
 
   // ── Serialization ─────────────────────────────────────────────────────────
 
   serialize() {
-    return { cols: this.cols, rows: this.rows,
-             pts: this.pts.map(p => [+p.x.toFixed(6), +p.y.toFixed(6)]) };
+    const d = { cols: this.cols, rows: this.rows,
+                pts: this.pts.map(p => [+p.x.toFixed(6), +p.y.toFixed(6)]) };
+    // Omitted entirely when nothing is overridden, so a mesh shaped without
+    // handles writes the same object it always did and an older build reads it
+    // back unchanged.
+    if (this.tangentCount) {
+      d.tans = {};
+      for (const [k, e] of Object.entries(this.tans)) {
+        const o = {};
+        if (e.u) o.u = [+e.u[0].toFixed(6), +e.u[1].toFixed(6)];
+        if (e.v) o.v = [+e.v[0].toFixed(6), +e.v[1].toFixed(6)];
+        d.tans[k] = o;
+      }
+    }
+    return d;
   }
 
   deserialize(d) {
@@ -336,6 +465,22 @@ export class ProjMapMesh {
     if (n !== d.pts.length || n < 4) return false;
     this.cols = d.cols; this.rows = d.rows;
     this.pts = d.pts.map(p => ({ x: p[0], y: p[1] }));
+    // Absent in every mesh saved before handles existed, and in every mesh
+    // shaped without them — so its absence is the normal case, not an error.
+    // Entries outside the net are dropped rather than trusted: a file edited
+    // by hand, or written by a build with a different net, must not be able to
+    // park a tangent on an index that has no point.
+    this.tans = {};
+    if (d.tans && typeof d.tans === 'object') {
+      for (const [k, e] of Object.entries(d.tans)) {
+        const i = +k;
+        if (!Number.isInteger(i) || i < 0 || i >= n || !e) continue;
+        const o = {};
+        if (Array.isArray(e.u) && e.u.length === 2) o.u = [+e.u[0], +e.u[1]];
+        if (Array.isArray(e.v) && e.v.length === 2) o.v = [+e.v[0], +e.v[1]];
+        if (o.u || o.v) this.tans[i] = o;
+      }
+    }
     this._changed();
     return true;
   }
@@ -401,8 +546,44 @@ export class ProjMapMesh {
       from: this.pts.map(p => ({ x: p.x, y: p.y })),
       to:   target.pts.map(p => ({ x: p.x, y: p.y })),
       t: 0, dur: secs,
+      ...this._morphTangents(target),
     };
     return true;
+  }
+
+  /**
+   * Tangent state for a crossfade — and NOTHING when neither side has a
+   * handle on it, which is the overwhelmingly common case and the one every
+   * existing measurement was made against.
+   *
+   * When either side does, both are snapshotted as EFFECTIVE tangents
+   * (explicit where set, derived otherwise) and interpolated as explicit
+   * values for the duration. They have to be pinned like that: a derived
+   * tangent is recomputed from the neighbours every sample, so leaving them
+   * derived would make the tangents chase the moving points instead of
+   * travelling between the two saved shapes, and the crossfade would pass
+   * through surfaces belonging to neither.
+   */
+  _morphTangents(target) {
+    if (!this.tangentCount && !target.tangentCount) return {};
+    const snap = (m) => {
+      const out = [];
+      for (let j = 0; j < m.rows; j++) {
+        for (let i = 0; i < m.cols; i++) {
+          const u = m.tangent(i, j, 'u'), v = m.tangent(i, j, 'v');
+          out.push({ u: [u.x, u.y], v: [v.x, v.y] });
+        }
+      }
+      return out;
+    };
+    // The set to END on: whatever the TARGET holds explicitly. Anything else
+    // goes back to derived, so a shape saved without handles recalls without
+    // them rather than inheriting a frozen copy of the shape it faded from.
+    const land = {};
+    for (const [k, e] of Object.entries(target.tans)) {
+      land[k] = { ...(e.u ? { u: [...e.u] } : {}), ...(e.v ? { v: [...e.v] } : {}) };
+    }
+    return { tanFrom: snap(this), tanTo: snap(target), tanLand: land };
   }
 
   get morphing() { return !!this._morph; }
@@ -417,7 +598,19 @@ export class ProjMapMesh {
       this.pts[k].x = m.from[k].x + (m.to[k].x - m.from[k].x) * s;
       this.pts[k].y = m.from[k].y + (m.to[k].y - m.from[k].y) * s;
     }
-    if (m.t >= 1) this._morph = null;
+    if (m.tanFrom) {
+      for (let k = 0; k < m.tanFrom.length; k++) {
+        const f = m.tanFrom[k], t = m.tanTo[k];
+        this.tans[k] = {
+          u: [f.u[0] + (t.u[0] - f.u[0]) * s, f.u[1] + (t.u[1] - f.u[1]) * s],
+          v: [f.v[0] + (t.v[0] - f.v[0]) * s, f.v[1] + (t.v[1] - f.v[1]) * s],
+        };
+      }
+    }
+    if (m.t >= 1) {
+      if (m.tanLand) this.tans = m.tanLand;
+      this._morph = null;
+    }
     this._changed();
     return true;
   }

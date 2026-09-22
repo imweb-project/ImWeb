@@ -34,7 +34,31 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   One thing to know: the curve trades a little perspective for smoothness. On
   a genuinely flat, strongly angled surface, leave it at 0 and keep the exact
   keystone; on a curved surface, raise it. Partway is a real setting, not a
-  compromise.
+  compromise. It also keeps the mesh out of trouble: a control point dragged
+  a long way inside its own cell can push the flat mapping past the point
+  where perspective stops being defined, which shows up as a fan of lines and
+  a smeared image. Raising the curve removes that — a curve has no vanishing
+  line to cross.
+
+- **Curve handles.** With Mesh Curve up, clicking a control point now shows
+  four small handles — gold for across, blue for down — with an arm through
+  the point. Drag one to set how the surface leaves that point, instead of
+  taking the shape the neighbours imply. **Double-click a handle to put it
+  back.** Hollow means the curve is still derived; filled means you have
+  shaped it, so you can see at a glance which parts of a mesh are hand-made.
+
+  Handles are per point and per direction, and the two arms move together —
+  that keeps the surface smooth through the point. They are a view on the
+  same numbers the renderer reads, so a handle can never point somewhere the
+  image is not going, and the control points themselves stay exactly where
+  you put them however far a handle is pulled.
+
+  They save with the mesh, into slots and into a project, and they crossfade
+  with everything else when you fade between mesh slots. Changing Mesh Cols
+  or Rows clears them — the new grid has different points, so the old handles
+  would belong to nothing, and the shape they produced is already in the
+  resampled points. A mesh with no handles saves exactly the file it did
+  before, so nothing you have already saved changes.
 
 ### Changed
 - **One Hypercube panel, grouped the way the cube is built.** The hand-built

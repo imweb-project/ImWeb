@@ -461,6 +461,40 @@ console.log('\n§9 registry and wiring');
   check('main.js gates the repost on the mesh revision',
     /projMesh\._rev !== _pmNetRev/.test(main),
     'an ungated repost posts ~2400 points on every idle frame at 17x17');
+
+  // ── the curve-handle wire, both ends ──
+  check('main.js accepts a dragged handle from the output window',
+    /projmesh-tangent/.test(main) && /projMesh\.setTangent\(/.test(main),
+    'the handle would move on screen and change nothing');
+  check('main.js accepts a handle RESET from the output window',
+    /projMesh\.clearTangent\(/.test(main),
+    'a dragged handle could never be put back');
+  check('main.js posts the effective tangents',
+    /projMesh\.tangent\(i, j, "u"\)/.test(main) && /\.tans = _pmTans/.test(main),
+    'the popup cannot place a handle it was never told about');
+  check('the output window draws handles and their arms',
+    /class="th"/.test(main.replace(/\s+/g, ' ')) || /'th'/.test(main) ||
+    /drawTanArms\(\)/.test(main),
+    'no handle widget');
+  check('the output window sends the tangent VECTOR, not a screen position',
+    /type:'projmesh-tangent',i:selPt\.i,j:selPt\.j,[\s\S]{0,60}dx:dx,dy:dy/.test(main),
+    'posting a position would put the 1/3 handle scale on both sides of the ' +
+    'wire, and the two copies would drift');
+  check('rebuilding the handle layer drops the curve handles with it',
+    /ho\.innerHTML='';handles=\[\];tanHandles=\[\];/.test(main),
+    'innerHTML= detaches the curve handles too, and an array still holding ' +
+    'them positions elements that are no longer in the document — they stop ' +
+    'appearing the moment the grid size changes, with nothing logged');
+  check('the opener fills tangents row-major and the popup reads them so',
+    /for \(let j = 0; j < projMesh\.rows; j\+\+\) \{[\s\S]{0,120}for \(let i = 0; i < projMesh\.cols; i\+\+\)/.test(main) &&
+    /lastTans\[j\*lastMesh\.cols\+i\]/.test(main),
+    'a transposed read puts every handle on the wrong point, which on a ' +
+    'symmetric net looks like a subtle bug rather than an index error');
+  // The Bezier 1/3 factor must live in exactly ONE place. Two copies is how
+  // the handle ends up somewhere the surface is not.
+  const thirds = (main.match(/\/3\b/g) ?? []).length;
+  check('the 1/3 handle scale appears only in the popup drawing and its inverse',
+    thirds > 0 && thirds <= 8, `${thirds} occurrences of /3 in main.js`);
 }
 
 // ── 10. The seam the flat surface has and the spline does not ────────────
@@ -566,6 +600,226 @@ console.log('\n§11 the render net is reposted only when it changes');
   check('the gate is worth having at 17x17', r4.sends === 1 && r4.lastN > 1000,
     `${r4.sends} sends, ${r4.lastN} pts — without the gate that is ` +
     `${r4.lastN * 30} points posted over ${r4.ticks} idle frames`);
+}
+
+// ── 12. The basis swap is the SAME surface ───────────────────────────────
+console.log('\n§12 Hermite with derived tangents == the Catmull-Rom it replaced');
+{
+  // This is the one duplicate in the file, and it is deliberate. The sampler
+  // moved from a Catmull-Rom basis to a Hermite one so that a handle could
+  // replace a tangent — a change to shipped geometry that nothing else would
+  // have caught, because both bases look equally plausible in review. Where a
+  // duplicate is genuinely unavoidable, assert the equality (2026-09-22).
+  const cr = (p0, p1, p2, p3, t) => {
+    const t2 = t * t, t3 = t2 * t;
+    return 0.5 * ((2 * p1) + (-p0 + p2) * t
+      + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2
+      + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+  };
+  const crSample = (m, u, v) => {
+    const C = m.cols, R = m.rows;
+    const gu = u * (C - 1), gv = v * (R - 1);
+    const cu = Math.max(0, Math.min(C - 2, Math.floor(gu)));
+    const cv = Math.max(0, Math.min(R - 2, Math.floor(gv)));
+    const lu = gu - cu, lv = gv - cv;
+    const rx = [], ry = [];
+    for (let n = -1; n <= 2; n++) {
+      const a = m._ctl(cu - 1, cv + n), b = m._ctl(cu,     cv + n);
+      const c = m._ctl(cu + 1, cv + n), d = m._ctl(cu + 2, cv + n);
+      rx.push(cr(a.x, b.x, c.x, d.x, lu));
+      ry.push(cr(a.y, b.y, c.y, d.y, lu));
+    }
+    return { x: cr(rx[0], rx[1], rx[2], rx[3], lv),
+             y: cr(ry[0], ry[1], ry[2], ry[3], lv) };
+  };
+
+  let worst = 0, probes = 0;
+  for (const [C, R] of [[3, 3], [5, 4], [9, 9], [17, 17]]) {
+    const m = new ProjMapMesh(); m.setCorners(KEYSTONE); m.setGrid(C, R);
+    m.setPoint(1, 1, 0.42, 0.30);
+    if (C > 3) m.setPoint(2, 2, 0.61, 0.58);
+    for (const [u, v] of PROBES) {
+      const a = m._sampleSpline(u, v), b = crSample(m, u, v);
+      worst = Math.max(worst, Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+      probes++;
+    }
+  }
+  check('probed a non-empty grid across four net sizes',
+    probes === N_PROBES * 4, `${probes}`);
+  check('an untouched mesh samples identically in either basis', worst < 1e-14,
+    `worst ${worst.toExponential(2)} — the surface moved when the basis did`);
+  // The twist term is what makes that true. Zeroing it is the usual shortcut
+  // and produces a DIFFERENT surface, so prove the difference is visible —
+  // otherwise the check above passes for the wrong reason.
+  const m2 = new ProjMapMesh(); m2.setCorners(KEYSTONE); m2.setGrid(3, 3);
+  m2.setPoint(1, 1, 0.42, 0.30);
+  const realTwist = m2._twist(1, 1);
+  check('the twist term is non-zero on a shaped net, so §12 is not vacuous',
+    Math.hypot(realTwist.x, realTwist.y) > 1e-3,
+    `|twist| ${Math.hypot(realTwist.x, realTwist.y).toExponential(2)}`);
+}
+
+// ── 13. Tangent overrides ────────────────────────────────────────────────
+console.log('\n§13 a dragged handle bends the surface and nothing else');
+{
+  const build = () => {
+    const m = new ProjMapMesh(3, 3);
+    m.setPoint(1, 1, 0.42, 0.30);
+    m.setCurve(1);
+    return m;
+  };
+  const plain = build();
+  const bent = build();
+  bent.setTangent(1, 0, 'u', 0.05, -0.35);
+
+  check('a fresh mesh overrides nothing', plain.tangentCount === 0,
+    `${plain.tangentCount}`);
+  check('setTangent records one override', bent.tangentCount === 1,
+    `${bent.tangentCount}`);
+  check('tangent() reports an override as explicit',
+    bent.tangent(1, 0, 'u').explicit === true &&
+    plain.tangent(1, 0, 'u').explicit === false);
+
+  let sep = 0, probes = 0, knotWorst = 0;
+  for (const [u, v] of PROBES) {
+    const a = plain.sample(u, v), b = bent.sample(u, v);
+    sep = Math.max(sep, Math.hypot(b.x - a.x, b.y - a.y));
+    probes++;
+  }
+  check('probed a non-empty grid for the handle effect', probes === N_PROBES, `${probes}`);
+  check('a dragged handle visibly bends the surface', sep > 0.02,
+    `separation ${sep.toExponential(2)} — with none, every check here is vacuous`);
+
+  for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++) {
+    const p = bent.get(i, j), q = bent.sample(i / 2, j / 2);
+    knotWorst = Math.max(knotWorst, Math.abs(q.x - p.x), Math.abs(q.y - p.y));
+  }
+  check('control points are STILL interpolated exactly with a handle dragged',
+    knotWorst < 1e-12, `worst ${knotWorst.toExponential(2)} — a handle must ` +
+    'bend the curve between points, never move the points themselves');
+
+  check('overriding u leaves the v tangent at that point derived',
+    bent.tangent(1, 0, 'v').explicit === false);
+
+  // Locality: a tangent at (1,0) must not reach the far side of the net.
+  let farSide = 0;
+  for (const [u, v] of PROBES) {
+    if (v < 0.5) continue;                       // only the row away from it
+    const a = plain.sample(u, v), b = bent.sample(u, v);
+    farSide = Math.max(farSide, Math.hypot(b.x - a.x, b.y - a.y));
+  }
+  check('a handle reaches its own spans, not the whole surface', farSide < sep / 2,
+    `far side ${farSide.toExponential(2)} vs peak ${sep.toExponential(2)}`);
+
+  // Clearing must restore the derived surface EXACTLY, or "undo" is a reshape.
+  bent.clearTangent(1, 0, 'u');
+  check('clearTangent removes the entry entirely', bent.tangentCount === 0,
+    `${bent.tangentCount}`);
+  let back = 0;
+  for (const [u, v] of PROBES) {
+    const a = plain.sample(u, v), b = bent.sample(u, v);
+    back = Math.max(back, Math.hypot(b.x - a.x, b.y - a.y));
+  }
+  check('clearing a handle restores the derived surface exactly', back === 0,
+    `worst ${back.toExponential(2)}`);
+
+  // Tangents mean nothing on a flat surface, and must not leak into one.
+  const flat = build(); flat.setCurve(0);
+  flat.setTangent(1, 0, 'u', 0.05, -0.35);
+  const flatRef = build(); flatRef.setCurve(0);
+  let leak = 0;
+  for (const [u, v] of PROBES) {
+    const a = flatRef.sample(u, v), b = flat.sample(u, v);
+    leak = Math.max(leak, Math.hypot(b.x - a.x, b.y - a.y));
+  }
+  check('a handle has no effect at curve 0', leak === 0, `worst ${leak.toExponential(2)}`);
+}
+
+// ── 14. Persistence, resize and the crossfade ────────────────────────────
+console.log('\n§14 handles survive a save, and do not survive a resize');
+{
+  const m = new ProjMapMesh(3, 3);
+  m.setPoint(1, 1, 0.42, 0.30);
+  m.setCurve(1);
+
+  const clean = m.serialize();
+  check('a mesh with no handles writes no tans key at all', !('tans' in clean),
+    'an older build must still read a mesh shaped without handles');
+
+  m.setTangent(1, 0, 'u', 0.05, -0.35);
+  m.setTangent(0, 1, 'v', -0.11, 0.22);
+  const d = m.serialize();
+  check('a mesh with handles writes them', !!d.tans && Object.keys(d.tans).length === 2,
+    `${d.tans ? Object.keys(d.tans).length : 0} entries`);
+
+  const round = new ProjMapMesh();
+  round.curve = 1;
+  check('deserialize accepts the round trip', round.deserialize(d) === true);
+  check('the round trip preserves both overrides', round.tangentCount === 2,
+    `${round.tangentCount}`);
+  let rt = 0, probes = 0;
+  for (const [u, v] of PROBES) {
+    const a = m.sample(u, v), b = round.sample(u, v);
+    rt = Math.max(rt, Math.hypot(b.x - a.x, b.y - a.y));
+    probes++;
+  }
+  check('probed a non-empty grid across the round trip', probes === N_PROBES, `${probes}`);
+  check('the reloaded mesh is the same surface', rt < 1e-6,
+    `worst ${rt.toExponential(2)} (serialize rounds to 6 decimals)`);
+
+  // A file that names a point the net does not have must not be trusted.
+  const junk = new ProjMapMesh();
+  junk.deserialize({ cols: 3, rows: 3, pts: d.pts, tans: { 99: { u: [1, 1] }, 4: { u: [0.1, 0.1] } } });
+  check('deserialize drops a tangent on an index the net has no point for',
+    junk.tangentCount === 1, `${junk.tangentCount} — 99 is outside a 3x3`);
+
+  // A resize re-keys every index, so overrides cannot come with it.
+  const resized = new ProjMapMesh(3, 3);
+  resized.setCurve(1);
+  resized.setTangent(1, 0, 'u', 0.05, -0.35);
+  resized.setGrid(5, 5);
+  check('setGrid drops overrides rather than re-keying them by luck',
+    resized.tangentCount === 0, `${resized.tangentCount}`);
+
+  // A crossfade between two shapes that carry handles.
+  const store = {};
+  globalThis.localStorage = {
+    getItem: (k) => (k in store ? store[k] : null),
+    setItem: (k, v) => { store[k] = String(v); },
+  };
+  const target = new ProjMapMesh(3, 3);
+  target.setPoint(1, 1, 0.30, 0.68);
+  target.setTangent(1, 0, 'u', -0.20, 0.30);
+  target.save(5);
+
+  const live = new ProjMapMesh(3, 3);
+  live.setPoint(1, 1, 0.42, 0.30);
+  live.setCurve(1);
+  live.setTangent(1, 0, 'u', 0.05, -0.35);
+  check('beginMorph accepts a slot that carries handles', live.beginMorph(5, 2) === true);
+  live.tickMorph(1);                       // halfway
+  check('the tangents are pinned explicitly mid-fade', live.tangentCount > 0,
+    'a derived tangent would chase the moving points instead of travelling');
+  live.tickMorph(1);                       // land
+  check('the crossfade completes', live.morphing === false);
+  check('it lands on the TARGET handle set, not the one it started with',
+    live.tangentCount === 1 &&
+    Math.abs(live.tangent(1, 0, 'u').x - (-0.20)) < 1e-9,
+    `u tangent ${live.tangent(1, 0, 'u').x}`);
+
+  // And a target with NO handles must land with none, rather than inheriting
+  // a frozen copy of the shape it faded from.
+  const plainTarget = new ProjMapMesh(3, 3);
+  plainTarget.setPoint(1, 1, 0.55, 0.55);
+  plainTarget.save(6);
+  const live2 = new ProjMapMesh(3, 3);
+  live2.setCurve(1);
+  live2.setTangent(1, 0, 'u', 0.05, -0.35);
+  live2.beginMorph(6, 2);
+  live2.tickMorph(2);
+  check('fading to a handle-less shape leaves no handles behind',
+    live2.tangentCount === 0, `${live2.tangentCount}`);
+  delete globalThis.localStorage;
 }
 
 console.log(`\n${failures === 0 ? 'PASS' : `FAILED: ${failures}`}`);
