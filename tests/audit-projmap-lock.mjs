@@ -60,7 +60,10 @@ check('projmap.lock defaults ON', lock?.value === 1,
 // Everything else under projmap. IS geometry and must stay capturable, or
 // .imweb project files stop carrying the site alignment.
 //   projmap.grid — the calibration grid overlay; view state, same as edit
-const VIEW_STATE = new Set(['projmap.lock', 'projmap.edit', 'projmap.grid']);
+//   projmap.meshSlot — an index into PER-ORIGIN localStorage, like warpSlot;
+//                      capturing it would recall a different mesh elsewhere
+const VIEW_STATE = new Set(['projmap.lock', 'projmap.edit', 'projmap.grid',
+                            'projmap.meshSlot', 'projmap.meshStore']);
 const corners = ps.getAll().filter(p => p.id.startsWith('projmap.') && !VIEW_STATE.has(p.id));
 check('projmap corner params exist', corners.length >= 8, `found ${corners.length}`);
 const wronglyGlobal = corners.filter(p => p.group === 'global').map(p => p.id);

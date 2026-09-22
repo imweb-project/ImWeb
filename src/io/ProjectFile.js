@@ -160,6 +160,10 @@ export class ProjectFile {
       playCues,
       drawData,
       strokeLoops,
+      // Projection mesh above 2x2. The four corner params already carry a 2x2
+      // alignment; this is what keeps interior points from vanishing on a
+      // reload, which is the whole reason raising the resolution was unsafe.
+      projmesh:     this.extras.projMesh ? this.extras.projMesh.serialize() : null,
       stills:       stillsMetadata,
       scene3d:      scene3dMetadata,
       glsl:         this.extras.glsl ? this.extras.glsl.capture() : null,
@@ -300,6 +304,10 @@ export class ProjectFile {
     // arrive via the param snapshot restore)
     if (data.strokeLoops && this.extras.strokeLooper) {
       this.extras.strokeLooper.restore(data.strokeLoops);
+    }
+
+    if (data.projmesh && this.extras.projMesh) {
+      this.extras.projMesh.deserialize(data.projmesh);
     }
 
     // Restore StillsBuffer metadata

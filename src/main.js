@@ -3010,6 +3010,17 @@ async function main() {
     nudgeCorner(selectedCorner,d[0],d[1]);
   });
 
+  // Anything this window does NOT own goes to the opener. While you are working
+  // on the projector the output window has focus, so every ImWeb shortcut was
+  // landing in the wrong document and doing nothing.
+  // Modified keys are left alone: cmd/ctrl combinations belong to the browser.
+  const _OWN_KEYS=/^(g|G|h|H|Arrow(Left|Right|Up|Down)|Escape)$/;
+  document.addEventListener('keydown',e=>{
+    if(_OWN_KEYS.test(e.key))return;
+    if(e.metaKey||e.ctrlKey||e.altKey)return;
+    window.opener?.postMessage({type:'key',key:e.key,code:e.code,shiftKey:e.shiftKey},'*');
+  });
+
   // The toolbar follows EDIT MODE, and nothing else. It used to hide in
   // fullscreen as well, which was one condition too many: edit-off already
   // gives a clean projection, and the extra rule took ⊞ Grid away in exactly
@@ -3129,6 +3140,17 @@ async function main() {
   // ── Projection Mapping ────────────────────────────────────────────────────
   // Corner handles live on the second screen. It sends updates back here.
   window.addEventListener("message", (e) => {
+    if (e.data?.type === "key" && typeof e.data.key === "string") {
+      // Replayed, not re-implemented: the shortcut table stays in one place.
+      // The synthesized event is untrusted, so anything needing a real user
+      // gesture (fullscreen, file pickers) still will not fire from here —
+      // those have their own buttons.
+      document.dispatchEvent(new KeyboardEvent("keydown", {
+        key: e.data.key, code: e.data.code,
+        shiftKey: !!e.data.shiftKey, bubbles: true, cancelable: true,
+      }));
+      return;
+    }
     if (e.data?.type === "projmap-grid-toggle") {
       const g = ps.get("projmap.grid");
       if (g) ps.set("projmap.grid", g.value ? 0 : 1);
@@ -3146,6 +3168,35 @@ async function main() {
       ps.set(`projmap.${e.data.corner}_y`, e.data.y);
     }
   });
+  /**
+   * Recall mesh slot 1-8 with the configured fade. ONE implementation reached
+   * two ways — the param and any controller driving it — so a MIDI button and
+   * the dropdown can never disagree, the shape _recallWarpSlot uses.
+   *
+   * A morph only runs between meshes of the SAME grid size; different sizes
+   * snap, because there is no correspondence between a 3x3 and a 5x5 set of
+   * control points.
+   */
+  const _recallMeshSlot = (i) => {
+    if (!(i >= 1 && i <= 8)) return false;
+    const secs = ps.get("projmap.meshFade")?.value ?? 0;
+    if (!projMesh.beginMorph(String(i), secs)) return false;
+    // Keep the resolution rows honest about what was just loaded.
+    ps.set("projmap.meshCols", projMesh.cols);
+    ps.set("projmap.meshRows", projMesh.rows);
+    return true;
+  };
+  ps.get("projmap.meshStore")?.onChange(() => {
+    const i = Math.round(ps.get("projmap.meshSlot")?.value ?? 0);
+    if (i < 1 || i > 8) { showToast("Pick a MeshSlot first", 1800); return; }
+    showToast(projMesh.save(String(i))
+      ? `Mesh stored in slot ${i}` : "Mesh store failed", 1800);
+  });
+  ps.get("projmap.meshSlot")?.onChange((v) => {
+    const i = Math.round(v);
+    if (i > 0) _recallMeshSlot(i);
+  });
+
   const _syncMeshGrid = () => {
     projMesh.setGrid(
       Math.round(ps.get("projmap.meshCols")?.value ?? 2),
@@ -3259,6 +3310,7 @@ async function main() {
   ctrl.setMontySignal(montyBridge._signal);
   const projectFile = new ProjectFile(ps, presetMgr, tableManager, {
     warpEditor,
+    projMesh,
     movieCues,
     playCues,
     drawLayer,
@@ -9164,6 +9216,9 @@ void main() {
 
     // Tick preset morph animation
     presetMgr.tickMorph(dt);
+    // Mesh slot crossfade (projmap.meshFade > 0). Unconditional, unlike the
+    // warp editor's tick, which sits inside the drawing block.
+    projMesh.tickMorph(dt);
 
     // Tick automation playback
     automation.tick(dt);

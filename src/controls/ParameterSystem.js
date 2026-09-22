@@ -7500,6 +7500,40 @@ export function registerCoreParameters(ps) {
   // like the corner positions. Raising it subdivides the CURRENT shape without
   // moving a pixel (ProjMapMesh.setGrid resamples projectively), so changing
   // resolution never costs you an alignment.
+  // Mesh slots, mirroring displace.warpSlot: group 'global' because slot
+  // CONTENTS live in per-origin localStorage, so a captured index would recall
+  // a different mesh on another machine or port. Controller-driven recall still
+  // works, which is what makes fading between shapes live possible.
+  ps.register({
+    id: "projmap.meshSlot",
+    label: "MeshSlot",
+    group: "global",
+    type: PARAM_TYPE.SELECT,
+    options: ["—", "1", "2", "3", "4", "5", "6", "7", "8"],
+    value: 0,
+  });
+  // Fade time is a SETTING, not a per-origin index, so it goes in 'projmap'
+  // with the geometry — the same split displace.warpSlotFade uses.
+  // Store the current mesh into the slot selected by projmap.meshSlot.
+  // A TRIGGER rather than a modifier-click, so it is reachable from a MIDI
+  // button while standing at the projector.
+  ps.register({
+    id: "projmap.meshStore",
+    label: "Store Mesh",
+    group: "global",
+    type: PARAM_TYPE.TRIGGER,
+    value: 0,
+  });
+  ps.register({
+    id: "projmap.meshFade",
+    label: "Mesh Fade",
+    group: "projmap",
+    min: 0,
+    max: 10,
+    value: 0, // 0 = snap, exactly as before
+    step: 0.05,
+    unit: "s",
+  });
   ps.register({
     id: "projmap.meshCols",
     label: "Mesh Cols",
