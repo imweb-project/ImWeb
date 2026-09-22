@@ -2526,6 +2526,28 @@ async function main() {
       btn.classList.add("active");
       btn.title = "Close second screen output (click again)";
 
+      // Move onto a second display and go fullscreen, AFTER opening.
+      // Deliberately not before: window.open must be called synchronously
+      // inside the click or Chromium treats it as an untrusted popup and
+      // refuses it — awaiting getScreenDetails() first loses the gesture.
+      // Every step degrades to the previous behaviour on its own.
+      (async () => {
+        try {
+          if (!window.getScreenDetails) return;           // not supported
+          const det = await window.getScreenDetails();    // may prompt once
+          const other = det.screens.find(s => s !== det.currentScreen)
+                     ?? det.screens.find(s => !s.isPrimary);
+          if (!other || !_outWin || _outWin.closed) return;
+          _outWin.moveTo(other.availLeft, other.availTop);
+          _outWin.resizeTo(other.availWidth, other.availHeight);
+          // Fullscreen may still be refused for want of a gesture; the ⛶
+          // button and double-click stay as the fallback, so a refusal costs
+          // a click rather than the feature.
+          const de = _outWin.document?.documentElement;
+          await de?.requestFullscreen?.({ navigationUI: 'hide' });
+        } catch { /* permission denied, one screen, or no gesture — fine */ }
+      })();
+
       _outWin.document.write(`<!DOCTYPE html>
 <html>
 <head>
@@ -2937,8 +2959,19 @@ async function main() {
     nudgeCorner(selectedCorner,d[0],d[1]);
   });
 
+  // In fullscreen the toolbar is projected onto the surface along with the
+  // image, so ⊞ Grid and ⛶ Full have to go. Both remain reachable: 'g'
+  // toggles the grid and Escape leaves fullscreen.
+  function _syncChrome(){
+    var fs=!!(document.fullscreenElement||document.webkitFullscreenElement);
+    toolbar.style.visibility=fs?'hidden':'visible';
+  }
+  document.addEventListener('fullscreenchange',_syncChrome);
+  document.addEventListener('webkitfullscreenchange',_syncChrome);
+
   window.addEventListener('resize',resize);
   resize();
+  _syncChrome();
 
   window.addEventListener('message',e=>{
     if(!e.data?.bitmap)return;
