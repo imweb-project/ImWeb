@@ -2795,8 +2795,55 @@ async function main() {
       if(err!==gl.NO_ERROR){ note('gl-error:'+err); return false; }
       return true;
     }
+    // N-by-M mesh. Each CELL is mapped projectively from its own uv rect to its
+    // own four screen points — and because a projective map is fixed by four
+    // correspondences, a cell whose corners lie on the global homography
+    // reproduces that homography exactly. That is why subdividing a 2x2 mesh
+    // leaves the picture untouched instead of degrading toward bilinear, which
+    // is what naive subdivision does.
+    function renderMesh(m){
+      if(!ok)return false;
+      if(gl.isContextLost()){ok=false;note('lost-on-render');return false;}
+      var C=m.cols,R=m.rows,P=m.pts;
+      if(!(C>=2&&R>=2)||!P||P.length!==C*R){note('bad-mesh');return false;}
+      var W=cvs.width,H=cvs.height;
+      gl.viewport(0,0,W,H);
+      gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT);
+      function nd(p){return [p.x*2-1, 1-p.y*2];}
+      var pos=[],uv=[];
+      for(var j=0;j<R-1;j++){
+        for(var i=0;i<C-1;i++){
+          var a=P[j*C+i], b=P[j*C+i+1], c2=P[(j+1)*C+i+1], d=P[(j+1)*C+i];
+          var q=qs({tl:a,tr:b,br:c2,bl:d});
+          var u0=i/(C-1),u1=(i+1)/(C-1),v0=j/(R-1),v1=(j+1)/(R-1);
+          var NP=[nd(a),nd(b),nd(c2),nd(d)];
+          var UV=[[u0,v0],[u1,v0],[u1,v1],[u0,v1]];
+          var ord=[0,1,2, 0,2,3];
+          for(var k=0;k<6;k++){
+            var t=ord[k];
+            pos.push(NP[t][0],NP[t][1]);
+            uv.push(UV[t][0]*q[t],UV[t][1]*q[t],q[t]);
+          }
+        }
+      }
+      gl.useProgram(prog);
+      gl.bindBuffer(gl.ARRAY_BUFFER,bufPos);
+      gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(pos),gl.DYNAMIC_DRAW);
+      gl.enableVertexAttribArray(locPos);
+      gl.vertexAttribPointer(locPos,2,gl.FLOAT,false,0,0);
+      gl.bindBuffer(gl.ARRAY_BUFFER,bufUV);
+      gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(uv),gl.DYNAMIC_DRAW);
+      gl.enableVertexAttribArray(locUV);
+      gl.vertexAttribPointer(locUV,3,gl.FLOAT,false,0,0);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,tex);
+      gl.uniform1i(locTex,0);
+      gl.drawArrays(gl.TRIANGLES,0,pos.length/2);
+      var e2=gl.getError();
+      if(e2!==gl.NO_ERROR){ note('gl-error:'+e2); return false; }
+      return true;
+    }
     function size(w,h){ if(cvs){cvs.width=w;cvs.height=h;} }
-    return {init:init,upload:upload,render:render,size:size,
+    return {init:init,upload:upload,render:render,renderMesh:renderMesh,size:size,
             available:function(){return ok;},
             state:function(){return trail.join(' > ');}};
   })();
