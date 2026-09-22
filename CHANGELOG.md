@@ -8,6 +8,34 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Added
+- **Mesh Curve — projection mapping onto curved surfaces.** Until now the
+  mapping mesh joined its control points with straight lines, so a cylinder, a
+  curved wall or a dome slice could only ever be approximated by adding more
+  and more points. **Mesh Curve** (Mapping panel, 0–100 %) blends the surface
+  from straight toward a smooth curve running through the same points. It is a
+  continuous control, not a switch, so it can be automated, mapped to a
+  controller and bent over eight bars like anything else here.
+
+  The points stay where you put them at every setting — 0 % and 100 % and
+  everything between pass exactly through each handle, so raising the curve
+  never pulls a calibrated point off the object. At 0 % the picture is
+  identical to before, to the last bit, so every existing project opens
+  unchanged.
+
+  Curvature needs something to curve, and four corners carry no shape between
+  them, so the first time you lift Mesh Curve off 0 on a plain corner-pinned
+  mapping the grid goes to 3×3 for you. That costs nothing: raising the mesh
+  resolution has never moved a pixel. The calibration grid bows with the
+  surface, as does the projected image — the output window is handed a
+  ready-made curved net rather than working the shape out for itself, so the
+  guide and the picture cannot disagree.
+
+  One thing to know: the curve trades a little perspective for smoothness. On
+  a genuinely flat, strongly angled surface, leave it at 0 and keep the exact
+  keystone; on a curved surface, raise it. Partway is a real setting, not a
+  compromise.
+
 ### Changed
 - **One Hypercube panel, grouped the way the cube is built.** The hand-built
   rows and the "Parameters · controllers" list showed the same settings twice,

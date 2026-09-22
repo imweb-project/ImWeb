@@ -7548,6 +7548,25 @@ export function registerCoreParameters(ps) {
     min: 2, max: 17, step: 1,
     value: 2,
   });
+  // Blend from the flat (piecewise-projective) surface toward a spline through
+  // the same control points, for mapping onto a curved wall, a cylinder or a
+  // dome slice — the thing a mesh of straight-edged cells cannot express.
+  // Group 'projmap' like meshCols/meshRows: this IS geometry, so it belongs in
+  // a project file and is stripped from Display State recall by the lock.
+  // Continuous rather than a toggle because both surfaces interpolate every
+  // control point exactly, so every value between them does too — and because
+  // an instrument where everything is a controller target should be able to
+  // bend a surface over eight bars. 0 is bit-identical to the old behaviour.
+  // Needs interior points to have anything to curve: at 2x2 it is inert, which
+  // is why main.js raises the grid to 3x3 the first time it is lifted off 0.
+  ps.register({
+    id: "projmap.meshCurve",
+    label: "Mesh Curve",
+    group: "projmap",
+    min: 0, max: 100, step: 1,
+    value: 0,
+    unit: "%",
+  });
   ps.register({
     id: "projmap.grid",
     label: "Map Grid",

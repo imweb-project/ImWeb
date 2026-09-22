@@ -2500,6 +2500,15 @@ async function main() {
   let _outWin = null;
   let _outWinReady = false;
   let _outFrameTick = 0;
+  // Render-net cache. A curved 17x17 tessellates to ~2400 points, and posting
+  // that every frame is pure waste when the mesh has not moved — so the net is
+  // rebuilt and reposted only when the mesh revision or the subdivision
+  // changes, and the key is OMITTED otherwise (absent = keep what you have,
+  // explicit null = there is none). Counted rather than assumed: a dirty-check
+  // that silently never fires reads exactly like one that works.
+  let _pmNetRev = -1, _pmNetSub = -1;
+  const _pmNetStats = { ticks: 0, sends: 0 };
+  if (import.meta.env.DEV) window.__pmNetStats = _pmNetStats;
   (() => {
     const btn = document.getElementById("btn-second-screen");
     if (!btn) return;
@@ -2620,7 +2629,14 @@ async function main() {
   // points on click.
   var handles=[], selCell=null, selPt=null;
   const CORNER_OF={'0,0':'tl','1,0':'tr','1,1':'br','0,1':'bl'};
-  let lastBitmap=null,lastCorners=null,lastMesh=null,lastGridLines=null,lastEdit=true,_wantFs=false;
+  // lastMesh is the CONTROL net: handles, hit-testing, nudging. lastRenderMesh
+  // is the net actually drawn — the same thing while the surface is flat, and a
+  // tessellation of it once Mesh Curve is up. They are kept apart because a
+  // handle belongs on a control point and a triangle does not: merging them
+  // would put a circle on every one of ~600 tessellated vertices.
+  // Sampled in the opener and posted, never recomputed here: this window must
+  // not hold a second opinion about the surface (LEARNED 2026-09-22).
+  let lastBitmap=null,lastCorners=null,lastMesh=null,lastRenderMesh=null,lastGridLines=null,lastEdit=true,_wantFs=false;
   let gridActive=false;
 
   function drawGrid(){
@@ -2978,7 +2994,8 @@ async function main() {
     // Mesh first when there is one; a 2x2 mesh renders byte-identically to the
     // corners path, so this is not a second way of drawing the same thing.
     var useGL=false;
-    if(lastMesh&&GL.upload(lastBitmap)) useGL=GL.renderMesh(lastMesh);
+    var netM=lastRenderMesh||lastMesh;
+    if(netM&&GL.upload(lastBitmap)) useGL=GL.renderMesh(netM);
     else if(lastCorners&&GL.upload(lastBitmap)) useGL=GL.render(lastCorners);
     // Posted grid lines are already in surface space, so this canvas must NOT
     // also be warped by CSS — that would apply the mapping twice. The
@@ -3147,6 +3164,9 @@ async function main() {
     lastBitmap=e.data.bitmap;
     lastCorners=e.data.corners||null;
     lastMesh=e.data.mesh||null;
+    // ABSENT means unchanged; an explicit null means there is no net. A net of
+    // ~2400 points does not need reposting on a frame where nothing moved.
+    if('renderMesh' in e.data)lastRenderMesh=e.data.renderMesh||null;
     lastGridLines=e.data.gridLines||null;
     lastEdit=e.data.edit!==false;
     // Mapping active and EDITING it are separate. With edit off the geometry
@@ -3363,6 +3383,24 @@ async function main() {
   };
   ps.get("projmap.meshCols")?.onChange(_syncMeshGrid);
   ps.get("projmap.meshRows")?.onChange(_syncMeshGrid);
+
+  // Mesh Curve. Four corners carry no curvature information, so the param is
+  // inert at 2x2 — and a control that visibly moves while nothing happens
+  // reads as broken rather than as unsupported. Raising the grid to 3x3 is
+  // free (setGrid resamples projectively: measured 3.3e-16, not one pixel
+  // moves) and it is the smallest net that HAS an interior point to bend, so
+  // lifting the knob off 0 takes it there rather than doing nothing. Dropping
+  // back to 0 leaves the 3x3 in place, which is harmless: at curve 0 a 3x3 and
+  // a 2x2 draw the same picture.
+  ps.get("projmap.meshCurve")?.onChange((v) => {
+    const a = (+v || 0) / 100;
+    if (a > 0 && projMesh.isQuad) {
+      ps.set("projmap.meshCols", 3);
+      ps.set("projmap.meshRows", 3);
+      console.info("[ProjMap] Mesh Curve needs interior points — grid raised to 3x3");
+    }
+    projMesh.setCurve(a);
+  });
 
   ps.get("projmap.active").onChange((v) => {
     document.getElementById("btn-projmap")?.classList.toggle("active", !!v);
@@ -10307,12 +10345,27 @@ void main() {
           // the rest of the time.
           let _pmGridLines = null;
           let _pmMesh = null;
+          // undefined on purpose: an absent key tells the output window the net
+          // it already holds is still current.
+          let _pmRenderMesh;
           if (_pmActive) {
             if (projMesh.isQuad && _pmCorners && !_meshRecallActive) {
               projMesh.setCorners(_pmCorners);
             }
             _pmMesh = { cols: projMesh.cols, rows: projMesh.rows,
                         pts: projMesh.pts.map(p => ({ x: p.x, y: p.y })) };
+            // The DRAWN net is sampled here, never in the popup — same rule the
+            // calibration grid follows. The popup draws one projective quad per
+            // cell of whatever net it is handed, which is exact while the
+            // surface is flat and a fan of chords the moment it curves, so a
+            // curve has to arrive already tessellated.
+            const _sub = projMesh.renderSub();
+            _pmNetStats.ticks++;
+            if (projMesh._rev !== _pmNetRev || _sub !== _pmNetSub) {
+              _pmNetRev = projMesh._rev; _pmNetSub = _sub;
+              _pmRenderMesh = projMesh.renderNet(_sub);
+              _pmNetStats.sends++;
+            }
             if (_pmGrid && _pmEdit) {
               const DIV = 10, SUB = 20; // SUB > DIV so a curved cell edge reads as a curve
               _pmGridLines = [];
@@ -10333,10 +10386,16 @@ void main() {
                 _pmGridLines.push(line);
               }
             }
+          } else if (_pmNetRev !== -1) {
+            // Mapping switched off: drop the popup's net rather than leaving it
+            // holding a shape nothing is maintaining any more.
+            _pmNetRev = -1; _pmNetSub = -1; _pmRenderMesh = null;
           }
-          _outWin.postMessage({ bitmap, corners: _pmCorners, mesh: _pmMesh,
-                                gridLines: _pmGridLines,
-                                edit: _pmEdit, grid: _pmGrid }, "*", [bitmap]);
+          const _pmMsg = { bitmap, corners: _pmCorners, mesh: _pmMesh,
+                           gridLines: _pmGridLines,
+                           edit: _pmEdit, grid: _pmGrid };
+          if (_pmRenderMesh !== undefined) _pmMsg.renderMesh = _pmRenderMesh;
+          _outWin.postMessage(_pmMsg, "*", [bitmap]);
         } else {
           bitmap.close();
         }

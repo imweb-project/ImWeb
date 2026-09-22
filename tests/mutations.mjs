@@ -1547,4 +1547,69 @@ export const MUTATIONS = [
       '    }',
     ].join('\n'),
   },
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // Projection mesh curvature (src/inputs/ProjMapMesh.js)
+  //
+  // Every one of these leaves an instrument that renders, responds and looks
+  // plausible on a flat test wall. They are only visible against a physical
+  // object, which is where re-alignment is expensive and often impossible
+  // mid-performance.
+  // ═════════════════════════════════════════════════════════════════════════
+  {
+    name: 'projmesh: 2x2 is allowed to curve',
+    audit: 'audit-projmap-curve.mjs',
+    file: 'src/inputs/ProjMapMesh.js',
+    why: 'four corners carry no curvature information, so the spline over their extrapolated ghosts is exactly the BILINEAR surface — on a keystoned quad that is a third of the frame away from the projective one, so raising Mesh Curve on a corner-pinned mapping would slide the whole image off the object',
+    find: '    if (!(a > 0) || this.isQuad) return flat;',
+    replace: '    if (!(a > 0)) return flat;',
+  },
+  {
+    name: 'projmesh: the spline end tangent is clamped, not extrapolated',
+    audit: 'audit-projmap-curve.mjs',
+    file: 'src/inputs/ProjMapMesh.js',
+    why: 'a clamped ghost gives a zero end tangent, so the surface flattens into every border of the net — the identity map stops being the identity by ~3e-2 of the frame in the boundary cells, which reads as the image going slack at the edges rather than as a maths error',
+    find: '      const a = this._ctl(0, j), b = this._ctl(1, j);\n      return { x: 2 * a.x - b.x, y: 2 * a.y - b.y };',
+    replace: '      return this._ctl(0, j);',
+  },
+  {
+    name: 'projmesh: the curve is never tessellated',
+    audit: 'audit-projmap-curve.mjs',
+    file: 'src/inputs/ProjMapMesh.js',
+    why: 'the output window draws one projective quad per cell of whatever net it is handed, so an untessellated curve renders as a fan of straight chords while sample(), the calibration grid and setGrid all describe a curve — the guide and the image become two truths about one shape, which is the exact bug this subsystem paid for on 2026-09-22',
+    find: '    const span = Math.max(this.cols - 1, this.rows - 1);\n    return Math.max(1, Math.min(12, Math.floor(48 / span)));',
+    replace: '    return 1;',
+  },
+  {
+    name: 'projmesh: a morph target is resampled on the flat surface',
+    audit: 'audit-projmap-curve.mjs',
+    file: 'src/inputs/ProjMapMesh.js',
+    why: 'setGrid resamples through sample(), which reads `curve` — a target left at 0 is resampled on a surface the instrument is not showing, so a slot crossfade jumps on its first frame and then eases from the wrong place',
+    find: '    target.curve = this.curve;',
+    replace: '',
+  },
+  {
+    name: 'projmesh: the surface misses its own control points',
+    audit: 'audit-projmap-curve.mjs',
+    file: 'src/inputs/ProjMapMesh.js',
+    why: 'an approximating basis instead of an interpolating one — the handles stop being where the image lands, which is the entire job of a calibration mesh, and it looks like a mesh that is merely a bit soft rather than one that is wrong',
+    find: '    + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2',
+    replace: '    + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 * 0.92',
+  },
+  {
+    name: 'projmesh: the render net is reposted on every frame',
+    audit: 'audit-projmap-curve.mjs',
+    file: 'src/main.js',
+    why: 'a curved 17x17 net is 2401 points, so an ungated repost structured-clones ~72,000 points a second into the output window while nothing is moving — the sender sees no cost at all and the projector is where it lands',
+    find: '            if (projMesh._rev !== _pmNetRev || _sub !== _pmNetSub) {',
+    replace: '            if (true) {',
+  },
+  {
+    name: 'projmesh: the render net is never posted to the output window',
+    audit: 'audit-projmap-curve.mjs',
+    file: 'src/main.js',
+    why: 'the popup keeps whatever net it last received, so the curve is computed, drawn on the calibration grid and simply absent from the projected image — the guide says the mapping is curved and the projector disagrees',
+    find: '          if (_pmRenderMesh !== undefined) _pmMsg.renderMesh = _pmRenderMesh;',
+    replace: '',
+  },
 ];
