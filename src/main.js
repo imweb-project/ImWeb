@@ -2535,6 +2535,10 @@ async function main() {
   *{margin:0;padding:0;box-sizing:border-box}
   html,body{width:100%;height:100%;background:#000;overflow:hidden;touch-action:manipulation}
   canvas{display:block;position:absolute;top:0;left:0;transform-origin:0 0}
+  /* #gl carries the warped IMAGE and is never CSS-transformed; #out sits on top
+     as a transparent grid-only overlay and keeps the matrix3d, so the
+     calibration grid warps exactly as it always did. */
+  #gl{display:none}
   #ho{position:fixed;inset:0;pointer-events:none;display:none;transition:opacity 0.4s}
   .h{position:absolute;width:54px;height:54px;margin:-27px 0 0 -27px;border:3px solid #c8a020;border-radius:50%;background:rgba(0,0,0,0.45);cursor:crosshair;pointer-events:all;touch-action:none;box-shadow:0 0 12px rgba(0,0,0,0.9);transition:border-color .1s,background .1s}
   .h:active{border-color:#fff;background:rgba(255,255,255,0.15)}
@@ -2545,6 +2549,7 @@ async function main() {
 </style>
 </head>
 <body>
+<canvas id="gl"></canvas>
 <canvas id="out"></canvas>
 <div id="ho">
   <div class="h" id="h-tl"></div>
@@ -2640,14 +2645,136 @@ async function main() {
 
   function resize(){
     c.width=window.innerWidth;c.height=window.innerHeight;
+    GL.size(window.innerWidth,window.innerHeight);
     applyTransform();positionHandles();draw();
   }
 
+  // ── Perspective-correct quad renderer ────────────────────────────────────
+  // A 4-corner mapping is a projective homography, and CSS matrix3d gave that
+  // for free. Curves and interior points cannot be one CSS transform, so the
+  // image moves to WebGL — starting here, at exact parity with the CSS path,
+  // before anything new is exposed.
+  //
+  // Perspective correctness is NOT automatic from more vertices: a bilinear
+  // quad has no foreshortening and would look subtly wrong on an angled flat
+  // surface even with the corners landing identically. The fix is the classic
+  // q-coordinate trick — weight each corner's uv by q derived from where the
+  // quad's diagonals cross, interpolate (u*q, v*q, q) and divide in the
+  // fragment shader.
+  var GL=(function(){
+    var cvs=document.getElementById('gl'), gl=null, prog=null, tex=null,
+        bufPos=null, bufUV=null, locPos=-1, locUV=-1, locTex=null, ok=false;
+    function sh(type,src){
+      var o=gl.createShader(type); gl.shaderSource(o,src); gl.compileShader(o);
+      if(!gl.getShaderParameter(o,gl.COMPILE_STATUS)){
+        console.warn('[out] shader',gl.getShaderInfoLog(o)); return null; }
+      return o;
+    }
+    function init(){
+      if(ok||gl===null&&cvs===null)return ok;
+      // preserveDrawingBuffer so the output can be read back — for verification,
+      // and so a screenshot of the projected image is possible at all. The cost
+      // is bounded: this canvas draws at most every 2nd frame (~30fps).
+      gl=cvs.getContext('webgl',{alpha:true,premultipliedAlpha:false,preserveDrawingBuffer:true});
+      if(!gl)return false;
+      var vs=sh(gl.VERTEX_SHADER,
+        'attribute vec2 aPos;attribute vec3 aUV;varying vec3 vUV;'+
+        'void main(){vUV=aUV;gl_Position=vec4(aPos,0.0,1.0);}');
+      var fs=sh(gl.FRAGMENT_SHADER,
+        'precision mediump float;varying vec3 vUV;uniform sampler2D uTex;'+
+        'void main(){gl_FragColor=texture2D(uTex,vUV.xy/vUV.z);}');
+      if(!vs||!fs)return false;
+      prog=gl.createProgram(); gl.attachShader(prog,vs); gl.attachShader(prog,fs);
+      gl.linkProgram(prog);
+      if(!gl.getProgramParameter(prog,gl.LINK_STATUS)){
+        console.warn('[out] link',gl.getProgramInfoLog(prog)); return false; }
+      locPos=gl.getAttribLocation(prog,'aPos');
+      locUV =gl.getAttribLocation(prog,'aUV');
+      locTex=gl.getUniformLocation(prog,'uTex');
+      bufPos=gl.createBuffer(); bufUV=gl.createBuffer();
+      tex=gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D,tex);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+      ok=true; return true;
+    }
+    // q per corner from the diagonal intersection. Falls back to 1 for a
+    // degenerate quad (collinear corners), which renders affine rather than
+    // throwing — a wrong-looking image beats a black screen mid-performance.
+    function qs(c){
+      var p0=c.tl,p1=c.tr,p2=c.br,p3=c.bl;
+      var ax=p2.x-p0.x, ay=p2.y-p0.y, bx=p3.x-p1.x, by=p3.y-p1.y;
+      var den=ax*by-ay*bx;
+      if(Math.abs(den)<1e-9) return [1,1,1,1];
+      var t=((p1.x-p0.x)*by-(p1.y-p0.y)*bx)/den;
+      var ix=p0.x+ax*t, iy=p0.y+ay*t;
+      function d(p){return Math.hypot(p.x-ix,p.y-iy);}
+      var d0=d(p0),d1=d(p1),d2=d(p2),d3=d(p3);
+      if(d0<1e-9||d1<1e-9||d2<1e-9||d3<1e-9) return [1,1,1,1];
+      return [(d0+d2)/d2,(d1+d3)/d3,(d0+d2)/d0,(d1+d3)/d1];
+    }
+    function upload(bmp){
+      if(!ok&&!init())return false;
+      gl.bindTexture(gl.TEXTURE_2D,tex);
+      // NO flip. With UNPACK_FLIP_Y_WEBGL false, texture v=0 is the FIRST row
+      // of the ImageBitmap, i.e. the image's top — which is exactly what the
+      // uv table in render() assumes (tl -> 0,0). Flipping here would need the
+      // uv table inverted to match, and this session has already paid twice
+      // for changing one half of an axis convention. Verified with an
+      // asymmetric fixture, not by reasoning.
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+      gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,bmp);
+      return true;
+    }
+    function render(c){
+      if(!ok)return false;
+      var W=cvs.width,H=cvs.height;
+      gl.viewport(0,0,W,H);
+      gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT);
+      var q=qs(c);
+      // window fraction (y-down) -> NDC
+      function nd(p){return [p.x*2-1, 1-p.y*2];}
+      var P=[nd(c.tl),nd(c.tr),nd(c.br),nd(c.bl)];
+      var UV=[[0,0],[1,0],[1,1],[0,1]];
+      var pos=[],uv=[], order=[0,1,2, 0,2,3];
+      for(var i=0;i<order.length;i++){
+        var k=order[i];
+        pos.push(P[k][0],P[k][1]);
+        uv.push(UV[k][0]*q[k],UV[k][1]*q[k],q[k]);
+      }
+      gl.useProgram(prog);
+      gl.bindBuffer(gl.ARRAY_BUFFER,bufPos);
+      gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(pos),gl.DYNAMIC_DRAW);
+      gl.enableVertexAttribArray(locPos);
+      gl.vertexAttribPointer(locPos,2,gl.FLOAT,false,0,0);
+      gl.bindBuffer(gl.ARRAY_BUFFER,bufUV);
+      gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(uv),gl.DYNAMIC_DRAW);
+      gl.enableVertexAttribArray(locUV);
+      gl.vertexAttribPointer(locUV,3,gl.FLOAT,false,0,0);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,tex);
+      gl.uniform1i(locTex,0);
+      gl.drawArrays(gl.TRIANGLES,0,6);
+      return true;
+    }
+    function size(w,h){ if(cvs){cvs.width=w;cvs.height=h;} }
+    return {init:init,upload:upload,render:render,size:size,
+            available:function(){return ok;}};
+  })();
+
+  var glc=document.getElementById('gl');
   function draw(){
     if(!lastBitmap)return;
     ctx.clearRect(0,0,c.width,c.height);
+    // GL owns the image only while mapping is ACTIVE. Any failure — no webgl,
+    // a shader that would not compile, a degenerate quad — falls straight back
+    // to the CSS path below, because a black projector is worse than a
+    // wrong-looking one.
+    var useGL=!!lastCorners&&GL.upload(lastBitmap)&&GL.render(lastCorners);
+    if(glc)glc.style.display=useGL?'block':'none';
     if(lastCorners){
-      ctx.drawImage(lastBitmap,0,0,c.width,c.height);
+      if(!useGL)ctx.drawImage(lastBitmap,0,0,c.width,c.height);
     } else {
       const sw=c.width,sh=c.height,iw=lastBitmap.width,ih=lastBitmap.height;
       const sc=Math.min(sw/iw,sh/ih),dw=iw*sc,dh=ih*sc;
