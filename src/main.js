@@ -2620,12 +2620,45 @@ async function main() {
   // points on click.
   var handles=[], selCell=null, selPt=null;
   const CORNER_OF={'0,0':'tl','1,0':'tr','1,1':'br','0,1':'bl'};
-  let lastBitmap=null,lastCorners=null,lastMesh=null,lastEdit=true,_wantFs=false;
+  let lastBitmap=null,lastCorners=null,lastMesh=null,lastGridLines=null,lastEdit=true,_wantFs=false;
   let gridActive=false;
 
   function drawGrid(){
-    if(!gridActive||!lastCorners)return;
-    const W=c.width,H=c.height,DIV=10;
+    if(!gridActive)return;
+    const W=c.width,H=c.height;
+    // Posted polylines follow the MESH — including interior points, which the
+    // old corner-derived grid could not show at all. It drew the outer quad
+    // and stayed put while interior points moved, so a correct mesh looked
+    // broken against its own guide.
+    if(lastGridLines&&lastGridLines.length){
+      ctx.save();
+      ctx.strokeStyle='rgba(255,255,255,0.55)';
+      ctx.lineWidth=1;
+      for(const L of lastGridLines){
+        ctx.beginPath();
+        for(let k=0;k<L.length;k+=2){
+          const x=L[k]*W,y=L[k+1]*H;
+          if(k===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+        }
+        ctx.stroke();
+      }
+      // Centre crosshair at the middle of the SURFACE, not the middle of the
+      // canvas — on a warped mesh those are different points, and the one you
+      // aim with is the surface's. The middle horizontal line's midpoint is
+      // exactly sample(0.5, 0.5).
+      const midLine=lastGridLines[Math.floor((lastGridLines.length/2)/2)];
+      if(midLine&&midLine.length>=2){
+        const k=Math.floor(midLine.length/4)*2;
+        const cx=midLine[k]*W,cy=midLine[k+1]*H;
+        ctx.strokeStyle='rgba(255,200,0,0.8)';ctx.lineWidth=1.5;
+        ctx.beginPath();ctx.moveTo(cx-20,cy);ctx.lineTo(cx+20,cy);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(cx,cy-20);ctx.lineTo(cx,cy+20);ctx.stroke();
+      }
+      ctx.restore();
+      return;
+    }
+    if(!lastCorners)return;
+    const DIV=10;
     ctx.save();
     ctx.strokeStyle='rgba(255,255,255,0.55)';
     ctx.lineWidth=1;
@@ -2634,7 +2667,6 @@ async function main() {
       ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();
       ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();
     }
-    // centre crosshair
     ctx.strokeStyle='rgba(255,200,0,0.8)';ctx.lineWidth=1.5;
     ctx.beginPath();ctx.moveTo(W*.5-20,H*.5);ctx.lineTo(W*.5+20,H*.5);ctx.stroke();
     ctx.beginPath();ctx.moveTo(W*.5,H*.5-20);ctx.lineTo(W*.5,H*.5+20);ctx.stroke();
@@ -2948,6 +2980,10 @@ async function main() {
     var useGL=false;
     if(lastMesh&&GL.upload(lastBitmap)) useGL=GL.renderMesh(lastMesh);
     else if(lastCorners&&GL.upload(lastBitmap)) useGL=GL.render(lastCorners);
+    // Posted grid lines are already in surface space, so this canvas must NOT
+    // also be warped by CSS — that would apply the mapping twice. The
+    // matrix3d is only for the 2D fallback, where the canvas carries the image.
+    if(useGL&&lastGridLines&&lastGridLines.length)c.style.transform='none';
     if(glc)glc.style.display=useGL?'block':'none';
     if(lastCorners){
       if(!useGL)ctx.drawImage(lastBitmap,0,0,c.width,c.height);
@@ -3111,6 +3147,7 @@ async function main() {
     lastBitmap=e.data.bitmap;
     lastCorners=e.data.corners||null;
     lastMesh=e.data.mesh||null;
+    lastGridLines=e.data.gridLines||null;
     lastEdit=e.data.edit!==false;
     // Mapping active and EDITING it are separate. With edit off the geometry
     // still applies and the rings, grid and toolbar are gone — which is what
@@ -10263,6 +10300,12 @@ void main() {
           // everything. Above 2x2 the mesh owns its own points and the params
           // are left alone — there is no sensible way for four numbers to
           // describe a 5x5 grid.
+          // Grid lines are sampled HERE, from ProjMapMesh, and posted as
+          // polylines — the output window must not re-implement the surface
+          // maths, or the guide and the image become two truths about one
+          // shape. Computed only while the grid is on, so it costs nothing
+          // the rest of the time.
+          let _pmGridLines = null;
           let _pmMesh = null;
           if (_pmActive) {
             if (projMesh.isQuad && _pmCorners && !_meshRecallActive) {
@@ -10270,8 +10313,29 @@ void main() {
             }
             _pmMesh = { cols: projMesh.cols, rows: projMesh.rows,
                         pts: projMesh.pts.map(p => ({ x: p.x, y: p.y })) };
+            if (_pmGrid && _pmEdit) {
+              const DIV = 10, SUB = 20; // SUB > DIV so a curved cell edge reads as a curve
+              _pmGridLines = [];
+              for (let j = 0; j <= DIV; j++) {
+                const line = [];
+                for (let k = 0; k <= SUB; k++) {
+                  const q = projMesh.sample(k / SUB, j / DIV);
+                  line.push(q.x, q.y);
+                }
+                _pmGridLines.push(line);
+              }
+              for (let i = 0; i <= DIV; i++) {
+                const line = [];
+                for (let k = 0; k <= SUB; k++) {
+                  const q = projMesh.sample(i / DIV, k / SUB);
+                  line.push(q.x, q.y);
+                }
+                _pmGridLines.push(line);
+              }
+            }
           }
           _outWin.postMessage({ bitmap, corners: _pmCorners, mesh: _pmMesh,
+                                gridLines: _pmGridLines,
                                 edit: _pmEdit, grid: _pmGrid }, "*", [bitmap]);
         } else {
           bitmap.close();
