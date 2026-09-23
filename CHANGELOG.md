@@ -35,6 +35,15 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   settings, including the factory bank.
 
 ### Fixed
+- **Displacement no longer smears streaks along the edge of the picture.**
+  Wherever the displacement pushed a pixel past the border, it read the
+  border row itself — every such pixel the same row — so strong displacement
+  drew a band of vertical streaks along the top (or bottom, or sides). The
+  displaced picture is now mirrored at the border instead. Measured on a
+  random test image: 51 of 63 row pairs in the edge band were identical
+  copies before, 1 after (the fold line). Anything not pushed past an edge is
+  unchanged.
+
 - **Entering edit mode showed no curve handles until you moved something.**
   The handles are only sent to the output window while edit mode is on, but
   the check deciding whether to send them looked at the mesh and not at edit

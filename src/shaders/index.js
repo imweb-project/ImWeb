@@ -229,7 +229,13 @@ export const DISPLACE = /* glsl */ `
       offset = dir * strength;
     }
 
-    gl_FragColor = texture2D(uFG, clamp(vUv + offset, 0.0, 1.0));
+    // Mirror at the border rather than clamp: a clamped lookup reads the SAME
+    // edge row for every pixel pushed past it, which shows as a band of
+    // vertical (or horizontal) streaks along that edge. Mirroring folds the
+    // picture back on itself, so there is no repeated row.
+    vec2 uv = vUv + offset;
+    uv = 1.0 - abs(1.0 - mod(uv, 2.0));
+    gl_FragColor = texture2D(uFG, uv);
   }
 `;
 
