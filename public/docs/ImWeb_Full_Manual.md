@@ -459,9 +459,15 @@ the same stages, so any combination is a few settings away:
 
 Only the rows that do something for the chosen type are shown.
 
-**Recipe.** Named combinations: Clouds, Marble, Wood Rings, Topography,
-Electric, Smoke, Cracked Earth, Organic Cells, Stained Glass, Mosaic, Lava Flow,
-Spiral, Tunnel, Flowing Tiles, Starfield, Patchy Static, Displace Flow. Picking
+**Recipe.** 45 named combinations in five groups — **Nature** (Clouds, Smoke,
+Electric, Topography, Lava Flow, Plasma, Rain, Starfield), **Organic** (Straight
+Hair, Flowing Hair, Fur, Grass, Neurons, Leaf Veins, Moss, Skin Cells, Organic
+Cells, Coral, Sponge, Worms, Silk, Fingerprint), **Materials** (Marble, Wood
+Rings, Wood Grain, Tree Bark, Brushed Metal, Cracked Earth, Stained Glass,
+Mosaic), **Patterns** (Zebra, Giraffe, Camouflage, Honeycomb, Dimples, Moiré,
+Interference, Spiral, Tunnel, Mandala, Halftone, Weave, Flowing Tiles) and
+**Signal** (Patchy Static, Displace Flow). Hovering a recipe says what it is
+built from. Picking
 one resets every Noise setting (Resolution excepted) and applies the recipe;
 after that it is ordinary settings, all editable and mappable. **Save** stores
 the current settings as your own recipe (★ in the list); **✕** deletes the
@@ -481,6 +487,7 @@ are stored in the browser per address, like GLSL user presets.
 |---------|-----------|-------|-------------|
 | — | `noise.scale` | 0.1–40 | Features per screen height (cells, stripes, tiles) |
 | Transform | `noise.rotate` | ±180° | Rotation. In Polar/Tunnel it shears angle against radius: 90° turns Waves into rings, between gives spirals |
+| | `noise.stretch` | 1–20 | **Stretch** — long along the Rotate direction, fine across it: hair, fur, grass, wood grain, rain, brushed metal. Ignored while tiling |
 | | `noise.offsetX / Y` | ±10 | Pan. In Polar, X spins and Y zooms |
 | | `noise.coords` | SELECT | Cartesian / Polar / Tunnel (angle is mirrored, so no seam) |
 | | `noise.aspect` | TOGGLE | Keep features round on a wide output |

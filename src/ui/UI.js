@@ -728,6 +728,8 @@ export function buildNoisePanel(ps, contextMenu) {
     const m = recipeMenu();
     recipeKeys = m.keys;
     recipeP.options = m.labels;
+    recipeP.displayOrder = m.order;
+    recipeP.optionHelp = m.help;
     const i = selectName ? m.keys.findIndex(k => k?.n === selectName) : -1;
     recipeP.value = i > 0 ? i : Math.min(recipeP.value, m.labels.length - 1);
     recipeWrap.querySelector('.param-row')?.remove();
@@ -826,7 +828,8 @@ export function buildNoisePanel(ps, contextMenu) {
   section('TRANSFORM', [
     ['noise.tile', t => !T.grain(t)],
     [tileNote, tileNoteVis],
-    ['noise.rotate', () => !tileOn()], ['noise.offsetX'], ['noise.offsetY'],
+    ['noise.rotate', () => !tileOn()], ['noise.stretch', () => !tileOn()],
+    ['noise.offsetX'], ['noise.offsetY'],
     ['noise.coords', t => !T.grain(t) && !tileOn()], ['noise.aspect', t => !T.grain(t) && !tileOn()],
   ]);
   section('MOTION', [

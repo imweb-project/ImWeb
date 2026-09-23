@@ -2587,6 +2587,8 @@ export function registerCoreParameters(ps) {
   reg('noise.scale',  'Scale',  { min: 0.1, max: 40, value: 3, step: 0.1 });
   // Transform
   reg('noise.rotate',  'Rotate',  { min: -180, max: 180, value: 0, step: 1, unit: '°' });
+  // Stretch: long along Rotate, fine across it — hair, fibre, wood grain, rain.
+  reg('noise.stretch', 'Stretch', { min: 1, max: 20, value: 1, step: 0.1 });
   reg('noise.offsetX', 'OffsetX', { min: -10, max: 10, value: 0, step: 0.1 });
   reg('noise.offsetY', 'OffsetY', { min: -10, max: 10, value: 0, step: 0.1 });
   reg('noise.coords',  'Coords',  { type: SEL, options: ['Cartesian', 'Polar', 'Tunnel'], value: 0 });

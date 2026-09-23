@@ -10326,6 +10326,7 @@ void main() {
           uLacunarity: tile ? Math.max(1, Math.round(nv('noise.lacunarity'))) : nv('noise.lacunarity'),
           uGain: nv('noise.gain'), uScale: scA,
           uRotate: nv('noise.rotate') * Math.PI / 180,
+          uStretch: tile ? 1 : nv('noise.stretch'),
           uOffset: [nv('noise.offsetX') + noiseDriftX, nv('noise.offsetY') + noiseDriftY],
           uAspect: nv('noise.aspect') && !tile ? pipeline.width / pipeline.height : 1,
           uCoords: nv('noise.coords'), uSeed: nv('noise.seed'),

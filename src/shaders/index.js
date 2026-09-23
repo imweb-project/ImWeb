@@ -615,7 +615,7 @@ export const COLORSHIFT = /* glsl */ `
 // so a uniform added to the shader is declared in exactly one other place.
 export const NOISE_UNIFORM_DEFAULTS = {
   uPhase: 0, uPhaseB: 0, uType: 1, uFractal: 1, uOctaves: 4, uLacunarity: 2,
-  uGain: 0.5, uScale: 3, uRotate: 0, uOffset: [0, 0], uAspect: 1, uCoords: 0,
+  uGain: 0.5, uScale: 3, uRotate: 0, uStretch: 1, uOffset: [0, 0], uAspect: 1, uCoords: 0,
   uSeed: 0, uWarp: 0, uWarpMode: 0, uWarpScale: 1, uCellMetric: 0,
   uCellOut: 0, uJitter: 1, uWidth: 0.2, uDensity: 0.5, uPeriod: [0, 0],
   uAlpha: 0, uCombine: 0, uAmount: 0.5, uTypeB: 6, uFractalB: 0, uScaleB: 6,
@@ -633,6 +633,7 @@ export const NOISE_BFG = /* glsl */ `
   uniform float uGain;
   uniform float uScale;
   uniform float uRotate;
+  uniform float uStretch;
   uniform vec2  uOffset;
   uniform float uAspect;
   uniform int   uCoords;
@@ -1110,7 +1111,11 @@ export const NOISE_BFG = /* glsl */ `
     if (uCoords == 1) q = vec2(abs(atan(q.y, q.x)) / 3.14159265, length(q) * 2.0) - 0.5;
     if (uCoords == 2) q = vec2(abs(atan(q.y, q.x)) / 3.14159265 - 0.5, 0.15 / max(length(q), 0.002));
     float c = cos(uRotate), s = sin(uRotate);
-    return vec2(c * q.x - s * q.y, s * q.x + c * q.y);
+    q = vec2(c * q.x - s * q.y, s * q.x + c * q.y);
+    // Stretch: features grow long along the Rotate direction and fine across
+    // it (hair, fibre, grain, rain). Area-preserving, so Scale keeps meaning.
+    float k = sqrt(max(uStretch, 1.0));
+    return vec2(q.x / k, q.y * k);
   }
 
   // Warp vector (pattern units) — Domain: one fBm displacement (Quilez);

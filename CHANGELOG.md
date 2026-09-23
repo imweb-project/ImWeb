@@ -26,6 +26,14 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   so there is always an edge to fill. Wrap together with Noise › Tile makes
   the join invisible.
 
+- **Noise › Stretch, and 28 more recipes.** Stretch pulls the noise long
+  along the Rotate direction and fine across it — the missing ingredient for
+  hair, fur, grass, wood grain, rain and brushed metal, none of which could be
+  built before. The recipe menu is now 45 entries grouped as Nature, Organic,
+  Materials, Patterns and Signal (plus your own), and hovering one says what
+  it is built from. The original 17 keep their positions, so controllers
+  mapped to them still recall the same looks.
+
 ### Changed
 - **Noise is rebuilt as stages you combine, with recipes.** The old list of 41
   types held exact duplicates (White = TVStatic = WhiteNoise, Perlin = fBm,
