@@ -2094,6 +2094,16 @@ export function registerCoreParameters(ps) {
     type: PARAM_TYPE.TOGGLE,
     value: 0,
   });
+  // What shows where displacement pushes the picture past the frame. Mirror
+  // is the default; Wrap is seamless on a tiling source (Noise › Tile).
+  ps.register({
+    id: "displace.edge",
+    label: "Edge",
+    group: "displace",
+    type: PARAM_TYPE.SELECT,
+    options: ["Mirror", "Wrap", "Clamp", "Black"],
+    value: 0,
+  });
   ps.register({
     id: "displace.warp",
     label: "WarpMode",

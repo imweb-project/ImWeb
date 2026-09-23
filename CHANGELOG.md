@@ -20,6 +20,12 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   type, then again shifted by exactly one tile: identical, pixel for pixel,
   for every supported type (a difference of 25–56 without Tile).
 
+- **Displace › Edge** chooses what fills the part of the frame that the
+  displacement pushes away: Mirror (the default), Wrap, Clamp (the old
+  streaks) or Black. A nearly flat displace source shifts the whole picture,
+  so there is always an edge to fill. Wrap together with Noise › Tile makes
+  the join invisible.
+
 ### Changed
 - **Noise is rebuilt as stages you combine, with recipes.** The old list of 41
   types held exact duplicates (White = TVStatic = WhiteNoise, Perlin = fBm,

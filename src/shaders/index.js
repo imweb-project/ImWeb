@@ -207,6 +207,7 @@ export const DISPLACE = /* glsl */ `
   uniform float uAngle;
   uniform float uOffset;
   uniform int   uRotateGrey;
+  uniform int   uEdge;           // 0 Mirror  1 Wrap  2 Clamp  3 Black
 
   varying vec2 vUv;
 
@@ -229,13 +230,18 @@ export const DISPLACE = /* glsl */ `
       offset = dir * strength;
     }
 
-    // Mirror at the border rather than clamp: a clamped lookup reads the SAME
-    // edge row for every pixel pushed past it, which shows as a band of
-    // vertical (or horizontal) streaks along that edge. Mirroring folds the
-    // picture back on itself, so there is no repeated row.
+    // Edge — what a pixel pushed past the border shows. Something has to:
+    // Mirror folds the picture back (default); Wrap re-enters from the far
+    // side, invisible on a tiling source (Noise › Tile); Clamp repeats the
+    // border row, which reads as streaks; Black shows nothing.
     vec2 uv = vUv + offset;
-    uv = 1.0 - abs(1.0 - mod(uv, 2.0));
-    gl_FragColor = texture2D(uFG, uv);
+    if (uEdge == 0)      uv = 1.0 - abs(1.0 - mod(uv, 2.0));
+    else if (uEdge == 1) uv = fract(uv);
+    else if (uEdge == 3 && (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)) {
+      gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+      return;
+    }
+    gl_FragColor = texture2D(uFG, clamp(uv, 0.0, 1.0));
   }
 `;
 

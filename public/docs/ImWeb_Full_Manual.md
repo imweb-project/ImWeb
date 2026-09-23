@@ -1276,6 +1276,7 @@ Warp the image using the DS layer as an offset map.
 | `displace.angle` | 0–360° | Direction of displacement vector |
 | `displace.offset` | 0–100% | Global offset (all pixels shifted) |
 | `displace.rotateg` | TOGGLE | Map grayscale value → angle |
+| `displace.edge` | SELECT | **Edge** — what shows where displacement pushes the picture past the frame: Mirror (fold back, default) / Wrap (re-enter from the far side — invisible on a tiling source such as Noise › Tile) / Clamp (repeat the border row: streaks) / Black. A displace source that is nearly flat shifts the whole frame, so some edge always shows |
 | `displace.warp` | SELECT | Warp mode — off / H-Wave / V-Wave / Radial / Spiral / Shear / Pinch / Turb / Rings / Custom |
 | `displace.warpamt` | 0–200% | Warp map strength |
 | `displace.warpFade` | 0–1 | Fade the warp field towards flat |

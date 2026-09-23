@@ -894,6 +894,7 @@ export class Pipeline {
         uAngle:      p.get('displace.angle').value * Math.PI / 180,
         uOffset:     p.get('displace.offset').value / 100,
         uRotateGrey: p.get('displace.rotateg').value,
+        uEdge:       p.get('displace.edge').value,
       });
     }
 
@@ -1626,6 +1627,7 @@ export class Pipeline {
         uAngle:      { value: 0 },
         uOffset:     { value: 0 },
         uRotateGrey: { value: 0 },
+        uEdge:       { value: 0 },
       }),
       blend:       this._mat(BLEND, {
         uCurrent:  { value: null },
