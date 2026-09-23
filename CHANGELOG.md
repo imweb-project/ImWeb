@@ -34,6 +34,13 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   it is built from. The original 17 keep their positions, so controllers
   mapped to them still recall the same looks.
 
+- **Noise warns when Full resolution meets a heavy setting.** At Full, a
+  note under Resolution names what makes the current settings expensive —
+  high octave counts, warp, Layer B, RGB — so you know what to trim if the
+  frame rate drops. Measured on a Radeon Pro 5500M: at 512 every
+  combination stayed under about 5 ms, while at Full the heaviest (RGB with
+  Double warp and Layer B) took 19.5 ms — more than a 60 fps frame by itself.
+
 ### Changed
 - **Noise is rebuilt as stages you combine, with recipes.** The old list of 41
   types held exact duplicates (White = TVStatic = WhiteNoise, Perlin = fBm,

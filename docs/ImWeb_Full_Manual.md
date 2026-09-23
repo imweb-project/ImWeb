@@ -519,7 +519,7 @@ are stored in the browser per address, like GLSL user presets.
 | | `noise.sharpen` | 0–100% | Hardens light/dark edges |
 | | `noise.invert` | TOGGLE | Swap low and high |
 | Colour | `noise.color` | SELECT | Two-Tone (Color 1 = low, Color 2 = high) / RGB (the whole chain per channel) / Spectrum |
-| | `noise.res` | SELECT | 512 (fast) / Full (output resolution — needed for real per-pixel grain) |
+| | `noise.res` | SELECT | 512 (fast) / Full (output resolution — needed for real per-pixel grain). At Full, a note under the row warns when the settings are heavy and names what makes them so (octaves, warp, Layer B, RGB) |
 
 Every smooth type is normalised to the same contrast, and fBm keeps that
 contrast at any octave count. Speed and Drift are integrated per frame, so

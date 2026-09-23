@@ -875,10 +875,47 @@ export function buildNoisePanel(ps, contextMenu) {
   // The swatches live in index.html; move them under Colour Mode so the
   // colour controls read as one group, and show them only for Two-Tone.
   const swatches = document.getElementById('noise-color-swatches');
+  // Full-resolution cost warning. Cost = field evaluations per pixel, in
+  // units of one Perlin octave, weighted by what each stage adds. Calibrated
+  // 2026-09-23 on a Radeon Pro 5500M at 1279×887 (ms at Full): 4 → 3.8,
+  // 8 → 4.6, 26 → 8.3, 30 → 11.1, 78 → 19.5. Above ~20 a single noise pass
+  // takes half a 60 fps frame or more; at 512 even 78 was 5.1 ms.
+  const HEAVY = 20;
+  const resNote = document.createElement('div');
+  resNote.className = 'noise-note';
+  const basisW = t => (t >= 6 && t <= 8) ? 3 : (t >= 9 && t <= 14) ? 2 : 1;  // cells 27 taps, patterns 9
+  const fieldCost = (t, fractal) => (t >= 15) ? 0.3
+    : basisW(t) * ((T.fractal(t) && fractal !== 0) || T.flow(t) ? v('noise.octaves') : 1);
+  const noiseCost = t => {
+    const why = [];
+    let c = T.curl(t) ? 3 * fieldCost(1, v('noise.fractal')) : fieldCost(t, v('noise.fractal'));
+    if (v('noise.octaves') >= 6 && (T.fractal(t) || T.flow(t)) && v('noise.fractal') !== 0) why.push(`${v('noise.octaves')} octaves`);
+    if (basisW(t) === 3 && v('noise.fractal') !== 0 && v('noise.octaves') > 1) why.push('fractal cells');
+    if (v('noise.warp') > 0 && !T.grain(t) && !T.flow(t)) {
+      const n = [2, 4, 3][v('noise.warpMode')];
+      c += n * v('noise.octaves');
+      why.push(['Domain', 'Double', 'Curl'][v('noise.warpMode')] + ' warp');
+    }
+    if (v('noise.combine') !== 0 && !T.curl(t)) {
+      const b = fieldCost(v('noise.b.type'), v('noise.b.fractal')) * (v('noise.combine') === 9 ? 2 : 1);
+      c += b;
+      if (b >= 4) why.push('Layer B');
+    }
+    if (v('noise.color') === 1 && !T.curl(t)) { c *= 3; why.push('RGB (×3)'); }
+    return { c, why };
+  };
+  const resNoteVis = t => {
+    if (v('noise.res') !== 1) return false;
+    const { c, why } = noiseCost(t);
+    resNote.textContent = `Heavy at Full resolution${why.length ? ` — ${why.join(', ')}` : ''}. `
+      + 'Use 512, or lighten these, if the frame rate drops.';
+    return c >= HEAVY;
+  };
   section('COLOUR', [
     ['noise.color', notCurl],
     ...(swatches ? [[swatches, t => notCurl(t) && v('noise.color') === 0]] : []),
     ['noise.res'],
+    [resNote, resNoteVis],
   ]);
 
   function refresh() {
@@ -908,7 +945,8 @@ export function buildNoisePanel(ps, contextMenu) {
     renderTypeMenu();
     refresh();
   });
-  for (const id of ['noise.fractal', 'noise.cellOut', 'noise.combine', 'noise.color', 'noise.b.type', 'noise.tile'])
+  for (const id of ['noise.fractal', 'noise.cellOut', 'noise.combine', 'noise.color', 'noise.b.type', 'noise.tile',
+                    'noise.res', 'noise.octaves', 'noise.warp', 'noise.warpMode', 'noise.b.fractal'])
     ps.get(id).onChange(refresh);
 
   renderTypeMenu();
