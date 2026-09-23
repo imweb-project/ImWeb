@@ -5667,3 +5667,15 @@ body.midi-map-mode .param-row:hover {
 .hc-stats.limited {
     color: var(--accent);
 }
+
+/* Noise recipe row: the recipe param row, then Save / ✕ under it. */
+.noise-recipe-btns {
+    display: flex;
+    gap: 6px;
+    padding: 2px 10px 6px;
+    justify-content: flex-end;
+}
+.noise-recipe-btns .import-btn {
+    padding: 2px 8px;
+    font-size: 10px;
+}

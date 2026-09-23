@@ -9044,8 +9044,8 @@ void main() {
     ps.set("color2.val", v);
   });
 
-  let _noiseColor1 = new THREE.Vector3(1, 1, 1);
-  let _noiseColor2 = new THREE.Vector3(0, 0, 0);
+  let _noiseColor1 = new THREE.Vector3(0, 0, 0);
+  let _noiseColor2 = new THREE.Vector3(1, 1, 1);
 
   function _hexToVec3(hex) {
     const r = parseInt(hex.slice(1, 3), 16) / 255;
@@ -9620,8 +9620,10 @@ void main() {
   // ── Render loop ───────────────────────────────────────────────────────────
 
   let lastTime = performance.now();
-  let noiseTime = 0;
   let noisePhase = 0;
+  // Integrated per frame (∫rate·dt) so a controller on Speed/Drift changes the
+  // RATE — the shader never multiplies time by speed, which would scrub.
+  let noisePhaseB = 0, noiseDriftX = 0, noiseDriftY = 0;
   let frameCount = 0;
   let autoCapTimer = 0;
   let scanTimer = 0;
@@ -9672,12 +9674,14 @@ void main() {
     }
 
     noisePhase += ps.get('noise.speed').value * dt;
+    noisePhaseB += ps.get('noise.b.speed').value * dt;
+    noiseDriftX += ps.get('noise.driftX').value * dt;
+    noiseDriftY += ps.get('noise.driftY').value * dt;
     if (_captureMode) return; // capture mode: render only on explicit step
     if (!shouldRender) return;
 
     // From here on, we are rendering a frame
     _pendingMidiFrame = false;
-    noiseTime += dt;
     frameCount++;
     profiler.begin();
 
@@ -10303,31 +10307,36 @@ void main() {
     const _seamlessPeriod = _scene3dNoise
       ? Math.max(2, Math.floor(_noiseScale / 2) * 2)
       : undefined;
-    if (_noiseUsed) noiseTexture = pipeline.generateNoise({
-      time: noiseTime,
-      phase: noisePhase,
-      type: ps.get("noise.type").value,
-      family: ps.get("noise.family").value,
-      scale: ps.get("noise.scale").value,
-      octaves: ps.get("noise.octaves").value,
-      lacunarity: ps.get("noise.lacunarity").value,
-      gain: ps.get("noise.gain").value,
-      swirl: ps.get('noise.swirl').value,
-      ridge: ps.get('noise.ridge').value,
-      speed: ps.get("noise.speed").value,
-      offsetX: ps.get("noise.offsetX").value,
-      offsetY: ps.get("noise.offsetY").value,
-      contrast: ps.get("noise.contrast").value,
-      sharpen: ps.get("noise.sharpen")?.value ?? 0,
-      invert: ps.get("noise.invert").value,
-      seed: ps.get("noise.seed").value,
-      color: ps.get("noise.color").value,
-      color1: _noiseColor1,
-      color2: _noiseColor2,
-      periodX: _seamlessPeriod ?? ps.get('noise.period.x').value,
-      periodY: _seamlessPeriod ?? ps.get('noise.period.y').value,
-      alpha:   ps.get('noise.alpha').value,
-    });
+    if (_noiseUsed) {
+      const nv = (id) => ps.get(id).value;
+      noiseTexture = pipeline.generateNoise({
+        full: nv('noise.res') === 1,
+        sharpen: nv('noise.sharpen'),
+        uniforms: {
+          uPhase: noisePhase, uPhaseB: noisePhaseB,
+          uType: nv('noise.type'), uFractal: nv('noise.fractal'),
+          uOctaves: nv('noise.octaves'), uLacunarity: nv('noise.lacunarity'),
+          uGain: nv('noise.gain'), uScale: nv('noise.scale'),
+          uRotate: nv('noise.rotate') * Math.PI / 180,
+          uOffset: [nv('noise.offsetX') + noiseDriftX, nv('noise.offsetY') + noiseDriftY],
+          // A seamless 3D texture needs uv 0..1 to span exactly one period,
+          // which aspect correction would break.
+          uAspect: nv('noise.aspect') && !_scene3dNoise ? pipeline.width / pipeline.height : 1,
+          uCoords: nv('noise.coords'), uSeed: nv('noise.seed'),
+          uWarp: nv('noise.warp'), uWarpMode: nv('noise.warpMode'), uWarpScale: nv('noise.warpScale'),
+          uCellMetric: nv('noise.metric'), uCellOut: nv('noise.cellOut'), uJitter: nv('noise.jitter'),
+          uWidth: nv('noise.width'), uDensity: nv('noise.density'),
+          uPeriod: [_seamlessPeriod ?? nv('noise.period.x'), _seamlessPeriod ?? nv('noise.period.y')],
+          uAlpha: nv('noise.alpha'),
+          uCombine: nv('noise.combine'), uAmount: nv('noise.amount'),
+          uTypeB: nv('noise.b.type'), uFractalB: nv('noise.b.fractal'), uScaleB: nv('noise.b.scale'),
+          uContrast: nv('noise.contrast'), uBrightness: nv('noise.brightness'),
+          uGamma: nv('noise.gamma'), uBands: nv('noise.bands'), uSteps: nv('noise.steps'),
+          uInvert: nv('noise.invert') ? 1 : 0, uColor: nv('noise.color'),
+          uColor1: _noiseColor1, uColor2: _noiseColor2,
+        },
+      });
+    }
 
     // Time-Displacement Engine — READ + PUBLISH before pipeline.render so
     // inputs.tdisp is consumable this frame. Ring WRITE happens after render

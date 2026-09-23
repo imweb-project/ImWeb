@@ -1187,6 +1187,114 @@ export const SOURCES = SOURCE_DEFS.map((s) => s.label);
 export const SOURCE_KEYS = SOURCE_DEFS.map((s) => s.key);
 
 /**
+ * Noise basis list — the index is what noise.type / noise.b.type save, and
+ * the shader's uType branches on it (NOISE_BFG in shaders/index.js).
+ * NOISE_FAMILY_TYPES groups it for the panel's two-level menu.
+ */
+export const NOISE_TYPES = [
+  'Value', 'Perlin', 'Simplex', 'Psrd', 'Flow', 'Curl',                    // 0–5
+  'Voronoi', 'Hex', 'Grid',                                                // 6–8
+  'Waves', 'Checker', 'Dots', 'Truchet', 'Gabor', 'Stars',                 // 9–14
+  'White', 'Gaussian', 'SaltPepper', 'Blue',                               // 15–18
+];
+export const NOISE_FAMILIES = ['Smooth', 'Cells', 'Pattern', 'Grain'];
+export const NOISE_FAMILY_TYPES = [
+  [0, 1, 2, 3, 4, 5], [6, 7, 8], [9, 10, 11, 12, 13, 14], [15, 16, 17, 18],
+];
+export const NOISE_FRACTALS = ['Off', 'fBm', 'Turbulence', 'Ridged'];
+export const NOISE_COMBINES = ['Off', 'Mix', 'Add', 'Multiply', 'Screen',
+  'Difference', 'Min', 'Max', 'Mask', 'Warp'];
+
+// Pre-2026-09-23 states stored noise.type as an index into a 41-entry list,
+// noise.contrast meaning Gamma, and noise.swirl/ridge for PsrdWarp. Each old
+// type maps to the stage settings that rebuild it. A state is legacy when it
+// has noise.type but no noise.fractal (which every new snapshot carries), so
+// migrating twice is a no-op. Colours need nothing: mix(col1, col2, n) is
+// unchanged — only the DEFAULT colours swapped.
+const _D = { fractal: 0 };
+const LEGACY_NOISE = [
+  { type: 15 },                                   //  0 WhiteNoise
+  { type: 0, fractal: 1 },                        //  1 Value
+  { type: 1, fractal: 1 },                        //  2 Perlin
+  { type: 2, fractal: 1 },                        //  3 Simplex
+  { type: 6, ..._D, invert: 1 },                  //  4 Cellular-F1
+  { type: 6, ..._D, cellOut: 2, invert: 1 },      //  5 Cellular-F2
+  { type: 1, fractal: 3 },                        //  6 Ridged
+  { type: 5, fractal: 1 },                        //  7 Curl
+  { type: 1, fractal: 1, warp: 1.5, warpMode: 1 },//  8 DomainWarp
+  { type: 15 }, { type: 16 }, { type: 16 }, { type: 15 }, // 9–12 White…TVStatic
+  { type: 9, rotate: 90, width: 1 },              // 13 ScanLines
+  { type: 17 },                                   // 14 SaltPepper
+  { type: 6, ..._D },                             // 15 Voronoi
+  { type: 6, ..._D, metric: 1 },                  // 16 Manhattan
+  { type: 6, ..._D, metric: 2 },                  // 17 Chebyshev
+  { type: 6, fractal: 1, octaves: 3, invert: 1 }, // 18 Caustics
+  { type: 4 },                                    // 19 FlowNoise
+  { type: 6, ..._D, cellOut: 2 },                 // 20 Veins
+  { type: 12 },                                   // 21 Truchet
+  { type: 7, ..._D, cellOut: 3 },                 // 22 HexGrid
+  { type: 13 },                                   // 23 Gabor
+  { type: 18 },                                   // 24 BlueNoise
+  { type: 11, jitter: 0.7 },                      // 25 PoissonDisc
+  { type: 15 },                                   // 26 Speckle
+  { type: 15, color: 1 },                         // 27 RGBShift
+  { type: 15 }, { type: 15 },                     // 28–29 Interlace, VCR
+  { type: 15, color: 1 },                         // 30 SpeckleColour
+  { type: 8, ..._D, cellOut: 3 },                 // 31 PixelSort
+  { type: 1, fractal: 1 },                        // 32 fBm
+  { type: 1, fractal: 2 },                        // 33 Turbulence
+  { type: 1, fractal: 2, invert: 1 },             // 34 Billowed
+  { type: 1, fractal: 1, warp: 1.5, warpMode: 1 },// 35 DomainWarp2
+  { type: 5, fractal: 1, warp: 0.5, warpMode: 2 },// 36 VelocityField
+  { type: 1, fractal: 1, warp: 0.5, warpMode: 2 },// 37 Advection
+  { type: 9, warp: 1.2, warpMode: 1 },            // 38 Marble
+  { type: 3, ..._D },                             // 39 Psrd2D
+  { type: 4, fractal: 1 },                        // 40 PsrdWarp
+];
+
+/**
+ * Legacy noise → stage settings, for one values map and its optional
+ * controller-record bag. Mutates in place, like the SDF/scene3d migrations,
+ * and is wired at the same load sites. Key order is preserved, so a state that
+ * carried noise.family keeps it ahead of noise.type — the panel's family→type
+ * guard then always sees a type that belongs to the family being restored.
+ */
+export function migrateNoiseParams(values, recs) {
+  if (recs) {
+    if (recs['noise.contrast']) { recs['noise.gamma'] = recs['noise.contrast']; delete recs['noise.contrast']; }
+    delete recs['noise.swirl'];
+    delete recs['noise.ridge'];
+  }
+  if (!values || !('noise.type' in values) || 'noise.fractal' in values) return values;
+  const old = Math.round(values['noise.type']);
+  const m = LEGACY_NOISE[old] ?? LEGACY_NOISE[2];
+  if ('noise.contrast' in values) values['noise.gamma'] = values['noise.contrast'];
+  values['noise.contrast'] = 1;
+  values['noise.fractal'] = m.fractal ?? 1;
+  if (old === 40) {                    // PsrdWarp: gain was the warp strength
+    values['noise.warp'] = Math.min(4, (values['noise.gain'] ?? 0.13) / 0.15);
+    if ((values['noise.swirl'] ?? 0) > 0.5) values['noise.warpMode'] = 2;
+    if ((values['noise.ridge'] ?? 0) > 0.5) values['noise.fractal'] = 3;
+  }
+  delete values['noise.swirl'];
+  delete values['noise.ridge'];
+  values['noise.family'] = NOISE_FAMILY_TYPES.findIndex(l => l.includes(m.type));
+  values['noise.type'] = m.type;
+  for (const k of ['octaves', 'warp', 'warpMode', 'cellOut', 'metric', 'jitter', 'rotate', 'width', 'color'])
+    if (k in m) values['noise.' + k] = m[k];
+  if (m.invert) values['noise.invert'] = values['noise.invert'] ? 0 : 1;
+  return values;
+}
+
+/** migrateNoiseParams over a Display State array. Mutates and returns `states`. */
+export function migrateStatesNoiseParams(states) {
+  if (Array.isArray(states)) {
+    for (const s of states) if (s) migrateNoiseParams(s.values, s.controllers);
+  }
+  return states;
+}
+
+/**
  * Source menu for the texture/mask slots that can also be switched OFF:
  * the canonical list with a 'None' prepended, so `value - 1` is a SOURCE_DEFS
  * index and 0 means no texture. DERIVED, never retyped — these menus carried a
@@ -2458,223 +2566,78 @@ export function registerCoreParameters(ps) {
   ps.register({ id: 'palette.bg.sat', label: 'BG Sat', group: 'palettebg', min: 0, max: 100, step: 1, value: 80,  unit: '%' });
   ps.register({ id: 'palette.bg.val', label: 'BG Val', group: 'palettebg', min: 0, max: 100, step: 1, value: 60,  unit: '%' });
 
-  // ── Noise BFG (Basis Function Generator) ─────────────────────────────────
-  ps.register({
-    id: "noise.type",
-    label: "NoiseType",
-    group: "noise",
-    type: PARAM_TYPE.SELECT,
-    options: [
-      "WhiteNoise",
-      "Value",
-      "Perlin",
-      "Simplex",
-      "Cellular-F1",
-      "Cellular-F2",
-      "Ridged",
-      "Curl",
-      "DomainWarp",
-      "White",
-      "FilmGrain",
-      "Gaussian",
-      "TVStatic",
-      "ScanLines",
-      "SaltPepper",
-      "Voronoi",
-      "Manhattan",
-      "Chebyshev",
-      "Caustics",
-      "FlowNoise",
-      "Veins",
-      "Truchet",
-      "HexGrid",
-      "Gabor",
-      "BlueNoise",
-      "PoissonDisc",
-      "Speckle",
-      "RGBShift",
-      "Interlace",
-      "VCRNoise",
-      "SpeckleColour",
-      "PixelSort",
-      "fBm",
-      "Turbulence",
-      "Billowed",
-      "DomainWarp2",
-      "VelocityField",
-      "Advection",
-      "Marble",
-      "Psrd2D",
-      "PsrdWarp",
-    ],
-    value: 1,
-  }); // default: WhiteNoise
-  ps.register({
-    id: 'noise.family',
-    label: 'Family',
-    group: 'noise',
-    type: PARAM_TYPE.SELECT,
-    select: true,
-    options: ['Gradient', 'Fractal', 'Cellular', 'Warp', 'Pattern', 'Analog', 'Periodic'],
-    value: 0,
-  });
-  ps.register({
-    id: "noise.color",
-    label: "Color Mode",
-    group: "noise",
-    type: PARAM_TYPE.SELECT,
-    select: true,
-    options: ["Grayscale", "RGB Channels", "Two-Tone"],
-    value: 2,
-  });
-  ps.register({
-    id: "noise.scale",
-    label: "Scale",
-    group: "noise",
-    min: 0.1,
-    max: 20,
-    value: 3,
-    step: 0.1,
-  });
-  ps.register({
-    id: "noise.octaves",
-    label: "Octaves",
-    group: "noise",
-    min: 1,
-    max: 8,
-    value: 4,
-    step: 1,
-  });
-  ps.register({
-    id: "noise.lacunarity",
-    label: "Lacunarity",
-    group: "noise",
-    min: 1.0,
-    max: 4.0,
-    value: 2.0,
-    step: 0.05,
-  });
-  ps.register({
-    id: "noise.gain",
-    label: "Gain",
-    group: "noise",
-    min: 0.1,
-    max: 1.0,
-    value: 0.5,
-    step: 0.01,
-  });
-  ps.register({
-    id: 'noise.swirl',
-    label: 'Swirl',
-    group: 'noise',
-    min: 0.0,
-    max: 1.0,
-    value: 0.0,
-    step: 0.01,
-  });
-  ps.register({
-    id: 'noise.ridge',
-    label: 'Ridge',
-    group: 'noise',
-    min: 0.0,
-    max: 1.0,
-    value: 0.0,
-    step: 0.01,
-  });
-  ps.register({
-    id: "noise.speed",
-    label: "Speed",
-    group: "noise",
-    min: -5.0,
-    max: 5.0,
-    value: 0.2,
-    step: 0.05,
-  });
-  ps.register({
-    id: "noise.offsetX",
-    label: "OffsetX",
-    group: "noise",
-    min: -10,
-    max: 10,
-    value: 0,
-    step: 0.1,
-  });
-  ps.register({
-    id: "noise.offsetY",
-    label: "OffsetY",
-    group: "noise",
-    min: -10,
-    max: 10,
-    value: 0,
-    step: 0.1,
-  });
-  ps.register({
-    id: "noise.contrast",
-    label: "Gamma",
-    group: "noise",
-    min: 0.1,
-    max: 5.0,
-    value: 1.0,
-    step: 0.05,
-  });
-  ps.register({
-    id: "noise.sharpen",
-    label: "Sharpen",
-    group: "noise",
-    min: 0,
-    max: 100,
-    value: 0,
-    unit: "%",
-  });
-  ps.register({
-    id: "noise.invert",
-    label: "Invert",
-    group: "noise",
-    type: PARAM_TYPE.TOGGLE,
-    value: 0,
-  });
-  ps.register({
-    id: "noise.seed",
-    label: "Seed",
-    group: "noise",
-    min: 0,
-    max: 100,
-    value: 0,
-    step: 0.5,
-  });
-  ps.register({
-    id: 'noise.period.x',
-    label: 'Period X',
-    group: 'noise',
-    min: 0,
-    max: 64,
-    value: 8,
-    step: 1,
-  });
-  ps.register({
-    id: 'noise.period.y',
-    label: 'Period Y',
-    group: 'noise',
-    min: 0,
-    max: 64,
-    value: 8,
-    step: 1,
-  });
-  ps.register({
-    id: 'noise.alpha',
-    label: 'Alpha',
-    group: 'noise',
-    min: 0,
-    max: 6.2832,
-    value: 0,
-    step: 0.01,
-  });
+  // ── Noise generator ───────────────────────────────────────────────────────
+  // Basis × fractal × warp × layer B × shaping — see NOISE_BFG (shaders) for
+  // what each stage does. NOISE_TYPES is exported so the panel's family menus
+  // and the B-layer menu share the one list; its indices are what states save.
+  const SEL = PARAM_TYPE.SELECT;
+  const reg = (id, label, o) => ps.register({ id, label, group: 'noise', ...o });
+  reg('noise.family', 'Family', { type: SEL, options: NOISE_FAMILIES, value: 0 });
+  reg('noise.type',   'Type',   { type: SEL, options: NOISE_TYPES, value: 1 });
+  reg('noise.scale',  'Scale',  { min: 0.1, max: 40, value: 3, step: 0.1 });
+  // Transform
+  reg('noise.rotate',  'Rotate',  { min: -180, max: 180, value: 0, step: 1, unit: '°' });
+  reg('noise.offsetX', 'OffsetX', { min: -10, max: 10, value: 0, step: 0.1 });
+  reg('noise.offsetY', 'OffsetY', { min: -10, max: 10, value: 0, step: 0.1 });
+  reg('noise.coords',  'Coords',  { type: SEL, options: ['Cartesian', 'Polar', 'Tunnel'], value: 0 });
+  reg('noise.aspect',  'Aspect',  { type: PARAM_TYPE.TOGGLE, value: 1 });
+  // Motion — Speed evolves the field in place (grain: refresh rate); Drift
+  // slides it. Both are integrated per frame, so modulating them is smooth.
+  reg('noise.speed',  'Speed',   { min: -5, max: 5, value: 0.2, step: 0.05 });
+  reg('noise.driftX', 'Drift X', { min: -2, max: 2, value: 0, step: 0.01 });
+  reg('noise.driftY', 'Drift Y', { min: -2, max: 2, value: 0, step: 0.01 });
+  reg('noise.seed',   'Seed',    { min: 0, max: 100, value: 0, step: 0.5 });
+  // Detail (fractal)
+  reg('noise.fractal',    'Fractal',    { type: SEL, options: NOISE_FRACTALS, value: 1 });
+  reg('noise.octaves',    'Octaves',    { min: 1, max: 8, value: 4, step: 1 });
+  reg('noise.lacunarity', 'Lacunarity', { min: 1, max: 4, value: 2, step: 0.05 });
+  reg('noise.gain',       'Roughness',  { min: 0.1, max: 1, value: 0.5, step: 0.01 });
+  // Cells (Voronoi / Hex / Grid)
+  reg('noise.cellOut', 'Output', { type: SEL, options: ['Distance', 'Round', 'Edges', 'Cell ID'], value: 0 });
+  reg('noise.metric',  'Metric', { type: SEL, options: ['Euclidean', 'Manhattan', 'Chebyshev'], value: 0 });
+  reg('noise.jitter',  'Jitter', { min: 0, max: 1, value: 1, step: 0.01 });
+  // Pattern shape — Width: line/dot/star size, Waves sine→square, Gabor
+  // alignment, grain size. Density: Dots/Stars fill, SaltPepper amount.
+  reg('noise.width',   'Width',   { min: 0, max: 1, value: 0.2, step: 0.01 });
+  reg('noise.density', 'Density', { min: 0, max: 1, value: 0.5, step: 0.01 });
+  // Periodic (Psrd / Flow)
+  reg('noise.period.x', 'Period X', { min: 0, max: 64, value: 8, step: 1 });
+  reg('noise.period.y', 'Period Y', { min: 0, max: 64, value: 8, step: 1 });
+  reg('noise.alpha',    'Alpha',    { min: 0, max: 6.2832, value: 0, step: 0.01 });
+  // Warp
+  reg('noise.warp',      'Warp',       { min: 0, max: 4, value: 0, step: 0.01 });
+  reg('noise.warpMode',  'Warp Mode',  { type: SEL, options: ['Domain', 'Double', 'Curl'], value: 0 });
+  reg('noise.warpScale', 'Warp Scale', { min: 0.25, max: 4, value: 1, step: 0.05 });
+  // Layer B — a second field combined with the first.
+  reg('noise.combine',   'Combine',   { type: SEL, options: NOISE_COMBINES, value: 0 });
+  reg('noise.amount',    'Amount',    { min: 0, max: 1, value: 0.5, step: 0.01 });
+  reg('noise.b.type',    'B Type',    { type: SEL, options: NOISE_TYPES, value: 6 });
+  reg('noise.b.fractal', 'B Fractal', { type: SEL, options: NOISE_FRACTALS, value: 0 });
+  reg('noise.b.scale',   'B Scale',   { min: 0.1, max: 40, value: 6, step: 0.1 });
+  reg('noise.b.speed',   'B Speed',   { min: -5, max: 5, value: 0.1, step: 0.05 });
+  // Shape
+  reg('noise.contrast',   'Contrast',   { min: 0, max: 4, value: 1, step: 0.01 });
+  reg('noise.brightness', 'Brightness', { min: -1, max: 1, value: 0, step: 0.01 });
+  reg('noise.bands',      'Contours',   { min: 0, max: 20, value: 0, step: 0.1 });
+  reg('noise.steps',      'Posterize',  { min: 0, max: 16, value: 0, step: 1 });
+  reg('noise.gamma',      'Gamma',      { min: 0.1, max: 5, value: 1, step: 0.05 });
+  reg('noise.sharpen',    'Sharpen',    { min: 0, max: 100, value: 0, unit: '%' });
+  reg('noise.invert',     'Invert',     { type: PARAM_TYPE.TOGGLE, value: 0 });
+  // Colour / output
+  reg('noise.color', 'Color Mode', { type: SEL, options: ['Two-Tone', 'RGB', 'Spectrum'], value: 0 });
+  reg('noise.res',   'Resolution', { type: SEL, options: ['512', 'Full'], value: 0 });
+  // Recipe: group 'global' like glsl.preset — an index into a list the user
+  // edits (built-ins + localStorage), so a captured value would drift. The
+  // recipe's VALUES are ordinary noise params and are captured normally.
+  // Options are synced by the Noise panel (NoiseRecipes.recipeMenu()).
+  ps.register({ id: 'noise.recipe', label: 'Recipe', group: 'global', type: SEL, options: ['—'], value: 0 });
   // ── Noise color backing params (for state save/restore) ──────────────────
   // Stored as linear-light R/G/B in [0,1]. Not shown in param rows — driven
   // exclusively by the native <input type="color"> pickers + onChange wiring.
+  // Color 1 is the LOW end (n = 0), so Gamma and Brightness read the right way.
   for (const [id, label, def] of [
-    ['noise.col1.r','NC1R',1],['noise.col1.g','NC1G',1],['noise.col1.b','NC1B',1],
-    ['noise.col2.r','NC2R',0],['noise.col2.g','NC2G',0],['noise.col2.b','NC2B',0],
+    ['noise.col1.r','NC1R',0],['noise.col1.g','NC1G',0],['noise.col1.b','NC1B',0],
+    ['noise.col2.r','NC2R',1],['noise.col2.g','NC2G',1],['noise.col2.b','NC2B',1],
   ]) {
     ps.register({ id, label, group:'noise', min:0, max:1, value:def, step:0.001 });
   }

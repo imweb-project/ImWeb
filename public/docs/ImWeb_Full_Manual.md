@@ -449,26 +449,74 @@ Click the colour swatch in the UI to open a quick colour picker.
 
 ---
 
-### 4.6 Noise (BFG Fractal Noise)
+### 4.6 Noise
 
-Resolution-independent GPU noise field, regenerated each frame.
+A GPU noise and pattern generator built in stages, in the spirit of jit.bfg and
+TouchDesigner's Noise TOP. Instead of one long list of types, every type shares
+the same stages, so any combination is a few settings away:
 
-| Parameter | Range | Description |
-|-----------|-------|-------------|
-| `noise.type` | SELECT | 0=Perlin / 1=Voronoi / 2=Worley / 3=Simplex |
-| `noise.scale` | 0.1–20 | Zoom (higher = smaller features) |
-| `noise.octaves` | 1–8 | Layering depth |
-| `noise.lacunarity` | 1–4 | Frequency multiplier per octave |
-| `noise.gain` | 0.1–1 | Amplitude decay per octave |
-| `noise.speed` | −5 – 5 | Time animation rate |
-| `noise.offsetX / Y` | −10 – 10 | Pan the noise field |
-| `noise.contrast` | 0.1–5 | Contrast adjustment |
-| `noise.invert` | TOGGLE | Invert black/white |
-| `noise.seed` | 0–100 | Pattern seed |
-| `noise.color` | TOGGLE | RGB vs grayscale output |
-| `noise.sharpen` | 0–100% | Hardens the gradient between light and dark, taking the field from cloud toward cell structure |
+**coords → warp → type × fractal → combine with Layer B → shape → colour**
 
-Rendered to a 512×512 GPU texture. Smooth animation when speed ≠ 0.
+Only the rows that do something for the chosen type are shown.
+
+**Recipe.** Named combinations: Clouds, Marble, Wood Rings, Topography,
+Electric, Smoke, Cracked Earth, Organic Cells, Stained Glass, Mosaic, Lava Flow,
+Spiral, Tunnel, Flowing Tiles, Starfield, Patchy Static, Displace Flow. Picking
+one resets every Noise setting (Resolution excepted) and applies the recipe;
+after that it is ordinary settings, all editable and mappable. **Save** stores
+the current settings as your own recipe (★ in the list); **✕** deletes the
+selected one. The recipe selector can be driven by a controller. Your recipes
+are stored in the browser per address, like GLSL user presets.
+
+**Type** (Family → Type)
+
+| Family | Types |
+|--------|-------|
+| Smooth | Value, Perlin, Simplex, Psrd (tileable; Alpha turns its gradients — flow noise), Flow (Psrd octaves warped by their own gradient), Curl (RG = flow vector, B = speed — route it to Displace) |
+| Cells | Voronoi, Hex, Grid — all with **Output**: Distance / Round / Edges / Cell ID |
+| Pattern | Waves, Checker, Dots, Truchet, Gabor, Stars |
+| Grain | White, Gaussian, SaltPepper, Blue — per pixel; **Speed** is the refresh rate, **Width** the grain size. Use Resolution *Full* |
+
+| Section | Parameter | Range | Description |
+|---------|-----------|-------|-------------|
+| — | `noise.scale` | 0.1–40 | Features per screen height (cells, stripes, tiles) |
+| Transform | `noise.rotate` | ±180° | Rotation. In Polar/Tunnel it shears angle against radius: 90° turns Waves into rings, between gives spirals |
+| | `noise.offsetX / Y` | ±10 | Pan. In Polar, X spins and Y zooms |
+| | `noise.coords` | SELECT | Cartesian / Polar / Tunnel (angle is mirrored, so no seam) |
+| | `noise.aspect` | TOGGLE | Keep features round on a wide output |
+| Motion | `noise.speed` | ±5 | Evolves the field in place (grain: refresh rate) |
+| | `noise.driftX / Y` | ±2 | Slides the field continuously |
+| | `noise.seed` | 0–100 | A different field of the same kind |
+| Detail | `noise.fractal` | SELECT | Off / fBm / Turbulence / Ridged — layering, for Smooth and Cells types |
+| | `noise.octaves` | 1–8 | Number of layers |
+| | `noise.lacunarity` | 1–4 | Frequency step per layer |
+| | `noise.gain` | 0.1–1 | **Roughness** — how much each finer layer counts |
+| Cells | `noise.cellOut` | SELECT | Distance / Round / Edges / Cell ID (Cell IDs in Hex and Grid cycle over time) |
+| | `noise.metric` | SELECT | Euclidean / Manhattan / Chebyshev (Voronoi) |
+| | `noise.jitter` | 0–1 | Seed randomness: 0 = regular grid (Voronoi, Dots) |
+| Pattern | `noise.width` | 0–1 | Line / dot / star size; Waves sine→square; Gabor alignment; grain size |
+| | `noise.density` | 0–1 | How many Dots / Stars; SaltPepper amount |
+| Periodic | `noise.period.x / y` | 0–64 | Psrd/Flow tile period (0 = none) |
+| | `noise.alpha` | 0–2π | Psrd/Flow gradient rotation |
+| Warp | `noise.warp` | 0–4 | Distorts the coordinates before sampling (Flow: its own warp strength) |
+| | `noise.warpMode` | SELECT | Domain / Double (warp the warp — marble) / Curl (swirls, never pinches) |
+| | `noise.warpScale` | 0.25–4 | Size of the distortion relative to the pattern |
+| Layer B | `noise.combine` | SELECT | Off / Mix / Add / Multiply / Screen / Difference / Min / Max / Mask (B gates A) / Warp (B distorts A) |
+| | `noise.amount` | 0–1 | How much of the combination (Warp: distance) |
+| | `noise.b.type / b.fractal / b.scale / b.speed` | | Layer B's own type, layering, size and clock (it shares A's octave settings) |
+| Shape | `noise.contrast` / `noise.brightness` | 0–4 / ±1 | Around mid-grey |
+| | `noise.bands` | 0–20 | **Contours** — repeating bands through the values (topographic lines) |
+| | `noise.steps` | 0–16 | **Posterize** — number of flat levels (0 = off) |
+| | `noise.gamma` | 0.1–5 | Above 1 darkens the mids |
+| | `noise.sharpen` | 0–100% | Hardens light/dark edges |
+| | `noise.invert` | TOGGLE | Swap low and high |
+| Colour | `noise.color` | SELECT | Two-Tone (Color 1 = low, Color 2 = high) / RGB (the whole chain per channel) / Spectrum |
+| | `noise.res` | SELECT | 512 (fast) / Full (output resolution — needed for real per-pixel grain) |
+
+Every smooth type is normalised to the same contrast, and fBm keeps that
+contrast at any octave count. Speed and Drift are integrated per frame, so
+putting an LFO on them changes the rate smoothly, with no jumps. States saved before
+this version are translated on load to the nearest new settings.
 
 ---
 

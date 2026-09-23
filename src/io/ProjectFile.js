@@ -20,7 +20,7 @@
  */
 
 import { CAPTURE_INDIRECT_BASE, migrateCaptureBase, migrateSdfParams,
-         migrateScene3dParams,
+         migrateScene3dParams, migrateNoiseParams,
          PARAM_SCHEMA, migrateBlendPercent,
          migrateHypercubeTexSrc } from '../controls/ParameterSystem.js';
 
@@ -252,6 +252,7 @@ export class ProjectFile {
       migrateScene3dParams(data.params);
       migrateBlendPercent(data.params, null, data._schema);
       migrateHypercubeTexSrc(data.params, null, data._schema);
+      migrateNoiseParams(data.params);
       this.ps.restoreState(data.params);
     }
 

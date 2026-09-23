@@ -574,67 +574,115 @@ export const COLORSHIFT = /* glsl */ `
   }
 `;
 
-// ── BFG — Basis Function Generator ───────────────────────────────────────────
-// Inspired by Cycling '74 jit.bfg — resolution-independent GPU noise field.
-// All types use 3D sampling with time as the 4th (z) dimension, enabling
-// smooth continuous animation without per-frame seed discontinuities.
+// ── Noise generator — basis × fractal × warp × layer B × shaping ─────────────
+// One field, built in stages that every type shares instead of one entry per
+// combination (the old 41-entry list held three exact duplicates and a family
+// of per-type copies of fBm/turbulence/warp):
 //
-// Types: 0=Value  1=Perlin  2=Simplex  3=Cellular-F1  4=Cellular-F2
-//        5=Ridged  6=Curl  7=DomainWarp
+//   coords (aspect, polar/tunnel, rotate) → warp → basis × fractal → combine
+//   with layer B → shape (contrast, contours, steps, gamma) → colour
+//
+// Basis (noise.type) — the index is what saved states hold:
+//   Smooth   0 Value  1 Perlin  2 Simplex  3 Psrd (periodic, Alpha turns it)
+//            4 Flow (Psrd, octaves warped by their own gradient)
+//            5 Curl (RG = flow vector, B = magnitude — a displacement source)
+//   Cells    6 Voronoi  7 Hex  8 Grid        (Output: Distance/Round/Edges/ID)
+//   Pattern  9 Waves 10 Checker 11 Dots 12 Truchet 13 Gabor 14 Stars
+//   Grain   15 White 16 Gaussian 17 SaltPepper 18 Blue  (per PIXEL: Width =
+//            grain size, Speed = refresh rate)
+//
+// Every smooth basis returns a signed value normalised to the same spread
+// (SD ≈ 0.4) before the fractal sum, and fBm divides by sqrt(Σamp²) rather
+// than Σamp, so the output keeps its contrast at any octave count — the old
+// sum/Σamp averaged 4 octaves down to SD 13/255, a grey wash.
+//
+// Time: uPhase / uPhaseB are ACCUMULATED in JS (∫speed·dt), never uTime·speed,
+// so modulating Speed changes the rate instead of scrubbing the position.
+
+// Uniform defaults for NOISE_BFG — the Pipeline material is built from this,
+// so a uniform added to the shader is declared in exactly one other place.
+export const NOISE_UNIFORM_DEFAULTS = {
+  uPhase: 0, uPhaseB: 0, uType: 1, uFractal: 1, uOctaves: 4, uLacunarity: 2,
+  uGain: 0.5, uScale: 3, uRotate: 0, uOffset: [0, 0], uAspect: 1, uCoords: 0,
+  uSeed: 0, uWarp: 0, uWarpMode: 0, uWarpScale: 1, uCellMetric: 0,
+  uCellOut: 0, uJitter: 1, uWidth: 0.2, uDensity: 0.5, uPeriod: [0, 0],
+  uAlpha: 0, uCombine: 0, uAmount: 0.5, uTypeB: 6, uFractalB: 0, uScaleB: 6,
+  uContrast: 1, uBrightness: 0, uGamma: 1, uBands: 0, uSteps: 0, uInvert: 0,
+  uColor: 0, uColor1: [0, 0, 0], uColor2: [1, 1, 1], uRes: [512, 512],
+};
 
 export const NOISE_BFG = /* glsl */ `
-  uniform float uTime;
   uniform float uPhase;
+  uniform float uPhaseB;
   uniform int   uType;
-  uniform float uScale;
+  uniform int   uFractal;
   uniform float uOctaves;
   uniform float uLacunarity;
   uniform float uGain;
-  uniform float uSwirl;
-  uniform float uRidge;
-  uniform float uSpeed;
-  uniform float uOffsetX;
-  uniform float uOffsetY;
-  uniform float uContrast;
-  uniform int   uInvert;
+  uniform float uScale;
+  uniform float uRotate;
+  uniform vec2  uOffset;
+  uniform float uAspect;
+  uniform int   uCoords;
   uniform float uSeed;
+  uniform float uWarp;
+  uniform int   uWarpMode;
+  uniform float uWarpScale;
+  uniform int   uCellMetric;
+  uniform int   uCellOut;
+  uniform float uJitter;
+  uniform float uWidth;
+  uniform float uDensity;
+  uniform vec2  uPeriod;
+  uniform float uAlpha;
+  uniform int   uCombine;
+  uniform float uAmount;
+  uniform int   uTypeB;
+  uniform int   uFractalB;
+  uniform float uScaleB;
+  uniform float uContrast;
+  uniform float uBrightness;
+  uniform float uGamma;
+  uniform float uBands;
+  uniform float uSteps;
+  uniform int   uInvert;
   uniform int   uColor;
   uniform vec3  uColor1;
   uniform vec3  uColor2;
-  uniform float uPeriodX;
-  uniform float uPeriodY;
-  uniform float uAlpha;
+  uniform vec2  uRes;
   varying vec2  vUv;
 
-  // ── Hash functions (iq-style, high quality) ────────────────────────────────
+  const float TAU = 6.28318530718;
+  // Fractal-mode centring, measured (tests: noise calibration in the harness)
+  const float TURB_K = 0.83;
+  const float RIDGE_MEAN = 0.45;
+  const float RIDGE_MID = 0.5;
+  const float RIDGE_K = 0.75;
 
+  // Per-evaluation globals (GLSL ES 1.00 has no closures): pattern-unit size
+  // of one pixel for anti-aliasing, and a salt that decorrelates RGB channels.
+  float gPx   = 0.01;
+  float gSalt = 0.0;
+
+  // ── Hashes ────────────────────────────────────────────────────────────────
   float h1(vec3 p) {
     p = fract(p * 0.1031);
     p += dot(p, p.zyx + 31.32);
     return fract((p.x + p.y) * p.z);
   }
-
-  // ── Continuous-position hash (for per-pixel "static" noise) ────────────────
-  // h1() collapses to ~1D along the screen diagonal when given continuous
-  // (non-lattice) input. This formula stays high-frequency for any p.xy.
-  float hashPos(vec2 p, float seed) {
-    return fract(sin(dot(p, vec2(12.9898, 78.233)) + seed * 37.719) * 43758.5453123);
-  }
-
-  // Cross-fades between consecutive "static refresh" frames so low Speed
-  // values dissolve smoothly instead of holding then popping to a new frame.
-  float hashPosSmooth(vec2 p, float seed, float fr, float frFrac) {
-    return mix(hashPos(p, seed + fr), hashPos(p, seed + fr + 1.0), frFrac);
-  }
-
   vec3 h3(vec3 p) {
     p = fract(p * vec3(0.1031, 0.1030, 0.0973));
     p += dot(p, p.yxz + 33.33);
     return fract((p.xxy + p.yxx) * p.zyx);
   }
+  vec2 h2(vec2 v, float s) { return h3(vec3(v, s)).xy; }
+  // Continuous-position hash for per-pixel grain (h1 goes ~1D on non-lattice
+  // input along the diagonal).
+  float hashPos(vec2 p, float seed) {
+    return fract(sin(dot(p, vec2(12.9898, 78.233)) + seed * 37.719) * 43758.5453123);
+  }
 
-  // ── Value Noise — trilinear interpolation of random grid ──────────────────
-
+  // ── Value noise — two time-phases crossfaded so z-animation doesn't breathe
   float _vLat(vec3 i, vec3 u) {
     return mix(
       mix(mix(h1(i),              h1(i+vec3(1,0,0)), u.x),
@@ -643,33 +691,24 @@ export const NOISE_BFG = /* glsl */ `
           mix(h1(i+vec3(0,1,1)), h1(i+vec3(1,1,1)), u.x), u.y),
       u.z);
   }
-
-  // Two time-phases (offset by half a cell on the z/time axis) crossfade so
-  // the quintic ease curve's zero-derivative point on one phase falls where
-  // the other phase is at peak derivative — removes the periodic "speed up/
-  // slow down" breathing that animated single-phase Value noise has along z.
   float vNoise(vec3 p) {
     vec3 i = floor(p), f = fract(p);
     vec3 u = f*f*f*(f*(f*6.0-15.0)+10.0);
     float a = _vLat(i, u);
-
     vec3 pB = p + vec3(0.0, 0.0, 0.5);
     vec3 iB = floor(pB), fB = fract(pB);
     vec3 uB = fB*fB*fB*(fB*(fB*6.0-15.0)+10.0);
     float b = _vLat(iB, uB);
-
-    float w = 1.0 - 4.0 * f.z * (1.0 - f.z); // 1 at f.z=0/1 (a's deriv=0), 0 at f.z=0.5
+    float w = 1.0 - 4.0 * f.z * (1.0 - f.z);
     return mix(a, b, w);
   }
 
-  // ── Perlin Gradient Noise — quintic interpolation ─────────────────────────
-
+  // ── Perlin gradient noise — quintic interpolation ─────────────────────────
   vec3 gHash(vec3 p) {
     p = fract(p * vec3(0.1031, 0.1030, 0.0973));
     p += dot(p, p.yxz + 33.33);
     return normalize(-1.0 + 2.0 * fract((p.xxy + p.yxx) * p.zyx));
   }
-
   float pNoise(vec3 p) {
     vec3 i = floor(p), f = fract(p);
     vec3 u = f*f*f*(f*(f*6.0-15.0)+10.0);
@@ -681,19 +720,17 @@ export const NOISE_BFG = /* glsl */ `
     float v101 = dot(gHash(i+vec3(1,0,1)), f-vec3(1,0,1));
     float v011 = dot(gHash(i+vec3(0,1,1)), f-vec3(0,1,1));
     float v111 = dot(gHash(i+vec3(1,1,1)), f-vec3(1,1,1));
-    return 0.5 + 0.5 * mix(
+    return mix(
       mix(mix(v000,v100,u.x), mix(v010,v110,u.x), u.y),
       mix(mix(v001,v101,u.x), mix(v011,v111,u.x), u.y),
       u.z);
   }
 
-  // ── Simplex Noise 3D — Stefan Gustavson ───────────────────────────────────
-
+  // ── Simplex noise 3D — Stefan Gustavson ───────────────────────────────────
   vec3  _m289v3(vec3  x){return x-floor(x*(1.0/289.0))*289.0;}
   vec4  _m289v4(vec4  x){return x-floor(x*(1.0/289.0))*289.0;}
   vec4  _prm(vec4   x){return _m289v4(((x*34.0)+1.0)*x);}
   vec4  _tiS(vec4   r){return 1.79284291400159-0.85373472095314*r;}
-
   float sNoise(vec3 v) {
     const vec2 C = vec2(1.0/6.0, 1.0/3.0);
     const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
@@ -734,192 +771,14 @@ export const NOISE_BFG = /* glsl */ `
     p0 *= nm.x; p1 *= nm.y; p2 *= nm.z; p3 *= nm.w;
     vec4 m = max(0.5 - vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)), 0.0);
     m = m * m;
-    return 0.5 + 52.0 * dot(m*m, vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
-  }
-
-  // ── Cellular / Worley Noise — 3×3×3 grid search ──────────────────────────
-
-  vec2 wNoise(vec3 p) {
-    vec3 i = floor(p), f = fract(p);
-    float f1 = 9.0, f2 = 9.0;
-    for (int z = -1; z <= 1; z++) {
-      for (int y = -1; y <= 1; y++) {
-        for (int x = -1; x <= 1; x++) {
-          vec3 nb = vec3(float(x), float(y), float(z));
-          vec3 pt = h3(i + nb);
-          float d = length(nb + pt - f);
-          if (d < f1) { f2 = f1; f1 = d; }
-          else if (d < f2) { f2 = d; }
-        }
-      }
-    }
-    return vec2(f1, f2);
-  }
-
-  // ── fBm wrapper — up to 8 octaves, three basis types ─────────────────────
-
-  float fbm(vec3 p, int oct, float lac, float gn, int basis) {
-    float sum = 0.0, amp = 0.5, freq = 1.0, norm = 0.0;
-    for (int i = 0; i < 8; i++) {
-      if (i >= oct) break;
-      float n;
-      if      (basis == 0) n = vNoise(p * freq);
-      else if (basis == 1) n = pNoise(p * freq);
-      else                 n = sNoise(p * freq);
-      sum  += n * amp;
-      norm += amp;
-      amp  *= gn;
-      freq *= lac;
-    }
-    return sum / norm;
-  }
-
-  // ── Ridged Multifractal — sharp crests, deep valleys ─────────────────────
-
-  float ridged(vec3 p, int oct, float lac, float gn) {
-    float sum = 0.0, amp = 0.5, freq = 1.0, prev = 1.0, norm = 0.0;
-    for (int i = 0; i < 8; i++) {
-      if (i >= oct) break;
-      float n = 1.0 - abs(pNoise(p * freq) * 2.0 - 1.0);
-      n    = n * n * prev;
-      sum += n * amp;
-      norm += amp;
-      prev  = n;
-      amp  *= gn;
-      freq *= lac;
-    }
-    return sum / norm;
-  }
-
-  // ── Turbulence — absolute-value Perlin fBm (Perlin 1985) ─────────────────
-  float turbulence(vec3 p, int oct, float lac, float gn) {
-    float sum = 0.0, amp = 0.5, freq = 1.0, norm = 0.0;
-    for (int i = 0; i < 8; i++) {
-      if (i >= oct) break;
-      float n = abs(pNoise(p * freq) * 2.0 - 1.0);
-      sum  += n * amp;
-      norm += amp;
-      amp  *= gn;
-      freq *= lac;
-    }
-    return sum / norm;
-  }
-
-  // ── Billowed — inverted-abs fBm, rounded bubbly peaks ────────────────────
-  float billowed(vec3 p, int oct, float lac, float gn) {
-    float sum = 0.0, amp = 0.5, freq = 1.0, norm = 0.0;
-    for (int i = 0; i < 8; i++) {
-      if (i >= oct) break;
-      float n = 1.0 - abs(pNoise(p * freq) * 2.0 - 1.0);
-      sum  += n * amp;
-      norm += amp;
-      amp  *= gn;
-      freq *= lac;
-    }
-    return sum / norm;
-  }
-
-  // ── Curl Noise — numerically differentiated fBm → divergence-free field ──
-  // Output: RG = flow vector (remapped 0–1), B = magnitude.
-  // Use as DisplaceSrc for fluid video displacement.
-
-  vec2 curlField(vec3 p, int oct, float lac, float gn) {
-    const float e = 0.005;
-    float n1 = fbm(p + vec3(0.0, e, 0.0), oct, lac, gn, 1);
-    float n2 = fbm(p - vec3(0.0, e, 0.0), oct, lac, gn, 1);
-    float n3 = fbm(p + vec3(e, 0.0, 0.0), oct, lac, gn, 1);
-    float n4 = fbm(p - vec3(e, 0.0, 0.0), oct, lac, gn, 1);
-    return vec2(n1 - n2, -(n3 - n4)) * (1.0 / (2.0 * e));
-  }
-
-  // ── Domain Warp — fBm(fBm(p)), Inigo Quilez ──────────────────────────────
-
-  float domainWarp(vec3 p, int oct, float lac, float gn) {
-    float ox = fbm(p + vec3(1.7, 9.2, 0.0), oct, lac, gn, 1);
-    float oy = fbm(p + vec3(8.3, 2.8, 0.0), oct, lac, gn, 1);
-    vec3  q  = p + 1.5 * vec3(ox, oy, 0.0);
-    float rx = fbm(q + vec3(5.2, 1.3, 0.0), oct, lac, gn, 1);
-    float ry = fbm(q + vec3(0.7, 4.1, 0.0), oct, lac, gn, 1);
-    return fbm(p + 1.5 * vec3(rx, ry, 0.0), oct, lac, gn, 1);
-  }
-
-  // ── Voronoi — multi-metric, 3×3×3 neighborhood ───────────────────────────
-  // metric: 0=Euclidean  1=Manhattan  2=Chebyshev
-  // Returns vec2(F1, F2) — nearest and second-nearest seed distances.
-
-  vec2 voronoi(vec3 p, int metric) {
-    vec3 i = floor(p), f = fract(p);
-    float f1 = 9.0, f2 = 9.0;
-    for (int z = -1; z <= 1; z++) {
-      for (int y = -1; y <= 1; y++) {
-        for (int x = -1; x <= 1; x++) {
-          vec3 nb = vec3(float(x), float(y), float(z));
-          vec3 dv = nb + h3(i + nb) - f;
-          float d = length(dv);
-          if (metric == 1) d = abs(dv.x) + abs(dv.y) + abs(dv.z);
-          if (metric == 2) d = max(max(abs(dv.x), abs(dv.y)), abs(dv.z));
-          if (d < f1) { f2 = f1; f1 = d; }
-          else if (d < f2) { f2 = d; }
-        }
-      }
-    }
-    return vec2(f1, f2);
-  }
-
-  // ── vec2 hash — for Gabor / Poisson kernels ──────────────────────────────
-  vec2 h2(vec2 v) {
-    return vec2(h1(vec3(v, 0.0)), h1(vec3(v + vec2(3.7, 1.9), 0.0)));
+    return 42.0 * dot(m*m, vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
   }
 
   // ── psrdnoise2 — Stefan Gustavson 2021, MIT license ──────────────────────
-  // Rewritten for GLSL ES 1.00 compatibility: no out param, no greaterThan.
-
-  float psrdnoise(vec2 x, vec2 period, float alpha) {
-    vec2 uv = vec2(x.x + x.y * 0.5, x.y);
-    vec2 i0 = floor(uv);
-    vec2 f0 = fract(uv);
-    float cmp = step(f0.y, f0.x);
-    vec2 o1 = vec2(cmp, 1.0 - cmp);
-    vec2 i1 = i0 + o1;
-    vec2 i2 = i0 + vec2(1.0, 1.0);
-    vec2 v0 = vec2(i0.x - i0.y * 0.5, i0.y);
-    vec2 v1 = vec2(i1.x - i1.y * 0.5, i1.y);
-    vec2 v2 = vec2(i2.x - i2.y * 0.5, i2.y);
-    vec2 x0 = x - v0, x1 = x - v1, x2 = x - v2;
-    vec3 iu, iv;
-    float usePeriod = step(0.001, period.x) + step(0.001, period.y);
-    if (usePeriod > 0.0) {
-      vec3 xw = vec3(v0.x, v1.x, v2.x);
-      vec3 yw = vec3(v0.y, v1.y, v2.y);
-      if (period.x > 0.001) xw = mod(xw, period.x);
-      if (period.y > 0.001) yw = mod(yw, period.y);
-      iu = floor(xw + 0.5 * yw + 0.5);
-      iv = floor(yw + 0.5);
-    } else {
-      iu = vec3(i0.x, i1.x, i2.x);
-      iv = vec3(i0.y, i1.y, i2.y);
-    }
-    vec3 hash = mod(iu, 289.0);
-    hash = mod((hash * 51.0 + 2.0) * hash + iv, 289.0);
-    hash = mod((hash * 34.0 + 10.0) * hash, 289.0);
-    vec3 psi = hash * 0.07482 + alpha;
-    vec3 gx = cos(psi);
-    vec3 gy = sin(psi);
-    vec2 g0 = vec2(gx.x, gy.x);
-    vec2 g1 = vec2(gx.y, gy.y);
-    vec2 g2 = vec2(gx.z, gy.z);
-    vec3 w = max(0.8 - vec3(dot(x0,x0), dot(x1,x1), dot(x2,x2)), 0.0);
-    vec3 w2 = w * w;
-    vec3 w4 = w2 * w2;
-    vec3 gdotx = vec3(dot(g0,x0), dot(g1,x1), dot(g2,x2));
-    return 10.9 * dot(w4, gdotx);
-  }
-
-  // ── PsrdResult struct + gradient variant (GLSL ES compat) ────────────────
-
+  // Periodic (period 0 = none) with rotating gradients (alpha): flow noise.
+  // Rewritten for GLSL ES 1.00: no out param, value + gradient in a struct.
   struct PsrdResult { float n; vec2 g; };
-
-  PsrdResult psrdnoise_grad(vec2 x, vec2 period, float alpha) {
+  PsrdResult psrdnoise(vec2 x, vec2 period, float alpha) {
     vec2 uv = vec2(x.x + x.y * 0.5, x.y);
     vec2 i0 = floor(uv);
     vec2 f0 = fract(uv);
@@ -932,8 +791,7 @@ export const NOISE_BFG = /* glsl */ `
     vec2 v2 = vec2(i2.x - i2.y * 0.5, i2.y);
     vec2 x0 = x - v0, x1 = x - v1, x2 = x - v2;
     vec3 iu, iv;
-    float usePeriod = step(0.001, period.x) + step(0.001, period.y);
-    if (usePeriod > 0.0) {
+    if (period.x > 0.001 || period.y > 0.001) {
       vec3 xw = vec3(v0.x, v1.x, v2.x);
       vec3 yw = vec3(v0.y, v1.y, v2.y);
       if (period.x > 0.001) xw = mod(xw, period.x);
@@ -955,278 +813,393 @@ export const NOISE_BFG = /* glsl */ `
     vec3 w = max(0.8 - vec3(dot(x0,x0), dot(x1,x1), dot(x2,x2)), 0.0);
     vec3 w2 = w * w; vec3 w4 = w2 * w2;
     vec3 gdotx = vec3(dot(g0,x0), dot(g1,x1), dot(g2,x2));
-    vec3 w3 = w2 * w;
-    vec3 dw = -8.0 * w3 * gdotx;
-    vec2 dn0 = w4.x * g0 + dw.x * x0;
-    vec2 dn1 = w4.y * g1 + dw.y * x1;
-    vec2 dn2 = w4.z * g2 + dw.z * x2;
+    vec3 dw = -8.0 * w2 * w * gdotx;
     PsrdResult r;
     r.n = 10.9 * dot(w4, gdotx);
-    r.g = 10.9 * (dn0 + dn1 + dn2);
+    r.g = 10.9 * (w4.x * g0 + dw.x * x0 + w4.y * g1 + dw.y * x1 + w4.z * g2 + dw.z * x2);
     return r;
   }
 
-  // ── Main ──────────────────────────────────────────────────────────────────
+  // ── Cells: Voronoi (3D, time morphs the seeds), Hex, Grid ─────────────────
+  // All three answer the same Output question, so one control serves them:
+  //   0 Distance  1 Round  2 Edges  3 Cell ID
+  float cellOut(float d, float dRound, float edge, float id) {
+    if (uCellOut == 0) return d;
+    if (uCellOut == 1) return dRound;
+    if (uCellOut == 2) {
+      float w = mix(0.005, 0.2, uWidth);
+      return 1.0 - smoothstep(w, w + gPx * 1.5, edge);
+    }
+    return id;
+  }
+
+  float voronoiN(vec3 p) {
+    vec3 i = floor(p), f = fract(p);
+    float f1 = 9.0, f2 = 9.0;
+    vec3 c1 = vec3(0.0);
+    for (int z = -1; z <= 1; z++)
+    for (int y = -1; y <= 1; y++)
+    for (int x = -1; x <= 1; x++) {
+      vec3 nb = vec3(float(x), float(y), float(z));
+      vec3 dv = nb + 0.5 + (h3(i + nb) - 0.5) * uJitter - f;
+      float d = length(dv);
+      if (uCellMetric == 1) d = abs(dv.x) + abs(dv.y) + abs(dv.z);
+      if (uCellMetric == 2) d = max(max(abs(dv.x), abs(dv.y)), abs(dv.z));
+      if (d < f1) { f2 = f1; f1 = d; c1 = i + nb; }
+      else if (d < f2) { f2 = d; }
+    }
+    float k = uCellMetric == 1 ? 0.6 : (uCellMetric == 2 ? 1.2 : 1.0);
+    return cellOut(clamp(f1 * k * 1.1, 0.0, 1.0),
+                   clamp(f2 * k * 0.8, 0.0, 1.0),
+                   (f2 - f1) * k,
+                   h1(c1 + 17.3));
+  }
+
+  // Cell ID that drifts over time: each tile cycles at its own rate.
+  float liveId(vec2 cell, float z) {
+    float h = h1(vec3(cell, uSeed * 1.618 + gSalt + 5.1));
+    return 0.5 + 0.5 * sin(TAU * (h + z * 0.25 * (0.5 + h)));
+  }
+
+  float hexN(vec3 p) {
+    const vec2 s = vec2(1.0, 1.7320508);
+    vec2 q = p.xy;
+    vec4 hc = floor(vec4(q, q - vec2(0.5, 1.0)) / s.xyxy) + 0.5;
+    vec4 hh = vec4(q - hc.xy * s, q - (hc.zw + 0.5) * s);
+    vec4 h = dot(hh.xy, hh.xy) < dot(hh.zw, hh.zw) ? vec4(hh.xy, hc.xy) : vec4(hh.zw, hc.zw + 0.5);
+    vec2 a = abs(h.xy);
+    float hd = max(dot(a, s * 0.5), a.x);       // 0 centre → 0.5 edge
+    return cellOut(hd * 2.0, clamp(length(h.xy) * 2.0, 0.0, 1.0),
+                   0.5 - hd, liveId(h.zw, p.z));
+  }
+
+  float gridN(vec3 p) {
+    vec2 c = floor(p.xy), l = fract(p.xy) - 0.5;
+    float d = max(abs(l.x), abs(l.y));
+    return cellOut(d * 2.0, clamp(length(l) * 1.4142, 0.0, 1.0),
+                   0.5 - d, liveId(c, p.z));
+  }
+
+  // ── Patterns ──────────────────────────────────────────────────────────────
+  // Width: Waves = sine→square, Dots = radius, Truchet = line,
+  // Gabor = alignment (0 random directions → 1 all along the Rotate angle),
+  // Stars = size.  Density: Dots/Stars fill, SaltPepper amount.
+  float wavesN(vec3 p) {
+    float s = 0.5 + 0.5 * sin(TAU * p.x + p.z * TAU * 0.25);
+    float aa = gPx * 3.0 + 0.001;
+    return mix(s, smoothstep(0.5 - aa, 0.5 + aa, s), uWidth);
+  }
+
+  float checkerN(vec3 p) {
+    float c = sin(3.14159265 * p.x) * sin(3.14159265 * p.y);
+    return smoothstep(-gPx * 3.0, gPx * 3.0, c);
+  }
+
+  float dotsN(vec3 p) {
+    vec2 i = floor(p.xy), f = fract(p.xy);
+    float r = mix(0.05, 0.5, uWidth);
+    float v = 0.0;
+    for (int y = -1; y <= 1; y++)
+    for (int x = -1; x <= 1; x++) {
+      vec2 nb = vec2(float(x), float(y));
+      vec3 hh = h3(vec3(i + nb, uSeed * 1.618 + gSalt + 9.7));
+      if (hh.z > uDensity) continue;
+      vec2 c = nb + 0.5 + (hh.xy - 0.5) * uJitter * (1.0 - r);
+      float d = length(f - c);
+      v = max(v, 1.0 - smoothstep(r - gPx, r + gPx, d));
+    }
+    return v;
+  }
+
+  float truchetN(vec3 p) {
+    vec2 i = floor(p.xy), l = fract(p.xy);
+    if (h1(vec3(i, uSeed * 1.618 + gSalt + 37.3)) > 0.5) l.x = 1.0 - l.x;
+    float d = min(abs(length(l) - 0.5), abs(length(l - 1.0) - 0.5));
+    float w = mix(0.02, 0.25, uWidth);
+    return 1.0 - smoothstep(w - gPx, w + gPx, d);
+  }
+
+  // Sparse-convolution Gabor noise (Lagae 2009): random impulses per cell,
+  // each a Gaussian-windowed cosine. 3×3 cells × 3 impulses.
+  float gaborN(vec3 p) {
+    vec2 i = floor(p.xy), f = fract(p.xy);
+    float sum = 0.0;
+    for (int y = -1; y <= 1; y++)
+    for (int x = -1; x <= 1; x++) {
+      vec2 nb = vec2(float(x), float(y));
+      for (int k = 0; k < 3; k++) {
+        vec3 hh = h3(vec3(i + nb, uSeed * 1.618 + gSalt + float(k) * 7.31));
+        vec2 r = f - nb - hh.xy;
+        float ang = mix(hh.z * TAU, 0.0, uWidth);
+        float env = exp(-dot(r, r) * 12.0);
+        float wgt = h1(vec3(i + nb, float(k) + 91.0)) < 0.5 ? -1.0 : 1.0;
+        sum += wgt * env * cos(TAU * 2.0 * dot(r, vec2(cos(ang), sin(ang))) + p.z * 3.0);
+      }
+    }
+    return 0.5 + 0.5 * clamp(sum * 0.55, -1.0, 1.0);
+  }
+
+  float starsN(vec3 p) {
+    vec2 i = floor(p.xy), f = fract(p.xy);
+    float v = 0.0;
+    for (int y = -1; y <= 1; y++)
+    for (int x = -1; x <= 1; x++) {
+      vec2 nb = vec2(float(x), float(y));
+      vec3 hh = h3(vec3(i + nb, uSeed * 1.618 + gSalt + 3.3));
+      if (hh.z > uDensity) continue;
+      float b = h1(vec3(i + nb, 55.1));
+      float sz = mix(0.01, 0.12, uWidth) * (0.4 + b) + gPx;
+      float tw = 0.65 + 0.35 * sin(p.z * 4.0 + b * 40.0);
+      float d = length(f - nb - hh.xy);
+      v += b * tw * exp(-d * d / (sz * sz));
+    }
+    return clamp(v * 1.5, 0.0, 1.0);
+  }
+
+  // ── Grain (per pixel; Speed = refresh rate, crossfaded between frames) ───
+  float grainN(int type) {
+    vec2 cell = floor(gl_FragCoord.xy / (1.0 + floor(uWidth * uWidth * 16.0)));  // Width 0–0.24 = 1 px
+    float seed = uSeed + gSalt * 13.0;
+    float frB = uPhase * 24.0;
+    float fr = floor(frB), ff = fract(frB);
+    float v0, v1;
+    if (type == 18) {
+      // Interleaved gradient noise (Jimenez) with its temporal offset — the
+      // cheap blue-ish dither; per pixel, so run the Noise at Full resolution.
+      vec2 ign = vec2(0.06711056, 0.00583715);
+      vec2 c = cell + seed * 7.0;
+      v0 = fract(52.9829189 * fract(dot(c + 5.588238 * fr, ign)));
+      v1 = fract(52.9829189 * fract(dot(c + 5.588238 * (fr + 1.0), ign)));
+      return mix(v0, v1, ff);
+    }
+    float a0 = hashPos(cell, seed + fr),        a1 = hashPos(cell, seed + fr + 1.0);
+    if (type == 15) return mix(a0, a1, ff);
+    if (type == 16) {
+      float b0 = hashPos(cell + 17.0, seed + 91.7 + fr);
+      float b1 = hashPos(cell + 17.0, seed + 92.7 + fr);
+      float g0 = sqrt(-2.0 * log(max(a0, 1e-4))) * cos(TAU * b0);
+      float g1 = sqrt(-2.0 * log(max(a1, 1e-4))) * cos(TAU * b1);
+      return clamp(0.5 + 0.2 * mix(g0, g1, ff), 0.0, 1.0);
+    }
+    // Salt & pepper: Density sets how many pixels flip to black or white.
+    float hv = mix(a0, a1, ff);
+    float d = uDensity * 0.5;
+    return hv < d ? 0.0 : (hv > 1.0 - d ? 1.0 : 0.5);
+  }
+
+  // ── Basis → signed value, SD ≈ 0.4 for every smooth type ─────────────────
+  float basisS(int type, vec3 p, float freq) {
+    if (type == 0) return (vNoise(p) - 0.5) * 2.5;
+    if (type == 2) return sNoise(p) * 2.8;
+    if (type == 3) {
+      vec2 per = uPeriod * freq;
+      return psrdnoise(p.xy, per, p.z + uAlpha).n * 0.85;
+    }
+    if (type == 6) return voronoiN(p) * 2.0 - 1.0;
+    if (type == 7) return hexN(p) * 2.0 - 1.0;
+    if (type == 8) return gridN(p) * 2.0 - 1.0;
+    return pNoise(p) * 2.0;                          // Perlin (and Curl's field)
+  }
+
+  // Flow: Gustavson's gradient-warped psrdnoise — each octave is displaced by
+  // the accumulated gradient of the ones before it. Warp = strength,
+  // Warp mode Curl = swirl (rotate the gradient 90°), Fractal Turbulence/
+  // Ridged fold each octave. Always layered: Octaves counts even when Off.
+  float flowN(vec3 p, int fm) {
+    vec2 gsum = vec2(0.0);
+    float acc = 0.0, wt = 1.0, sc = 1.0, wtSum = 0.0;
+    float swirl = uWarpMode == 2 ? 1.0 : 0.0;
+    for (int i = 0; i < 8; i++) {
+      if (float(i) >= uOctaves) break;
+      vec2 wv = mix(gsum, vec2(-gsum.y, gsum.x), swirl);
+      float aS = pow(sc, 0.33);
+      float aArg = p.z + uAlpha;
+      float aPh = aS * ((uPeriod.x > 0.001 || uPeriod.y > 0.001) ? mod(aArg, TAU / aS) : aArg);
+      PsrdResult r = psrdnoise(sc * p.xy + uWarp * 0.15 * wv, sc * uPeriod, aPh);
+      float v = r.n;
+      if (fm == 2) v = abs(v) * 2.0 - 1.0;
+      if (fm == 3) v = 1.0 - 2.0 * abs(v);
+      acc += wt * v;
+      gsum += wt * r.g;
+      wtSum += wt;
+      wt *= uGain;
+      sc *= 2.0;
+    }
+    return clamp(0.5 + 0.5 * acc / max(wtSum, 0.001), 0.0, 1.0);
+  }
+
+  // ── Field: basis with its fractal, returned in 0..1 ──────────────────────
+  // fm: 0 Off (one octave, the plain basis)  1 fBm  2 Turbulence  3 Ridged
+  float field(int type, int fm, vec3 p) {
+    if (type == 4) return flowN(p, fm);
+    if (type >= 15) return grainN(type);
+    if (type == 9)  return wavesN(p);
+    if (type == 10) return checkerN(p);
+    if (type == 11) return dotsN(p);
+    if (type == 12) return truchetN(p);
+    if (type == 13) return gaborN(p);
+    if (type == 14) return starsN(p);
+    float oct = fm == 0 ? 1.0 : uOctaves;
+    int m = fm == 0 ? 1 : fm;
+    float sum = 0.0, amp = 1.0, freq = 1.0, n2 = 0.0, prev = 1.0;
+    float px0 = gPx;
+    for (int i = 0; i < 8; i++) {
+      if (float(i) >= oct) break;
+      vec3 o = vec3(float(i) * 19.19, float(i) * 7.37, 0.0);
+      float s = basisS(type, p * freq + o, freq);
+      if (m == 1) {
+        sum += s * amp;
+      } else if (m == 2) {
+        sum += (abs(s) - 0.32) * amp;              // E|s| at SD 0.4
+      } else {
+        float r = clamp(1.0 - abs(s), 0.0, 1.0);
+        r = r * r * prev;                          // Musgrave: crests gate
+        prev = r;                                  // the next octave
+        sum += (r - RIDGE_MEAN) * amp;
+      }
+      n2 += amp * amp;
+      amp *= uGain;
+      freq *= uLacunarity;
+      gPx *= uLacunarity;
+    }
+    gPx = px0;
+    // Each mode is re-centred on 0.5 with a spread close to the plain basis,
+    // so switching mode or octave count changes the character, not the level.
+    float z = sum / sqrt(n2);
+    if (m == 1) return 0.5 + 0.5 * z;
+    if (m == 2) return 0.5 + TURB_K * z;
+    return RIDGE_MID + RIDGE_K * z;
+  }
+
+  // ── Coordinates ───────────────────────────────────────────────────────────
+  // aspect → Cartesian/Polar/Tunnel → rotate. In Polar and Tunnel, Rotate
+  // shears angle against radius, so 90° turns Waves into rings and anything
+  // between gives spirals; Offset X spins, Offset Y zooms.
+  // Angle is mirrored (|atan|) so the ±180° seam cannot show.
+  vec2 baseCoords() {
+    vec2 q = vUv - 0.5;
+    q.x *= uAspect;
+    if (uCoords == 1) q = vec2(abs(atan(q.y, q.x)) / 3.14159265, length(q) * 2.0) - 0.5;
+    if (uCoords == 2) q = vec2(abs(atan(q.y, q.x)) / 3.14159265 - 0.5, 0.15 / max(length(q), 0.002));
+    float c = cos(uRotate), s = sin(uRotate);
+    return vec2(c * q.x - s * q.y, s * q.x + c * q.y);
+  }
+
+  // Warp vector (pattern units) — Domain: one fBm displacement (Quilez);
+  // Double: the displacement warped again; Curl: along the curl of the field,
+  // which swirls and never pinches.
+  vec2 warpVec(vec3 wp) {
+    // One call site for field(): GLSL ES inlines every call, so the samples
+    // are taken in a loop rather than written out (compile time, not speed).
+    bool curl = uWarpMode == 2;
+    int nS = curl ? 3 : (uWarpMode == 1 ? 4 : 2);
+    const float e = 0.02;
+    vec2 w = vec2(0.0);
+    float a = 0.0, b = 0.0, c = 0.0;
+    for (int k = 0; k < 4; k++) {
+      if (k >= nS) break;
+      vec3 q;
+      if (curl) q = wp + (k == 1 ? vec3(e, 0.0, 0.0) : (k == 2 ? vec3(0.0, e, 0.0) : vec3(0.0)));
+      else      q = wp + vec3(w * uWarp, 0.0)
+                       + (k == 0 || k == 2 ? vec3(1.7, 9.2, 0.0) : vec3(8.3, 2.8, 0.0));
+      float v = field(1, 1, q);
+      if (k == 0) a = v; else if (k == 1) b = v; else c = v;
+      if (!curl && (k == 1 || k == 3)) {
+        if (k == 3) a = c;
+        w = vec2(a, v) * 2.0 - 1.0;
+      }
+    }
+    if (curl) return vec2(c - a, -(b - a)) / e * 0.12;
+    return w;
+  }
+
+  // ── One channel of the full chain ─────────────────────────────────────────
+  float evalChannel(vec2 q, float salt) {
+    gSalt = salt;
+    float tA = uPhase + uSeed * 3.17 + salt * 11.3;
+    gPx = uScale / uRes.y;
+    vec3 pA = vec3(q * uScale + uScale * 0.5 + uOffset, tA);
+
+    bool grain = uType >= 15;
+    if (uWarp > 0.0 && !grain && uType != 4) {
+      vec3 wp = vec3(pA.xy * uWarpScale, tA * 0.5 + 4.1);
+      pA.xy += uWarp * warpVec(wp) / uWarpScale;
+    }
+
+    // Layer B — its own type, fractal, scale and clock over the same coords.
+    float b = 0.0;
+    vec3 pB = vec3(q * uScaleB + uScaleB * 0.5 + uOffset, uPhaseB + uSeed * 3.17 + salt * 11.3 + 23.0);
+    // Warp takes two samples of B (x and y displacement); the rest take one.
+    // A loop, so B's field() is compiled once.
+    float b2 = 0.0;
+    gPx = uScaleB / uRes.y;
+    for (int k = 0; k < 2; k++) {
+      if (uCombine == 0 || (k == 1 && uCombine != 9)) break;
+      float v = field(uTypeB, uFractalB, pB + (k == 1 ? vec3(5.2, 1.3, 0.0) : vec3(0.0)));
+      if (k == 0) b = v; else b2 = v;
+    }
+    if (uCombine == 9) pA.xy += uAmount * 1.5 * (vec2(b, b2) * 2.0 - 1.0) * uScale / uScaleB;
+
+    gPx = uScale / uRes.y;
+    float a = field(uType, uFractal, pA);
+    float n = a;
+    if (uCombine > 0 && uCombine < 9) {
+      float o = a;
+      if      (uCombine == 1) o = b;                          // Mix (crossfade A→B)
+      else if (uCombine == 2) o = a + b - 0.5;                // Add
+      else if (uCombine == 3) o = a * b * 2.0;                // Multiply
+      else if (uCombine == 4) o = 1.0 - (1.0 - a) * (1.0 - b);// Screen
+      else if (uCombine == 5) o = abs(a - b) * 2.0;           // Difference
+      else if (uCombine == 6) o = min(a, b);                  // Min
+      else if (uCombine == 7) o = max(a, b);                  // Max
+      else if (uCombine == 8) o = a * smoothstep(0.45, 0.55, b); // Mask (B gates A)
+      n = mix(a, o, uAmount);
+    }
+
+    // Shape
+    n = (n - 0.5) * uContrast + 0.5 + uBrightness;
+    if (uBands > 0.0) n = 0.5 - 0.5 * cos(TAU * n * uBands);
+    n = clamp(n, 0.0, 1.0);
+    if (uSteps >= 2.0) n = min(floor(n * uSteps), uSteps - 1.0) / (uSteps - 1.0);
+    n = pow(n, uGamma);
+    if (uInvert == 1) n = 1.0 - n;
+    return n;
+  }
 
   void main() {
-    int  oct = int(uOctaves + 0.5);
-    // Time is the 3rd spatial dimension — smooth continuous animation
-    float t  = uPhase + uSeed;
-    vec3  p  = vec3((vUv - 0.5) * uScale + 0.5 + vec2(uOffsetX, uOffsetY), t);
-    // Shared "static refresh rate" for Analog-family per-pixel noise types —
-    // Speed=0 freezes on a single frame; higher Speed = faster re-randomization.
-    // frFrac dissolves between fr and fr+1 so low Speed feels smooth, not stutter-stepped.
-    float frBase = uTime * uSpeed * 24.0;
-    float fr     = floor(frBase);
-    float frFrac = fract(frBase);
+    vec2 q = baseCoords();
 
-    float n     = 0.0;
-    vec2  curlV = vec2(0.0);
-    bool  isCurl = (uType == 7);  // Curl shifted from 6→7
-    float r_rgb = 0.0, g_rgb = 0.0, b_rgb = 0.0;
-
-    if (uType == 0) {
-        // Speed = static refresh rate (shared fr); Scale has minimal visual
-        // effect by design — true white noise is scale-invariant.
-        n = hashPosSmooth(p.xy, uSeed, fr, frFrac);       // White Noise
-    } else if (uType == 1) {
-      n = fbm(p, oct, uLacunarity, uGain, 0);           // Value
-    } else if (uType == 2) {
-      n = fbm(p, oct, uLacunarity, uGain, 1);           // Perlin
-    } else if (uType == 3) {
-      n = fbm(p, oct, uLacunarity, uGain, 2);           // Simplex
-    } else if (uType == 4) {
-      vec2 c = wNoise(p);
-      n = 1.0 - smoothstep(0.0, 0.9, c.x);             // Cellular F1
-    } else if (uType == 5) {
-      vec2 c = wNoise(p);
-      n = smoothstep(0.0, 0.5, c.y - c.x);             // Cellular F2-F1
-    } else if (uType == 6) {
-      n = ridged(p, oct, uLacunarity, uGain);           // Ridged
-    } else if (uType == 7) {
-      curlV = curlField(p, oct, uLacunarity, uGain);
-      n = length(curlV) * 0.5;                          // Curl
-    } else if (uType == 8) {
-      n = domainWarp(p, oct, uLacunarity, uGain);       // Domain Warp
-    } else if (uType == 9) {
-      n = hashPosSmooth(p.xy, uSeed, fr, frFrac);       // White
-    } else if (uType == 10) {
-      float vig = 1.0 - smoothstep(0.3, 0.8, length(p.xy/uScale - 0.5) * 2.0);
-      n = hashPosSmooth(p.xy, uSeed, fr, frFrac) * (0.75 + vig * 0.5); // Film Grain
-    } else if (uType == 11) {
-      float u1 = hashPosSmooth(p.xy, uSeed, fr, frFrac);
-      float u2 = hashPosSmooth(p.xy + 17.0, uSeed + 91.7, fr, frFrac);
-      float gz = sqrt(-2.0 * log(max(u1, 0.0001))) * cos(6.2832 * u2);
-      n = clamp(gz * 0.15 + 0.5, 0.0, 1.0);           // Gaussian
-    } else if (uType == 12) {
-      n = hashPosSmooth(p.xy, uSeed, fr, frFrac);       // TV Static
-    } else if (uType == 13) {
-      n = mod(p.y * 20.0, 1.0) < 0.5 + sin(t) * 0.1 ? 1.0 : 0.0; // Scan Lines
-    } else if (uType == 14) {
-      float hv = hashPosSmooth(p.xy, uSeed, fr, frFrac);
-      float density = clamp(uGain, 0.0, 1.0) * 0.15;  // uGain=0.5 → ~7.5% salt + ~7.5% pepper
-      n = hv < density ? 0.0 : hv > (1.0 - density) ? 1.0 : 0.5; // Salt-and-Pepper
-    } else if (uType == 15) {
-      vec2 c = voronoi(p, 0);
-      n = clamp(c.x * 1.5, 0.0, 1.0);                 // Voronoi F1
-    } else if (uType == 16) {
-      vec2 c = voronoi(p, 1);
-      n = clamp(c.x * 0.8, 0.0, 1.0);                 // Manhattan Voronoi
-    } else if (uType == 17) {
-      vec2 c = voronoi(p, 2);
-      n = clamp(c.x * 1.2, 0.0, 1.0);                 // Chebyshev Voronoi
-    } else if (uType == 18) {
-      vec2 ca = wNoise(p);
-      vec2 cb = wNoise(p * 1.7 + vec3(3.1, 1.7, 0.0));
-      vec2 cc = wNoise(p * 0.6 + vec3(0.0, 0.0, 1.3));
-      n = 1.0 - clamp(ca.x * 0.6 + cb.x * 0.3 + cc.x * 0.1, 0.0, 1.0); // Caustics
-    } else if (uType == 19) {
-      float ang = t * 0.5;
-      float cs = cos(ang), sn = sin(ang);
-      vec3 rp = vec3(p.x * cs - p.y * sn, p.x * sn + p.y * cs, p.z);
-      n = fbm(rp, oct, uLacunarity, uGain, 1);         // Flow Noise
-    } else if (uType == 20) {
-      vec2 c = wNoise(p);
-      n = 1.0 - smoothstep(0.0, 0.3, c.y - c.x);      // Worley Veins
-    } else if (uType == 21) {
-      vec2 cell = floor(p.xy * 0.3);
-      vec2 local = fract(p.xy * 0.3) - 0.5;
-      float flip = step(0.5, h1(vec3(cell + uSeed + 37.3, 0.0)));
-      vec2 corner = vec2(flip > 0.5 ? 0.5 : -0.5, 0.5);
-      n = 1.0 - smoothstep(0.0, 0.08, abs(length(local - corner) - 0.5)); // Truchet
-    } else if (uType == 22) {
-      vec2 hUv = p.xy * 0.3;
-      float q = hUv.x * 2.0 / 3.0;
-      float r = (-hUv.x + sqrt(3.0) * hUv.y) / 3.0;
-      vec2 hex = vec2(q, r);
-      vec2 hid = floor(hex + 0.5);
-      float cellN = h1(vec3(hid + uSeed + 73.1, 0.0));
-      float dist = length(hex - hid);
-      n = cellN * (1.0 - smoothstep(0.3, 0.5, dist));  // Hex Grid
-    } else if (uType == 23) {
-      float sum = 0.0;
-      vec2 uv22 = p.xy * 0.2;
-      for (int i = 0; i < 8; i++) {
-        float a = h1(vec3(float(i), uSeed + 11.0, 0.0)) * 6.283;
-        vec2 off = h2(vec2(float(i), uSeed + 23.0));
-        vec2 gd = fract(uv22) - off;
-        float env = exp(-dot(gd, gd) * 4.0);
-        float wave = cos(dot(gd, vec2(cos(a), sin(a))) + t);
-        sum += env * wave;
+    // Curl: a displacement source. RG = flow vector (0.5 = still), B = speed.
+    if (uType == 5) {
+      gPx = uScale / uRes.y;
+      float tA = uPhase + uSeed * 3.17;
+      vec3 p = vec3(q * uScale + uScale * 0.5 + uOffset, tA);
+      if (uWarp > 0.0) p.xy += uWarp * warpVec(vec3(p.xy * uWarpScale, tA * 0.5 + 4.1)) / uWarpScale;
+      const float e = 0.01;
+      float n0 = 0.0, nx = 0.0, ny = 0.0;
+      for (int k = 0; k < 3; k++) {
+        float v = field(1, uFractal, p + (k == 1 ? vec3(e, 0.0, 0.0) : (k == 2 ? vec3(0.0, e, 0.0) : vec3(0.0))));
+        if (k == 0) n0 = v; else if (k == 1) nx = v; else ny = v;
       }
-      n = clamp(sum / 8.0 * 0.5 + 0.5, 0.0, 1.0);     // Gabor
-    } else if (uType == 24) {
-      // Interleaved Gradient Noise (Jimenez) — tuned for integer pixel coords;
-      // uScale/uOffset intentionally have no effect (dithering is resolution-locked).
-      vec2  uv23 = gl_FragCoord.xy + uSeed;
-      vec2  ign  = vec2(0.06711056, 0.00583715);
-      float bnA  = fract(52.9829189 * fract(dot(uv23 + fr, ign)));
-      float bnB  = fract(52.9829189 * fract(dot(uv23 + fr + 1.0, ign)));
-      n = mix(bnA, bnB, frFrac);                        // Blue Noise
-    } else if (uType == 25) {
-      // 3x3 neighbor search — avoids tile-seam cuts from edge-adjacent jittered points
-      vec2 gp = p.xy * 0.2;
-      vec2 cell = floor(gp);
-      vec2 local = fract(gp);
-      float minD = 10.0;
-      for (int dy = -1; dy <= 1; dy++) {
-        for (int dx = -1; dx <= 1; dx++) {
-          vec2 nb = vec2(float(dx), float(dy));
-          vec2 jitterA = h2(cell + nb + uSeed + fr + 19.4) * 0.7 + 0.15;
-          vec2 jitterB = h2(cell + nb + uSeed + fr + 20.4) * 0.7 + 0.15;
-          vec2 jitter = mix(jitterA, jitterB, frFrac);
-          minD = min(minD, length(local - nb - jitter));
-        }
-      }
-      n = 1.0 - smoothstep(0.05, 0.3, minD);           // Poisson Disc
-    } else if (uType == 26) {
-      float sp = hashPosSmooth(p.xy, uSeed, fr, frFrac);
-      n = clamp(0.5 + (sp - 0.5) * 2.0 * uGain, 0.0, 1.0); // Speckle
-    } else if (uType == 27) {
-      r_rgb = hashPosSmooth(p.xy + vec2(0.1, 0.0), uSeed, fr, frFrac);
-      g_rgb = hashPosSmooth(p.xy + vec2(0.0, 0.1), uSeed + 0.37, fr, frFrac);
-      b_rgb = hashPosSmooth(p.xy + vec2(0.1, 0.1), uSeed + 0.71, fr, frFrac);
-      n = (r_rgb + g_rgb + b_rgb) / 3.0;               // RGB Shift
-    } else if (uType == 28) {
-      float line = floor(p.y * 10.0);
-      float shift = (h1(vec3(line, floor(uTime * uSpeed * 5.0) + uSeed, 0.0)) - 0.5) * 0.3;
-      n = h1(vec3(p.x * 0.2 + shift + uSeed, line * 0.1 + uSeed, 0.0)); // Interlace
-    } else if (uType == 29) {
-      float bandY = fract(p.y * 2.0 + uTime * uSpeed * 0.08);
-      float track = smoothstep(0.0, 0.15, bandY) * (1.0 - smoothstep(0.15, 0.4, bandY));
-      float shift2 = (h1(vec3(floor(p.y * 8.0), floor(uTime * 4.0) + uSeed, 0.0)) - 0.5) * track * 0.4;
-      float dropout = step(0.96, h1(vec3(p.y, floor(uTime * 8.0) + uSeed, 0.0)));
-      float signal = h1(vec3(p.x * 0.3 + shift2 + uSeed, p.y * 0.3 + uSeed, floor(uTime * 30.0)));
-      n = mix(signal, 1.0, dropout * 0.9);             // VCR Noise
-    } else if (uType == 30) {
-      r_rgb = clamp(0.5 + (hashPosSmooth(p.xy + vec2(0.3, 0.0), uSeed, fr, frFrac) - 0.5) * 2.0 * uGain, 0.0, 1.0);
-      g_rgb = clamp(0.5 + (hashPosSmooth(p.xy + vec2(0.0, 0.3), uSeed + 0.37, fr, frFrac) - 0.5) * 2.0 * uGain, 0.0, 1.0);
-      b_rgb = clamp(0.5 + (hashPosSmooth(p.xy + vec2(0.3, 0.3), uSeed + 0.71, fr, frFrac) - 0.5) * 2.0 * uGain, 0.0, 1.0);
-      n = (r_rgb + g_rgb + b_rgb) / 3.0;               // Speckle Colour
-    } else if (uType == 31) {
-      // Animated per-row gradient ramps quantized into bands — reads as
-      // "sorted" pixel runs (true per-pixel sort isn't possible, no neighbor access)
-      float row = floor(p.y * 5.0);
-      float rowSeed = hashPosSmooth(vec2(row, 0.0), uSeed, fr, frFrac);
-      float ramp = fract(p.x * 0.5 + rowSeed * 4.0);
-      float bands = floor(ramp * 8.0) / 8.0;
-      float detail = hashPosSmooth(p.xy, uSeed + 0.5, fr, frFrac) * 0.1;
-      n = clamp(bands + detail, 0.0, 1.0);             // Pixel Sort
-    } else if (uType == 32) {
-      n = fbm(p, oct, uLacunarity, uGain, 1);          // fBm (Perlin)
-    } else if (uType == 33) {
-      n = turbulence(p, oct, uLacunarity, uGain);      // Turbulence
-    } else if (uType == 34) {
-      n = billowed(p, oct, uLacunarity, uGain);        // Billowed
-    } else if (uType == 35) {
-      n = domainWarp(p, oct, uLacunarity, uGain);      // Domain Warp 2
-    } else if (uType == 36) {
-      vec2 pos = p.xy;
-      for (int i = 0; i < 3; i++) {
-        vec2 cv = curlField(vec3(pos * 0.3, p.z), oct, uLacunarity, uGain);
-        pos += cv * 0.02 * uGain;
-      }
-      curlV = curlField(vec3(pos * 0.3, p.z), oct, uLacunarity, uGain);
-      n = length(curlV) * 0.5;
-      isCurl = true;                                   // Velocity Field
-    } else if (uType == 37) {
-      vec2 vel = curlField(vec3(p.xy * 0.3, p.z), oct, uLacunarity, uGain);
-      vec3 advP = vec3((p.xy - vel * 0.08) * 0.3, p.z);
-      float n1 = fbm(advP, oct, uLacunarity, uGain, 1);
-      float n2 = fbm(p * 0.3, oct, uLacunarity, uGain, 1);
-      n = mix(n1, n2, 0.4);                            // Advection
-    } else if (uType == 38) {
-      float w = domainWarp(p, oct, uLacunarity, uGain);
-      n = 0.5 + 0.5 * sin(1.5 * p.x + w * 6.0 + uTime * uSpeed * 0.3); // Marble
-    } else if (uType == 39) {
-      vec2 period2d = vec2(uPeriodX, uPeriodY);
-      vec2 periodicP = p.xy + vec2(floor(uScale * 0.5) + 1.0);
-      float raw = psrdnoise(periodicP, period2d, t + uAlpha);
-      n = raw * 0.5 + 0.5;
-    } else if (uType == 40) {
-      // PsrdWarp: gradient-guided domain warping — Gustavson 2D tutorial 19
-      // uOctaves = iteration count (1–8)
-      // uGain    = warp strength (0=plain, 0.13=clouds, 0.5=extreme)
-      // uAlpha   = phase offset, Speed animates via t
-      vec2 period2d = vec2(uPeriodX, uPeriodY);
-      vec2 periodicP = p.xy + vec2(floor(uScale * 0.5) + 1.0);
-      vec2 gsum = vec2(0.0);
-      float acc = 0.0, wt = 1.0, sc = 1.0, wtSum = 0.0;
-      for (int i = 0; i < 8; i++) {
-        if (i >= oct) break;
-        vec2 warpVec = mix(gsum, vec2(-gsum.y, gsum.x), uSwirl);
-        vec2 warped = sc * periodicP + uGain * warpVec;
-        float alphaScale = pow(sc, 0.33);
-        float alphaArg = t + uAlpha;
-        float alphaPhase = alphaScale * mix(
-          alphaArg,
-          mod(alphaArg, 6.28318530718 / alphaScale),
-          step(0.001, max(period2d.x, period2d.y)));
-        PsrdResult r = psrdnoise_grad(
-          warped,
-          sc * period2d,
-          alphaPhase);
-        float ridgeN = 1.0 - 2.0 * abs(r.n);
-        acc   += wt * mix(r.n, ridgeN, uRidge);
-        gsum  += wt * r.g;
-        wtSum += wt;
-        wt *= 0.5;
-        sc *= 2.0;
-      }
-      n = 0.5 + 0.5 * (acc / max(wtSum, 0.001));
-    }
-
-    // ── Post-process ────────────────────────────────────────────────────────
-    n = clamp(n, 0.0, 1.0);
-    n = pow(n, uContrast);
-    if (uInvert == 1) n = 1.0 - n;
-
-    // ── Color output ────────────────────────────────────────────────────────
-    vec3 col;
-    if (isCurl) {
-      // Encode flow vector in RG (0=left/down, 1=right/up), magnitude in B
-      col = vec3(0.5 + 0.4 * curlV.x, 0.5 + 0.4 * curlV.y, n);
+      vec2 cv = vec2(ny - n0, -(nx - n0)) / e * 0.25;
+      vec3 col = vec3(0.5 + 0.5 * clamp(cv, -1.0, 1.0), clamp(length(cv), 0.0, 1.0));
       if (uInvert == 1) col.xy = 1.0 - col.xy;
-    } else if (uColor == 2) {
-      col = mix(uColor1, uColor2, n);
-    } else if (uColor == 1) {
-      // Tri-channel colorization via spatially shifted fbm passes
-      int colorOct = oct > 1 ? oct - 1 : 1;
-      float r = fbm(p + vec3(1.0, 0.0, 0.5), colorOct, uLacunarity, uGain, 0);
-      float g = fbm(p + vec3(0.0, 1.0, 0.5), colorOct, uLacunarity, uGain, 0);
-      float b = fbm(p + vec3(0.5, 0.0, 1.0), colorOct, uLacunarity, uGain, 0);
-      r = pow(clamp(r, 0.0, 1.0), uContrast);
-      g = pow(clamp(g, 0.0, 1.0), uContrast);
-      b = pow(clamp(b, 0.0, 1.0), uContrast);
-      col = mix(vec3(n), vec3(r, g, b), 0.75);
-    } else {
-      // Default: mix between the two noise colors (color pickers always active)
-      // With defaults white/black this is identical to grayscale vec3(n)
-      col = mix(uColor1, uColor2, n);
+      gl_FragColor = vec4(col, 1.0);
+      return;
     }
 
-    if (uType == 27 || uType == 30) col = vec3(r_rgb, g_rgb, b_rgb);
-
+    // RGB runs the SAME chain once per channel, decorrelated by salt. A loop,
+    // not three calls, so the chain is compiled once rather than inlined 3×.
+    vec3 ch = vec3(0.0);
+    for (int c = 0; c < 3; c++) {
+      if (c > 0 && uColor != 1) break;
+      float v = evalChannel(q, float(c));
+      if (c == 0) ch.r = v; else if (c == 1) ch.g = v; else ch.b = v;
+    }
+    vec3 col;
+    if      (uColor == 1) col = ch;
+    else if (uColor == 2) col = 0.5 + 0.5 * cos(TAU * (ch.r * 0.85 + vec3(0.0, 0.33, 0.67)));
+    else                  col = mix(uColor1, uColor2, ch.r);
     gl_FragColor = vec4(col, 1.0);
   }
 `;

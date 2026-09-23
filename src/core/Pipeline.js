@@ -18,7 +18,7 @@
 import * as THREE from 'three';
 import {
   VERT, KEYER, DISPLACE, BLEND, FEEDBACK,
-  TRANSFERMODE, COLORSHIFT, NOISE_BFG, INTERLACE, MIRROR, WARP, FADE, PASSTHROUGH,
+  TRANSFERMODE, COLORSHIFT, NOISE_BFG, NOISE_UNIFORM_DEFAULTS, INTERLACE, MIRROR, WARP, FADE, PASSTHROUGH,
   BUFFER_TRANSFORM, INTERP,
   PIXELATE, EDGE, RGBSHIFT, POSTERIZE, SOLARIZE, COLOR_CORRECT, CHROMA_KEY,
   VIGNETTE, BLOOM_EXTRACT, BLOOM_BLUR, BLOOM_COMPOSITE, BOKEH_GATHER,
@@ -520,8 +520,8 @@ export class Pipeline {
     // Pre-build all effect materials
     this._buildMaterials();
 
-    // Dedicated noise render target — fixed 512×512 so complex BFG types
-    // (DomainWarp, Curl) stay fast regardless of output resolution.
+    // Dedicated noise render target — 512×512 by default so the heavy types
+    // stay fast; noise.res = Full resizes it to the output in generateNoise().
     this._noiseTarget = this._makeTarget(512, 512);
     // Second 512×512 target for the optional noise-sharpen pass (ping-pong
     // independent of the main pipeline's targets).
@@ -1263,28 +1263,26 @@ export class Pipeline {
    * @param {object} p  All BFG params from ParameterSystem
    */
   generateNoise(p) {
+    // Resolution: 512² keeps the heavy types (Double warp, 8-octave Flow)
+    // cheap; Full matches the output, which per-pixel grain needs to read as
+    // grain rather than magnified blobs.
+    const w = p.full ? this.width  : 512;
+    const h = p.full ? this.height : 512;
+    if (this._noiseTarget.width !== w || this._noiseTarget.height !== h) {
+      this._noiseTarget.setSize(w, h);
+      this._noiseSharpTarget.setSize(w, h);
+      this.m.noiseSharpen.uniforms.uResolution.value.set(w, h);
+    }
     const m = this.m.noise;
-    m.uniforms.uTime.value       = p.time;
-    m.uniforms.uPhase.value      = p.phase;
-    m.uniforms.uType.value       = p.type;
-    m.uniforms.uScale.value      = p.scale;
-    m.uniforms.uOctaves.value    = p.octaves;
-    m.uniforms.uLacunarity.value = p.lacunarity;
-    m.uniforms.uGain.value       = p.gain;
-    m.uniforms.uSwirl.value      = p.swirl ?? 0;
-    m.uniforms.uRidge.value      = p.ridge ?? 0;
-    m.uniforms.uSpeed.value      = p.speed;
-    m.uniforms.uOffsetX.value    = p.offsetX;
-    m.uniforms.uOffsetY.value    = p.offsetY;
-    m.uniforms.uContrast.value   = p.contrast;
-    m.uniforms.uInvert.value     = p.invert;
-    m.uniforms.uSeed.value       = p.seed;
-    m.uniforms.uColor.value      = p.color;
-    if (m.uniforms.uColor1) m.uniforms.uColor1.value = p.color1 ?? new THREE.Vector3(1,1,1);
-    if (m.uniforms.uColor2) m.uniforms.uColor2.value = p.color2 ?? new THREE.Vector3(0,0,0);
-    if (m.uniforms.uPeriodX) m.uniforms.uPeriodX.value = p.periodX ?? 0;
-    if (m.uniforms.uPeriodY) m.uniforms.uPeriodY.value = p.periodY ?? 0;
-    if (m.uniforms.uAlpha)   m.uniforms.uAlpha.value   = p.alpha   ?? 0;
+    for (const k in p.uniforms) {
+      const u = m.uniforms[k];
+      if (!u) continue;
+      const v = p.uniforms[k];
+      if (u.value?.isVector2) u.value.set(v[0], v[1]);
+      else if (u.value?.isVector3) { if (v.isVector3) u.value.copy(v); else u.value.set(v[0], v[1], v[2]); }
+      else u.value = v;
+    }
+    m.uniforms.uRes.value.set(w, h);
     this._quad.material = m;
     this.renderer.setRenderTarget(this._noiseTarget);
     this.renderer.render(this._scene, this._camera);
@@ -1668,29 +1666,11 @@ export class Pipeline {
         uStrength: { value: 0 },
       }),
       fade:        this._mat(FADE, { uAmount: { value: 1 } }),
-      noise: this._mat(NOISE_BFG, {
-        uTime:       { value: 0 },
-        uPhase:      { value: 0 },
-        uType:       { value: 1 },   // default: Perlin
-        uScale:      { value: 3.0 },
-        uOctaves:    { value: 4.0 },
-        uLacunarity: { value: 2.0 },
-        uGain:       { value: 0.5 },
-        uSwirl:      { value: 0.0 },
-        uRidge:      { value: 0.0 },
-        uSpeed:      { value: 0.2 },
-        uOffsetX:    { value: 0.0 },
-        uOffsetY:    { value: 0.0 },
-        uContrast:   { value: 1.0 },
-        uInvert:     { value: 0 },
-        uSeed:       { value: 0.0 },
-        uColor:      { value: 0 },
-        uColor1:     { value: new THREE.Vector3(1, 1, 1) },
-        uColor2:     { value: new THREE.Vector3(0, 0, 0) },
-        uPeriodX:    { value: 0 },
-        uPeriodY:    { value: 0 },
-        uAlpha:      { value: 0 },
-      }),
+      // Uniforms are declared from NOISE_UNIFORM_DEFAULTS so the list lives in
+      // one place; generateNoise() writes whatever the caller hands it.
+      noise: this._mat(NOISE_BFG, Object.fromEntries(
+        Object.entries(NOISE_UNIFORM_DEFAULTS).map(([k, v]) => [k, { value:
+          Array.isArray(v) ? (v.length === 2 ? new THREE.Vector2(...v) : new THREE.Vector3(...v)) : v }]))),
       bufferTransform: this._mat(BUFFER_TRANSFORM, {
         uPanX:  { value: 0 },
         uPanY:  { value: 0 },

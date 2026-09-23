@@ -4,7 +4,10 @@
  * Vanilla JS — no framework. Direct DOM manipulation for sub-ms response.
  */
 
-import { PARAM_TYPE, SOURCES, SOURCE_DISPLAY_ORDER, SLEW_SHAPES } from '../controls/ParameterSystem.js';
+import { PARAM_TYPE, SOURCES, SOURCE_DISPLAY_ORDER, SLEW_SHAPES,
+  NOISE_TYPES, NOISE_FAMILY_TYPES } from '../controls/ParameterSystem.js';
+import { recipeMenu, applyRecipe, captureRecipe, saveUserRecipe, deleteUserRecipe,
+  NOISE_RECIPES, loadUserRecipes } from '../inputs/NoiseRecipes.js';
 import { XMAP_HZ_MIN, XMAP_HZ_MAX } from '../controls/ControllerManager.js';
 import { DEFAULT_FX_ORDER } from '../core/Pipeline.js';
 import { PROVIDERS } from '../ai/AIFeatures.js';
@@ -326,6 +329,7 @@ export function buildMappingPanels(ps, contextMenu) {
                                .map(id => ps.get(id)).filter(Boolean)),
     'global-params':       ps.getGroup('global').filter(p =>
       p.id !== 'glsl.preset' && p.id !== 'displace.warpSlot' &&
+      p.id !== 'noise.recipe' &&
       p.id !== 'projmap.edit' && p.id !== 'projmap.grid' &&
       p.id !== 'projmap.meshSlot' && p.id !== 'projmap.meshStore' &&
       p.id !== 'projmap.meshHandlesClear' && p.id !== 'projmap.meshAllHandles' &&
@@ -676,41 +680,86 @@ export function buildMappingPanels(ps, contextMenu) {
   }
 }
 
-// ── Noise panel — family → type two-level selector ────────────────────────────
+// ── Noise panel — family → type menu, then one section per stage ─────────────
+// Sections follow the shader's order (coords → warp → basis/fractal → layer B
+// → shape → colour). Each row carries a predicate over the current settings;
+// a row that would do nothing for the chosen type is hidden, and a section
+// whose rows are all hidden hides its header too.
 
 export function buildNoisePanel(ps, contextMenu) {
   const noiseTop = document.getElementById('noise-params-top');
   const noiseBot = document.getElementById('noise-params');
   if (!noiseTop || !noiseBot) return;
 
-  const NOISE_TYPES = ps.get('noise.type').options;
-
-  const NOISE_FAMILY_MAP = {
-    Gradient: [1, 2, 3],
-    Fractal:  [6, 32, 33, 34, 38],
-    Cellular: [4, 5, 15, 16, 17, 18, 20],
-    Warp:     [8, 35, 19, 36, 37, 7],
-    Pattern:  [21, 22, 23, 13],
-    Analog:   [0, 9, 10, 11, 12, 14, 26, 27, 28, 29, 30, 31, 24, 25],
-    Periodic: [39, 40],
+  const v = (id) => ps.get(id).value;
+  const T = {                                   // type-index predicates
+    fractal:  t => t <= 8,                      // smooth + cells (Curl too)
+    cells:    t => t >= 6 && t <= 8,
+    grain:    t => t >= 15,
+    periodic: t => t === 3 || t === 4,
+    flow:     t => t === 4,
+    curl:     t => t === 5,
   };
-  const FAMILY_NAMES = Object.keys(NOISE_FAMILY_MAP);
+  const usesWidth = t => (T.cells(t) && v('noise.cellOut') === 2)
+    || [9, 11, 12, 13, 14].includes(t) || T.grain(t);
+  const usesDensity = t => t === 11 || t === 14 || t === 17;
+  const usesJitter  = t => t === 6 || t === 11;
 
-  // Per-type parameter relevance (derived from NOISE_BFG shader audit) —
-  // Octaves/Lacunarity/Gain/Swirl/Ridge/Period/Color visibility depends on
-  // noise.type, not noise.family.
-  const FRACTAL_TYPES = [1, 2, 3, 6, 7, 8, 19, 32, 33, 34, 35, 36, 37, 38];
-  const OCTAVES_TYPES = [...FRACTAL_TYPES, 40];
-  const LACUNARITY_TYPES = FRACTAL_TYPES;
-  const GAIN_TYPES = [...FRACTAL_TYPES, 26, 29, 30, 40];
-  const SWIRL_RIDGE_TYPES = [40];
-  const PERIODIC_TYPES = [39, 40];
-  const COLOR_HIDDEN_TYPES = [7, 27, 30, 36];
+  // ── Recipe: a named combination, applied then fully editable ─────────────
+  // The row is rebuilt when the user list changes (buildParamRow fixes its
+  // option list at construction). Save stores the CURRENT settings under a
+  // name; ✕ deletes the selected user recipe (built-ins cannot be deleted).
+  const recipeP = ps.get('noise.recipe');
+  let recipeKeys = [];
+  const recipeWrap = document.createElement('div');
+  recipeWrap.className = 'noise-recipe';
+  const recipeBtns = document.createElement('div');
+  recipeBtns.className = 'noise-recipe-btns';
+  const mkBtn = (label, title, fn) => {
+    const b = document.createElement('button');
+    b.className = 'import-btn';
+    b.textContent = label;
+    b.title = title;
+    b.addEventListener('click', fn);
+    recipeBtns.appendChild(b);
+    return b;
+  };
+  function syncRecipes(selectName) {
+    const m = recipeMenu();
+    recipeKeys = m.keys;
+    recipeP.options = m.labels;
+    const i = selectName ? m.keys.findIndex(k => k?.n === selectName) : -1;
+    recipeP.value = i > 0 ? i : Math.min(recipeP.value, m.labels.length - 1);
+    recipeWrap.querySelector('.param-row')?.remove();
+    recipeWrap.prepend(buildParamRow(recipeP, contextMenu));
+  }
+  mkBtn('Save', 'Save the current noise settings as a recipe', () => {
+    const cur = recipeKeys[recipeP.value];
+    const name = prompt('Recipe name', cur?.user ? cur.n : '')?.trim();
+    if (!name) return;
+    if (NOISE_RECIPES[name]) { alert(`"${name}" is a built-in recipe — pick another name.`); return; }
+    if (!saveUserRecipe(name, captureRecipe(ps))) { alert('Could not save the recipe (storage full or blocked).'); return; }
+    syncRecipes(name);
+  });
+  mkBtn('✕', 'Delete the selected user recipe', () => {
+    const cur = recipeKeys[recipeP.value];
+    if (!cur?.user) return;
+    if (!confirm(`Delete recipe "${cur.n}"?`)) return;
+    deleteUserRecipe(cur.n);
+    recipeP.value = 0;
+    syncRecipes();
+  });
+  recipeWrap.appendChild(recipeBtns);
+  noiseTop.appendChild(recipeWrap);
+  recipeP.onChange(i => {
+    const k = recipeKeys[i];
+    if (!k) return;
+    applyRecipe(ps, k.user ? loadUserRecipes()[k.n] : NOISE_RECIPES[k.n]);
+  });
+  syncRecipes();
 
-  // ── A) Family dropdown ────────────────────────────────────────────────────
+  // ── Family → Type (two-level menu over one noise.type param) ─────────────
   noiseTop.appendChild(buildParamRow(ps.get('noise.family'), contextMenu));
-
-  // ── B) Type dropdown — rebuilt per family ─────────────────────────────────
   const typeRow = document.createElement('div');
   typeRow.className = 'param-row select-row';
   typeRow.dataset.paramId = 'noise.type';
@@ -721,94 +770,130 @@ export function buildNoisePanel(ps, contextMenu) {
   typeCtrl.className = 'param-ctrl';
   const typeValueEl = document.createElement('span');
   typeValueEl.className = 'param-value';
-  typeRow.appendChild(typeLabel);
-  typeRow.appendChild(typeCtrl);
-  typeRow.appendChild(typeValueEl);
+  typeRow.append(typeLabel, typeCtrl, typeValueEl);
   noiseTop.appendChild(typeRow);
+  noiseTop.appendChild(buildParamRow(ps.get('noise.scale'), contextMenu));
+  let typeSel = null;
 
-  let typeSel = null; // current _mkSelect wrapper for the Type dropdown
-
-  // ── C) Color Mode param ───────────────────────────────────────────────────
-  const colorModeRow = buildParamRow(ps.get('noise.color'), contextMenu);
-  noiseBot.appendChild(colorModeRow);
-  const colorSwatchesEl = document.getElementById('noise-color-swatches');
-
-  // ── Shared params ─────────────────────────────────────────────────────────
-  ['noise.scale', 'noise.speed', 'noise.offsetX', 'noise.offsetY',
-   'noise.seed', 'noise.contrast', 'noise.sharpen', 'noise.invert'].forEach(id =>
-    noiseBot.appendChild(buildParamRow(ps.get(id), contextMenu))
-  );
-
-  // ── D) Octaves/Lacunarity/Gain + Swirl/Ridge — shown/hidden per noise.type ─
-  const octavesRow = buildParamRow(ps.get('noise.octaves'), contextMenu);
-  const lacunarityRow = buildParamRow(ps.get('noise.lacunarity'), contextMenu);
-  const gainRow = buildParamRow(ps.get('noise.gain'), contextMenu);
-  noiseBot.append(octavesRow, lacunarityRow, gainRow);
-
-  const swirlRidgeSection = document.createElement('div');
-  ['noise.swirl', 'noise.ridge'].forEach(id =>
-    swirlRidgeSection.appendChild(buildParamRow(ps.get(id), contextMenu))
-  );
-  noiseBot.appendChild(swirlRidgeSection);
-
-  // ── E) Periodic params — built once, shown/hidden per noise.type ─────────
-  const periodicSection = document.createElement('div');
-  ps.set('noise.period.x', Math.round(ps.get('noise.period.x').value));
-  ps.set('noise.period.y', Math.round(ps.get('noise.period.y').value));
-  ['noise.period.x', 'noise.period.y', 'noise.alpha'].forEach(id =>
-    periodicSection.appendChild(buildParamRow(ps.get(id), contextMenu))
-  );
-  noiseBot.appendChild(periodicSection);
-
-  // ── Internal helpers ──────────────────────────────────────────────────────
-  function _renderNoiseTypeUI(typeIdx) {
-    octavesRow.style.display = OCTAVES_TYPES.includes(typeIdx) ? '' : 'none';
-    lacunarityRow.style.display = LACUNARITY_TYPES.includes(typeIdx) ? '' : 'none';
-    gainRow.style.display = GAIN_TYPES.includes(typeIdx) ? '' : 'none';
-    swirlRidgeSection.style.display = SWIRL_RIDGE_TYPES.includes(typeIdx) ? '' : 'none';
-    periodicSection.style.display = PERIODIC_TYPES.includes(typeIdx) ? '' : 'none';
-
-    const hideColor = COLOR_HIDDEN_TYPES.includes(typeIdx);
-    colorModeRow.style.display = hideColor ? 'none' : '';
-    if (colorSwatchesEl) colorSwatchesEl.style.display = hideColor ? 'none' : 'flex';
-  }
-
-  function _renderNoiseFamilyUI(familyIndex) {
-    const name = FAMILY_NAMES[familyIndex];
-    const indices = NOISE_FAMILY_MAP[name];
-    const curType = ps.get('noise.type').value;
-    const idxInFamily = Math.max(0, indices.indexOf(curType));
-    const labels = indices.map(typeIdx => NOISE_TYPES[typeIdx] ?? String(typeIdx));
-
-    // _mkSelect's option list is fixed at construction, so rebuild from scratch —
-    // destroy the old instance (incl. its detached .imw-sel-menu) first.
+  function renderTypeMenu() {
+    const types = NOISE_FAMILY_TYPES[v('noise.family')] ?? NOISE_FAMILY_TYPES[0];
+    const idx = Math.max(0, types.indexOf(v('noise.type')));
+    // _mkSelect's option list is fixed at construction, so rebuild — destroy
+    // the old instance (incl. its detached .imw-sel-menu) first.
     typeSel?._destroy();
     typeValueEl.innerHTML = '';
-    typeSel = _mkSelect(labels, idxInFamily, i => {
-      ps.set('noise.type', indices[i]);
-    }, 'param-select');
+    typeSel = _mkSelect(types.map(i => NOISE_TYPES[i]), idx,
+      i => ps.set('noise.type', types[i]), 'param-select');
     typeValueEl.appendChild(typeSel);
   }
 
-  // Keep the Type dropdown + per-type sections in sync when type changes
-  // externally (controller, preset restore, family switch)
-  ps.get('noise.type').onChange(v => {
-    const indices = NOISE_FAMILY_MAP[FAMILY_NAMES[ps.get('noise.family').value]];
-    const idx = indices.indexOf(v);
-    if (idx >= 0 && typeSel) typeSel.value = idx;
-    _renderNoiseTypeUI(v);
-  });
+  // ── Stage sections ────────────────────────────────────────────────────────
+  const rows = [];                               // [el, visible()]
+  const sections = [];                           // [el, rowEls]
+  function section(title, spec) {
+    const el = document.createElement('div');
+    const hd = document.createElement('div');
+    hd.className = 'cp-sub-header';
+    hd.textContent = title;
+    el.appendChild(hd);
+    const mine = [];
+    for (const [id, vis] of spec) {
+      const r = typeof id === 'string' ? buildParamRow(ps.get(id), contextMenu) : id;
+      el.appendChild(r);
+      rows.push([r, vis ?? (() => true)]);
+      mine.push(r);
+    }
+    noiseBot.appendChild(el);
+    sections.push([el, mine]);
+  }
+  const notCurl = t => !T.curl(t);
+  const fractalOn = t => T.fractal(t) && v('noise.fractal') !== 0;
 
-  // Family changes (dropdown or preset restore): keep noise.type valid for the
-  // new family, then rebuild the Type dropdown
-  ps.get('noise.family').onChange(v => {
-    const indices = NOISE_FAMILY_MAP[FAMILY_NAMES[v]];
-    if (!indices.includes(ps.get('noise.type').value)) ps.set('noise.type', indices[0]);
-    _renderNoiseFamilyUI(v);
-  });
+  section('TRANSFORM', [
+    ['noise.rotate'], ['noise.offsetX'], ['noise.offsetY'],
+    ['noise.coords', t => !T.grain(t)], ['noise.aspect', t => !T.grain(t)],
+  ]);
+  section('MOTION', [
+    ['noise.speed'], ['noise.driftX', t => !T.grain(t)], ['noise.driftY', t => !T.grain(t)],
+    ['noise.seed'],
+  ]);
+  section('DETAIL', [
+    ['noise.fractal',    t => T.fractal(t)],
+    ['noise.octaves',    t => fractalOn(t) || T.flow(t)],
+    ['noise.lacunarity', t => fractalOn(t) && !T.flow(t)],
+    ['noise.gain',       t => fractalOn(t) || T.flow(t)],
+  ]);
+  section('CELLS', [
+    ['noise.cellOut', t => T.cells(t)],
+    ['noise.metric',  t => t === 6],
+    ['noise.jitter',  usesJitter],
+  ]);
+  section('PATTERN', [
+    ['noise.width', usesWidth], ['noise.density', usesDensity],
+  ]);
+  section('PERIODIC', [
+    ['noise.period.x', T.periodic], ['noise.period.y', T.periodic], ['noise.alpha', T.periodic],
+  ]);
+  section('WARP', [
+    ['noise.warp',      t => !T.grain(t)],
+    ['noise.warpMode',  t => !T.grain(t)],
+    ['noise.warpScale', t => !T.grain(t) && !T.flow(t)],
+  ]);
+  const combineOn = () => v('noise.combine') !== 0;
+  section('LAYER B', [
+    ['noise.combine', notCurl],
+    ['noise.amount',    t => notCurl(t) && combineOn()],
+    ['noise.b.type',    t => notCurl(t) && combineOn()],
+    ['noise.b.fractal', t => notCurl(t) && combineOn() && T.fractal(v('noise.b.type'))],
+    ['noise.b.scale',   t => notCurl(t) && combineOn()],
+    ['noise.b.speed',   t => notCurl(t) && combineOn()],
+  ]);
+  section('SHAPE', [
+    ['noise.contrast', notCurl], ['noise.brightness', notCurl],
+    ['noise.bands', notCurl], ['noise.steps', notCurl], ['noise.gamma', notCurl],
+    ['noise.sharpen'], ['noise.invert'],
+  ]);
+  // The swatches live in index.html; move them under Colour Mode so the
+  // colour controls read as one group, and show them only for Two-Tone.
+  const swatches = document.getElementById('noise-color-swatches');
+  section('COLOUR', [
+    ['noise.color', notCurl],
+    ...(swatches ? [[swatches, t => notCurl(t) && v('noise.color') === 0]] : []),
+    ['noise.res'],
+  ]);
 
-  _renderNoiseFamilyUI(ps.get('noise.family').value);
-  _renderNoiseTypeUI(ps.get('noise.type').value);
+  function refresh() {
+    const t = v('noise.type');
+    for (const [el, vis] of rows) el.style.display = vis(t) ? '' : 'none';
+    for (const [el, mine] of sections)
+      el.style.display = mine.some(r => r.style.display !== 'none') ? '' : 'none';
+    if (swatches && swatches.style.display !== 'none') swatches.style.display = 'flex';
+  }
+
+  // Type set from outside (controller, state recall): follow it to its
+  // family so the menu can show it. Family set by the user: keep the type
+  // valid for the new family.
+  ps.get('noise.type').onChange(t => {
+    const fam = NOISE_FAMILY_TYPES.findIndex(list => list.includes(t));
+    if (fam >= 0 && fam !== v('noise.family')) ps.set('noise.family', fam);
+    else {
+      const types = NOISE_FAMILY_TYPES[v('noise.family')];
+      const idx = types.indexOf(t);
+      if (idx >= 0 && typeSel) typeSel.value = idx;
+    }
+    refresh();
+  });
+  ps.get('noise.family').onChange(f => {
+    const types = NOISE_FAMILY_TYPES[f] ?? NOISE_FAMILY_TYPES[0];
+    if (!types.includes(v('noise.type'))) ps.set('noise.type', types[0]);
+    renderTypeMenu();
+    refresh();
+  });
+  for (const id of ['noise.fractal', 'noise.cellOut', 'noise.combine', 'noise.color', 'noise.b.type'])
+    ps.get(id).onChange(refresh);
+
+  renderTypeMenu();
+  refresh();
 }
 
 // ── Sequence params panel ─────────────────────────────────────────────────────

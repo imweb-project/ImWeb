@@ -8,6 +8,32 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Changed
+- **Noise is rebuilt as stages you combine, with recipes.** The old list of 41
+  types held exact duplicates (White = TVStatic = WhiteNoise, Perlin = fBm,
+  DomainWarp = DomainWarp2, all measured pixel-identical), several broken
+  patterns (a one-arc Truchet, a "hex" grid of slanted ovals, a Gabor that was
+  a flat repeating tile, all invisible below Scale ≈ 20), and gradient noises
+  washed out to a standard deviation of 13/255. It is now 19 types in four
+  families — Smooth, Cells, Pattern, Grain — and every type goes through the
+  same stages: coordinates (rotate, Polar, Tunnel, aspect lock), warp (Domain,
+  Double, Curl), fractal (Off, fBm, Turbulence, Ridged), a second **Layer B**
+  combined with the first (Mix, Add, Multiply, Screen, Difference, Min, Max,
+  Mask, or B warping A), shaping (Contrast, Brightness, Contours, Posterize,
+  Gamma) and colour (Two-Tone, RGB, Spectrum). Voronoi, Hex and Grid share an
+  Output choice — Distance, Round, Edges, Cell ID. **Recipes** give 17 named
+  combinations, from Marble and Cracked Earth to Stained Glass and Tunnel. Each
+  one is complete, stays fully editable after you pick it, and can be saved
+  as your own.
+- Smooth types now all have the same contrast, and it holds at any octave
+  count. Speed and the new Drift X/Y are integrated per frame, so an LFO on
+  Speed changes the rate instead of scrubbing back and forth. Colour 1 is now
+  the low end and Colour 2 the high end, so Gamma darkens as you'd expect.
+  Grain types can render at full output resolution (Resolution: Full) rather
+  than being magnified from 512².
+- Saved states, banks and projects are translated on load to the nearest new
+  settings, including the factory bank.
+
 ### Fixed
 - **Entering edit mode showed no curve handles until you moved something.**
   The handles are only sent to the output window while edit mode is on, but

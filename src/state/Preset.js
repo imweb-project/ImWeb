@@ -18,6 +18,8 @@ import {
   migrateStatesBlendPercent,
   migrateHypercubeTexSrc,
   migrateStatesHypercubeTexSrc,
+  migrateNoiseParams,
+  migrateStatesNoiseParams,
 } from '../controls/ParameterSystem.js';
 
 export const MAX_STATES = 32;
@@ -163,6 +165,7 @@ export class Preset {
                             migrateStatesCaptureBase(data.states || [], data.sourceCount))),
                         data.schema),
                       data.schema);
+    migrateStatesNoiseParams(p.states);
     p.activeState = data.activeState ?? 0;
     return p;
   }
@@ -185,6 +188,8 @@ export class Preset {
     migrateScene3dParams(null, p.controllers);
     migrateBlendPercent(null, p.controllers, data.schema);
     migrateHypercubeTexSrc(null, p.controllers, data.schema);
+    migrateNoiseParams(null, p.controllers);
+    migrateStatesNoiseParams(p.states);
     return p;
   }
 
@@ -554,6 +559,7 @@ export class PresetManager extends EventTarget {
     migrateScene3dParams(data.values, data.controllers);
     migrateBlendPercent(data.values, data.controllers, data.schema);
     migrateHypercubeTexSrc(data.values, data.controllers, data.schema);
+    migrateNoiseParams(data.values, data.controllers);
     if ('output.transfer' in data.values) {
       data.values['feedback.mode'] = data.values['output.transfer'];
       delete data.values['output.transfer'];
