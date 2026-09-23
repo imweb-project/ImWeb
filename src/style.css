@@ -5679,3 +5679,9 @@ body.midi-map-mode .param-row:hover {
     padding: 2px 8px;
     font-size: 10px;
 }
+.noise-note {
+    font-size: 10px;
+    color: var(--text-2);
+    padding: 2px 10px 6px;
+    line-height: 1.4;
+}

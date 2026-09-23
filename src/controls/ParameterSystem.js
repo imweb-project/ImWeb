@@ -2581,6 +2581,11 @@ export function registerCoreParameters(ps) {
   reg('noise.offsetY', 'OffsetY', { min: -10, max: 10, value: 0, step: 0.1 });
   reg('noise.coords',  'Coords',  { type: SEL, options: ['Cartesian', 'Polar', 'Tunnel'], value: 0 });
   reg('noise.aspect',  'Aspect',  { type: PARAM_TYPE.TOGGLE, value: 1 });
+  // Tile: a seamless texture — the field repeats exactly across the frame's
+  // edges. Rounds Scale/Lacunarity/Warp Scale to whole cells and ignores
+  // Rotate, Coords and Aspect. Simplex and Hex cannot tile (skewed lattices).
+  // Forced on while Noise is the 3D material's texture.
+  reg('noise.tile',    'Tile',    { type: PARAM_TYPE.TOGGLE, value: 0 });
   // Motion — Speed evolves the field in place (grain: refresh rate); Drift
   // slides it. Both are integrated per frame, so modulating them is smooth.
   reg('noise.speed',  'Speed',   { min: -5, max: 5, value: 0.2, step: 0.05 });

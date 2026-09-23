@@ -8,6 +8,18 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Added
+- **Noise › Tile — seamless textures.** Turn it on and the noise repeats
+  exactly across the edges of the frame, so it can wrap a 3D object or tile
+  as a material without a visible join. The whole chain tiles, not just the
+  base pattern: fractal layers, warp, and Layer B too. Scale and the other
+  size controls snap to whole cells while it is on. Simplex and Hex can't
+  tile (their grids are slanted), and the panel says so when one is chosen.
+  Noise on the 3D material now uses Tile automatically — before, only the
+  Psrd type tiled there, and only at even Scales. Checked by rendering each
+  type, then again shifted by exactly one tile: identical, pixel for pixel,
+  for every supported type (a difference of 25–56 without Tile).
+
 ### Changed
 - **Noise is rebuilt as stages you combine, with recipes.** The old list of 41
   types held exact duplicates (White = TVStatic = WhiteNoise, Perlin = fBm,

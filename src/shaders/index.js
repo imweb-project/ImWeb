@@ -614,7 +614,7 @@ export const NOISE_UNIFORM_DEFAULTS = {
   uCellOut: 0, uJitter: 1, uWidth: 0.2, uDensity: 0.5, uPeriod: [0, 0],
   uAlpha: 0, uCombine: 0, uAmount: 0.5, uTypeB: 6, uFractalB: 0, uScaleB: 6,
   uContrast: 1, uBrightness: 0, uGamma: 1, uBands: 0, uSteps: 0, uInvert: 0,
-  uColor: 0, uColor1: [0, 0, 0], uColor2: [1, 1, 1], uRes: [512, 512],
+  uColor: 0, uColor1: [0, 0, 0], uColor2: [1, 1, 1], uRes: [512, 512], uTile: 0,
 };
 
 export const NOISE_BFG = /* glsl */ `
@@ -656,6 +656,7 @@ export const NOISE_BFG = /* glsl */ `
   uniform vec3  uColor1;
   uniform vec3  uColor2;
   uniform vec2  uRes;
+  uniform int   uTile;
   varying vec2  vUv;
 
   const float TAU = 6.28318530718;
@@ -669,15 +670,25 @@ export const NOISE_BFG = /* glsl */ `
   // of one pixel for anti-aliasing, and a salt that decorrelates RGB channels.
   float gPx   = 0.01;
   float gSalt = 0.0;
+  // Tile: the lattice period (in cells) of the field being evaluated, 0 = off.
+  // Every lattice hash wraps its x/y by it, so any type built on h1/h3/gHash
+  // repeats exactly — Scale, Lacunarity and Warp Scale are rounded in JS so
+  // each octave's period is a whole number. Simplex and Hex use skewed
+  // lattices that cannot wrap on a square; Psrd/Flow take it as their period.
+  vec2  gPer  = vec2(0.0);
+  vec3 wrapP(vec3 p) {
+    if (gPer.x > 0.0) p.xy = mod(p.xy, gPer);
+    return p;
+  }
 
   // ── Hashes ────────────────────────────────────────────────────────────────
   float h1(vec3 p) {
-    p = fract(p * 0.1031);
+    p = fract(wrapP(p) * 0.1031);
     p += dot(p, p.zyx + 31.32);
     return fract((p.x + p.y) * p.z);
   }
   vec3 h3(vec3 p) {
-    p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+    p = fract(wrapP(p) * vec3(0.1031, 0.1030, 0.0973));
     p += dot(p, p.yxz + 33.33);
     return fract((p.xxy + p.yxx) * p.zyx);
   }
@@ -711,7 +722,7 @@ export const NOISE_BFG = /* glsl */ `
 
   // ── Perlin gradient noise — quintic interpolation ─────────────────────────
   vec3 gHash(vec3 p) {
-    p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+    p = fract(wrapP(p) * vec3(0.1031, 0.1030, 0.0973));
     p += dot(p, p.yxz + 33.33);
     return normalize(-1.0 + 2.0 * fract((p.xxy + p.yxx) * p.zyx));
   }
@@ -998,7 +1009,7 @@ export const NOISE_BFG = /* glsl */ `
     if (type == 0) return (vNoise(p) - 0.5) * 2.5;
     if (type == 2) return sNoise(p) * 2.8;
     if (type == 3) {
-      vec2 per = uPeriod * freq;
+      vec2 per = gPer.x > 0.0 ? gPer : uPeriod * freq;
       return psrdnoise(p.xy, per, p.z + uAlpha).n * 0.85;
     }
     if (type == 6) return voronoiN(p) * 2.0 - 1.0;
@@ -1015,13 +1026,14 @@ export const NOISE_BFG = /* glsl */ `
     vec2 gsum = vec2(0.0);
     float acc = 0.0, wt = 1.0, sc = 1.0, wtSum = 0.0;
     float swirl = uWarpMode == 2 ? 1.0 : 0.0;
+    vec2 per = gPer.x > 0.0 ? gPer : uPeriod;
     for (int i = 0; i < 8; i++) {
       if (float(i) >= uOctaves) break;
       vec2 wv = mix(gsum, vec2(-gsum.y, gsum.x), swirl);
       float aS = pow(sc, 0.33);
       float aArg = p.z + uAlpha;
-      float aPh = aS * ((uPeriod.x > 0.001 || uPeriod.y > 0.001) ? mod(aArg, TAU / aS) : aArg);
-      PsrdResult r = psrdnoise(sc * p.xy + uWarp * 0.15 * wv, sc * uPeriod, aPh);
+      float aPh = aS * ((per.x > 0.001 || per.y > 0.001) ? mod(aArg, TAU / aS) : aArg);
+      PsrdResult r = psrdnoise(sc * p.xy + uWarp * 0.15 * wv, sc * per, aPh);
       float v = r.n;
       if (fm == 2) v = abs(v) * 2.0 - 1.0;
       if (fm == 3) v = 1.0 - 2.0 * abs(v);
@@ -1049,8 +1061,10 @@ export const NOISE_BFG = /* glsl */ `
     int m = fm == 0 ? 1 : fm;
     float sum = 0.0, amp = 1.0, freq = 1.0, n2 = 0.0, prev = 1.0;
     float px0 = gPx;
+    vec2 per0 = gPer;
     for (int i = 0; i < 8; i++) {
       if (float(i) >= oct) break;
+      gPer = per0 * freq;
       vec3 o = vec3(float(i) * 19.19, float(i) * 7.37, 0.0);
       float s = basisS(type, p * freq + o, freq);
       if (m == 1) {
@@ -1069,6 +1083,7 @@ export const NOISE_BFG = /* glsl */ `
       gPx *= uLacunarity;
     }
     gPx = px0;
+    gPer = per0;
     // Each mode is re-centred on 0.5 with a spread close to the plain basis,
     // so switching mode or octave count changes the character, not the level.
     float z = sum / sqrt(n2);
@@ -1084,6 +1099,7 @@ export const NOISE_BFG = /* glsl */ `
   // Angle is mirrored (|atan|) so the ±180° seam cannot show.
   vec2 baseCoords() {
     vec2 q = vUv - 0.5;
+    if (uTile == 1) return q;        // tiling: no aspect, polar or rotation
     q.x *= uAspect;
     if (uCoords == 1) q = vec2(abs(atan(q.y, q.x)) / 3.14159265, length(q) * 2.0) - 0.5;
     if (uCoords == 2) q = vec2(abs(atan(q.y, q.x)) / 3.14159265 - 0.5, 0.15 / max(length(q), 0.002));
@@ -1127,7 +1143,9 @@ export const NOISE_BFG = /* glsl */ `
     vec3 pA = vec3(q * uScale + uScale * 0.5 + uOffset, tA);
 
     bool grain = uType >= 15;
+    float tile = uTile == 1 ? 1.0 : 0.0;
     if (uWarp > 0.0 && !grain && uType != 4) {
+      gPer = vec2(uScale * uWarpScale * tile);
       vec3 wp = vec3(pA.xy * uWarpScale, tA * 0.5 + 4.1);
       pA.xy += uWarp * warpVec(wp) / uWarpScale;
     }
@@ -1139,6 +1157,7 @@ export const NOISE_BFG = /* glsl */ `
     // A loop, so B's field() is compiled once.
     float b2 = 0.0;
     gPx = uScaleB / uRes.y;
+    gPer = vec2(uScaleB * tile);
     for (int k = 0; k < 2; k++) {
       if (uCombine == 0 || (k == 1 && uCombine != 9)) break;
       float v = field(uTypeB, uFractalB, pB + (k == 1 ? vec3(5.2, 1.3, 0.0) : vec3(0.0)));
@@ -1147,6 +1166,7 @@ export const NOISE_BFG = /* glsl */ `
     if (uCombine == 9) pA.xy += uAmount * 1.5 * (vec2(b, b2) * 2.0 - 1.0) * uScale / uScaleB;
 
     gPx = uScale / uRes.y;
+    gPer = vec2(uScale * tile);
     float a = field(uType, uFractal, pA);
     float n = a;
     if (uCombine > 0 && uCombine < 9) {
@@ -1180,7 +1200,10 @@ export const NOISE_BFG = /* glsl */ `
       gPx = uScale / uRes.y;
       float tA = uPhase + uSeed * 3.17;
       vec3 p = vec3(q * uScale + uScale * 0.5 + uOffset, tA);
+      float tile = uTile == 1 ? 1.0 : 0.0;
+      gPer = vec2(uScale * uWarpScale * tile);
       if (uWarp > 0.0) p.xy += uWarp * warpVec(vec3(p.xy * uWarpScale, tA * 0.5 + 4.1)) / uWarpScale;
+      gPer = vec2(uScale * tile);
       const float e = 0.01;
       float n0 = 0.0, nx = 0.0, ny = 0.0;
       for (int k = 0; k < 3; k++) {

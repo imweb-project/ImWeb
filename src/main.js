@@ -10302,34 +10302,40 @@ void main() {
     // Generate noise only when a layer is using it as a source (512×512 dedicated target)
     const NOISE_IDX = 5;
     const _noiseUsed = _srcUsed(NOISE_IDX) || _analogSrcIdx === 3 || ps.get('scene3d.mat.texsrc')?.value === 6;
+    // A texture on the 3D material must tile, so it forces Tile on.
     const _scene3dNoise = ps.get('scene3d.mat.texsrc')?.value === 6;
-    const _noiseScale = ps.get('noise.scale')?.value ?? 8;
-    const _seamlessPeriod = _scene3dNoise
-      ? Math.max(2, Math.floor(_noiseScale / 2) * 2)
-      : undefined;
     if (_noiseUsed) {
       const nv = (id) => ps.get(id).value;
+      // Tile: the shader wraps its lattice at Scale cells, so every period —
+      // Scale, B Scale, each octave (Lacunarity), the warp field — has to be a
+      // whole number of cells. Checker repeats every 2 cells, so it needs an
+      // even count. The params keep their values; only what is sent rounds.
+      const tile = !!nv('noise.tile') || _scene3dNoise;
+      const tileScale = (sc, type) => !tile ? sc
+        : type === 10 ? Math.max(2, Math.round(sc / 2) * 2) : Math.max(1, Math.round(sc));
+      const scA = tileScale(nv('noise.scale'), nv('noise.type'));
+      const scB = tileScale(nv('noise.b.scale'), nv('noise.b.type'));
+      const ws  = tile ? Math.max(1, Math.round(scA * nv('noise.warpScale'))) / scA : nv('noise.warpScale');
       noiseTexture = pipeline.generateNoise({
         full: nv('noise.res') === 1,
         sharpen: nv('noise.sharpen'),
         uniforms: {
-          uPhase: noisePhase, uPhaseB: noisePhaseB,
+          uPhase: noisePhase, uPhaseB: noisePhaseB, uTile: tile ? 1 : 0,
           uType: nv('noise.type'), uFractal: nv('noise.fractal'),
-          uOctaves: nv('noise.octaves'), uLacunarity: nv('noise.lacunarity'),
-          uGain: nv('noise.gain'), uScale: nv('noise.scale'),
+          uOctaves: nv('noise.octaves'),
+          uLacunarity: tile ? Math.max(1, Math.round(nv('noise.lacunarity'))) : nv('noise.lacunarity'),
+          uGain: nv('noise.gain'), uScale: scA,
           uRotate: nv('noise.rotate') * Math.PI / 180,
           uOffset: [nv('noise.offsetX') + noiseDriftX, nv('noise.offsetY') + noiseDriftY],
-          // A seamless 3D texture needs uv 0..1 to span exactly one period,
-          // which aspect correction would break.
-          uAspect: nv('noise.aspect') && !_scene3dNoise ? pipeline.width / pipeline.height : 1,
+          uAspect: nv('noise.aspect') && !tile ? pipeline.width / pipeline.height : 1,
           uCoords: nv('noise.coords'), uSeed: nv('noise.seed'),
-          uWarp: nv('noise.warp'), uWarpMode: nv('noise.warpMode'), uWarpScale: nv('noise.warpScale'),
+          uWarp: nv('noise.warp'), uWarpMode: nv('noise.warpMode'), uWarpScale: ws,
           uCellMetric: nv('noise.metric'), uCellOut: nv('noise.cellOut'), uJitter: nv('noise.jitter'),
           uWidth: nv('noise.width'), uDensity: nv('noise.density'),
-          uPeriod: [_seamlessPeriod ?? nv('noise.period.x'), _seamlessPeriod ?? nv('noise.period.y')],
+          uPeriod: [nv('noise.period.x'), nv('noise.period.y')],
           uAlpha: nv('noise.alpha'),
           uCombine: nv('noise.combine'), uAmount: nv('noise.amount'),
-          uTypeB: nv('noise.b.type'), uFractalB: nv('noise.b.fractal'), uScaleB: nv('noise.b.scale'),
+          uTypeB: nv('noise.b.type'), uFractalB: nv('noise.b.fractal'), uScaleB: scB,
           uContrast: nv('noise.contrast'), uBrightness: nv('noise.brightness'),
           uGamma: nv('noise.gamma'), uBands: nv('noise.bands'), uSteps: nv('noise.steps'),
           uInvert: nv('noise.invert') ? 1 : 0, uColor: nv('noise.color'),

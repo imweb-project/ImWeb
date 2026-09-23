@@ -809,9 +809,25 @@ export function buildNoisePanel(ps, contextMenu) {
   const notCurl = t => !T.curl(t);
   const fractalOn = t => T.fractal(t) && v('noise.fractal') !== 0;
 
+  // Tile note: shown only when it has something to say — a type that
+  // cannot tile, so the seam is explained rather than looking like a bug.
+  const tileOn = () => !!v('noise.tile');
+  const cantTile = t => t === 2 || t === 7;
+  const tileNote = document.createElement('div');
+  tileNote.className = 'noise-note';
+  const tileNoteVis = t => {
+    const bad = [cantTile(t) && NOISE_TYPES[t],
+      v('noise.combine') !== 0 && cantTile(v('noise.b.type')) && `B ${NOISE_TYPES[v('noise.b.type')]}`]
+      .filter(Boolean);
+    tileNote.textContent = bad.length
+      ? `${bad.join(' and ')} cannot tile (a slanted grid) — Perlin or Psrd can.` : '';
+    return tileOn() && bad.length > 0;
+  };
   section('TRANSFORM', [
-    ['noise.rotate'], ['noise.offsetX'], ['noise.offsetY'],
-    ['noise.coords', t => !T.grain(t)], ['noise.aspect', t => !T.grain(t)],
+    ['noise.tile', t => !T.grain(t)],
+    [tileNote, tileNoteVis],
+    ['noise.rotate', () => !tileOn()], ['noise.offsetX'], ['noise.offsetY'],
+    ['noise.coords', t => !T.grain(t) && !tileOn()], ['noise.aspect', t => !T.grain(t) && !tileOn()],
   ]);
   section('MOTION', [
     ['noise.speed'], ['noise.driftX', t => !T.grain(t)], ['noise.driftY', t => !T.grain(t)],
@@ -889,7 +905,7 @@ export function buildNoisePanel(ps, contextMenu) {
     renderTypeMenu();
     refresh();
   });
-  for (const id of ['noise.fractal', 'noise.cellOut', 'noise.combine', 'noise.color', 'noise.b.type'])
+  for (const id of ['noise.fractal', 'noise.cellOut', 'noise.combine', 'noise.color', 'noise.b.type', 'noise.tile'])
     ps.get(id).onChange(refresh);
 
   renderTypeMenu();

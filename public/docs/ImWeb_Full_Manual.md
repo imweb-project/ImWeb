@@ -484,6 +484,7 @@ are stored in the browser per address, like GLSL user presets.
 | | `noise.offsetX / Y` | ±10 | Pan. In Polar, X spins and Y zooms |
 | | `noise.coords` | SELECT | Cartesian / Polar / Tunnel (angle is mirrored, so no seam) |
 | | `noise.aspect` | TOGGLE | Keep features round on a wide output |
+| | `noise.tile` | TOGGLE | **Tile** — a seamless texture: the field repeats exactly across the frame's edges, the whole chain included (fractal, warp, Layer B). Scale, B Scale, Lacunarity and Warp Scale round to whole cells (Checker to an even count); Rotate, Coords and Aspect are ignored. Simplex and Hex cannot tile. Forced on while Noise is the 3D material's texture |
 | Motion | `noise.speed` | ±5 | Evolves the field in place (grain: refresh rate) |
 | | `noise.driftX / Y` | ±2 | Slides the field continuously |
 | | `noise.seed` | 0–100 | A different field of the same kind |
