@@ -1151,7 +1151,10 @@ export const NOISE_BFG = /* glsl */ `
     gSalt = salt;
     float tA = uPhase + uSeed * 3.17 + salt * 11.3;
     gPx = uScale / uRes.y;
-    vec3 pA = vec3(q * uScale + uScale * 0.5 + uOffset, tA);
+    // Centred: q is 0 at the middle of the frame, so Scale zooms about the
+    // centre. (Tiling needs no anchor — a whole-number period tiles from
+    // any starting point.)
+    vec3 pA = vec3(q * uScale + uOffset, tA);
 
     bool grain = uType >= 15;
     float tile = uTile == 1 ? 1.0 : 0.0;
@@ -1163,7 +1166,7 @@ export const NOISE_BFG = /* glsl */ `
 
     // Layer B — its own type, fractal, scale and clock over the same coords.
     float b = 0.0;
-    vec3 pB = vec3(q * uScaleB + uScaleB * 0.5 + uOffset, uPhaseB + uSeed * 3.17 + salt * 11.3 + 23.0);
+    vec3 pB = vec3(q * uScaleB + uOffset, uPhaseB + uSeed * 3.17 + salt * 11.3 + 23.0);
     // Warp takes two samples of B (x and y displacement); the rest take one.
     // A loop, so B's field() is compiled once.
     float b2 = 0.0;
@@ -1210,7 +1213,7 @@ export const NOISE_BFG = /* glsl */ `
     if (uType == 5) {
       gPx = uScale / uRes.y;
       float tA = uPhase + uSeed * 3.17;
-      vec3 p = vec3(q * uScale + uScale * 0.5 + uOffset, tA);
+      vec3 p = vec3(q * uScale + uOffset, tA);
       float tile = uTile == 1 ? 1.0 : 0.0;
       gPer = vec2(uScale * uWarpScale * tile);
       if (uWarp > 0.0) p.xy += uWarp * warpVec(vec3(p.xy * uWarpScale, tA * 0.5 + 4.1)) / uWarpScale;

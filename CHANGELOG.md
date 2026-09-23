@@ -68,6 +68,11 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   settings, including the factory bank.
 
 ### Fixed
+- **Noise Scale now zooms from the centre of the frame, not the bottom-left
+  corner.** Checked with Offset at 0 across Scale 2–13: the centre pixel holds
+  its value (111–116) while the bottom-left one swings from 45 to 190. Tiling
+  is unaffected — every type still repeats exactly.
+
 - **Displacement no longer smears streaks along the edge of the picture.**
   Wherever the displacement pushed a pixel past the border, it read the
   border row itself — every such pixel the same row — so strong displacement
