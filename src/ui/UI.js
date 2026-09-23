@@ -1200,7 +1200,7 @@ export function buildGeometryButtons(ps, sceneManager, contextMenu) {
       modelLabel.textContent = `✓ ${modelFile.name} (+${files.length - 1} assets)`;
       modelLabel.style.color = 'var(--green)';
       importBtn.textContent = '+ Import Model';
-      importEl.dispatchEvent(new CustomEvent('modelLoaded', { bubbles: true, detail: { name: modelFile.name } }));
+      importEl.dispatchEvent(new CustomEvent('modelLoaded', { bubbles: true, detail: { name: modelFile.name, files } }));
     } catch (err) {
       console.error('[Import]', err);
       modelLabel.textContent = `✗ Error: ${err.message}`;

@@ -70,6 +70,7 @@ import { MovieCues, CUE_SLOTS } from "./inputs/MovieCues.js";
 import { CueBank } from "./core/CueBank.js";
 import { MappingAutosave } from "./state/MappingAutosave.js";
 import { StillsAutosave } from "./state/StillsAutosave.js";
+import { saveModelFiles, loadModelFiles, MODEL_FILE, initModelStore, hasStoredModel } from "./state/ModelStore.js";
 import { ProjMapMesh } from "./inputs/ProjMapMesh.js";
 
 /**
@@ -958,6 +959,27 @@ async function main() {
     (pins) => particles.ghostNodes.restorePins(pins),
   );
 
+  // Bring a dropped model back from the ModelStore by the name a state
+  // recorded. The token drops a restore that a later recall has overtaken
+  // while its bytes were still being read. Returns whether it loaded.
+  let _modelRestoreTok = 0;
+  async function _restoreSceneModel(name) {
+    const tok = ++_modelRestoreTok;
+    const files = await loadModelFiles(name);
+    if (!files || tok !== _modelRestoreTok) return false;
+    const main = files.find(f => f.name === name) ?? files.find(f => MODEL_FILE.test(f.name));
+    if (!main) return false;
+    try {
+      await scene3d.loadModel(main, ps, files);
+      presetMgr.setMediaRef('scene3d', name);   // so the next save keeps it
+      _refreshModelLabel();
+      return true;
+    } catch (err) {
+      console.error('[3D] stored model failed to load:', name, err);
+      return false;
+    }
+  }
+
   // Wire extra non-param state (text content, imported 3D model flag) into state system
   presetMgr.setExtraCallback(() => ({
     textContent:      textLayer._contentList.length > 0
@@ -993,8 +1015,12 @@ async function main() {
     const mr = ds?.mediaRefs;
     if (mr?.scene3d && mr.scene3d.startsWith('/')) {
       scene3d.loadModelFromUrl(mr.scene3d);
-    } else if (mr?.scene3d && !scene3d.importedModelName) {
-      scene3d.setImportPending(mr.scene3d);
+    } else if (mr?.scene3d && scene3d.importedModelName !== mr.scene3d) {
+      // A dropped model: bring it back from the ModelStore. Hold the neutral
+      // placeholder meanwhile, and keep it (with the reload toast) if the
+      // bytes were never stored — a state saved before the store existed.
+      if (!scene3d.importedModelName) scene3d.setImportPending(mr.scene3d);
+      _restoreSceneModel(mr.scene3d);
     } else if (!extra?.scene3dHasImport) {
       // State was saved without an imported model — clear any pending suppression
       scene3d.clearImportPending();
@@ -1039,6 +1065,9 @@ async function main() {
     ps.set('layer.bg', 0);
     ps.set('layer.ds', 0);
   });
+  // The store's name list must be read before init() recalls the first state.
+  await initModelStore();
+  presetMgr._modelRestorable = (ref) => ref.startsWith('/') || hasStoredModel(ref);
   await presetMgr.init();
 
   // Track URL-loaded models in preset state so future saveState() captures them
@@ -1048,10 +1077,13 @@ async function main() {
     if (url && url.startsWith('/')) presetMgr.setMediaRef('scene3d', url);
   };
 
-  // Restore bundled model when activatePreset snaps to a state that saved one
+  // Restore the model when activatePreset snaps to a state that saved one —
+  // a bundled URL directly, a dropped file from the ModelStore.
   presetMgr._onStateActivated = (ds) => {
-    const url = ds.mediaRefs?.scene3d;
-    if (url && url.startsWith('/') && scene3d) scene3d.loadModelFromUrl(url);
+    const ref = ds.mediaRefs?.scene3d;
+    if (!ref || !scene3d) return;
+    if (ref.startsWith('/')) scene3d.loadModelFromUrl(ref);
+    else if (scene3d.importedModelName !== ref) _restoreSceneModel(ref);
   };
 
   // Force-push all hypercube ps values into the HypercubeObject unconditionally.
@@ -1650,6 +1682,11 @@ async function main() {
   document
     .getElementById("model-import")
     ?.addEventListener("modelLoaded", (e) => {
+      // Record it in the state and keep the bytes, as the drop path does —
+      // the Import button used to do neither, so its model was lost on reload.
+      const { name, files } = e.detail ?? {};
+      if (name) presetMgr.setMediaRef('scene3d', name);
+      if (name && files) saveModelFiles(name, files);
       if (ps.get("layer.fg").value === 0) ps.set("layer.fg", 5);
       ps.set("scene3d.active", 1);
       ps.set("scene3d.anim.active", 1);
@@ -5641,6 +5678,7 @@ async function main() {
       } else if (/\.(glb|gltf|obj|stl|dae)$/i.test(file.name)) {
         try {
           await scene3d.loadModel(file, ps, files);
+          saveModelFiles(file.name, files);
           // Auto-activate 3D: if FG is not already a useful source, route it to 3D
           if (ps.get("layer.fg").value === 3 /* Color */) ps.set("layer.fg", 5); // 5 = 3D scene
           ps.set("scene3d.active", 1);

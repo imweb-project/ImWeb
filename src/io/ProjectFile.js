@@ -23,6 +23,7 @@ import { CAPTURE_INDIRECT_BASE, migrateCaptureBase, migrateSdfParams,
          migrateScene3dParams, migrateNoiseParams,
          PARAM_SCHEMA, migrateBlendPercent,
          migrateHypercubeTexSrc } from '../controls/ParameterSystem.js';
+import { loadModelFiles, MODEL_FILE } from '../state/ModelStore.js';
 
 const FORMAT_VERSION = 3;
 
@@ -358,7 +359,17 @@ export class ProjectFile {
     if (data.scene3d?.modelAsset && this.extras.scene3d) {
       await this.extras.scene3d.loadModelFromUrl(data.scene3d.modelAsset);
     } else if (data.scene3d?.modelName && !data.scene3d?.modelAsset) {
-      console.info(`[Project] Session uses 3D model: ${data.scene3d.modelName}. Please re-import if not already loaded.`);
+      // A dropped model: this browser may still hold its bytes (ModelStore).
+      const name = data.scene3d.modelName;
+      const files = this.extras.scene3d && this.extras.scene3d.importedModelName !== name
+        ? await loadModelFiles(name) : null;
+      const main = files?.find(f => f.name === name) ?? files?.find(f => MODEL_FILE.test(f.name));
+      if (main) {
+        try { await this.extras.scene3d.loadModel(main, this.ps, files); }
+        catch (err) { console.error('[Project] stored model failed to load:', name, err); }
+      } else if (this.extras.scene3d?.importedModelName !== name) {
+        console.info(`[Project] Session uses 3D model: ${name}. Please re-import if not already loaded.`);
+      }
     }
 
     // Live GLSL editor state — the GLSL UI hook registers after the

@@ -68,6 +68,17 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   settings, including the factory bank.
 
 ### Fixed
+- **An imported 3D model now survives a reload.** A model you dropped in or
+  picked with Import was remembered only by its file name, so after a reload
+  the scene showed a placeholder and asked for the file again. The model and
+  its companion files (.bin, .mtl, textures) are now kept in the browser and
+  come back when a state that used it is recalled, or a project that names it
+  is opened. The Import button now also records the model in the state, which
+  it never did. The "please load manually" warning now appears only when a
+  model genuinely can't come back. Checked: a renamed model, dropped in and
+  saved into a state, came back after a reload; with its stored copy removed,
+  the same recall showed the warning instead.
+
 - **Noise Scale now zooms from the centre of the frame, not the bottom-left
   corner.** Checked with Offset at 0 across Scale 2–13: the centre pixel holds
   its value (111–116) while the bottom-left one swings from 45 to 190. Tiling

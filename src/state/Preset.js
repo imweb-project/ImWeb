@@ -538,7 +538,10 @@ export class PresetManager extends EventTarget {
     const current = this._mediaRefs;
     const mismatches = [];
     if (saved.movie   && saved.movie   !== current.movie)   mismatches.push(`Movie: "${saved.movie}"`);
-    if (saved.scene3d && saved.scene3d !== current.scene3d) mismatches.push(`3D model: "${saved.scene3d}"`);
+    // A model that restores itself (bundled URL, or kept in the ModelStore)
+    // is not a mismatch to warn about — main.js supplies the test.
+    if (saved.scene3d && saved.scene3d !== current.scene3d && !this._modelRestorable?.(saved.scene3d))
+      mismatches.push(`3D model: "${saved.scene3d}"`);
     if (mismatches.length) {
       this.dispatchEvent(new CustomEvent('toast',
         { detail: { msg: `⚠ State was saved with: ${mismatches.join(', ')} — please load manually` } }));
