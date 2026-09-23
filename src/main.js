@@ -743,6 +743,7 @@ async function main() {
   const scene3d = new SceneManager(renderer, W, H);
   // Extra imported models (slots 2–4); slot 1 is scene3d's own object.
   const modelSlots = new ModelSlots(scene3d);
+  if (import.meta.env.DEV) window.__modelSlots = modelSlots;
   let _modelSlotsUI = { refresh() {} };
   await scene3d.createHypercube({ dim: 4 });   // the constructor reads `dim`; `startDim` was never read
 

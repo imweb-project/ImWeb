@@ -13,7 +13,19 @@
  *
  * Rendering needs nothing extra: the colour, depth and normal passes all draw
  * the whole scene.
+ *
+ * Wire (Main / Solid / Wire) without a second material: each slot mesh flips
+ * `wireframe` on whatever material it is drawn with in onBeforeRender and
+ * puts it back in onAfterRender. three.js reads the flag at draw time and it
+ * is not part of the program key, so there is no recompile — and a cloned
+ * material would lose the shared one's live texture and mapping uniforms.
+ *
+ * Animation: a mixer per slot on the model's clips. Skinned meshes were
+ * flattened by _prepareGLTFScene (ANGLE/Metal bone-texture bug), so node
+ * animation plays; skeletal deformation does not — as for the main slot.
  */
+
+import * as THREE from 'three';
 
 export const SLOT_PREFIXES = ['model2', 'model3', 'model4'];
 
@@ -47,7 +59,28 @@ export class ModelSlots {
     if (tok !== this._tok[i]) return false;
     this._remove(i);
     this.sm.scene.add(pivot);
-    this.slots[i] = { name: typeof src === 'string' ? src : src.name, pivot, mat: this.sm.material };
+    const clips = pivot.userData.clips ?? [];
+    const slot = {
+      name: typeof src === 'string' ? src : src.name, pivot, mat: this.sm.material,
+      wire: 0,                       // 0 Main, 1 Solid, 2 Wire — set in apply()
+      clips, mixer: clips.length ? new THREE.AnimationMixer(pivot.userData.model) : null,
+      actions: [], cur: -1,
+    };
+    if (slot.mixer) slot.actions = clips.map(c => slot.mixer.clipAction(c));
+    pivot.traverse(c => {
+      if (!c.isMesh) return;
+      c.onBeforeRender = (r, sc, cam, geo, mat) => {
+        if (slot.wire === 0) return;
+        c.userData._wirePrev = mat.wireframe;
+        mat.wireframe = slot.wire === 2;
+      };
+      c.onAfterRender = (r, sc, cam, geo, mat) => {
+        if (c.userData._wirePrev === undefined) return;
+        mat.wireframe = c.userData._wirePrev;
+        c.userData._wirePrev = undefined;
+      };
+    });
+    this.slots[i] = slot;
     this.missing[i] = null;
     this._lastRot[i] = null;
     return true;
@@ -63,6 +96,7 @@ export class ModelSlots {
     const s = this.slots[i];
     if (!s) return;
     this.sm.scene.remove(s.pivot);
+    s.mixer?.stopAllAction();
     // Geometry and the model's own textures belong to this slot alone; the
     // material is shared with the main object, so it is left alone.
     s.pivot.traverse(c => { if (c.isMesh) c.geometry?.dispose(); });
@@ -104,6 +138,32 @@ export class ModelSlots {
       // ×2 matches the main object's default Normalization, so a slot at
       // Scale 1 comes in the same size as a model imported into slot 1.
       p.scale.setScalar(v('scale') * 2 * (p.userData.baseScale ?? 1));
+
+      s.wire = v('wire');
+
+      if (s.mixer) {
+        const ci = Math.min(Math.round(v('clip')) - 1, s.actions.length - 1);
+        if (v('anim')) {
+          if (ci !== s.cur) {
+            s.actions[s.cur]?.stop();
+            s.cur = ci;
+            s.actions[ci]?.reset().play();
+          }
+          s.mixer.update(dt * v('animSpeed'));
+        } else if (s.cur !== -1) {
+          s.actions[s.cur]?.stop();
+          s.cur = -1;
+        }
+      }
     });
+  }
+
+  /** Clip count and the name of the clip Clip currently points at. */
+  clipInfo(i, ps) {
+    const s = this.slots[i];
+    if (!s?.clips.length) return null;
+    const n = s.clips.length;
+    const ci = Math.min(Math.round(ps.get(`${SLOT_PREFIXES[i]}.clip`).value), n);
+    return { n, index: ci, name: s.clips[ci - 1]?.name || `Anim ${ci}` };
   }
 }

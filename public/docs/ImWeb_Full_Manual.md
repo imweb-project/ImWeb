@@ -552,7 +552,11 @@ to a 2×2×2 bounding box on load.
 sit in the same scene as the main object. Each has its own tab: **+ Import**
 (with textures), **✕ Clear**, and its own placement — `model2/3/4.visible`,
 `pos.x/y/z`, `rot.x/y/z`, `spin.x/y/z`, `scale` (same ranges as the main
-object; Scale 1 = the same size as a model in the main slot). ⌥-drop a model
+object; Scale 1 = the same size as a model in the main slot). **Wire** —
+Main (follow the main object's Wireframe) / Solid / Wire, per slot. For a
+model with animations: **Play**, **Clip** (a number; the clip's name is
+shown under it) and **Anim Speed**. Node animation plays; skinned (bone)
+deformation does not, as for the main object. ⌥-drop a model
 file to put it in the first empty slot. The slots share the main Material —
 type, colour, texture source and mapping. Display States record which model
 sits in each slot and where; imported files are kept in the browser, so they

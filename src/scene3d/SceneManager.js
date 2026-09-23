@@ -829,7 +829,8 @@ export class SceneManager {
    * (ModelSlots). Same preparation as the main loaders, but fresh loader
    * instances, so a slot import can never swap the shared loaders' manager out
    * from under a main-slot load in flight. Resolves the pivot (not yet in the
-   * scene); pivot.userData.baseScale holds its normalisation.
+   * scene); pivot.userData holds baseScale, model (the animation root) and
+   * clips (its animations).
    *
    * @param {File|string} src  a File, or a URL (bundled /assets/ model)
    * @param {File[]} [extraFiles] companions for a File (.bin, .mtl, textures)
@@ -850,12 +851,14 @@ export class SceneManager {
     });
     const load = (loader) => new Promise((res, rej) => loader.load(url, res, undefined, rej));
     try {
-      let model;
+      let model, clips = [];
       if (ext === 'glb' || ext === 'gltf') {
         const l = new GLTFLoader(manager);
         l.setDRACOLoader(this.dracoLoader);
         l.setMeshoptDecoder(MeshoptDecoder);
-        model = (await load(l)).scene;
+        const gltf = await load(l);
+        model = gltf.scene;
+        clips = gltf.animations ?? [];
         this._prepareGLTFScene(model);
       } else if (ext === 'obj') {
         model = await load(new OBJLoader(manager));
@@ -863,6 +866,7 @@ export class SceneManager {
         model = new THREE.Mesh(await load(new STLLoader(manager)), this.material);
       } else if (ext === 'dae') {
         model = (await load(new ColladaLoader(manager))).scene;
+        clips = model.animations ?? [];
       } else {
         throw new Error(`Unsupported 3D format: .${ext}`);
       }
@@ -873,6 +877,9 @@ export class SceneManager {
       const pivot = this._wrapInPivot(model);
       this._importedBaseScale = mainBase;
       pivot.name = name;
+      // The mixer root is the model, not the pivot, as for the main slot.
+      pivot.userData.model = model;
+      pivot.userData.clips = clips;
       return pivot;
     } finally {
       if (isFile) URL.revokeObjectURL(url);

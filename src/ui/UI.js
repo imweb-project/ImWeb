@@ -1320,7 +1320,8 @@ export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear
 
   const PREFIXES = ['model2', 'model3', 'model4'];
   let cur = 0;
-  const bodies = [], tabBtns = [], statuses = [], rowSets = [];
+  const bodies = [], tabBtns = [], statuses = [], rowSets = [], animRows = [], clipLines = [];
+  const ANIM_KEYS = ['anim', 'clip', 'animSpeed'];
   PREFIXES.forEach((pre, i) => {
     const tb = document.createElement('button');
     tb.className = 'model-slot-tab';
@@ -1361,9 +1362,22 @@ export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear
     body.appendChild(btns);
 
     const rows = document.createElement('div');
-    ps.getGroup(pre).forEach(p => rows.appendChild(buildParamRow(p, contextMenu)));
+    const mine = [];
+    const clipLine = document.createElement('div');
+    clipLine.className = 'import-note';
+    ps.getGroup(pre).forEach(p => {
+      const r = buildParamRow(p, contextMenu);
+      rows.appendChild(r);
+      const key = p.id.slice(pre.length + 1);
+      if (ANIM_KEYS.includes(key)) mine.push(r);
+      // The clip's name, under the Clip row: the row itself is a number.
+      if (key === 'clip') { rows.appendChild(clipLine); p.onChange(() => refresh()); }
+    });
+    mine.push(clipLine);
     body.appendChild(rows);
     rowSets.push(rows);
+    animRows.push(mine);
+    clipLines.push(clipLine);
 
     wrap.appendChild(body);
     bodies.push(body);
@@ -1392,6 +1406,10 @@ export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear
         : 'Empty — import a model';
       statuses[i].style.color = n ? 'var(--green)' : miss ? 'var(--red, #e05)' : '';
       rowSets[i].style.display = n ? '' : 'none';
+      // Animation rows only for a model that has clips.
+      const ci = slots.clipInfo(i, ps);
+      animRows[i].forEach(r => { r.style.display = ci ? '' : 'none'; });
+      if (ci) clipLines[i].textContent = `Clip ${ci.index} of ${ci.n}: ${ci.name}`;
     });
   }
   refresh();

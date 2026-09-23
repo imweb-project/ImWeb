@@ -3239,6 +3239,13 @@ export function registerCoreParameters(ps) {
     { key: 'spin.y',  label: 'Spin Y', min: -180, max: 180, value: 0, unit: '°/s' },
     { key: 'spin.z',  label: 'Spin Z', min: -180, max: 180, value: 0, unit: '°/s' },
     { key: 'scale',   label: 'Scale', min: 0.01, max: 5,  value: 1 },
+    // Main = follow scene3d.wireframe (the shared material), as before.
+    { key: 'wire',    label: 'Wire',  type: PARAM_TYPE.SELECT, options: ['Main', 'Solid', 'Wire'], value: 0 },
+    { key: 'anim',    label: 'Play',  type: PARAM_TYPE.TOGGLE, value: 1 },
+    // A number, not a SELECT of clip names: a recall sets it before the
+    // slot's model has loaded, and a SELECT would clamp it to 'None' then.
+    { key: 'clip',    label: 'Clip',  min: 1, max: 16, value: 1, step: 1 },
+    { key: 'animSpeed', label: 'Anim Speed', min: -2, max: 2, value: 1, step: 0.01 },
   ];
   [
     { prefix: 'model2', n: 2, start: { 'pos.x': -2 } },

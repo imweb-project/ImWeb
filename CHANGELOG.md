@@ -9,6 +9,14 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Model slots: Wire and animation.** Each of Model 2–4 can be solid, wireframe
+  or follow the main object's Wireframe, independently of the others. A
+  model with animations gets Play, Clip (with the clip's name shown) and Anim
+  Speed, like the main object. Node animation plays; bone deformation does
+  not, the same limit as the main object. Checked on a test model with two
+  clips: each clip moved the node it animates, and Play off froze it; the
+  renderer drew the model's edges only when that slot was set to Wire.
+
 - **3D scene: up to four models at once.** Three extra model slots
   (Model 2–4) sit in the scene next to the main object. Each has its own
   Import, Clear, show/hide, position, rotation, spin and scale, all
