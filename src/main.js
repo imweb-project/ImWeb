@@ -114,6 +114,7 @@ import { TextLayer } from "./inputs/TextLayer.js";
 import { buildWarpMaps } from "./inputs/WarpMaps.js";
 import { WarpMapEditor } from "./inputs/WarpMapEditor.js";
 import { SceneManager } from "./scene3d/SceneManager.js";
+import { ModelSlots } from "./scene3d/ModelSlots.js";
 import { EASING, PLANE_NAMES, PLANE_PAIRS, PLANE_HELP, PLANE_MENU_ORDER } from "./scene3d/HypercubeGeometry.js";
 import { Pipeline } from "./core/Pipeline.js";
 import { GestureArbitrator } from "./core/GestureArbitrator.js";
@@ -152,6 +153,7 @@ import {
   buildNoisePanel,
   buildSeqParams,
   buildGeometryButtons,
+  buildModelSlotsPanel,
   buildWarpEditor,
   StateBar,
   SignalPath,
@@ -739,6 +741,9 @@ async function main() {
   const _textAudio = { freq: null, level: 0, bass: 0, mid: 0, high: 0 };
 
   const scene3d = new SceneManager(renderer, W, H);
+  // Extra imported models (slots 2–4); slot 1 is scene3d's own object.
+  const modelSlots = new ModelSlots(scene3d);
+  let _modelSlotsUI = { refresh() {} };
   await scene3d.createHypercube({ dim: 4 });   // the constructor reads `dim`; `startDim` was never read
 
   ps.get('hypercube.faces.active').onChange(v => {
@@ -980,12 +985,36 @@ async function main() {
     }
   }
 
+  // Put each extra model slot back as a recalled state had it. A state saved
+  // before slots existed has no list: leave the slots alone rather than
+  // clearing models the user loaded since. null = that slot was empty.
+  async function _restoreModelSlots(list) {
+    if (!Array.isArray(list)) return;
+    await Promise.all(list.map(async (ref, i) => {
+      if (ref === modelSlots.names()[i]) return;
+      if (!ref) { modelSlots.clear(i); return; }
+      try {
+        if (ref.startsWith('/')) { await modelSlots.load(i, ref); return; }
+        const files = await loadModelFiles(ref);
+        const main = files?.find(f => f.name === ref) ?? files?.find(f => MODEL_FILE.test(f.name));
+        if (main) await modelSlots.load(i, main, files);
+        else { modelSlots.clear(i); modelSlots.missing[i] = ref; }
+      } catch (err) {
+        console.error(`[3D] Model ${i + 2} failed to restore:`, ref, err);
+      }
+    }));
+    _modelSlotsUI.refresh();
+  }
+
   // Wire extra non-param state (text content, imported 3D model flag) into state system
   presetMgr.setExtraCallback(() => ({
     textContent:      textLayer._contentList.length > 0
                         ? [...textLayer._contentList]
                         : (textLayer._text ? [textLayer._text] : []),
     scene3dHasImport: !!scene3d.importedModelName,
+    // Which model sits in each extra slot (null = empty). Their placement is
+    // in the model2/3/4 params; this is the part a param cannot hold.
+    modelSlots:       modelSlots.names(),
   }));
 
   // Populated by the hypercube panel build block (below). Calling it clears and
@@ -1025,6 +1054,7 @@ async function main() {
       // State was saved without an imported model — clear any pending suppression
       scene3d.clearImportPending();
     }
+    _restoreModelSlots(extra?.modelSlots);
 
     const hc = scene3d.getHypercube();
     if (!hc) return;
@@ -1081,9 +1111,11 @@ async function main() {
   // a bundled URL directly, a dropped file from the ModelStore.
   presetMgr._onStateActivated = (ds) => {
     const ref = ds.mediaRefs?.scene3d;
-    if (!ref || !scene3d) return;
-    if (ref.startsWith('/')) scene3d.loadModelFromUrl(ref);
-    else if (scene3d.importedModelName !== ref) _restoreSceneModel(ref);
+    if (ref && scene3d) {
+      if (ref.startsWith('/')) scene3d.loadModelFromUrl(ref);
+      else if (scene3d.importedModelName !== ref) _restoreSceneModel(ref);
+    }
+    _restoreModelSlots(ds.extra?.modelSlots);
   };
 
   // Force-push all hypercube ps values into the HypercubeObject unconditionally.
@@ -1510,6 +1542,20 @@ async function main() {
   buildNoisePanel(ps, contextMenu);
   buildSeqParams(ps, contextMenu);
   buildGeometryButtons(ps, scene3d, contextMenu);
+  _modelSlotsUI = buildModelSlotsPanel(ps, contextMenu, modelSlots, {
+    onImport: async (i, files) => {
+      const main = files.find(f => MODEL_FILE.test(f.name));
+      if (!main) return;
+      try {
+        await modelSlots.load(i, main, files);
+        saveModelFiles(main.name, files);
+        ps.set("scene3d.active", 1);
+      } catch (err) {
+        console.error(`[3D] Model ${i + 2} failed to load:`, err);
+      }
+    },
+    onClear: (i) => modelSlots.clear(i),
+  });
 
   // ── Hypercube panel — appended as a section inside #tab-scene3d ───────────
   {
@@ -5674,6 +5720,20 @@ async function main() {
         } catch (err) {
           console.error("[DnD] video load failed:", err);
           _showClipError(err.message);
+        }
+      } else if (/\.(glb|gltf|obj|stl|dae)$/i.test(file.name) && e.altKey) {
+        // ⌥-drop: into the first empty extra slot (Model 2–4), keeping the
+        // main object. All slots full → Model 4 is replaced.
+        const names = modelSlots.names();
+        const i = names.indexOf(null) >= 0 ? names.indexOf(null) : names.length - 1;
+        try {
+          await modelSlots.load(i, file, files);
+          saveModelFiles(file.name, files);
+          ps.set("scene3d.active", 1);
+          _modelSlotsUI.refresh();
+          console.info(`[3D] Model ${i + 2}: ${file.name}`);
+        } catch (err) {
+          console.error("[DnD] 3D model load failed:", err);
         }
       } else if (/\.(glb|gltf|obj|stl|dae)$/i.test(file.name)) {
         try {
@@ -10409,6 +10469,7 @@ void main() {
     // scene3d.getHypercube()?.setInstancerTexture(pipeline.prev.texture); — removed: SceneManager now owns instancer texture via _adoptMesh
     renderer.info.autoReset = false;
     renderer.info.reset();
+    if (scene3dNeeded) modelSlots.apply(ps, dt);
     if (scene3dNeeded)
       scene3d.render(ps, dt, {
         camera: camera3d.active ? camera3d.currentTexture : null,

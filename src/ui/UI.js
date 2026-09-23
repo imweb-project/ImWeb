@@ -1297,6 +1297,107 @@ export function buildGeometryButtons(ps, sceneManager, contextMenu) {
   clearBtn.addEventListener('click', refreshModelSections);
 }
 
+// ── More models (slots 2–4) ───────────────────────────────────────────────────
+// Sits under the main Import block. A tab per slot keeps 33 rows down to 11:
+// the tab shows the slot's model name, the body its Import/Clear and its
+// placement rows. onImport(i, files) does the loading (main.js owns
+// ModelSlots and the ModelStore); refresh() repaints names after any load,
+// clear or state recall.
+export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear }) {
+  const importEl = document.getElementById('model-import');
+  if (!importEl || !slots) return { refresh() {} };
+
+  const wrap = document.createElement('div');
+  wrap.className = 'model-slots';
+  const hd = document.createElement('div');
+  hd.className = 'cp-sub-header';
+  hd.textContent = 'MORE MODELS';
+  wrap.appendChild(hd);
+
+  const tabs = document.createElement('div');
+  tabs.className = 'model-slot-tabs';
+  wrap.appendChild(tabs);
+
+  const PREFIXES = ['model2', 'model3', 'model4'];
+  let cur = 0;
+  const bodies = [], tabBtns = [], statuses = [], rowSets = [];
+  PREFIXES.forEach((pre, i) => {
+    const tb = document.createElement('button');
+    tb.className = 'model-slot-tab';
+    tb.addEventListener('click', () => { cur = i; refresh(); });
+    tabs.appendChild(tb);
+    tabBtns.push(tb);
+
+    const body = document.createElement('div');
+    const status = document.createElement('div');
+    status.className = 'import-note';
+    body.appendChild(status);
+    statuses.push(status);
+
+    const btns = document.createElement('div');
+    btns.className = 'model-slot-btns';
+    const imp = document.createElement('button');
+    imp.className = 'import-btn';
+    imp.textContent = '+ Import';
+    imp.title = `Load a model into Model ${i + 2} (GLB / OBJ / STL / DAE, with its textures)`;
+    imp.addEventListener('click', () => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.gltf,.glb,.obj,.stl,.dae,.jpg,.jpeg,.png,.webp,.bmp,.tga,.mtl,.bin';
+      input.multiple = true;
+      input.onchange = async e => {
+        imp.textContent = '⏳ Loading…';
+        try { await onImport(i, Array.from(e.target.files)); }
+        finally { imp.textContent = '+ Import'; refresh(); }
+      };
+      input.click();
+    });
+    const clr = document.createElement('button');
+    clr.className = 'import-btn';
+    clr.textContent = '✕ Clear';
+    clr.title = `Remove the model from Model ${i + 2}`;
+    clr.addEventListener('click', () => { onClear(i); refresh(); });
+    btns.append(imp, clr);
+    body.appendChild(btns);
+
+    const rows = document.createElement('div');
+    ps.getGroup(pre).forEach(p => rows.appendChild(buildParamRow(p, contextMenu)));
+    body.appendChild(rows);
+    rowSets.push(rows);
+
+    wrap.appendChild(body);
+    bodies.push(body);
+  });
+
+  const note = document.createElement('div');
+  note.className = 'import-note';
+  note.textContent = 'Share the main Material. Tip: ⌥-drop a model file to put it in the first empty slot.';
+  wrap.appendChild(note);
+
+  importEl.after(wrap);
+
+  function refresh() {
+    const names = slots.names();
+    PREFIXES.forEach((_, i) => {
+      const n = names[i];
+      const short = n ? n.split('/').pop().replace(/\.[^.]+$/, '') : null;
+      tabBtns[i].textContent = `M${i + 2}${short ? ' · ' + short : ''}`;
+      tabBtns[i].title = n ?? `Model ${i + 2} — empty`;
+      tabBtns[i].classList.toggle('active', i === cur);
+      tabBtns[i].classList.toggle('loaded', !!n);
+      bodies[i].style.display = i === cur ? '' : 'none';
+      const miss = slots.missing?.[i];
+      statuses[i].textContent = n ? `✓ ${n.split('/').pop()}`
+        : miss ? `⚠ ${miss} is not stored in this browser — import it again`
+        : 'Empty — import a model';
+      statuses[i].style.color = n ? 'var(--green)' : miss ? 'var(--red, #e05)' : '';
+      rowSets[i].style.display = n ? '' : 'none';
+    });
+  }
+  refresh();
+  return { refresh };
+}
+
 // ── State bar (thumbnail tiles + bank selector) ───────────────────────────────
 
 export class StateBar {

@@ -9,6 +9,17 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **3D scene: up to four models at once.** Three extra model slots
+  (Model 2–4) sit in the scene next to the main object. Each has its own
+  Import, Clear, show/hide, position, rotation, spin and scale, all
+  mappable to controllers. ⌥-drop a model file to put it in the first empty
+  slot. For now the slots share the main Material; per-slot material and
+  animation come next. Display States remember which model is in each slot
+  and where it sits, and imported files are kept in the browser, so the whole
+  arrangement comes back after a reload. Checked by counting what the
+  renderer draws: each model adds exactly its own triangles, and hiding it
+  removes exactly those.
+
 - **Noise › Tile — seamless textures.** Turn it on and the noise repeats
   exactly across the edges of the frame, so it can wrap a 3D object or tile
   as a material without a visible join. The whole chain tiles, not just the

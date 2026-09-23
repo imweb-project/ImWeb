@@ -5685,3 +5685,17 @@ body.midi-map-mode .param-row:hover {
     padding: 2px 10px 6px;
     line-height: 1.4;
 }
+
+/* More models (3D slots 2–4) */
+.model-slots { margin-top: 10px; }
+.model-slot-tabs { display: flex; gap: 4px; padding: 2px 10px 6px; flex-wrap: wrap; }
+.model-slot-tab {
+    font-family: var(--mono); font-size: 10px; padding: 3px 8px;
+    background: var(--bg-3); color: var(--text-2);
+    border: 1px solid var(--border); border-radius: 3px; cursor: pointer;
+    max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.model-slot-tab.loaded { color: var(--text-1); }
+.model-slot-tab.active { border-color: var(--accent); color: var(--accent); }
+.model-slot-btns { display: flex; gap: 6px; padding: 2px 10px 6px; }
+.model-slot-btns .import-btn { padding: 3px 8px; font-size: 10px; }

@@ -623,6 +623,9 @@ export class SceneManager {
 
     const pivot = new THREE.Group();
     pivot.add(model);
+    // Also on the pivot itself: extra model slots (ModelSlots) each need their
+    // own, and must not read the main object's _importedBaseScale.
+    pivot.userData.baseScale = this._importedBaseScale;
     return pivot;
   }
 
@@ -630,33 +633,7 @@ export class SceneManager {
     return new Promise((resolve, reject) => {
       this.gltfLoader.load(url, gltf => this._withOwnMesh(() => {
         const model = gltf.scene;
-        // Collect SkinnedMesh nodes first (modifying hierarchy during traverse is unsafe)
-        const skinnedMeshes = [];
-        model.traverse(child => { if (child.isSkinnedMesh) skinnedMeshes.push(child); });
-        // Replace each SkinnedMesh with a plain Mesh to prevent USE_SKINNING being
-        // defined in the shader — ANGLE/Metal incorrectly reads the bone texture via
-        // texelFetch() in the vertex stage, producing geometric distortion in Chrome.
-        for (const sm of skinnedMeshes) {
-          const plainMesh = new THREE.Mesh(sm.geometry, sm.material);
-          plainMesh.position.copy(sm.position);
-          plainMesh.quaternion.copy(sm.quaternion);
-          plainMesh.scale.copy(sm.scale);
-          plainMesh.name = sm.name;
-          sm.parent.add(plainMesh);
-          sm.parent.remove(sm);
-        }
-        model.traverse(child => {
-          if (child.isMesh) {
-            child.material = this.material;
-            const idx = child.geometry.index;
-            if (idx && idx.array instanceof Uint16Array &&
-                child.geometry.attributes.position.count > 65535) {
-              child.geometry.setIndex(
-                new THREE.BufferAttribute(new Uint32Array(idx.array), 1)
-              );
-            }
-          }
-        });
+        this._prepareGLTFScene(model);
         this._setupAnimations(model, gltf.animations, params);
         const pivot = this._wrapInPivot(model);
         if (this.mesh) this.scene.remove(this.mesh);
@@ -667,6 +644,40 @@ export class SceneManager {
         this.scene.add(pivot);
         resolve(pivot);
       }), undefined, reject);
+    });
+  }
+
+  /**
+   * GLTF clean-up shared by the main slot and the extra model slots.
+   * Must run before _wrapInPivot (it measures the final hierarchy).
+   */
+  _prepareGLTFScene(model) {
+    // Collect SkinnedMesh nodes first (modifying hierarchy during traverse is unsafe)
+    const skinnedMeshes = [];
+    model.traverse(child => { if (child.isSkinnedMesh) skinnedMeshes.push(child); });
+    // Replace each SkinnedMesh with a plain Mesh to prevent USE_SKINNING being
+    // defined in the shader — ANGLE/Metal incorrectly reads the bone texture via
+    // texelFetch() in the vertex stage, producing geometric distortion in Chrome.
+    for (const sm of skinnedMeshes) {
+      const plainMesh = new THREE.Mesh(sm.geometry, sm.material);
+      plainMesh.position.copy(sm.position);
+      plainMesh.quaternion.copy(sm.quaternion);
+      plainMesh.scale.copy(sm.scale);
+      plainMesh.name = sm.name;
+      sm.parent.add(plainMesh);
+      sm.parent.remove(sm);
+    }
+    model.traverse(child => {
+      if (child.isMesh) {
+        child.material = this.material;
+        const idx = child.geometry.index;
+        if (idx && idx.array instanceof Uint16Array &&
+            child.geometry.attributes.position.count > 65535) {
+          child.geometry.setIndex(
+            new THREE.BufferAttribute(new Uint32Array(idx.array), 1)
+          );
+        }
+      }
     });
   }
 
@@ -811,6 +822,62 @@ export class SceneManager {
     if (ext === 'stl')                   return await this.loadSTL(url, name);
     if (ext === 'dae')                   return await this.loadCollada(url, name);
     throw new Error(`Unsupported 3D format: .${ext}`);
+  }
+
+  /**
+   * Build a model WITHOUT touching the main slot — for the extra model slots
+   * (ModelSlots). Same preparation as the main loaders, but fresh loader
+   * instances, so a slot import can never swap the shared loaders' manager out
+   * from under a main-slot load in flight. Resolves the pivot (not yet in the
+   * scene); pivot.userData.baseScale holds its normalisation.
+   *
+   * @param {File|string} src  a File, or a URL (bundled /assets/ model)
+   * @param {File[]} [extraFiles] companions for a File (.bin, .mtl, textures)
+   */
+  async parseModel(src, extraFiles = []) {
+    const isFile = typeof src !== 'string';
+    const name = isFile ? src.name : src.split('/').pop();
+    const ext  = name.split('?')[0].split('.').pop().toLowerCase();
+    const url  = isFile ? URL.createObjectURL(src) : src;
+    const manager = new THREE.LoadingManager();
+    const blobs = [];
+    manager.setURLModifier(path => {
+      const match = extraFiles.find(f => f.name === path.split('/').pop());
+      if (!match) return path;
+      const u = URL.createObjectURL(match);
+      blobs.push(u);
+      return u;
+    });
+    const load = (loader) => new Promise((res, rej) => loader.load(url, res, undefined, rej));
+    try {
+      let model;
+      if (ext === 'glb' || ext === 'gltf') {
+        const l = new GLTFLoader(manager);
+        l.setDRACOLoader(this.dracoLoader);
+        l.setMeshoptDecoder(MeshoptDecoder);
+        model = (await load(l)).scene;
+        this._prepareGLTFScene(model);
+      } else if (ext === 'obj') {
+        model = await load(new OBJLoader(manager));
+      } else if (ext === 'stl') {
+        model = new THREE.Mesh(await load(new STLLoader(manager)), this.material);
+      } else if (ext === 'dae') {
+        model = (await load(new ColladaLoader(manager))).scene;
+      } else {
+        throw new Error(`Unsupported 3D format: .${ext}`);
+      }
+      model.traverse(c => { if (c.isMesh) c.material = this.material; });
+      // _wrapInPivot also writes this._importedBaseScale — the MAIN slot's
+      // normalisation — so save and restore it around the call.
+      const mainBase = this._importedBaseScale;
+      const pivot = this._wrapInPivot(model);
+      this._importedBaseScale = mainBase;
+      pivot.name = name;
+      return pivot;
+    } finally {
+      if (isFile) URL.revokeObjectURL(url);
+      blobs.forEach(u => URL.revokeObjectURL(u));
+    }
   }
 
   // ── Parameter-driven updates ───────────────────────────────────────────────

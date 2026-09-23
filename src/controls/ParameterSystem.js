@@ -3219,6 +3219,42 @@ export function registerCoreParameters(ps) {
     max: 10,
     value: 2.0,
   });
+
+  // ── Extra model slots 2–4 (slot 1 is the main object above) ──────────────
+  // One descriptor, three prefixes — the MIX_BUS_PARAMS shape. Group
+  // "model2"/"model3"/"model4" so Display States capture each slot's
+  // placement; WHICH model sits in a slot travels in the state's extra
+  // (modelSlots), like the main model's mediaRef. Ranges match scene3d.*.
+  // Each slot starts somewhere different so new imports do not stack at the
+  // centre on top of the main object.
+  const MODEL_SLOT_PARAMS = [
+    { key: 'visible', label: 'Show',  type: PARAM_TYPE.TOGGLE, value: 1 },
+    { key: 'pos.x',   label: 'Pos X', min: -5,  max: 5,   value: 0, step: 0.01 },
+    { key: 'pos.y',   label: 'Pos Y', min: -5,  max: 5,   value: 0, step: 0.01 },
+    { key: 'pos.z',   label: 'Pos Z', min: -10, max: 10,  value: 0, step: 0.01 },
+    { key: 'rot.x',   label: 'Rot X', min: 0,   max: 360, value: 0, unit: '°' },
+    { key: 'rot.y',   label: 'Rot Y', min: 0,   max: 360, value: 0, unit: '°' },
+    { key: 'rot.z',   label: 'Rot Z', min: 0,   max: 360, value: 0, unit: '°' },
+    { key: 'spin.x',  label: 'Spin X', min: -180, max: 180, value: 0, unit: '°/s' },
+    { key: 'spin.y',  label: 'Spin Y', min: -180, max: 180, value: 0, unit: '°/s' },
+    { key: 'spin.z',  label: 'Spin Z', min: -180, max: 180, value: 0, unit: '°/s' },
+    { key: 'scale',   label: 'Scale', min: 0.01, max: 5,  value: 1 },
+  ];
+  [
+    { prefix: 'model2', n: 2, start: { 'pos.x': -2 } },
+    { prefix: 'model3', n: 3, start: { 'pos.x':  2 } },
+    { prefix: 'model4', n: 4, start: { 'pos.y':  1.5 } },
+  ].forEach(({ prefix, n, start }) => {
+    MODEL_SLOT_PARAMS.forEach(({ key, label, ...rest }) => {
+      ps.register({
+        id: `${prefix}.${key}`,
+        label: `M${n} ${label}`,
+        group: prefix,
+        ...rest,
+        value: start[key] ?? rest.value,
+      });
+    });
+  });
   ps.register({
     // Renders the scene on a transparent background so the target carries real
     // ALPHA — which is what makes Opacity mean "see the layer underneath"
