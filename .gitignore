@@ -259,6 +259,14 @@ Brainstorms/
 assets/Projects/Banks/*.imbank
 assets/Projects/States/*.imstate
 
+# The repo-root assets/ is a LOCAL working folder (source models, Poser
+# exports, scans) — kept here, never pushed. What the app serves and ships
+# lives in public/assets/. The two files below were tracked before this rule
+# and stay tracked: preview.png is the README image.
+/assets/*
+!/assets/Harabara-optimized.glb
+!/assets/preview.png
+
 # localStorage exports — per-origin user data, not factory content
 glsl-user-presets-backup.json
 *-presets-backup.json
