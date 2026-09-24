@@ -194,6 +194,9 @@ export class RangePlayer {
     this.fade = 1;         // 0→1 progress of the current morph
   }
 
+  /** Where the playing loop is, in clip seconds (null when stopped) — for the timeline strip. */
+  get time() { return this.cur ? place(this.cur).t : null; }
+
   stop() {
     for (const a of this.pool) a.stop();
     for (const l of this.lanes) l.twin = null;

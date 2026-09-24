@@ -9,6 +9,16 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Animation timeline strip.** Under each model's Segment row (M1–M4), the
+  clip as a bar: takes as alternating bands (⟲ tinted), cut lines, a motion
+  curve (per-frame speed, splice frames left out), the playing range and a
+  live playhead. Click a take to play it — through the Segment param, so
+  Morph applies; drag to set a range or trim its edges (with Length on, drag
+  moves Start); pinch / ⌥-scroll zooms, shift-scroll pans, double-click
+  zooms out; hover reads time and take. Static layers are cached per clip,
+  view and width; the loop idles while the strip is off screen.
+  (src/ui/components/ClipStrip.js)
+
 - **Seam and Length for animation loops.** *Seam* (s): in Loop mode the
   last Seam seconds of the range blend into its first, as an audio loop
   crossfades its splice, so any take loops forward without a jump — a

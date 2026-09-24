@@ -17,6 +17,7 @@ import { mkSelect as _mkSelect } from './components/Select.js';
 import { openCtrlPopover as _openCtrlPopover } from './components/CtrlPopover.js';
 import { buildParamRow } from './components/ParamRow.js';
 import { clipSegments } from '../scene3d/ClipSegments.js';
+import { createClipStrip } from './components/ClipStrip.js';
 import { openGuide } from './Guide.js';
 import { setViewportPos } from './layout/LayoutManager.js';
 const DEFAULT_FX_ORDER_SP = DEFAULT_FX_ORDER;
@@ -1321,15 +1322,40 @@ export function buildGeometryButtons(ps, sceneManager, contextMenu) {
 // nothing is rewritten — and when they match nothing it is dimmed as custom.
 // Options change with the clip, and a SELECT row fixes its options when
 // built, so sync() rebuilds the row inside a stable wrapper.
-function buildSegmentRow(ps, contextMenu, getClip, segId, startId, endId, clipId) {
+//
+// Under the row, the clip as a timeline strip (ClipStrip): takes, motion,
+// range and playhead; click a take, drag a range. Its range() mirrors
+// RangePlayer's own resolution of Start / End / Length — keep them in step.
+function buildSegmentRow(ps, contextMenu, getClip, segId, startId, endId, clipId, lenId, getPlayer) {
   const p = ps.get(segId);
   const wrap = document.createElement('div');
+  const rowHost = document.createElement('div');
   let clip = null, segs = [], row = null;
   const pct = t => t / clip.duration * 100;
   function rebuild() {
     row = buildParamRow(p, contextMenu);
-    wrap.replaceChildren(row);
+    rowHost.replaceChildren(row);
   }
+  const lenOf = () => Math.min(ps.get(lenId)?.value ?? 0, clip?.duration ?? 0);
+  const strip = createClipStrip({
+    data: () => {
+      if (!clip) return null;
+      const r = clipSegments(clip);
+      return { clip, segs, cuts: r.cuts, speed: r.speed, fps: r.fps };
+    },
+    range: () => {
+      const d = clip.duration, a = ps.get(startId).value / 100 * d, b = ps.get(endId).value / 100 * d;
+      const len = lenOf();
+      if (len > 0) { const s = Math.min(a, d - len); return { s, e: s + len }; }
+      return { s: Math.min(a, b), e: Math.max(a, b) };
+    },
+    time: () => { const pl = getPlayer?.(); return pl && pl.clip === clip ? pl.time : null; },
+    lenLocked: () => lenOf() > 0,
+    pick: i => ps.set(segId, i + 1),
+    setRange: (s, e) => { ps.set(startId, pct(s)); ps.set(endId, pct(e)); },
+    setStart: s => ps.set(startId, pct(s)),
+  });
+  wrap.append(rowHost, strip.el);
   function follow() {
     if (!row) return;
     const a = ps.get(startId).value, b = ps.get(endId).value;
@@ -1419,7 +1445,8 @@ export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear
   if (m1Anim) m1Body.appendChild(m1Anim);
   const m1Seg = buildSegmentRow(ps, contextMenu,
     () => slots.sm.actions?.[ps.get('scene3d.anim.select').value]?.getClip() ?? null,
-    'scene3d.anim.segment', 'scene3d.anim.start', 'scene3d.anim.end', 'scene3d.anim.select');
+    'scene3d.anim.segment', 'scene3d.anim.start', 'scene3d.anim.end', 'scene3d.anim.select',
+    'scene3d.anim.len', () => slots.sm._range);
   m1Anim?.querySelector('[data-param-id="scene3d.anim.end"]')?.after(m1Seg.row);
   wrap.appendChild(m1Body);
   let _m1ClipKey = null;
@@ -1486,7 +1513,8 @@ export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear
         const seg = buildSegmentRow(ps, contextMenu, () => {
           const ci = slots.clipInfo(i, ps);
           return ci ? slots.slots[i].clips[ci.index - 1] ?? null : null;
-        }, `${pre}.animSegment`, `${pre}.animStart`, `${pre}.animEnd`, `${pre}.clip`);
+        }, `${pre}.animSegment`, `${pre}.animStart`, `${pre}.animEnd`, `${pre}.clip`,
+          `${pre}.animLen`, () => slots.slots[i]?.range);
         rows.appendChild(seg.row);
         mine.push(seg.row);
         segRows.push(seg);

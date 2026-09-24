@@ -581,6 +581,13 @@ cleanly. **Morph** — seconds to blend into a new range (0 = cut): when a new
 Segment, or Start / End from a controller, would make the figure jump, the
 old loop keeps playing while the new one fades in. A change that keeps the
 playhead inside the range (dragging End, say) needs no blend and gets none.
+**Timeline** — the bar under Segment is the whole clip: takes as alternating
+bands (⟲ loops tinted green), cut lines, a curve of how much the figure moves,
+the playing range in yellow, and the playhead. Click a take to play it (as
+choosing it in Segment, so Morph applies); drag to set a range, or drag near
+the range's edge to trim it — with Length on, dragging moves Start instead.
+Pinch or ⌥-scroll zooms, shift-scroll pans, double-click zooms out; hover
+shows the time and take.
 **Seam** — in Loop mode, seconds of the range's end blended into its start,
 the way an audio loop crossfades its splice: the wrap never jumps, whatever
 the take's last pose. One cycle is then Length − Seam long; Seam is capped at
