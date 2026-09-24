@@ -3277,6 +3277,12 @@ export function registerCoreParameters(ps) {
     // blends the change. See advanceTake (ModelSlots.js).
     { key: 'animAdvance', label: 'Advance', type: PARAM_TYPE.SELECT, options: ['Off', 'Next', 'Random'], value: 0 },
     { key: 'animLoops',   label: 'Loops',   min: 1, max: 16, value: 2, step: 1 },
+    // Choreography: Follow another model's Segment, Offset takes from it,
+    // Delay seconds behind it — a canon from one controller. While following,
+    // the slot's own Advance is paused. See ModelSlots.choreograph().
+    { key: 'animFollow',  label: 'Follow',  type: PARAM_TYPE.SELECT, options: ['Own', 'M1', 'M2', 'M3', 'M4'], value: 0 },
+    { key: 'animOffset',  label: 'Offset',  min: -16, max: 16, value: 0, step: 1 },
+    { key: 'animDelay',   label: 'Delay',   min: 0, max: 10, value: 0, step: 0.05, unit: 's' },
     // Load centre: the rotation point stays where the body was at import.
     // Follow body: the body is held on it while animating (see applyAnchor).
     { key: 'anchor',    label: 'Anchor',     type: PARAM_TYPE.SELECT, options: ['Load centre', 'Follow body'], value: 0 },

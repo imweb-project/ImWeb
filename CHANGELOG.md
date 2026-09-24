@@ -9,6 +9,17 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Choreography across M1–M4.** M2–M4 get *Follow* (Own / M1–M4),
+  *Offset* (−16…+16 takes) and *Delay* (0–10 s): a follower plays its
+  leader's take + Offset, Delay seconds after the leader changes — a canon
+  from one controller on M1's Segment, or from M1's Advance. The leader is
+  polled each frame (hand, controller and Advance all count; changes queue,
+  so quick ones replay in order behind the delay); chains settle one frame
+  per link; offsets wrap within the follower's own takes; whole clip maps to
+  whole clip; a follower's own Advance is paused. Verified in node (offsets,
+  wrap, chain with delay, ordered replay, Own freezes, self-follow ignored)
+  and in the app (M1 Next + M2 Follow M1 at +1: 14/15 → … → 18/19).
+
 - **Auto-advance through the takes.** *Advance* (Off / Next / Random) and
   *Loops* (1–16, default 2) on M1 and M2–M4: after Loops cycles of the
   current take, Next moves to the following one (backwards while Anim Speed

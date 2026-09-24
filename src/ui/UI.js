@@ -1505,7 +1505,7 @@ export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear
 
   const PREFIXES = ['model2', 'model3', 'model4'];
   const bodies = [], tabBtns = [], statuses = [], rowSets = [], animRows = [], clipLines = [], segRows = [];
-  const ANIM_KEYS = ['anim', 'clip', 'animSpeed', 'animStart', 'animEnd', 'animLoop', 'animMorph', 'animSeam', 'animLen', 'animAdvance', 'animLoops', 'anchor'];
+  const ANIM_KEYS = ['anim', 'clip', 'animSpeed', 'animStart', 'animEnd', 'animLoop', 'animMorph', 'animSeam', 'animLen', 'animAdvance', 'animLoops', 'animFollow', 'animOffset', 'animDelay', 'anchor'];
   PREFIXES.forEach((pre, i) => {
     const tb = document.createElement('button');
     tb.className = 'model-slot-tab';

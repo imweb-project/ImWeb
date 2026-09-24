@@ -598,7 +598,13 @@ cycles of the current one (backwards while Anim Speed is negative), *Random*
 to any other take; it goes through Segment, so Morph blends each change and
 the row and timeline follow. A cycle is one wrap in Loop mode, one
 there-and-back in Ping-pong and Sine. Picking a take yourself restarts the
-count, so it always gets its full Loops. **Timeline** — the bar under Segment is the whole clip: takes as alternating
+count, so it always gets its full Loops. **Follow / Offset / Delay**
+(M2–M4) — choreography: *Follow* a leader (M1–M4, or *Own*), play its take
+shifted by *Offset* takes, *Delay* seconds behind it. Drive M1's Segment from
+one LFO or MIDI note (or its Advance) and the others answer — M2 at +1, M3 at
++2 half a second later — a canon. Followers can follow followers. An offset
+wraps within the follower's own takes, and the whole clip maps to the whole
+clip. While a model follows, its own Advance waits. **Timeline** — the bar under Segment is the whole clip: takes as alternating
 bands (⟲ loops tinted green), cut lines, a curve of how much the figure moves,
 the playing range in yellow, and the playhead. Click a take to play it (as
 choosing it in Segment, so Morph applies); drag to set a range, or drag near

@@ -441,8 +441,43 @@ export class ModelSlots {
     this.slots[i] = null;
   }
 
+  /**
+   * Choreography, per frame: each slot whose Follow names a leader copies the
+   * leader's Segment, shifted by Offset takes and Delay seconds behind. The
+   * leader is polled rather than listened to, so a take chosen by hand, a
+   * controller or the leader's own Advance all count, and a chain (M3 → M2 →
+   * M1) settles one frame per link. Offsets wrap within the FOLLOWER's takes
+   * (its model may have a different number); the whole clip maps to the whole
+   * clip. Delays run on the frame clock, so they hold while the app pauses.
+   */
+  choreograph(ps, dt) {
+    const SEG = ['scene3d.anim.segment', ...SLOT_PREFIXES.map(p => `${p}.animSegment`)];
+    this._clock = (this._clock ?? 0) + dt;
+    this._follow ??= SLOT_PREFIXES.map(() => ({ lead: -1, last: null, queue: [] }));
+    SLOT_PREFIXES.forEach((pre, i) => {
+      const f = this._follow[i];
+      const lead = Math.round(ps.get(`${pre}.animFollow`).value) - 1;   // -1 Own, 0 = M1 …
+      if (lead < 0 || lead === i + 1 || !this.slots[i]) { f.lead = -1; f.queue.length = 0; return; }
+      if (lead !== f.lead) { f.lead = lead; f.last = null; f.queue.length = 0; }
+      const lv = Math.round(ps.get(SEG[lead]).value);
+      if (lv !== f.last) {
+        f.last = lv;
+        f.queue.push({ at: this._clock + ps.get(`${pre}.animDelay`).value, lv });
+      }
+      while (f.queue.length && f.queue[0].at <= this._clock) {
+        const { lv: v } = f.queue.shift();
+        const seg = ps.get(SEG[i + 1]);
+        const n = seg.options.length - 1;
+        if (v === 0 || n < 1) { ps.set(SEG[i + 1], 0); continue; }
+        const off = Math.round(ps.get(`${pre}.animOffset`).value);
+        ps.set(SEG[i + 1], (((v - 1 + off) % n) + n) % n + 1);
+      }
+    });
+  }
+
   /** Per frame: visibility, transform, shared-material sync. */
   apply(ps, dt) {
+    this.choreograph(ps, dt);
     const toRad = Math.PI / 180;
     SLOT_PREFIXES.forEach((pre, i) => {
       const s = this.slots[i];
@@ -488,7 +523,8 @@ export class ModelSlots {
         if (v('anim') && s.actions[ci]) {
           s.cur = ci;
           s.range.update(dt, v('animSpeed'), s.actions[ci], v('animStart'), v('animEnd'), v('animLoop'), v('animMorph'), v('animSeam'), v('animLen'));
-          advanceTake(ps, s.range, `${pre}.animSegment`, v('animAdvance'), v('animLoops'), v('animSpeed'));
+          // A follower takes its takes from its leader (choreograph), not its own Advance.
+          if (!v('animFollow')) advanceTake(ps, s.range, `${pre}.animSegment`, v('animAdvance'), v('animLoops'), v('animSpeed'));
         } else if (s.cur !== -1) {
           s.range.stop();
           s.cur = -1;
