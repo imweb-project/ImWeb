@@ -3239,6 +3239,10 @@ export function registerCoreParameters(ps) {
     { key: 'spin.y',  label: 'Spin Y', min: -180, max: 180, value: 0, unit: '°/s' },
     { key: 'spin.z',  label: 'Spin Z', min: -180, max: 180, value: 0, unit: '°/s' },
     { key: 'scale',   label: 'Scale', min: 0.01, max: 5,  value: 1 },
+    // Size relative to the model's own bounds, like scene3d.norm on M1. The
+    // default 2 is the factor apply() used to hard-code, so older states keep
+    // their size.
+    { key: 'norm',      label: 'Normalize',  min: 0.1, max: 10, value: 2 },
     // Main = follow scene3d.wireframe (the shared material), as before.
     { key: 'wire',    label: 'Wire',  type: PARAM_TYPE.SELECT, options: ['Main', 'Solid', 'Wire'], value: 0 },
     { key: 'anim',    label: 'Play',  type: PARAM_TYPE.TOGGLE, value: 1 },
@@ -3246,6 +3250,9 @@ export function registerCoreParameters(ps) {
     // slot's model has loaded, and a SELECT would clamp it to 'None' then.
     { key: 'clip',    label: 'Clip',  min: 1, max: 16, value: 1, step: 1 },
     { key: 'animSpeed', label: 'Anim Speed', min: -2, max: 2, value: 1, step: 0.01 },
+    // Play only part of the clip: Start/End in % of its length, looping inside.
+    { key: 'animStart', label: 'Anim Start', min: 0, max: 100, value: 0,   step: 0.1, unit: '%' },
+    { key: 'animEnd',   label: 'Anim End',   min: 0, max: 100, value: 100, step: 0.1, unit: '%' },
   ];
   [
     { prefix: 'model2', n: 2, start: { 'pos.x': -2 } },
@@ -3856,6 +3863,9 @@ export function registerCoreParameters(ps) {
     value: 1.0,
     step: 0.1,
   });
+  // Play only part of the clip: Start/End in % of its length, looping inside.
+  ps.register({ id: "scene3d.anim.start", label: "Anim Start", group: "scene3d", min: 0, max: 100, value: 0,   step: 0.1, unit: "%" });
+  ps.register({ id: "scene3d.anim.end",   label: "Anim End",   group: "scene3d", min: 0, max: 100, value: 100, step: 0.1, unit: "%" });
   ps.register({
     id: "scene3d.clone.mode",
     label: "Cloner",

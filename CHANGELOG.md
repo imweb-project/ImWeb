@@ -9,6 +9,23 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Play part of an animation: Anim Start / Anim End.** On M1 and on each
+  of M2–M4, the clip plays and loops only between Start and End (in % of
+  its length), forward or in reverse. The slot panel shows the clip's
+  length and the part being played. M2–M4 also get **Normalize**, like M1's
+  Normalization; its default matches the old fixed size.
+
+- **M1 joins the model tabs, and a drop goes where you are looking.** The
+  Import section is now one strip of tabs, M1–M4. M1 is the main object, with
+  its Import, Folder, Back to Geometry, size and animation controls plus
+  Wireframe and placement. Dropping a model file loads it into the selected
+  tab. It used to always replace M1; ⌥-drop still fills the first empty slot.
+  M1's Transform (position, rotation, spin, scale, normalization) now lives
+  in its tab rather than a separate section, and its animation controls
+  appear whenever the model has animation, however it was loaded. Before,
+  they showed only after the Import button, never after a drop or a recall,
+  and the clip menu stayed at "None".
+
 - **Model slots: Wire and animation.** Each of Model 2–4 can be solid, wireframe
   or follow the main object's Wireframe, independently of the others. A
   model with animations gets Play, Clip (with the clip's name shown) and Anim
@@ -87,6 +104,22 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   settings, including the factory bank.
 
 ### Fixed
+- **Poser animations now play.** A COLLADA file from Poser loaded as a still
+  pose, while one from 3ds Max moved. The reason isn't the skeleton: Poser
+  writes each bone's rotation axis and position as separate channels
+  (rotateX.ANGLE, translate.X…), and three.js's COLLADA loader only
+  understands whole-matrix channels, so it quietly dropped them all. ImWeb
+  now rebuilds those channels into a playable animation, for M1 and for
+  M2–M4. Checked on Haraldur12.dae: the loader alone built 0 tracks, now
+  225 (75 joints, 98 s). The rebuilt rest pose matches the loader's own
+  exactly, and the figure walks, turns and gestures with its skin following.
+  avatar.dae (3ds Max) still plays through the loader, unchanged.
+
+- **Back to Geometry briefly showed a sphere whatever shape was selected.**
+  It passed the menu label ("Basic: Torus") where a geometry name was needed,
+  which fell back to a sphere with a warning until the next frame corrected
+  it. It now leaves the rebuild to the next frame, which uses the right name.
+
 - **An imported 3D model now survives a reload.** A model you dropped in or
   picked with Import was remembered only by its file name, so after a reload
   the scene showed a placeholder and asked for the file again. The model and

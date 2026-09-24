@@ -1239,12 +1239,12 @@ export function buildGeometryButtons(ps, sceneManager, contextMenu) {
   clearBtn.textContent = '↩ Back to Geometry';
   clearBtn.title = 'Remove imported model and return to procedural geometry';
   clearBtn.addEventListener('click', () => {
-    const geoIdx = ps.get('scene3d.geo').value;
-    const geoName = ps.get('scene3d.geo').options[geoIdx] ?? 'Sphere';
-    // Clear imported model then force geometry re-select
+    // Clear the imported model and invalidate the geometry key: the next
+    // applyParams() then rebuilds scene3d.geo through GEOMETRY_NAMES. The
+    // option LABEL ("Basic: Sphere") is not a geometry name, so passing it
+    // here fell back to a sphere, with a warning, for one frame.
     sceneManager._importedModelName = null;
-    sceneManager._geoKey = null;  // invalidate so setGeometry actually runs
-    sceneManager.setGeometry(geoName);
+    sceneManager._geoKey = null;
     modelLabel.textContent = 'No model loaded — drop .glb/.obj/.stl/.dae here or use button below';
     modelLabel.style.color = '';
   });
@@ -1283,6 +1283,8 @@ export function buildGeometryButtons(ps, sceneManager, contextMenu) {
   animSection.appendChild(buildParamRow(ps.get('scene3d.anim.active'), contextMenu));
   animSection.appendChild(buildParamRow(ps.get('scene3d.anim.select'), contextMenu));
   animSection.appendChild(buildParamRow(ps.get('scene3d.anim.speed'), contextMenu));
+  animSection.appendChild(buildParamRow(ps.get('scene3d.anim.start'), contextMenu));
+  animSection.appendChild(buildParamRow(ps.get('scene3d.anim.end'), contextMenu));
   importEl.appendChild(animSection);
 
   // Show/hide model sections when a model is loaded or cleared
@@ -1297,12 +1299,14 @@ export function buildGeometryButtons(ps, sceneManager, contextMenu) {
   clearBtn.addEventListener('click', refreshModelSections);
 }
 
-// ── More models (slots 2–4) ───────────────────────────────────────────────────
-// Sits under the main Import block. A tab per slot keeps 33 rows down to 11:
-// the tab shows the slot's model name, the body its Import/Clear and its
-// placement rows. onImport(i, files) does the loading (main.js owns
-// ModelSlots and the ModelStore); refresh() repaints names after any load,
-// clear or state recall.
+// ── Models M1–M4 ──────────────────────────────────────────────────────────────
+// One tab per model. M1 is the main object: its tab takes over the existing
+// Import block's contents (status, Import, Folder, Back to Geometry, size and
+// animation — moved, not rebuilt, so their listeners and ids are untouched)
+// plus Wireframe and placement rows. M2–M4 are ModelSlots. The selected tab
+// is also where a plain file drop lands (selectedSlot(): -1 = M1).
+// onImport(i, files) does the slot loading (main.js owns ModelSlots and the
+// ModelStore); refresh() repaints after any load, clear or state recall.
 export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear }) {
   const importEl = document.getElementById('model-import');
   if (!importEl || !slots) return { refresh() {} };
@@ -1311,21 +1315,57 @@ export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear
   wrap.className = 'model-slots';
   const hd = document.createElement('div');
   hd.className = 'cp-sub-header';
-  hd.textContent = 'MORE MODELS';
+  hd.textContent = 'MODELS';
   wrap.appendChild(hd);
 
   const tabs = document.createElement('div');
   tabs.className = 'model-slot-tabs';
   wrap.appendChild(tabs);
 
-  const PREFIXES = ['model2', 'model3', 'model4'];
+  // cur: 0 = M1 (main object), 1–3 = slots M2–M4
   let cur = 0;
+  const m1Tab = document.createElement('button');
+  m1Tab.className = 'model-slot-tab';
+  m1Tab.addEventListener('click', () => { cur = 0; refresh(); });
+  tabs.appendChild(m1Tab);
+  const m1Body = document.createElement('div');
+  while (importEl.firstChild) m1Body.appendChild(importEl.firstChild);
+  // M1's placement moves here from its own Transform section: the container
+  // itself moves (its id is what buildGeometryButtons filled), and the now
+  // empty section goes. Transform carries Scale and Normalization, so the
+  // Import block's separate "Model Size" copy of those two is dropped.
+  const transformEl = document.getElementById('transform-params');
+  if (transformEl) {
+    const oldSection = transformEl.closest('.panel-section');
+    const th = document.createElement('div');
+    th.className = 'cp-sub-header';
+    th.textContent = 'TRANSFORM';
+    m1Body.append(th, transformEl);
+    if (oldSection && oldSection !== importEl.closest('.panel-section')) oldSection.remove();
+  }
+  // Look these up inside m1Body: it is not in the document yet, so
+  // getElementById cannot see what was just moved into it.
+  m1Body.querySelector('#model-size-controls')?.remove();
+  const wireP = ps.get('scene3d.wireframe');
+  if (wireP) m1Body.appendChild(buildParamRow(wireP, contextMenu));
+  // Animation after the placement, as on M2–M4.
+  const m1Anim = m1Body.querySelector('#model-anim-controls');
+  if (m1Anim) m1Body.appendChild(m1Anim);
+  wrap.appendChild(m1Body);
+  let _m1ClipKey = null;
+  ps.get('scene3d.geo').onChange(() => refresh());
+  // M1's buttons came from the Import block and do not know about the tabs;
+  // Back to Geometry in particular clears the model without an event. Repaint
+  // after any button in the section (after the handler has run).
+  importEl.addEventListener('click', e => { if (e.target.closest('button')) queueMicrotask(refresh); });
+
+  const PREFIXES = ['model2', 'model3', 'model4'];
   const bodies = [], tabBtns = [], statuses = [], rowSets = [], animRows = [], clipLines = [];
-  const ANIM_KEYS = ['anim', 'clip', 'animSpeed'];
+  const ANIM_KEYS = ['anim', 'clip', 'animSpeed', 'animStart', 'animEnd'];
   PREFIXES.forEach((pre, i) => {
     const tb = document.createElement('button');
     tb.className = 'model-slot-tab';
-    tb.addEventListener('click', () => { cur = i; refresh(); });
+    tb.addEventListener('click', () => { cur = i + 1; refresh(); });
     tabs.appendChild(tb);
     tabBtns.push(tb);
 
@@ -1371,7 +1411,8 @@ export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear
       const key = p.id.slice(pre.length + 1);
       if (ANIM_KEYS.includes(key)) mine.push(r);
       // The clip's name, under the Clip row: the row itself is a number.
-      if (key === 'clip') { rows.appendChild(clipLine); p.onChange(() => refresh()); }
+      if (key === 'clip') rows.appendChild(clipLine);
+      if (key === 'clip' || key === 'animStart' || key === 'animEnd') p.onChange(() => refresh());
     });
     mine.push(clipLine);
     body.appendChild(rows);
@@ -1385,21 +1426,45 @@ export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear
 
   const note = document.createElement('div');
   note.className = 'import-note';
-  note.textContent = 'Share the main Material. Tip: ⌥-drop a model file to put it in the first empty slot.';
+  note.textContent = 'M2–M4 share the main Material. Dropping a model file loads it into the selected tab; ⌥-drop fills the first empty slot.';
   wrap.appendChild(note);
 
-  importEl.after(wrap);
+  importEl.appendChild(wrap);
 
   function refresh() {
+    const main = slots.sm.importedModelName;
+    const geo = ps.get('scene3d.geo');
+    const m1Name = main ? main.split('/').pop().replace(/\.[^.]+$/, '')
+      : (geo.options[geo.value] ?? 'Geometry').replace(/^.*: /, '');   // "Basic: Sphere" → "Sphere"
+    m1Tab.textContent = `M1 · ${m1Name}`;
+    m1Tab.title = main ?? `Main object — ${m1Name} (built-in geometry)`;
+    m1Tab.classList.add('loaded');
+    m1Tab.classList.toggle('active', cur === 0);
+    m1Body.style.display = cur === 0 ? '' : 'none';
+    // M1 animation: shown whenever the main model has clips, however it was
+    // loaded (the Import block only refreshed it on its own button's event).
+    // The Clip row is rebuilt when the clip list changes — a SELECT row fixes
+    // its options when built, so it would otherwise keep showing 'None'.
+    if (m1Anim) {
+      const hasAnims = !!(main && slots.sm.actions?.length);
+      m1Anim.style.display = hasAnims ? '' : 'none';
+      const selP = ps.get('scene3d.anim.select');
+      const key = selP.options.join('|');
+      if (hasAnims && key !== _m1ClipKey) {
+        _m1ClipKey = key;
+        const old = m1Anim.querySelector('[data-param-id="scene3d.anim.select"]');
+        if (old) old.replaceWith(buildParamRow(selP, contextMenu));
+      }
+    }
     const names = slots.names();
     PREFIXES.forEach((_, i) => {
       const n = names[i];
       const short = n ? n.split('/').pop().replace(/\.[^.]+$/, '') : null;
       tabBtns[i].textContent = `M${i + 2}${short ? ' · ' + short : ''}`;
       tabBtns[i].title = n ?? `Model ${i + 2} — empty`;
-      tabBtns[i].classList.toggle('active', i === cur);
+      tabBtns[i].classList.toggle('active', i + 1 === cur);
       tabBtns[i].classList.toggle('loaded', !!n);
-      bodies[i].style.display = i === cur ? '' : 'none';
+      bodies[i].style.display = i + 1 === cur ? '' : 'none';
       const miss = slots.missing?.[i];
       statuses[i].textContent = n ? `✓ ${n.split('/').pop()}`
         : miss ? `⚠ ${miss} is not stored in this browser — import it again`
@@ -1409,11 +1474,16 @@ export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear
       // Animation rows only for a model that has clips.
       const ci = slots.clipInfo(i, ps);
       animRows[i].forEach(r => { r.style.display = ci ? '' : 'none'; });
-      if (ci) clipLines[i].textContent = `Clip ${ci.index} of ${ci.n}: ${ci.name}`;
+      if (ci) {
+        const a = ps.get(`${PREFIXES[i]}.animStart`).value, b = ps.get(`${PREFIXES[i]}.animEnd`).value;
+        const lo = Math.min(a, b) / 100 * ci.duration, hi = Math.max(a, b) / 100 * ci.duration;
+        clipLines[i].textContent = `Clip ${ci.index} of ${ci.n}: ${ci.name} · ${ci.duration.toFixed(1)} s`
+          + (lo > 0 || hi < ci.duration ? ` · playing ${lo.toFixed(1)}–${hi.toFixed(1)} s` : '');
+      }
     });
   }
   refresh();
-  return { refresh };
+  return { refresh, selectedSlot: () => cur - 1 };
 }
 
 // ── State bar (thumbnail tiles + bank selector) ───────────────────────────────

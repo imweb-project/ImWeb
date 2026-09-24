@@ -548,15 +548,28 @@ to a 2×2×2 bounding box on load.
 
 #### Parameters — Transform
 
-**More models (slots 2–4).** Under the Import block, three extra model slots
-sit in the same scene as the main object. Each has its own tab: **+ Import**
+**Models M1–M4.** The Import section has a tab per model. **M1** is the
+main object — built-in geometry or an imported model — with its Import,
+Import Folder, Back to Geometry, its **Transform** (position, rotation,
+spin, scale, normalization — moved here from its own section), Wireframe,
+and its animation controls whenever the model has animation.
+**M2–M4** are extra models in the same scene. Dropping a model file loads it
+into the **selected** tab. Each extra slot's tab has **+ Import**
 (with textures), **✕ Clear**, and its own placement — `model2/3/4.visible`,
 `pos.x/y/z`, `rot.x/y/z`, `spin.x/y/z`, `scale` (same ranges as the main
 object; Scale 1 = the same size as a model in the main slot). **Wire** —
 Main (follow the main object's Wireframe) / Solid / Wire, per slot. For a
-model with animations: **Play**, **Clip** (a number; the clip's name is
-shown under it) and **Anim Speed**. Node animation plays; skinned (bone)
-deformation does not, as for the main object. ⌥-drop a model
+model with animations: **Play**, **Clip** (a number; the clip's name and
+length are shown under it), **Anim Speed**, and **Anim Start / Anim End** —
+play and loop only that part of the clip, in % of its length (M1 has the
+same pair beside its animation controls). **Normalize** sets a slot's size
+relative to the model's own bounds, like M1's Normalization.
+
+Animated COLLADA from any exporter plays, including Poser, which writes each
+bone's rotation axis as its own channel — three.js's loader skips those, so
+ImWeb rebuilds them. A GLB's skinned (bone-bent) meshes are still flattened
+(an ANGLE/Metal driver workaround), so a GLB character plays its node
+animation only. ⌥-drop a model
 file to put it in the first empty slot. The slots share the main Material —
 type, colour, texture source and mapping. Display States record which model
 sits in each slot and where; imported files are kept in the browser, so they

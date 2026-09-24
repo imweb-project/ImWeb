@@ -29,6 +29,22 @@ import * as THREE from 'three';
 
 export const SLOT_PREFIXES = ['model2', 'model3', 'model4'];
 
+/**
+ * Keep an action inside [start, end] (% of its clip), wrapping in either
+ * direction so a negative Anim Speed loops the range backwards. Shared with
+ * the main object (SceneManager).
+ */
+export function clampActionRange(action, startPct, endPct) {
+  const d = action.getClip().duration;
+  if (!(d > 0)) return;
+  let s = Math.min(startPct, endPct) / 100 * d;
+  let e = Math.max(startPct, endPct) / 100 * d;
+  if (s <= 0 && e >= d) return;                  // whole clip: leave looping to three
+  const len = Math.max(e - s, 1e-3);
+  const t = action.time;
+  if (t < s || t > e) action.time = s + (((t - s) % len) + len) % len;
+}
+
 export class ModelSlots {
   /** @param {import('./SceneManager.js').SceneManager} sm */
   constructor(sm) {
@@ -135,9 +151,9 @@ export class ModelSlots {
       this._lastRot[i] = { x: rx, y: ry, z: rz };
 
       p.position.set(v('pos.x'), v('pos.y'), v('pos.z'));
-      // ×2 matches the main object's default Normalization, so a slot at
-      // Scale 1 comes in the same size as a model imported into slot 1.
-      p.scale.setScalar(v('scale') * 2 * (p.userData.baseScale ?? 1));
+      // Normalize (default 2 = the main object's default Normalization), so a
+      // slot at Scale 1 comes in the same size as a model imported into M1.
+      p.scale.setScalar(v('scale') * v('norm') * (p.userData.baseScale ?? 1));
 
       s.wire = v('wire');
 
@@ -150,6 +166,7 @@ export class ModelSlots {
             s.actions[ci]?.reset().play();
           }
           s.mixer.update(dt * v('animSpeed'));
+          if (s.actions[ci]) clampActionRange(s.actions[ci], v('animStart'), v('animEnd'));
         } else if (s.cur !== -1) {
           s.actions[s.cur]?.stop();
           s.cur = -1;
@@ -164,6 +181,7 @@ export class ModelSlots {
     if (!s?.clips.length) return null;
     const n = s.clips.length;
     const ci = Math.min(Math.round(ps.get(`${SLOT_PREFIXES[i]}.clip`).value), n);
-    return { n, index: ci, name: s.clips[ci - 1]?.name || `Anim ${ci}` };
+    const d = s.clips[ci - 1]?.duration ?? 0;
+    return { n, index: ci, name: s.clips[ci - 1]?.name || `Anim ${ci}`, duration: d };
   }
 }

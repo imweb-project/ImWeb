@@ -16,6 +16,8 @@ import { OBJLoader }  from 'three/addons/loaders/OBJLoader.js';
 import { STLLoader }  from 'three/addons/loaders/STLLoader.js';
 import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { hasComponentChannels, buildComponentClip } from './ColladaChannels.js';
+import { clampActionRange } from './ModelSlots.js';
 import { GeometryFactory, GEOMETRY_NAMES } from './GeometryFactory.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { TRIPLANAR_GLSL, TRI_MAP_FRAGMENT, TRI_EMISSIVEMAP_FRAGMENT } from './Triplanar.js';
@@ -718,29 +720,66 @@ export class SceneManager {
   }
 
   async loadCollada(url, name = '', params = null) {
-    return new Promise((resolve, reject) => {
-      this.colladaLoader.load(url, collada => this._withOwnMesh(() => {
-        const model = collada.scene;
-        model.traverse(child => {
-          if (child.isMesh) child.material = this.material;
-        });
+    // Read the text ourselves and parse with the same loader (what its load()
+    // does internally) so the source is at hand for animation it cannot build.
+    const text  = await this._fetchText(url);
+    const path  = this.colladaLoader.path || THREE.LoaderUtils.extractUrlBase(url);
+    const collada = this._parseCollada(this.colladaLoader, text, path);
+    const clips = this._colladaClips(collada, text);
+    return this._withOwnMesh(() => {
+      const model = collada.scene;
+      model.traverse(child => {
+        if (child.isMesh) child.material = this.material;
+      });
 
-        // Wrap first so the pivot is the animation root
-        const pivot = this._wrapInPivot(model);
-        if (this.mesh) this.scene.remove(this.mesh);
-        this.mesh = pivot;
-        this._geoKey = '__imported__';
-        this._importedModelName = name;
-        this._importPending = false;
-        this.scene.add(pivot);
+      // Wrap first so the pivot is the animation root
+      const pivot = this._wrapInPivot(model);
+      if (this.mesh) this.scene.remove(this.mesh);
+      this.mesh = pivot;
+      this._geoKey = '__imported__';
+      this._importedModelName = name;
+      this._importPending = false;
+      this.scene.add(pivot);
 
-        // Animations — use collada.scene.animations (collada.animations is deprecated)
-        const clips = collada.scene.animations ?? [];
-        this._setupAnimations(model, clips, params);
-
-        resolve(pivot);
-      }), undefined, reject);
+      this._setupAnimations(model, clips, params);
+      return pivot;
     });
+  }
+
+  async _fetchText(url) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status} loading ${url}`);
+    return res.text();
+  }
+
+  /**
+   * Parse, minus ColladaLoader's "transform type … not yet implemented"
+   * warning when it is about to be answered: for a file whose component
+   * channels ColladaChannels builds, the warning fires once per channel (235
+   * times for a Poser figure) and claims a gap that is no longer there. Only
+   * that exact message, only during this parse; everything else passes.
+   */
+  _parseCollada(loader, text, path) {
+    if (!hasComponentChannels(text)) return loader.parse(text, path);
+    const warn = console.warn;
+    console.warn = (msg, ...rest) => {
+      if (typeof msg === 'string' && msg.includes('not yet implemented')) return;
+      warn.call(console, msg, ...rest);
+    };
+    try { return loader.parse(text, path); } finally { console.warn = warn; }
+  }
+
+  /**
+   * ColladaLoader's clips, or — when it built none because the file animates
+   * transform COMPONENTS (rotateX.ANGLE, translate.X: Poser does this) — a
+   * clip built from those channels by ColladaChannels.
+   */
+  _colladaClips(collada, text) {
+    const clips = (collada.scene.animations ?? []).filter(c => c.tracks.length);
+    if (clips.length || !hasComponentChannels(text)) return clips;
+    const clip = buildComponentClip(text, collada.scene, 'Animation');
+    if (clip) console.info(`[3D] Built animation from component channels (Poser-style): ${clip.tracks.length / 3} joints, ${clip.duration.toFixed(1)} s`);
+    return clip ? [clip] : [];
   }
 
   _setupAnimations(model, animations, params) {
@@ -865,8 +904,10 @@ export class SceneManager {
       } else if (ext === 'stl') {
         model = new THREE.Mesh(await load(new STLLoader(manager)), this.material);
       } else if (ext === 'dae') {
-        model = (await load(new ColladaLoader(manager))).scene;
-        clips = model.animations ?? [];
+        const text = await this._fetchText(url);
+        const collada = this._parseCollada(new ColladaLoader(manager), text, THREE.LoaderUtils.extractUrlBase(url));
+        model = collada.scene;
+        clips = this._colladaClips(collada, text);
       } else {
         throw new Error(`Unsupported 3D format: .${ext}`);
       }
@@ -936,6 +977,8 @@ export class SceneManager {
           if (this.actions[animIdx]) this.actions[animIdx].play();
         }
         this.mixer.update(dt * speed);
+        if (this.actions[animIdx]) clampActionRange(this.actions[animIdx],
+          p.get('scene3d.anim.start')?.value ?? 0, p.get('scene3d.anim.end')?.value ?? 100);
       } else {
         if (this._curAnimIdx !== -1) {
           if (this.actions[this._curAnimIdx]) this.actions[this._curAnimIdx].stop();

@@ -744,7 +744,7 @@ async function main() {
   // Extra imported models (slots 2–4); slot 1 is scene3d's own object.
   const modelSlots = new ModelSlots(scene3d);
   if (import.meta.env.DEV) window.__modelSlots = modelSlots;
-  let _modelSlotsUI = { refresh() {} };
+  let _modelSlotsUI = { refresh() {}, selectedSlot: () => -1 };
   await scene3d.createHypercube({ dim: 4 });   // the constructor reads `dim`; `startDim` was never read
 
   ps.get('hypercube.faces.active').onChange(v => {
@@ -1105,6 +1105,7 @@ async function main() {
   const _baseLoadModelFromUrl = scene3d.loadModelFromUrl.bind(scene3d);
   scene3d.loadModelFromUrl = async (url) => {
     await _baseLoadModelFromUrl(url);
+    _refreshModelLabel();   // tab name + M1 animation block
     if (url && url.startsWith('/')) presetMgr.setMediaRef('scene3d', url);
   };
 
@@ -1712,6 +1713,7 @@ async function main() {
 
   // Update model status label after drag-and-drop or button import
   function _refreshModelLabel() {
+    _modelSlotsUI.refresh();   // the M1 tab names the main model too
     const lbl = document.getElementById("model-status-label");
     if (!lbl) return;
     const name = scene3d.importedModelName;
@@ -5722,11 +5724,14 @@ async function main() {
           console.error("[DnD] video load failed:", err);
           _showClipError(err.message);
         }
-      } else if (/\.(glb|gltf|obj|stl|dae)$/i.test(file.name) && e.altKey) {
-        // ⌥-drop: into the first empty extra slot (Model 2–4), keeping the
-        // main object. All slots full → Model 4 is replaced.
+      } else if (/\.(glb|gltf|obj|stl|dae)$/i.test(file.name) &&
+                 (e.altKey || _modelSlotsUI.selectedSlot() >= 0)) {
+        // Into a slot (M2–M4): the one whose tab is selected, or with ⌥ the
+        // first empty one (all full → M4). A plain drop with M1 selected
+        // falls through to the main object below, as it always did.
         const names = modelSlots.names();
-        const i = names.indexOf(null) >= 0 ? names.indexOf(null) : names.length - 1;
+        const i = !e.altKey ? _modelSlotsUI.selectedSlot()
+          : names.indexOf(null) >= 0 ? names.indexOf(null) : names.length - 1;
         try {
           await modelSlots.load(i, file, files);
           saveModelFiles(file.name, files);
