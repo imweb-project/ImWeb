@@ -104,6 +104,16 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   settings, including the factory bank.
 
 ### Fixed
+- **Rigged models now rotate about their own centre, at the right size.** An
+  imported model is centred on its rotation point and normalised by its
+  bounding box, which was measured from the skin's raw vertices rather than
+  where the bones actually draw them. For a Poser figure that put the
+  rotation point 90% of the figure's size away from the body, so it swung
+  round an empty point, and it came in at about a third of its proper size.
+  The box is now measured as drawn: the rotation point sits 0.2% from the
+  body's centre, and the figure normalises to the same size as any other
+  model. Unrigged models are unaffected.
+
 - **Poser animations now play.** A COLLADA file from Poser loaded as a still
   pose, while one from 3ds Max moved. The reason isn't the skeleton: Poser
   writes each bone's rotation axis and position as separate channels

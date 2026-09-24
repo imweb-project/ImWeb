@@ -611,8 +611,14 @@ export class SceneManager {
    * Returns the pivot.
    */
   _wrapInPivot(model) {
-    // Measure raw bounding box before any of our transforms
-    const box    = new THREE.Box3().setFromObject(model);
+    // Measure the model AS DRAWN before any of our transforms. `precise`
+    // walks the vertices through getVertexPosition(), which applies skinning,
+    // so a rigged figure is measured where its bones put it. The default
+    // measures the raw geometry box — for a Poser figure that sat 90% of its
+    // size away from the visible body, so it rotated about an empty point and
+    // was normalised to the wrong size. Bones need current world matrices.
+    model.updateMatrixWorld(true);
+    const box    = new THREE.Box3().setFromObject(model, true);
     const size   = box.getSize(new THREE.Vector3());
     const center = box.getCenter(new THREE.Vector3());
     const maxDim = Math.max(size.x, size.y, size.z);
