@@ -9,6 +9,17 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Anchor: Follow body.** On M1 and M2–M4, *Follow body* keeps an
+  animated model on its rotation point: the body is held in place while
+  the animation plays, so a walk happens on the spot and a spinning figure
+  turns about itself instead of about where it started. *Load centre* (the
+  default) is the old behaviour. A rigged model follows the moving bone
+  nearest its centre, found by playing the clip through once. On a Poser
+  figure the plain nearest bone was the root, which never moves. An unrigged
+  model follows its own centre. On Haraldur12 the worst distance of the body
+  from the rotation point fell from 31% of the figure's size to 15%; what
+  remains is the pose itself, arms and legs reaching out.
+
 - **Play part of an animation: Anim Start / Anim End.** On M1 and on each
   of M2–M4, the clip plays and loops only between Start and End (in % of
   its length), forward or in reverse. The slot panel shows the clip's

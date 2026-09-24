@@ -30,6 +30,86 @@ import * as THREE from 'three';
 export const SLOT_PREFIXES = ['model2', 'model3', 'model4'];
 
 /**
+ * Anchor = Follow body: keep the animated body on the rotation point.
+ *
+ * What it tracks: for a rigged model, the bone nearest the rotation point
+ * among the bones the clip actually MOVES — found the first time it is
+ * needed by playing the clip through on a scratch mixer (pickAnchorBone).
+ * Nearest alone picked Poser's BODY, which the clip animates with constant
+ * values, so following it did nothing; among moving bones it lands on the
+ * pelvis. Unrigged: the centre of the mesh box.
+ *
+ * Each frame the model is shifted inside its pivot so the tracked point stays
+ * where it was at import: walks happen on the spot, steps and gestures
+ * intact. Call after the mixer has updated; `follow` false restores the
+ * model's own position.
+ */
+const _v = new THREE.Vector3(), _box = new THREE.Box3();
+export function applyAnchor(pivot, follow, clip) {
+  const ud = pivot.userData;
+  const model = ud.model;
+  if (!model || !ud.anchorBase) return;
+  if (!follow) {
+    if (ud.anchorOn) { model.position.copy(ud.anchorBase); ud.anchorOn = false; }
+    return;
+  }
+  if (ud.bones?.length && clip && ud.anchorClip !== clip) {
+    ud.anchorClip = clip;
+    ud.anchorBone = pickAnchorBone(pivot, clip);
+  }
+  ud.anchorOn = true;
+  pivot.updateMatrixWorld(true);
+  let rest;
+  if (ud.anchorBone) {
+    ud.anchorBone.getWorldPosition(_v);
+    rest = ud.boneRest.get(ud.anchorBone);
+  } else {
+    _box.setFromObject(model).getCenter(_v);
+    rest = ud.anchorRest;
+  }
+  pivot.worldToLocal(_v);
+  // _v includes the shift applied last frame; take it back out, then shift
+  // by how far the tracked point has moved from where it was at import.
+  _v.sub(model.position).add(ud.anchorBase);
+  model.position.copy(ud.anchorBase).sub(_v.sub(rest));
+}
+
+// The moving bone nearest the rotation point. Samples the clip on a scratch
+// mixer and puts every bone back afterwards — the real mixer overwrites them
+// on its next update anyway, but a paused model must not be left posed.
+function pickAnchorBone(pivot, clip) {
+  const { bones, boneRest, model } = pivot.userData;
+  const saved = bones.map(b => [b.position.clone(), b.quaternion.clone(), b.scale.clone()]);
+  const shift = model.position.clone();
+  model.position.copy(pivot.userData.anchorBase);
+  const mixer = new THREE.AnimationMixer(model);
+  mixer.clipAction(clip).play();
+  const moved = new Map(bones.map(b => [b, 0]));
+  const N = 8;
+  for (let k = 0; k <= N; k++) {
+    mixer.setTime(clip.duration * k / N);
+    pivot.updateMatrixWorld(true);
+    for (const b of bones) {
+      pivot.worldToLocal(b.getWorldPosition(_v));
+      moved.set(b, Math.max(moved.get(b), _v.distanceTo(boneRest.get(b))));
+    }
+  }
+  mixer.stopAllAction();
+  mixer.uncacheRoot(model);
+  bones.forEach((b, i) => { b.position.copy(saved[i][0]); b.quaternion.copy(saved[i][1]); b.scale.copy(saved[i][2]); });
+  model.position.copy(shift);
+
+  const scale = Math.max(...bones.map(b => boneRest.get(b).length()), 1e-6);
+  let best = null, bestD = Infinity;
+  for (const b of bones) {
+    if (moved.get(b) < scale * 1e-3) continue;      // the clip leaves it where it is
+    const d = boneRest.get(b).length();
+    if (d < bestD) { bestD = d; best = b; }
+  }
+  return best;
+}
+
+/**
  * Keep an action inside [start, end] (% of its clip), wrapping in either
  * direction so a negative Anim Speed loops the range backwards. Shared with
  * the main object (SceneManager).
@@ -172,6 +252,7 @@ export class ModelSlots {
           s.cur = -1;
         }
       }
+      applyAnchor(p, v('anchor') === 1, s.actions[s.cur]?.getClip() ?? s.clips[0]);
     });
   }
 

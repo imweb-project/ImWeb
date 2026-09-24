@@ -562,7 +562,10 @@ Main (follow the main object's Wireframe) / Solid / Wire, per slot. For a
 model with animations: **Play**, **Clip** (a number; the clip's name and
 length are shown under it), **Anim Speed**, and **Anim Start / Anim End** —
 play and loop only that part of the clip, in % of its length (M1 has the
-same pair beside its animation controls). **Normalize** sets a slot's size
+same pair beside its animation controls). **Anchor** — *Load centre* keeps the rotation
+point where the body was at import; *Follow body* holds the body on it
+while animating, so a walk happens on the spot and a spinning figure turns
+about itself (M1 has it too). **Normalize** sets a slot's size
 relative to the model's own bounds, like M1's Normalization.
 
 Animated COLLADA from any exporter plays, including Poser, which writes each

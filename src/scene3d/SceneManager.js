@@ -17,7 +17,7 @@ import { STLLoader }  from 'three/addons/loaders/STLLoader.js';
 import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { hasComponentChannels, buildComponentClip } from './ColladaChannels.js';
-import { clampActionRange } from './ModelSlots.js';
+import { clampActionRange, applyAnchor } from './ModelSlots.js';
 import { GeometryFactory, GEOMETRY_NAMES } from './GeometryFactory.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { TRIPLANAR_GLSL, TRI_MAP_FRAGMENT, TRI_EMISSIVEMAP_FRAGMENT } from './Triplanar.js';
@@ -634,6 +634,23 @@ export class SceneManager {
     // Also on the pivot itself: extra model slots (ModelSlots) each need their
     // own, and must not read the main object's _importedBaseScale.
     pivot.userData.baseScale = this._importedBaseScale;
+    pivot.userData.model = model;
+
+    // Anchor = Follow body (applyAnchor, ModelSlots.js) needs every bone's
+    // place at import — where the rotation point was set — to choose from
+    // later, once it can see which bones the clip actually moves. Unrigged:
+    // the mesh box centre is what it tracks.
+    pivot.updateMatrixWorld(true);
+    const bones = [], boneRest = new Map();
+    model.traverse(o => {
+      if (!o.isBone) return;
+      bones.push(o);
+      boneRest.set(o, pivot.worldToLocal(o.getWorldPosition(new THREE.Vector3())));
+    });
+    pivot.userData.bones = bones;
+    pivot.userData.boneRest = boneRest;
+    pivot.userData.anchorRest = pivot.worldToLocal(new THREE.Box3().setFromObject(model).getCenter(new THREE.Vector3()));
+    pivot.userData.anchorBase = model.position.clone();
     return pivot;
   }
 
@@ -985,11 +1002,14 @@ export class SceneManager {
         this.mixer.update(dt * speed);
         if (this.actions[animIdx]) clampActionRange(this.actions[animIdx],
           p.get('scene3d.anim.start')?.value ?? 0, p.get('scene3d.anim.end')?.value ?? 100);
+        applyAnchor(this.mesh, p.get('scene3d.anchor')?.value === 1, this.actions[animIdx]?.getClip());
       } else {
         if (this._curAnimIdx !== -1) {
           if (this.actions[this._curAnimIdx]) this.actions[this._curAnimIdx].stop();
           this._curAnimIdx = -1;
         }
+        // Paused: keep following, or a frozen pose would jump off the point.
+        applyAnchor(this.mesh, p.get('scene3d.anchor')?.value === 1, this.actions[animIdx]?.getClip());
       }
     }
 

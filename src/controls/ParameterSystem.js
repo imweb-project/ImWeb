@@ -3253,6 +3253,9 @@ export function registerCoreParameters(ps) {
     // Play only part of the clip: Start/End in % of its length, looping inside.
     { key: 'animStart', label: 'Anim Start', min: 0, max: 100, value: 0,   step: 0.1, unit: '%' },
     { key: 'animEnd',   label: 'Anim End',   min: 0, max: 100, value: 100, step: 0.1, unit: '%' },
+    // Load centre: the rotation point stays where the body was at import.
+    // Follow body: the body is held on it while animating (see applyAnchor).
+    { key: 'anchor',    label: 'Anchor',     type: PARAM_TYPE.SELECT, options: ['Load centre', 'Follow body'], value: 0 },
   ];
   [
     { prefix: 'model2', n: 2, start: { 'pos.x': -2 } },
@@ -3866,6 +3869,7 @@ export function registerCoreParameters(ps) {
   // Play only part of the clip: Start/End in % of its length, looping inside.
   ps.register({ id: "scene3d.anim.start", label: "Anim Start", group: "scene3d", min: 0, max: 100, value: 0,   step: 0.1, unit: "%" });
   ps.register({ id: "scene3d.anim.end",   label: "Anim End",   group: "scene3d", min: 0, max: 100, value: 100, step: 0.1, unit: "%" });
+  ps.register({ id: "scene3d.anchor", label: "Anchor", group: "scene3d", type: PARAM_TYPE.SELECT, options: ["Load centre", "Follow body"], value: 0 });
   ps.register({
     id: "scene3d.clone.mode",
     label: "Cloner",

@@ -1285,6 +1285,7 @@ export function buildGeometryButtons(ps, sceneManager, contextMenu) {
   animSection.appendChild(buildParamRow(ps.get('scene3d.anim.speed'), contextMenu));
   animSection.appendChild(buildParamRow(ps.get('scene3d.anim.start'), contextMenu));
   animSection.appendChild(buildParamRow(ps.get('scene3d.anim.end'), contextMenu));
+  animSection.appendChild(buildParamRow(ps.get('scene3d.anchor'), contextMenu));
   importEl.appendChild(animSection);
 
   // Show/hide model sections when a model is loaded or cleared
@@ -1361,7 +1362,7 @@ export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear
 
   const PREFIXES = ['model2', 'model3', 'model4'];
   const bodies = [], tabBtns = [], statuses = [], rowSets = [], animRows = [], clipLines = [];
-  const ANIM_KEYS = ['anim', 'clip', 'animSpeed', 'animStart', 'animEnd'];
+  const ANIM_KEYS = ['anim', 'clip', 'animSpeed', 'animStart', 'animEnd', 'anchor'];
   PREFIXES.forEach((pre, i) => {
     const tb = document.createElement('button');
     tb.className = 'model-slot-tab';
