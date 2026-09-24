@@ -412,7 +412,7 @@ export class ModelSlots {
       const src = v('texsrc');
       // While the Hypercube instancer is adopted, sm.material is ITS material
       // (with its own shader hook) — not one to clone; stay shared until then.
-      const want = src > 0 && !this.sm._adoptedMesh ? this._ownMaterial(s, src - 1) : this.sm.material;
+      const want = src > 0 && !this.sm._adoptedMesh ? this._ownMaterial(s, src - 1, i) : this.sm.material;
       if (s.mat !== want) {
         p.traverse(c => { if (c.isMesh) c.material = want; });
         s.mat = want;
@@ -461,7 +461,7 @@ export class ModelSlots {
    * for only when something the program depends on changed: the main
    * material's version, whether there is a map, or the mapping.
    */
-  _ownMaterial(s, srcIdx) {
+  _ownMaterial(s, srcIdx, i) {
     const main = this.sm.material;
     if (!s.own || s.ownBase !== main) {
       s.own?.dispose();
@@ -472,7 +472,7 @@ export class ModelSlots {
     }
     const own = s.own;
     own.copy(main);                       // colour, roughness, emissive, wireframe…
-    const { tex, tri } = this.sm.slotTexture(srcIdx);
+    const { tex, tri } = this.sm.slotTexture(srcIdx, i);
     own.map = tex ? Object.assign(tex, { wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping }) : null;
     if (own.emissiveMap !== undefined) own.emissiveMap = own.map;   // glow with its own picture, as the main one does
     // copy() resets MeshStandardMaterial's defines; the mapping is the slot's own.

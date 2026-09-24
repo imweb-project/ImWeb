@@ -9,6 +9,19 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Texture = Image: a model can wear a picture of your own.** *Image* is
+  appended to M1's Texture Source and to M2–M4's Texture; choosing it shows
+  a *Load image* picker under the row, and loading a picture selects Image.
+  SceneManager.setModelImage keeps one texture per model (sRGB, repeat;
+  flipY by the model's format — glTF unflipped, COLLADA / OBJ / STL flipped).
+  Pictures are stored in the same IndexedDB store as models under their own
+  `image:` keys; states record the names (extra.modelImages) and restore them
+  after the slot models, flagging one this browser does not hold. T-Disp
+  Source does not mirror Image yet. Verified: WebGL2 render with the real
+  SceneManager / ModelSlots (M1 green, M2 red — pixels where each model is);
+  headless app flow (picker hidden until Image, load → ✓ name + Texture =
+  Image; state saved, image and texture changed, recall restores both).
+
 - **Each model can wear its own texture.** M2–M4 get *Texture*: *Shared*
   (default — the main Material, as before) or any texture source, which gives
   the model its own copy of the main Material wearing that source. The copy

@@ -22,6 +22,9 @@ import { GeometryFactory, GEOMETRY_NAMES } from './GeometryFactory.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { TRIPLANAR_GLSL, TRI_MAP_FRAGMENT, TRI_EMISSIVEMAP_FRAGMENT } from './Triplanar.js';
 
+// scene3d.mat.texsrc index of Image (the model's own picture).
+const IMAGE_SRC = 7;
+
 export class SceneManager {
   constructor(renderer, width, height) {
     this.renderer = renderer;
@@ -126,6 +129,9 @@ export class SceneManager {
     this._matType   = -1;
     this._toonSteps = -1;
     this._liveTex   = null;
+    // Texture = Image: a picture per model, 0 = M1, 1–3 = M2–M4.
+    // { name, tex } or null. See setModelImage().
+    this._images = [null, null, null, null];
     this._alphaBg   = false;  // matches the opaque scene.background set above
 
     // Toon gradient: 3-step cel-shading ramp (dark / mid / bright)
@@ -522,11 +528,37 @@ export class SceneManager {
    * (a feedback loop), and whether the Mapping setting makes it triplanar.
    * Read from the last render's inputs.
    */
-  slotTexture(srcIdx) {
-    const t = this._texSrcMap?.[srcIdx] ?? null;
+  slotTexture(srcIdx, slot) {
+    const t = srcIdx === IMAGE_SRC ? (this._images[slot + 1]?.tex ?? null) : (this._texSrcMap?.[srcIdx] ?? null);
     const tex = t && t !== this.target.texture ? t : null;
     return { tex, tri: !!this._resolveTriplanar?.(srcIdx) };
   }
+
+  /**
+   * Texture = Image: load `file` as model i's picture (0 = M1, 1–3 = M2–M4).
+   * `flipY` follows the model's format — glTF expects images unflipped,
+   * COLLADA / OBJ / STL flipped — so a skin painted for the model lands the
+   * right way up. Resolves when the texture is ready; the previous one is
+   * disposed. null clears.
+   */
+  async setModelImage(i, file, flipY = true) {
+    if (!file) { this._images[i]?.tex.dispose(); this._images[i] = null; return; }
+    const url = URL.createObjectURL(file);
+    try {
+      const tex = await new THREE.TextureLoader().loadAsync(url);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.flipY = flipY;
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.needsUpdate = true;
+      this._images[i]?.tex.dispose();
+      this._images[i] = { name: file.name, tex };
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  /** The image name per model (null = none) — what a state records. */
+  imageNames() { return this._images.map(x => x?.name ?? null); }
 
   _rebuildMaterial(type) {
     if (this._adoptedMesh) return this._withOwnMesh(() => this._rebuildMaterial(type));
@@ -1218,7 +1250,8 @@ export class SceneManager {
         else delete this.material.defines.USE_TRIPLANAR;
         this.material.needsUpdate = true;
       }
-      const texSrcMap = [null, inputs.camera, inputs.movie, inputs.screen, inputs.draw, inputs.buffer, inputs.noise];
+      const texSrcMap = [null, inputs.camera, inputs.movie, inputs.screen, inputs.draw, inputs.buffer, inputs.noise,
+        this._images[0]?.tex ?? null];   // 7 Image — M1's own; a slot's comes from slotTexture()
       // Kept for the slots' own materials (ModelSlots, modelN.texsrc): the same
       // sources and the same mapping rule, read through slotTexture().
       this._texSrcMap = texSrcMap;

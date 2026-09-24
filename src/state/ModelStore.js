@@ -90,3 +90,43 @@ export async function loadModelFiles(modelName) {
     return null;
   }
 }
+
+// ── Model textures ───────────────────────────────────────────────────────────
+// An image a model wears (Texture = Image, scene3d.mat.texsrc / modelN.texsrc).
+// Same store, its own key space (`image:<file name>`) so images never appear
+// as models. States record the name (extra.modelImages), as for models.
+
+/** Store an image file under its name. Resolves false on any failure. */
+export async function saveImageFile(file) {
+  try {
+    const db = await openDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).put({ hash: `image:${file.name}`, kind: 'image', name: file.name,
+        files: [{ name: file.name, type: file.type, blob: file }], savedAt: Date.now() });
+      tx.oncomplete = resolve;
+      tx.onerror    = () => reject(tx.error);
+    });
+    return true;
+  } catch (e) {
+    console.warn('[ModelStore] image save failed', e);
+    return false;
+  }
+}
+
+/** The stored image as a File, or null if it was never kept. */
+export async function loadImageFile(name) {
+  try {
+    const db = await openDB();
+    const rec = await new Promise((resolve, reject) => {
+      const req = db.transaction(STORE, 'readonly').objectStore(STORE).get(`image:${name}`);
+      req.onsuccess = () => resolve(req.result ?? null);
+      req.onerror   = () => reject(req.error);
+    });
+    const f = rec?.files?.[0];
+    return f ? new File([f.blob], f.name, { type: f.type }) : null;
+  } catch (e) {
+    console.warn('[ModelStore] image load failed', e);
+    return null;
+  }
+}

@@ -1399,7 +1399,52 @@ function buildSegmentRow(ps, contextMenu, getClip, segId, startId, endId, clipId
 // is also where a plain file drop lands (selectedSlot(): -1 = M1).
 // onImport(i, files) does the slot loading (main.js owns ModelSlots and the
 // ModelStore); refresh() repaints after any load, clear or state recall.
-export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear }) {
+export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear, onImage, imageInfo }) {
+  // Texture = Image: a picker (name + Load image) under the model's Texture
+  // row, shown only while Image is chosen. i: 0 = M1, 1–3 = M2–M4.
+  // imageInfo(i) → { name, missing }; onImage(i, file) loads and stores it.
+  const pickers = [];
+  const makePicker = (i, paramId, imageIdx) => {
+    const el = document.createElement('div');
+    el.className = 'model-image-picker import-note';
+    el.style.cssText = 'display:flex;align-items:center;gap:6px;margin:2px 0 4px;';
+    const name = document.createElement('span');
+    name.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    const btn = document.createElement('button');
+    btn.className = 'import-btn';
+    btn.textContent = '🖼 Load image';
+    btn.title = `Load a picture (JPG / PNG / WebP) for ${i === 0 ? 'M1' : `M${i + 1}`} to wear`;
+    btn.addEventListener('click', () => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*,.jpg,.jpeg,.png,.webp,.bmp';
+      input.onchange = async e => {
+        const f = e.target.files?.[0];
+        if (!f) return;
+        btn.textContent = '⏳ Loading…';
+        try { await onImage?.(i, f); } finally { btn.textContent = '🖼 Load image'; refreshPickers(); }
+      };
+      input.click();
+    });
+    el.append(name, btn);
+    const refresh = () => {
+      el.style.display = ps.get(paramId).value === imageIdx ? 'flex' : 'none';
+      const info = imageInfo?.(i) ?? {};
+      name.textContent = info.name ? `✓ ${info.name}`
+        : info.missing ? `⚠ ${info.missing} is not stored in this browser — load it again`
+        : 'No image loaded';
+      name.style.color = info.name ? 'var(--green)' : info.missing ? 'var(--red, #e05)' : '';
+    };
+    ps.get(paramId).onChange(() => refresh());
+    pickers.push(refresh);
+    return { el, refresh };
+  };
+  const refreshPickers = () => pickers.forEach(r => r());
+  {
+    const m1Row = document.querySelector('#material-params [data-param-id="scene3d.mat.texsrc"]');
+    if (m1Row) m1Row.after(makePicker(0, 'scene3d.mat.texsrc', 7).el);
+  }
+
   const importEl = document.getElementById('model-import');
   if (!importEl || !slots) return { refresh() {} };
 
@@ -1509,6 +1554,7 @@ export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear
       if (ANIM_KEYS.includes(key)) mine.push(r);
       // The clip's name, under the Clip row: the row itself is a number.
       if (key === 'clip') rows.appendChild(clipLine);
+      if (key === 'texsrc') rows.appendChild(makePicker(i + 1, p.id, 8).el);
       if (key === 'animEnd') {
         const seg = buildSegmentRow(ps, contextMenu, () => {
           const ci = slots.clipInfo(i, ps);
@@ -1564,6 +1610,7 @@ export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear
       }
       m1Seg.sync();
     }
+    refreshPickers();
     const names = slots.names();
     PREFIXES.forEach((_, i) => {
       const n = names[i];
@@ -1595,7 +1642,7 @@ export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear
     });
   }
   refresh();
-  return { refresh, selectedSlot: () => cur - 1 };
+  return { refresh, refreshImages: refreshPickers, selectedSlot: () => cur - 1 };
 }
 
 // ── State bar (thumbnail tiles + bank selector) ───────────────────────────────

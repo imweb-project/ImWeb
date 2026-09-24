@@ -70,7 +70,7 @@ import { MovieCues, CUE_SLOTS } from "./inputs/MovieCues.js";
 import { CueBank } from "./core/CueBank.js";
 import { MappingAutosave } from "./state/MappingAutosave.js";
 import { StillsAutosave } from "./state/StillsAutosave.js";
-import { saveModelFiles, loadModelFiles, MODEL_FILE, initModelStore, hasStoredModel } from "./state/ModelStore.js";
+import { saveModelFiles, loadModelFiles, MODEL_FILE, initModelStore, hasStoredModel, saveImageFile, loadImageFile } from "./state/ModelStore.js";
 import { ProjMapMesh } from "./inputs/ProjMapMesh.js";
 
 /**
@@ -986,6 +986,27 @@ async function main() {
     }
   }
 
+  // Texture = Image: each model's picture (0 = M1, 1–3 = M2–M4). A name a
+  // recalled state asked for but this browser does not hold is kept here so
+  // the picker can say so, as a missing slot model does.
+  const _imageMissing = [null, null, null, null];
+  // glTF expects images unflipped; COLLADA / OBJ / STL flipped.
+  const _imageFlipFor = (i) =>
+    !/\.gl(b|tf)$/i.test((i === 0 ? scene3d.importedModelName : modelSlots.names()[i - 1]) ?? '');
+  async function _restoreModelImages(list) {
+    if (!Array.isArray(list)) return;
+    const have = scene3d.imageNames();
+    await Promise.all(list.map(async (ref, i) => {
+      if (ref === have[i]) return;
+      _imageMissing[i] = null;
+      if (!ref) { await scene3d.setModelImage(i, null); return; }
+      const file = await loadImageFile(ref);
+      if (file) await scene3d.setModelImage(i, file, _imageFlipFor(i));
+      else { await scene3d.setModelImage(i, null); _imageMissing[i] = ref; }
+    }));
+    _modelSlotsUI.refreshImages?.();
+  }
+
   // Put each extra model slot back as a recalled state had it. A state saved
   // before slots existed has no list: leave the slots alone rather than
   // clearing models the user loaded since. null = that slot was empty.
@@ -1016,6 +1037,8 @@ async function main() {
     // Which model sits in each extra slot (null = empty). Their placement is
     // in the model2/3/4 params; this is the part a param cannot hold.
     modelSlots:       modelSlots.names(),
+    // The picture each model wears when its Texture is Image (null = none).
+    modelImages:      scene3d.imageNames(),
   }));
 
   // Populated by the hypercube panel build block (below). Calling it clears and
@@ -1055,7 +1078,8 @@ async function main() {
       // State was saved without an imported model — clear any pending suppression
       scene3d.clearImportPending();
     }
-    _restoreModelSlots(extra?.modelSlots);
+    // Images after the slot models: each image's orientation follows its model.
+    _restoreModelSlots(extra?.modelSlots).then(() => _restoreModelImages(extra?.modelImages));
 
     const hc = scene3d.getHypercube();
     if (!hc) return;
@@ -1117,7 +1141,7 @@ async function main() {
       if (ref.startsWith('/')) scene3d.loadModelFromUrl(ref);
       else if (scene3d.importedModelName !== ref) _restoreSceneModel(ref);
     }
-    _restoreModelSlots(ds.extra?.modelSlots);
+    _restoreModelSlots(ds.extra?.modelSlots).then(() => _restoreModelImages(ds.extra?.modelImages));
   };
 
   // Force-push all hypercube ps values into the HypercubeObject unconditionally.
@@ -1557,6 +1581,18 @@ async function main() {
       }
     },
     onClear: (i) => modelSlots.clear(i),
+    onImage: async (i, file) => {
+      try {
+        await scene3d.setModelImage(i, file, _imageFlipFor(i));
+        _imageMissing[i] = null;
+        saveImageFile(file);
+        // Loading a picture means you want to wear it.
+        ps.set(i === 0 ? 'scene3d.mat.texsrc' : `${SLOT_PREFIXES[i - 1]}.texsrc`, i === 0 ? 7 : 8);
+      } catch (err) {
+        console.error(`[3D] Image for M${i + 1} failed to load:`, err);
+      }
+    },
+    imageInfo: (i) => ({ name: scene3d.imageNames()[i], missing: _imageMissing[i] }),
   });
 
   // ── Hypercube panel — appended as a section inside #tab-scene3d ───────────

@@ -3250,7 +3250,7 @@ export function registerCoreParameters(ps) {
     // source instead (ModelSlots._ownMaterial). The rest of the list MIRRORS
     // scene3d.mat.texsrc, offset by one — extend both together, at the end.
     { key: 'texsrc',  label: 'Texture', type: PARAM_TYPE.SELECT,
-      options: ['Shared', 'None', 'Camera', 'Movie', 'Screen', 'Draw', 'Buffer', 'Noise'], value: 0 },
+      options: ['Shared', 'None', 'Camera', 'Movie', 'Screen', 'Draw', 'Buffer', 'Noise', 'Image'], value: 0 },
     { key: 'anim',    label: 'Play',  type: PARAM_TYPE.TOGGLE, value: 1 },
     // A number, not a SELECT of clip names: a recall sets it before the
     // slot's model has loaded, and a SELECT would clamp it to 'None' then.
@@ -3487,7 +3487,10 @@ export function registerCoreParameters(ps) {
     group: "scene3d",
     type: PARAM_TYPE.SELECT,
     select: true,
-    options: ["None", "Camera", "Movie", "Screen", "Draw", "Buffer", "Noise"],
+    // "Image" (7) is the model's own picture (SceneManager.setModelImage) —
+    // appended, so saved indices keep their meaning. scene3d.mat.dispsrc does
+    // not mirror it (yet): displacing by an image is its own job.
+    options: ["None", "Camera", "Movie", "Screen", "Draw", "Buffer", "Noise", "Image"],
     value: 0,
   });
   ps.register({

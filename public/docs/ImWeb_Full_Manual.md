@@ -561,10 +561,16 @@ object; Scale 1 = the same size as a model in the main slot). **Wire** —
 Main (follow the main object's Wireframe) / Solid / Wire, per slot.
 **Texture** — what the model wears: *Shared* (the default) is the main
 Material exactly, as M1 wears it; any source (None, Camera, Movie, Screen,
-Draw, Buffer, Noise) gives the model its own copy of the Material wearing
-that instead — colour, roughness, glow, warp, blob and displace still follow
-the main Material, only the picture differs. Mapping follows the main
-setting (Auto makes Noise seamless). For a
+Draw, Buffer, Noise, Image) gives the model its own copy of the Material
+wearing that instead — colour, roughness, glow, warp, blob and displace still
+follow the main Material, only the picture differs. Mapping follows the main
+setting (Auto makes Noise seamless). **Image** — a picture of your own (JPG,
+PNG, WebP): choose Image and a *Load image* button appears under the row;
+loading one selects Image for you. M1 has Image too, at the end of the
+Material's Texture Source. The picture is kept in this browser and Display
+States record which one each model wears; one this browser does not hold is
+flagged in red. It follows the model's own UVs, the right way up for its
+format (glTF unflipped, COLLADA / OBJ / STL flipped). For a
 model with animations: **Play**, **Clip** (a number; the clip's name and
 length are shown under it), **Anim Speed**, and **Anim Start / Anim End** —
 play and loop only that part of the clip, in % of its length (M1 has the
