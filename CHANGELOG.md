@@ -115,6 +115,19 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   settings, including the factory bank.
 
 ### Fixed
+- **Recordings now match what you see.** With a fixed record size (720p,
+  1080p…), a recording of layers that leave parts of the picture see-through
+  (a 3D scene over Particles, for example) built up every earlier frame in
+  those parts: a washed-out haze with frozen ghosts of the 3D scene that the
+  live output never showed. The live view hid it because the canvas sits on
+  a black page; the recorder copied the frame without clearing first. Each
+  frame is now copied over black, as the page shows it. The same fix applies
+  to four other copies of the output: the spectral-image grab, Draw's
+  Output ink, the AI vision frame and the change-detection hash. Checked
+  with real recordings, before and after: the particle area's brightness
+  crept from 141 to 147 before, and stays steady at about 80 now, matching
+  the live view.
+
 - **Rigged models now rotate about their own centre, at the right size.** An
   imported model is centred on its rotation point and normalised by its
   bounding box, which was measured from the skin's raw vertices rather than

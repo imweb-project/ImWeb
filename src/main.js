@@ -1377,7 +1377,7 @@ async function main() {
       const w = Math.max(2, Math.min(1024, frames | 0));
       const h = Math.max(2, Math.min(256, rows | 0));
       if (grab.width !== w || grab.height !== h) { grab.width = w; grab.height = h; }
-      gctx.drawImage(canvas, 0, 0, w, h);
+      _drawOutputOpaque(gctx, w, h);
       const rgba = gctx.getImageData(0, 0, w, h).data;
       return {
         luma: lumaFromRGBA(rgba, w, h),
@@ -8396,11 +8396,18 @@ void main() {
 
   // Copy the output canvas into the record canvas, stretched to fill it.
   //
-  // The three-argument drawImage covers the whole destination, so every pixel
-  // is written every frame — no clear is needed and none is done, and a window
-  // resized MID-recording is handled for free (the stream's dimensions cannot
-  // change once started, and the next frame simply stretches by a new factor
-  // rather than suddenly letterboxing).
+  // A window resized MID-recording is handled for free (the stream's
+  // dimensions cannot change once started, and the next frame simply
+  // stretches by a new factor rather than suddenly letterboxing).
+  //
+  // The copy goes through _drawOutputOpaque, which paints black first. This
+  // used to say that a full-cover drawImage writes every pixel so no clear
+  // was needed — true only for an OPAQUE source, and the output is not: its
+  // context reports alpha:true, and with Particles behind a 3D scene 28% of
+  // it is fully transparent and most of the rest partly. drawImage blends,
+  // so every earlier frame showed through those pixels and built up in the
+  // file as frozen ghosts the live view never had (the live canvas sits on a
+  // black page, which is the backdrop the black fill reproduces).
   //
   // Depends on `preserveDrawingBuffer: true` — without it drawImage() off a
   // WebGL canvas returns a STALE frame rather than failing (LEARNED
@@ -8412,7 +8419,17 @@ void main() {
     // A zero-sized source throws InvalidStateError rather than drawing
     // nothing, which would kill the render loop mid-recording.
     if (!canvas.width || !canvas.height) return;
-    _recCtx.drawImage(canvas, 0, 0, _recCanvas.width, _recCanvas.height);
+    _drawOutputOpaque(_recCtx, _recCanvas.width, _recCanvas.height);
+  }
+
+  // Copy the output canvas into a 2D context the way the page shows it: over
+  // black. The output carries alpha (see _recBlit), and drawImage blends, so a
+  // REUSED canvas copied into without this keeps every earlier frame under
+  // the transparent pixels. Every such copy goes through here.
+  function _drawOutputOpaque(ctx, w, h) {
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(canvas, 0, 0, w, h);
   }
 
   // The surface to record, and its size. Returns the output canvas itself for
@@ -10171,7 +10188,7 @@ void main() {
       const c = drawLayer._inkCache;
       if (c.width > 0) {
         const cc = drawLayer._inkCacheCtx;
-        cc.drawImage(canvas, 0, 0, c.width, c.height);
+        _drawOutputOpaque(cc, c.width, c.height);
       }
     }
 
@@ -11069,7 +11086,7 @@ void main() {
     const ctx = _visionCanvas.getContext("2d");
     if (!ctx) return null;
     try {
-      ctx.drawImage(canvas, 0, 0, VISION_W, h);
+      _drawOutputOpaque(ctx, VISION_W, h);
       const url = _visionCanvas.toDataURL("image/jpeg", 0.6);
       const comma = url.indexOf(",");
       if (comma === -1) return null;
@@ -11108,7 +11125,7 @@ void main() {
     const ctx = _hashCanvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return null;
     try {
-      ctx.drawImage(canvas, 0, 0, HASH_N, HASH_N);
+      _drawOutputOpaque(ctx, HASH_N, HASH_N);
       const d = ctx.getImageData(0, 0, HASH_N, HASH_N).data;
       const luma = [];
       for (let i = 0; i < d.length; i += 4) {
