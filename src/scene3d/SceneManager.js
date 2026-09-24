@@ -1000,7 +1000,8 @@ export class SceneManager {
           this._range ??= new RangePlayer(this.mixer);
           this._range.update(dt, speed, this.actions[animIdx],
             p.get('scene3d.anim.start')?.value ?? 0, p.get('scene3d.anim.end')?.value ?? 100,
-            p.get('scene3d.anim.loop')?.value ?? 0, p.get('scene3d.anim.morph')?.value ?? 0);
+            p.get('scene3d.anim.loop')?.value ?? 0, p.get('scene3d.anim.morph')?.value ?? 0,
+            p.get('scene3d.anim.seam')?.value ?? 0, p.get('scene3d.anim.len')?.value ?? 0);
         }
         applyAnchor(this.mesh, p.get('scene3d.anchor')?.value === 1, this.actions[animIdx]?.getClip());
       } else {

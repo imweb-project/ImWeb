@@ -9,6 +9,17 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Seam and Length for animation loops.** *Seam* (s): in Loop mode the
+  last Seam seconds of the range blend into its first, as an audio loop
+  crossfades its splice, so any take loops forward without a jump — a
+  second action per loop plays the start region under the fade (capped at a
+  third of the range). *Length* (s, 0 = off) replaces Anim End: the loop has
+  a fixed length and Start is its start point; sliding Start moves the
+  window keeping the loop's phase, and a jump of more than 0.1 s in a frame
+  blends with Morph. Synthetic test: the per-frame step through a wrap falls
+  from 0.98 to 0.022 (0.017 is plain playback); weights stay summed to 1
+  through seams and rapid morphs.
+
 - **Segment menu for animations.** On M1 and M2–M4, under Anim Start /
   End, a menu of the takes inside the clip. A baked Poser animation is short
   takes spliced by hard cuts — single frames where the pose jumps 4–15 rad —

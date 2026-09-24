@@ -131,26 +131,55 @@ function pickAnchorBone(pivot, clip) {
  * retargets: nothing would jump, so there is nothing to blend. Up to
  * MAX_LANES loops blend at once; each extra one plays a twin clip that shares
  * the original's tracks (the mixer keeps one action per clip).
+ *
+ * Seam (Loop mode): the last `seam` seconds of the range blend into its
+ * first `seam` seconds, as an audio loop crossfades its splice, so the wrap
+ * never jumps whatever the take's end pose. The start region is heard only
+ * inside the blend, so one cycle is (length − seam) long, and playback
+ * enters at s + seam. Seam is capped at a third of the length, so at least
+ * half of each cycle plays unblended (at half, the loop would blend
+ * throughout). Blending needs a second action per lane — its `twin`,
+ * from the same pool (MAX_ACTIONS); with none free the wrap is hard.
+ *
+ * Length (s, 0 = off) replaces End: the range is [Start, Start + Length],
+ * held inside the clip. A range that moves without changing length keeps the
+ * loop's PHASE, so sliding Start scrubs the window like an audio loop's start
+ * point; a shift of more than SLIDE in one frame (a controller, a Segment
+ * pick) is a jump and blends with Morph instead.
  */
 export const LOOP_MODES = ['Loop', 'Ping-pong', 'Sine'];
 const MAX_LANES = 4;
+const MAX_ACTIONS = 8;     // lanes + their seam twins
+const SLIDE = 0.1;         // s — a per-frame shift above this is a jump
 const mod = (a, n) => ((a % n) + n) % n;
 
-function timeAt(l) {
+// Where lane l plays: main time t, and — inside a seam blend — the twin's
+// time t2 and its share k (0..1).
+function place(l) {
   const len = Math.max(l.e - l.s, 1e-3);
-  if (l.mode === 0) return l.s + mod(l.u, len);
+  if (l.mode === 0) {
+    const sm = Math.min(l.seam, len / 3);
+    if (!(sm > 0)) return { t: l.s + mod(l.u, len), k: 0 };
+    const P = len - sm, x = mod(l.u, P), t = l.s + sm + x;
+    if (x <= P - sm) return { t, k: 0 };
+    const k = (x - (P - sm)) / sm;
+    return { t, k, t2: l.s + k * sm };
+  }
   const x = mod(l.u, 2 * len);
-  if (l.mode === 1) return l.s + (x <= len ? x : 2 * len - x);
-  return l.s + len * (1 - Math.cos(Math.PI * x / len)) / 2;
+  if (l.mode === 1) return { t: l.s + (x <= len ? x : 2 * len - x), k: 0 };
+  return { t: l.s + len * (1 - Math.cos(Math.PI * x / len)) / 2, k: 0 };
 }
 
-// The phase u that puts lane l at time t in mode `mode` over [s, e], keeping
-// the direction it was travelling in.
-function phaseOf(l, t, s, e, mode) {
+// The phase u that puts lane l at time t in `mode` / `seam` over [s, e],
+// keeping the direction it was travelling in.
+function phaseOf(l, t, s, e, mode, seam) {
   const len = Math.max(e - s, 1e-3), y = Math.min(Math.max(t - s, 0), len);
   const oldLen = Math.max(l.e - l.s, 1e-3);
   const fwd = l.mode === 0 || mod(l.u, 2 * oldLen) <= oldLen;
-  if (mode === 0) return y;
+  if (mode === 0) {
+    const sm = Math.min(seam, len / 3);
+    return sm > 0 ? Math.min(Math.max(y - sm, 0), len - sm - 1e-6) : y;
+  }
   const a = mode === 1 ? y : len * Math.acos(Math.min(1, Math.max(-1, 1 - 2 * y / len))) / Math.PI;
   return fwd ? a : 2 * len - a;
 }
@@ -159,14 +188,15 @@ export class RangePlayer {
   constructor(mixer) {
     this.mixer = mixer;
     this.clip = null;
-    this.pool = [];        // actions for this clip: the original + twins
-    this.lanes = [];       // { action, s, e, mode, u, w, w0 }
+    this.pool = [];        // actions for this clip: the original + twin clips
+    this.lanes = [];       // { action, twin, s, e, mode, seam, u, w, w0 }
     this.cur = null;       // the lane fading in / playing
     this.fade = 1;         // 0→1 progress of the current morph
   }
 
   stop() {
     for (const a of this.pool) a.stop();
+    for (const l of this.lanes) l.twin = null;
     this.lanes = []; this.cur = null; this.clip = null;
   }
 
@@ -174,63 +204,97 @@ export class RangePlayer {
    * @param dt      real seconds since last frame (the morph runs on these)
    * @param speed   Anim Speed (playback runs on dt × speed)
    * @param action  the clip's action from the mixer
+   * @param seam    s of wrap blend in Loop mode (0 = hard wrap)
+   * @param lenSec  s; > 0 replaces End with Start + lenSec
    */
-  update(dt, speed, action, startPct, endPct, mode, morph) {
+  update(dt, speed, action, startPct, endPct, mode, morph, seam = 0, lenSec = 0) {
     const clip = action.getClip(), d = clip.duration;
     if (!(d > 0)) return;
-    const s = Math.min(startPct, endPct) / 100 * d;
-    const e = Math.max(startPct, endPct) / 100 * d;
+    let s, e;
+    if (lenSec > 0) {
+      const len = Math.min(lenSec, d);
+      s = Math.min(startPct / 100 * d, d - len);
+      e = s + len;
+    } else {
+      s = Math.min(startPct, endPct) / 100 * d;
+      e = Math.max(startPct, endPct) / 100 * d;
+    }
     if (clip !== this.clip) {
       this.stop();
       this.clip = clip;
       this.pool = [action];
-      this.cur = this._lane(action, s, e, mode);
+      this.cur = this._lane(action, s, e, mode, seam);
       this.lanes = [this.cur];
       this.fade = 1;
     }
     const cur = this.cur;
-    if (cur.s !== s || cur.e !== e || cur.mode !== mode) {
-      const t = cur.action.time;
+    if (cur.s !== s || cur.e !== e || cur.mode !== mode || cur.seam !== seam) {
+      const shift = Math.abs((e - s) - (cur.e - cur.s)) < 1e-6 && mode === cur.mode && seam === cur.seam;
+      const t = place(cur).t;
       const inside = t >= s && t <= e;
-      if (inside || !(morph > 0)) {
-        cur.u = inside ? phaseOf(cur, t, s, e, mode) : 0;
-        cur.s = s; cur.e = e; cur.mode = mode;
+      if (shift && (Math.abs(s - cur.s) <= SLIDE || !(morph > 0))) {
+        cur.s = s; cur.e = e;                        // same loop, moved: keep its phase
+      } else if (!shift && (inside || !(morph > 0))) {
+        cur.u = inside ? phaseOf(cur, t, s, e, mode, seam) : 0;
+        cur.s = s; cur.e = e; cur.mode = mode; cur.seam = seam;
       } else {
-        this._switch(s, e, mode);
+        this._switch(s, e, mode, seam, shift ? cur.u : 0);
       }
     }
 
     if (this.lanes.length > 1) {
       this.fade = morph > 0 ? Math.min(1, this.fade + dt / morph) : 1;
       if (this.fade >= 1) {
-        for (const l of this.lanes) if (l !== this.cur) l.action.stop();
+        for (const l of this.lanes) if (l !== this.cur) this._drop(l);
         this.lanes = [this.cur];
       }
     }
     for (const l of this.lanes) {
       l.w = l === this.cur ? (this.lanes.length > 1 ? this.fade : 1) : l.w0 * (1 - this.fade);
-      l.action.setEffectiveWeight(l.w);
       l.u += dt * speed;
-      l.action.time = timeAt(l);
+      const needTwin = l.mode === 0 && l.seam > 0;
+      if (needTwin && !l.twin) { l.twin = this._acquire(); l.twin?.reset().play(); }
+      if (!needTwin && l.twin) { l.twin.stop(); l.twin = null; }
+      const at = place(l);
+      const k = l.twin ? at.k : 0;
+      l.action.time = at.t;
+      l.action.setEffectiveWeight(l.w * (1 - k));
+      if (l.twin) {
+        l.twin.time = at.t2 ?? l.s;
+        l.twin.setEffectiveWeight(l.w * k);
+      }
     }
     this.mixer.update(0);
   }
 
-  _lane(action, s, e, mode) {
+  _lane(action, s, e, mode, seam, u = 0) {
     action.reset().play();
-    return { action, s, e, mode, u: 0, w: 1, w0: 1 };
+    return { action, twin: null, s, e, mode, seam, u, w: 1, w0: 1 };
   }
 
-  _switch(s, e, mode) {
-    let a = this.pool.find(x => !this.lanes.some(l => l.action === x));
-    if (!a && this.pool.length < MAX_LANES) {
+  _drop(l) {
+    l.action.stop();
+    l.twin?.stop();
+    l.twin = null;
+  }
+
+  // An action of this clip no lane is using, or null when all MAX_ACTIONS are.
+  _acquire() {
+    const used = new Set(this.lanes.flatMap(l => [l.action, l.twin]));
+    let a = this.pool.find(x => !used.has(x));
+    if (!a && this.pool.length < MAX_ACTIONS) {
       const c = this.clip;
       a = this.mixer.clipAction(new THREE.AnimationClip(c.name, c.duration, c.tracks));
       this.pool.push(a);
     }
-    if (!a) {                                  // all lanes busy: drop the faintest
+    return a ?? null;
+  }
+
+  _switch(s, e, mode, seam, u) {
+    let a = this.lanes.length < MAX_LANES ? this._acquire() : null;
+    if (!a) {                                  // no room: drop the faintest
       const out = this.lanes.filter(l => l !== this.cur).reduce((m, l) => l.w < m.w ? l : m);
-      out.action.stop();
+      this._drop(out);
       this.lanes = this.lanes.filter(l => l !== out);
       a = out.action;
     }
@@ -238,7 +302,7 @@ export class RangePlayer {
     // be lost and the blend would sag toward the rest pose.
     const sum = this.lanes.reduce((t, l) => t + l.w, 0) || 1;
     for (const l of this.lanes) l.w0 = l.w / sum;
-    this.cur = this._lane(a, s, e, mode);
+    this.cur = this._lane(a, s, e, mode, seam, u);
     this.cur.w = 0;
     this.lanes.push(this.cur);
     this.fade = 0;
@@ -364,7 +428,7 @@ export class ModelSlots {
         const ci = Math.min(Math.round(v('clip')) - 1, s.actions.length - 1);
         if (v('anim') && s.actions[ci]) {
           s.cur = ci;
-          s.range.update(dt, v('animSpeed'), s.actions[ci], v('animStart'), v('animEnd'), v('animLoop'), v('animMorph'));
+          s.range.update(dt, v('animSpeed'), s.actions[ci], v('animStart'), v('animEnd'), v('animLoop'), v('animMorph'), v('animSeam'), v('animLen'));
         } else if (s.cur !== -1) {
           s.range.stop();
           s.cur = -1;

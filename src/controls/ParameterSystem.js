@@ -3261,6 +3261,11 @@ export function registerCoreParameters(ps) {
     // capture.
     { key: 'animLoop',  label: 'Loop',  type: PARAM_TYPE.SELECT, options: ['Loop', 'Ping-pong', 'Sine'], value: 0 },
     { key: 'animMorph', label: 'Morph', min: 0, max: 5, value: 0, step: 0.05, unit: 's' },
+    // Seam: in Loop mode, seconds of the range's end blended into its start,
+    // so the wrap never jumps. Length (s, 0 = off) replaces End, so sliding
+    // Start moves a fixed-length loop like an audio loop's start point.
+    { key: 'animSeam',  label: 'Seam',   min: 0, max: 2,  value: 0, step: 0.01, unit: 's' },
+    { key: 'animLen',   label: 'Length', min: 0, max: 30, value: 0, step: 0.01, unit: 's' },
     // Load centre: the rotation point stays where the body was at import.
     // Follow body: the body is held on it while animating (see applyAnchor).
     { key: 'anchor',    label: 'Anchor',     type: PARAM_TYPE.SELECT, options: ['Load centre', 'Follow body'], value: 0 },
@@ -3884,6 +3889,9 @@ export function registerCoreParameters(ps) {
   // Loop mode and Morph time, as the slots' animLoop / animMorph.
   ps.register({ id: "scene3d.anim.loop",  label: "Loop",  group: "scene3d", type: PARAM_TYPE.SELECT, options: ["Loop", "Ping-pong", "Sine"], value: 0 });
   ps.register({ id: "scene3d.anim.morph", label: "Morph", group: "scene3d", min: 0, max: 5, value: 0, step: 0.05, unit: "s" });
+  // Seam and Length, as the slots' animSeam / animLen.
+  ps.register({ id: "scene3d.anim.seam", label: "Seam",   group: "scene3d", min: 0, max: 2,  value: 0, step: 0.01, unit: "s" });
+  ps.register({ id: "scene3d.anim.len",  label: "Length", group: "scene3d", min: 0, max: 30, value: 0, step: 0.01, unit: "s" });
   // Which take of the clip to play (0 = whole clip). Options are filled from
   // the loaded clip by buildSegmentRow (UI.js); choosing one writes Anim
   // Start / End. group 'global' — excluded from Display State capture: Start /

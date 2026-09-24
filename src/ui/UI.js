@@ -1290,6 +1290,8 @@ export function buildGeometryButtons(ps, sceneManager, contextMenu) {
   animSection.appendChild(buildParamRow(ps.get('scene3d.anim.end'), contextMenu));
   animSection.appendChild(buildParamRow(ps.get('scene3d.anim.loop'), contextMenu));
   animSection.appendChild(buildParamRow(ps.get('scene3d.anim.morph'), contextMenu));
+  animSection.appendChild(buildParamRow(ps.get('scene3d.anim.seam'), contextMenu));
+  animSection.appendChild(buildParamRow(ps.get('scene3d.anim.len'), contextMenu));
   animSection.appendChild(buildParamRow(ps.get('scene3d.anchor'), contextMenu));
   importEl.appendChild(animSection);
 
@@ -1429,7 +1431,7 @@ export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear
 
   const PREFIXES = ['model2', 'model3', 'model4'];
   const bodies = [], tabBtns = [], statuses = [], rowSets = [], animRows = [], clipLines = [], segRows = [];
-  const ANIM_KEYS = ['anim', 'clip', 'animSpeed', 'animStart', 'animEnd', 'animLoop', 'animMorph', 'anchor'];
+  const ANIM_KEYS = ['anim', 'clip', 'animSpeed', 'animStart', 'animEnd', 'animLoop', 'animMorph', 'animSeam', 'animLen', 'anchor'];
   PREFIXES.forEach((pre, i) => {
     const tb = document.createElement('button');
     tb.className = 'model-slot-tab';
@@ -1489,7 +1491,7 @@ export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear
         mine.push(seg.row);
         segRows.push(seg);
       }
-      if (key === 'clip' || key === 'animStart' || key === 'animEnd') p.onChange(() => refresh());
+      if (key === 'clip' || key === 'animStart' || key === 'animEnd' || key === 'animLen') p.onChange(() => refresh());
     });
     mine.push(clipLine);
     body.appendChild(rows);
@@ -1554,7 +1556,10 @@ export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear
       animRows[i].forEach(r => { r.style.display = ci ? '' : 'none'; });
       if (ci) {
         const a = ps.get(`${PREFIXES[i]}.animStart`).value, b = ps.get(`${PREFIXES[i]}.animEnd`).value;
-        const lo = Math.min(a, b) / 100 * ci.duration, hi = Math.max(a, b) / 100 * ci.duration;
+        const len = Math.min(ps.get(`${PREFIXES[i]}.animLen`).value, ci.duration);
+        // Length > 0 replaces End (RangePlayer): the window is Start + Length, kept inside the clip.
+        const lo = len > 0 ? Math.min(a / 100 * ci.duration, ci.duration - len) : Math.min(a, b) / 100 * ci.duration;
+        const hi = len > 0 ? lo + len : Math.max(a, b) / 100 * ci.duration;
         clipLines[i].textContent = `Clip ${ci.index} of ${ci.n}: ${ci.name} · ${ci.duration.toFixed(1)} s`
           + (lo > 0 || hi < ci.duration ? ` · playing ${lo.toFixed(1)}–${hi.toFixed(1)} s` : '');
       }

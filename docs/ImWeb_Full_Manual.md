@@ -581,6 +581,14 @@ cleanly. **Morph** — seconds to blend into a new range (0 = cut): when a new
 Segment, or Start / End from a controller, would make the figure jump, the
 old loop keeps playing while the new one fades in. A change that keeps the
 playhead inside the range (dragging End, say) needs no blend and gets none.
+**Seam** — in Loop mode, seconds of the range's end blended into its start,
+the way an audio loop crossfades its splice: the wrap never jumps, whatever
+the take's last pose. One cycle is then Length − Seam long; Seam is capped at
+a third of the range. **Length** — seconds; above 0 it replaces Anim End, so
+the loop has a fixed length and Anim Start becomes its start point: slide
+Start and the window moves while the loop keeps its place in the cycle, as
+with an audio loop. A big jump in Start (a controller, a Segment pick) blends
+with Morph instead.
 **Anchor** — *Load centre* keeps the rotation
 point where the body was at import; *Follow body* holds the body on it
 while animating, so a walk happens on the spot and a spinning figure turns
