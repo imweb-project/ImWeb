@@ -3251,8 +3251,16 @@ export function registerCoreParameters(ps) {
     { key: 'clip',    label: 'Clip',  min: 1, max: 16, value: 1, step: 1 },
     { key: 'animSpeed', label: 'Anim Speed', min: -2, max: 2, value: 1, step: 0.01 },
     // Play only part of the clip: Start/End in % of its length, looping inside.
-    { key: 'animStart', label: 'Anim Start', min: 0, max: 100, value: 0,   step: 0.1, unit: '%' },
-    { key: 'animEnd',   label: 'Anim End',   min: 0, max: 100, value: 100, step: 0.1, unit: '%' },
+    // snap: false — Segment writes frame-exact values; 0.1% of a 98 s clip is
+    // three frames, enough to put a matched loop's join back out of step.
+    { key: 'animStart', label: 'Anim Start', min: 0, max: 100, value: 0,   step: 0.1, snap: false, unit: '%' },
+    { key: 'animEnd',   label: 'Anim End',   min: 0, max: 100, value: 100, step: 0.1, snap: false, unit: '%' },
+    // How the range repeats — Loop / Ping-pong / Sine (eased turns), and the
+    // seconds a new range takes to blend in when it would jump (0 = cut).
+    // See RangePlayer (ModelSlots.js). Options are fixed: an index is safe to
+    // capture.
+    { key: 'animLoop',  label: 'Loop',  type: PARAM_TYPE.SELECT, options: ['Loop', 'Ping-pong', 'Sine'], value: 0 },
+    { key: 'animMorph', label: 'Morph', min: 0, max: 5, value: 0, step: 0.05, unit: 's' },
     // Load centre: the rotation point stays where the body was at import.
     // Follow body: the body is held on it while animating (see applyAnchor).
     { key: 'anchor',    label: 'Anchor',     type: PARAM_TYPE.SELECT, options: ['Load centre', 'Follow body'], value: 0 },
@@ -3271,6 +3279,9 @@ export function registerCoreParameters(ps) {
         value: start[key] ?? rest.value,
       });
     });
+    // As scene3d.anim.segment: 'global', outside the slot's group on purpose.
+    ps.register({ id: `${prefix}.animSegment`, label: `M${n} Segment`, group: 'global',
+      type: PARAM_TYPE.SELECT, options: ['Whole clip'], value: 0 });
   });
   ps.register({
     // Renders the scene on a transparent background so the target carries real
@@ -3867,8 +3878,18 @@ export function registerCoreParameters(ps) {
     step: 0.1,
   });
   // Play only part of the clip: Start/End in % of its length, looping inside.
-  ps.register({ id: "scene3d.anim.start", label: "Anim Start", group: "scene3d", min: 0, max: 100, value: 0,   step: 0.1, unit: "%" });
-  ps.register({ id: "scene3d.anim.end",   label: "Anim End",   group: "scene3d", min: 0, max: 100, value: 100, step: 0.1, unit: "%" });
+  // snap: false as for the slots' animStart/animEnd (Segment writes exact frames).
+  ps.register({ id: "scene3d.anim.start", label: "Anim Start", group: "scene3d", min: 0, max: 100, value: 0,   step: 0.1, snap: false, unit: "%" });
+  ps.register({ id: "scene3d.anim.end",   label: "Anim End",   group: "scene3d", min: 0, max: 100, value: 100, step: 0.1, snap: false, unit: "%" });
+  // Loop mode and Morph time, as the slots' animLoop / animMorph.
+  ps.register({ id: "scene3d.anim.loop",  label: "Loop",  group: "scene3d", type: PARAM_TYPE.SELECT, options: ["Loop", "Ping-pong", "Sine"], value: 0 });
+  ps.register({ id: "scene3d.anim.morph", label: "Morph", group: "scene3d", min: 0, max: 5, value: 0, step: 0.05, unit: "s" });
+  // Which take of the clip to play (0 = whole clip). Options are filled from
+  // the loaded clip by buildSegmentRow (UI.js); choosing one writes Anim
+  // Start / End. group 'global' — excluded from Display State capture: Start /
+  // End are what states capture, and a captured index recalled on top of a
+  // custom range would overwrite it.
+  ps.register({ id: "scene3d.anim.segment", label: "Segment", group: "global", type: PARAM_TYPE.SELECT, options: ["Whole clip"], value: 0 });
   ps.register({ id: "scene3d.anchor", label: "Anchor", group: "scene3d", type: PARAM_TYPE.SELECT, options: ["Load centre", "Follow body"], value: 0 });
   ps.register({
     id: "scene3d.clone.mode",

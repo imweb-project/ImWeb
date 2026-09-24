@@ -110,19 +110,139 @@ function pickAnchorBone(pivot, clip) {
 }
 
 /**
- * Keep an action inside [start, end] (% of its clip), wrapping in either
- * direction so a negative Anim Speed loops the range backwards. Shared with
- * the main object (SceneManager).
+ * Plays one clip inside Anim Start / End — shared by the main object
+ * (SceneManager) and the slots.
+ *
+ * The player sets each action's time itself and calls mixer.update(0), so the
+ * pose drawn is always the one at the time it chose (three advancing the time
+ * and a clamp pulling it back afterwards drew one frame outside the range).
+ *
+ * Loop mode, over the range [s, e]:
+ *   Loop       wrap from e back to s (either direction with negative speed)
+ *   Ping-pong  forward, then backward — never jumps
+ *   Sine       ping-pong eased by a cosine: slows to rest at both ends, so the
+ *              turn has no jolt. Same period as Ping-pong.
+ *
+ * Morph: when a new range would make the playhead JUMP — it is outside the
+ * new range — the old loop keeps playing in its own range while the new one
+ * starts at its Start and fades in over `morph` seconds (weights linear,
+ * summing to 1, so the pose never sags toward the rest pose mid-blend). A
+ * change that keeps the playhead inside the range (dragging End, say) just
+ * retargets: nothing would jump, so there is nothing to blend. Up to
+ * MAX_LANES loops blend at once; each extra one plays a twin clip that shares
+ * the original's tracks (the mixer keeps one action per clip).
  */
-export function clampActionRange(action, startPct, endPct) {
-  const d = action.getClip().duration;
-  if (!(d > 0)) return;
-  let s = Math.min(startPct, endPct) / 100 * d;
-  let e = Math.max(startPct, endPct) / 100 * d;
-  if (s <= 0 && e >= d) return;                  // whole clip: leave looping to three
-  const len = Math.max(e - s, 1e-3);
-  const t = action.time;
-  if (t < s || t > e) action.time = s + (((t - s) % len) + len) % len;
+export const LOOP_MODES = ['Loop', 'Ping-pong', 'Sine'];
+const MAX_LANES = 4;
+const mod = (a, n) => ((a % n) + n) % n;
+
+function timeAt(l) {
+  const len = Math.max(l.e - l.s, 1e-3);
+  if (l.mode === 0) return l.s + mod(l.u, len);
+  const x = mod(l.u, 2 * len);
+  if (l.mode === 1) return l.s + (x <= len ? x : 2 * len - x);
+  return l.s + len * (1 - Math.cos(Math.PI * x / len)) / 2;
+}
+
+// The phase u that puts lane l at time t in mode `mode` over [s, e], keeping
+// the direction it was travelling in.
+function phaseOf(l, t, s, e, mode) {
+  const len = Math.max(e - s, 1e-3), y = Math.min(Math.max(t - s, 0), len);
+  const oldLen = Math.max(l.e - l.s, 1e-3);
+  const fwd = l.mode === 0 || mod(l.u, 2 * oldLen) <= oldLen;
+  if (mode === 0) return y;
+  const a = mode === 1 ? y : len * Math.acos(Math.min(1, Math.max(-1, 1 - 2 * y / len))) / Math.PI;
+  return fwd ? a : 2 * len - a;
+}
+
+export class RangePlayer {
+  constructor(mixer) {
+    this.mixer = mixer;
+    this.clip = null;
+    this.pool = [];        // actions for this clip: the original + twins
+    this.lanes = [];       // { action, s, e, mode, u, w, w0 }
+    this.cur = null;       // the lane fading in / playing
+    this.fade = 1;         // 0→1 progress of the current morph
+  }
+
+  stop() {
+    for (const a of this.pool) a.stop();
+    this.lanes = []; this.cur = null; this.clip = null;
+  }
+
+  /**
+   * @param dt      real seconds since last frame (the morph runs on these)
+   * @param speed   Anim Speed (playback runs on dt × speed)
+   * @param action  the clip's action from the mixer
+   */
+  update(dt, speed, action, startPct, endPct, mode, morph) {
+    const clip = action.getClip(), d = clip.duration;
+    if (!(d > 0)) return;
+    const s = Math.min(startPct, endPct) / 100 * d;
+    const e = Math.max(startPct, endPct) / 100 * d;
+    if (clip !== this.clip) {
+      this.stop();
+      this.clip = clip;
+      this.pool = [action];
+      this.cur = this._lane(action, s, e, mode);
+      this.lanes = [this.cur];
+      this.fade = 1;
+    }
+    const cur = this.cur;
+    if (cur.s !== s || cur.e !== e || cur.mode !== mode) {
+      const t = cur.action.time;
+      const inside = t >= s && t <= e;
+      if (inside || !(morph > 0)) {
+        cur.u = inside ? phaseOf(cur, t, s, e, mode) : 0;
+        cur.s = s; cur.e = e; cur.mode = mode;
+      } else {
+        this._switch(s, e, mode);
+      }
+    }
+
+    if (this.lanes.length > 1) {
+      this.fade = morph > 0 ? Math.min(1, this.fade + dt / morph) : 1;
+      if (this.fade >= 1) {
+        for (const l of this.lanes) if (l !== this.cur) l.action.stop();
+        this.lanes = [this.cur];
+      }
+    }
+    for (const l of this.lanes) {
+      l.w = l === this.cur ? (this.lanes.length > 1 ? this.fade : 1) : l.w0 * (1 - this.fade);
+      l.action.setEffectiveWeight(l.w);
+      l.u += dt * speed;
+      l.action.time = timeAt(l);
+    }
+    this.mixer.update(0);
+  }
+
+  _lane(action, s, e, mode) {
+    action.reset().play();
+    return { action, s, e, mode, u: 0, w: 1, w0: 1 };
+  }
+
+  _switch(s, e, mode) {
+    let a = this.pool.find(x => !this.lanes.some(l => l.action === x));
+    if (!a && this.pool.length < MAX_LANES) {
+      const c = this.clip;
+      a = this.mixer.clipAction(new THREE.AnimationClip(c.name, c.duration, c.tracks));
+      this.pool.push(a);
+    }
+    if (!a) {                                  // all lanes busy: drop the faintest
+      const out = this.lanes.filter(l => l !== this.cur).reduce((m, l) => l.w < m.w ? l : m);
+      out.action.stop();
+      this.lanes = this.lanes.filter(l => l !== out);
+      a = out.action;
+    }
+    // Outgoing weights, renormalised: a dropped lane's share would otherwise
+    // be lost and the blend would sag toward the rest pose.
+    const sum = this.lanes.reduce((t, l) => t + l.w, 0) || 1;
+    for (const l of this.lanes) l.w0 = l.w / sum;
+    this.cur = this._lane(a, s, e, mode);
+    this.cur.w = 0;
+    this.lanes.push(this.cur);
+    this.fade = 0;
+  }
 }
 
 export class ModelSlots {
@@ -162,7 +282,10 @@ export class ModelSlots {
       clips, mixer: clips.length ? new THREE.AnimationMixer(pivot.userData.model) : null,
       actions: [], cur: -1,
     };
-    if (slot.mixer) slot.actions = clips.map(c => slot.mixer.clipAction(c));
+    if (slot.mixer) {
+      slot.actions = clips.map(c => slot.mixer.clipAction(c));
+      slot.range = new RangePlayer(slot.mixer);
+    }
     pivot.traverse(c => {
       if (!c.isMesh) return;
       c.onBeforeRender = (r, sc, cam, geo, mat) => {
@@ -239,16 +362,11 @@ export class ModelSlots {
 
       if (s.mixer) {
         const ci = Math.min(Math.round(v('clip')) - 1, s.actions.length - 1);
-        if (v('anim')) {
-          if (ci !== s.cur) {
-            s.actions[s.cur]?.stop();
-            s.cur = ci;
-            s.actions[ci]?.reset().play();
-          }
-          s.mixer.update(dt * v('animSpeed'));
-          if (s.actions[ci]) clampActionRange(s.actions[ci], v('animStart'), v('animEnd'));
+        if (v('anim') && s.actions[ci]) {
+          s.cur = ci;
+          s.range.update(dt, v('animSpeed'), s.actions[ci], v('animStart'), v('animEnd'), v('animLoop'), v('animMorph'));
         } else if (s.cur !== -1) {
-          s.actions[s.cur]?.stop();
+          s.range.stop();
           s.cur = -1;
         }
       }

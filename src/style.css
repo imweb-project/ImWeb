@@ -975,6 +975,9 @@ button.ws-open:hover {
     grid-column: 3 / -1;
 }
 
+/* Segment row whose take no longer matches Anim Start / End (UI.js buildSegmentRow) */
+.param-row.seg-custom .param-value { opacity: 0.45; font-style: italic; }
+
 .param-row.toggle-row,
 .param-row.trigger-row {
     cursor: pointer;

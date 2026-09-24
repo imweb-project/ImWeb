@@ -562,7 +562,26 @@ Main (follow the main object's Wireframe) / Solid / Wire, per slot. For a
 model with animations: **Play**, **Clip** (a number; the clip's name and
 length are shown under it), **Anim Speed**, and **Anim Start / Anim End** —
 play and loop only that part of the clip, in % of its length (M1 has the
-same pair beside its animation controls). **Anchor** — *Load centre* keeps the rotation
+same pair beside its animation controls). **Segment** — the takes the
+clip is spliced from. A baked Poser animation is short takes joined by hard
+cuts (one frame where the whole pose jumps), and each take between two cuts is
+a segment, exactly as the file has it — some are half a second long. A clip
+with no cuts is split at the moments the figure nearly stops instead. Picking
+a segment sets Anim Start / End to it; ⟲ marks one whose last pose matches its
+first, so it loops without a jump. *Whole clip* resets the range. Segment
+is a parameter like any other: right-click or Ctrl+click it to assign a
+controller (MIDI note, LFO, Random…), and its min / max fields bound which
+takes a controller reaches. It is not captured by Display States — Start /
+End are, and the row follows them: a recalled range that is exactly a take
+shows that take, and a range changed some other way dims the row. **Loop** —
+how the range repeats: *Loop* wraps from End to Start, *Ping-pong* plays
+forward then back, *Sine* goes back and forth slowing to rest at each end, so
+the turn is smooth. Ping-pong and Sine never jump, so any segment loops
+cleanly. **Morph** — seconds to blend into a new range (0 = cut): when a new
+Segment, or Start / End from a controller, would make the figure jump, the
+old loop keeps playing while the new one fades in. A change that keeps the
+playhead inside the range (dragging End, say) needs no blend and gets none.
+**Anchor** — *Load centre* keeps the rotation
 point where the body was at import; *Follow body* holds the body on it
 while animating, so a walk happens on the spot and a spinning figure turns
 about itself (M1 has it too). **Normalize** sets a slot's size

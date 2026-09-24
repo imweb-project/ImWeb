@@ -9,6 +9,31 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Segment menu for animations.** On M1 and M2–M4, under Anim Start /
+  End, a menu of the takes inside the clip. A baked Poser animation is short
+  takes spliced by hard cuts — single frames where the pose jumps 4–15 rad —
+  so the clip is sampled at 30 fps and a cut is a frame that moves more than
+  1 rad and 3× both its neighbours. Each take is a segment, played exactly as
+  the file has it: Haraldur6 (98 s) gives 53, found in ~30 ms, some half a
+  second long. A clip with no cuts falls back to cutting where the figure
+  nearly stops. ⟲ marks a take whose last pose matches its first. Segment
+  is a parameter (`scene3d.anim.segment`, `model2/3/4.animSegment`), so a
+  controller can pick takes — right-click / Ctrl+click its row. Group
+  'global', not captured: states capture Start / End, and the row follows
+  them (an exact take shows as that take, anything else dims it). Anim
+  Start / End no longer round to 0.1 %: that is 3 frames of a 98 s clip.
+  Dragging still steps by 0.1.
+
+- **Loop mode and Morph for animations.** *Loop* (as before), *Ping-pong*,
+  or *Sine* — back and forth, easing to rest at each end so the turn has no
+  jolt; neither of the last two ever jumps. *Morph* (s, default 0 = cut):
+  when a new range would make the figure jump, the old loop keeps playing
+  while the new one blends in, weights summing to 1 so the pose never sags
+  toward rest. Up to four loops blend at once. The player now sets each
+  action's time itself and draws that pose, instead of letting three advance
+  the time and pulling it back afterwards — which drew one frame outside the
+  range at every wrap.
+
 - **Anchor: Follow body.** On M1 and M2–M4, *Follow body* keeps an
   animated model on its rotation point: the body is held in place while
   the animation plays, so a walk happens on the spot and a spinning figure

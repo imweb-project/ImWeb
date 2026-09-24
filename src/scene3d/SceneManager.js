@@ -17,7 +17,7 @@ import { STLLoader }  from 'three/addons/loaders/STLLoader.js';
 import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { hasComponentChannels, buildComponentClip } from './ColladaChannels.js';
-import { clampActionRange, applyAnchor } from './ModelSlots.js';
+import { RangePlayer, applyAnchor } from './ModelSlots.js';
 import { GeometryFactory, GEOMETRY_NAMES } from './GeometryFactory.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { TRIPLANAR_GLSL, TRI_MAP_FRAGMENT, TRI_EMISSIVEMAP_FRAGMENT } from './Triplanar.js';
@@ -812,6 +812,7 @@ export class SceneManager {
       this.actions = [];
       this._curAnimIdx = -1;
     }
+    this._range = null;             // its mixer is gone; the next update makes one
 
     if (!model || !animations || !animations.length) {
       if (params) {
@@ -994,18 +995,17 @@ export class SceneManager {
       const animIdx = p.get('scene3d.anim.select').value;
 
       if (active) {
-        if (animIdx !== this._curAnimIdx) {
-          if (this.actions[this._curAnimIdx]) this.actions[this._curAnimIdx].stop();
-          this._curAnimIdx = animIdx;
-          if (this.actions[animIdx]) this.actions[animIdx].play();
+        this._curAnimIdx = animIdx;
+        if (this.actions[animIdx]) {
+          this._range ??= new RangePlayer(this.mixer);
+          this._range.update(dt, speed, this.actions[animIdx],
+            p.get('scene3d.anim.start')?.value ?? 0, p.get('scene3d.anim.end')?.value ?? 100,
+            p.get('scene3d.anim.loop')?.value ?? 0, p.get('scene3d.anim.morph')?.value ?? 0);
         }
-        this.mixer.update(dt * speed);
-        if (this.actions[animIdx]) clampActionRange(this.actions[animIdx],
-          p.get('scene3d.anim.start')?.value ?? 0, p.get('scene3d.anim.end')?.value ?? 100);
         applyAnchor(this.mesh, p.get('scene3d.anchor')?.value === 1, this.actions[animIdx]?.getClip());
       } else {
         if (this._curAnimIdx !== -1) {
-          if (this.actions[this._curAnimIdx]) this.actions[this._curAnimIdx].stop();
+          this._range?.stop();
           this._curAnimIdx = -1;
         }
         // Paused: keep following, or a frozen pose would jump off the point.

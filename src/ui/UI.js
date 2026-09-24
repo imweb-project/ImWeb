@@ -16,6 +16,7 @@ import { ColorPicker } from './ColorPicker.js';
 import { mkSelect as _mkSelect } from './components/Select.js';
 import { openCtrlPopover as _openCtrlPopover } from './components/CtrlPopover.js';
 import { buildParamRow } from './components/ParamRow.js';
+import { clipSegments } from '../scene3d/ClipSegments.js';
 import { openGuide } from './Guide.js';
 import { setViewportPos } from './layout/LayoutManager.js';
 const DEFAULT_FX_ORDER_SP = DEFAULT_FX_ORDER;
@@ -329,6 +330,8 @@ export function buildMappingPanels(ps, contextMenu) {
                                .map(id => ps.get(id)).filter(Boolean)),
     'global-params':       ps.getGroup('global').filter(p =>
       p.id !== 'glsl.preset' && p.id !== 'displace.warpSlot' &&
+      // Segment rows live in each model's animation block (buildSegmentRow).
+      !/^(scene3d\.anim\.segment|model[234]\.animSegment)$/.test(p.id) &&
       p.id !== 'noise.recipe' &&
       p.id !== 'projmap.edit' && p.id !== 'projmap.grid' &&
       p.id !== 'projmap.meshSlot' && p.id !== 'projmap.meshStore' &&
@@ -1285,6 +1288,8 @@ export function buildGeometryButtons(ps, sceneManager, contextMenu) {
   animSection.appendChild(buildParamRow(ps.get('scene3d.anim.speed'), contextMenu));
   animSection.appendChild(buildParamRow(ps.get('scene3d.anim.start'), contextMenu));
   animSection.appendChild(buildParamRow(ps.get('scene3d.anim.end'), contextMenu));
+  animSection.appendChild(buildParamRow(ps.get('scene3d.anim.loop'), contextMenu));
+  animSection.appendChild(buildParamRow(ps.get('scene3d.anim.morph'), contextMenu));
   animSection.appendChild(buildParamRow(ps.get('scene3d.anchor'), contextMenu));
   importEl.appendChild(animSection);
 
@@ -1298,6 +1303,64 @@ export function buildGeometryButtons(ps, sceneManager, contextMenu) {
 
   importEl.addEventListener('modelLoaded', refreshModelSections);
   clearBtn.addEventListener('click', refreshModelSections);
+}
+
+// ── Segment row (one per model) ───────────────────────────────────────────────
+// A view of a SELECT param (scene3d.anim.segment / modelN.animSegment) whose
+// options are the takes ClipSegments finds in the current clip — a standard
+// param row, so right-click / Ctrl+click assigns a controller and the min/max
+// fields bound which takes it recalls. Choosing a take (by hand, MIDI, LFO…)
+// writes Anim Start / End; 0 = Whole clip.
+//
+// The param is group 'global': Start / End are what states capture, and a
+// captured index recalled on top of a custom range would overwrite it.
+// Instead the row follows the range: when Start / End match a take exactly
+// (a recalled state, say) the value is set to it SILENTLY — no onChange, so
+// nothing is rewritten — and when they match nothing it is dimmed as custom.
+// Options change with the clip, and a SELECT row fixes its options when
+// built, so sync() rebuilds the row inside a stable wrapper.
+function buildSegmentRow(ps, contextMenu, getClip, segId, startId, endId, clipId) {
+  const p = ps.get(segId);
+  const wrap = document.createElement('div');
+  let clip = null, segs = [], row = null;
+  const pct = t => t / clip.duration * 100;
+  function rebuild() {
+    row = buildParamRow(p, contextMenu);
+    wrap.replaceChildren(row);
+  }
+  function follow() {
+    if (!row) return;
+    const a = ps.get(startId).value, b = ps.get(endId).value;
+    const lo = Math.min(a, b), hi = Math.max(a, b), eps = 1e-3;
+    let i = lo <= 0 && hi >= 100 ? 0
+      : segs.findIndex(s => Math.abs(pct(s.start) - lo) < eps && Math.abs(pct(s.end) - hi) < eps) + 1;
+    if (i > 0 || (lo <= 0 && hi >= 100)) { p._value = p._target = i; }
+    const custom = !!clip && i === 0 && !(lo <= 0 && hi >= 100);
+    row.classList.toggle('seg-custom', custom);
+    row.title = custom ? 'Anim Start / End were changed since — they match no take' : '';
+  }
+  function sync() {
+    const c = getClip();
+    if (c !== clip) {
+      clip = c;
+      segs = clip ? clipSegments(clip).segments : [];
+      if (segs.length < 2) segs = [];              // no cuts: only the whole clip
+      p.options = ['Whole clip',
+        ...segs.map((s, i) => `${i + 1} · ${s.start.toFixed(2)}–${s.end.toFixed(2)} s${s.match < 0.1 ? ' ⟲' : ''}`)];
+      p._value = p._target = 0;                    // silently: a new clip keeps its range
+      rebuild();
+    }
+    follow();
+  }
+  p.onChange(v => {
+    if (!clip) return;
+    const s = segs[Math.round(v) - 1];
+    ps.set(startId, s ? pct(s.start) : 0);
+    ps.set(endId, s ? pct(s.end) : 100);
+  });
+  [startId, endId, clipId].forEach(id => id && ps.get(id)?.onChange(() => sync()));
+  rebuild();
+  return { row: wrap, sync };
 }
 
 // ── Models M1–M4 ──────────────────────────────────────────────────────────────
@@ -1352,6 +1415,10 @@ export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear
   // Animation after the placement, as on M2–M4.
   const m1Anim = m1Body.querySelector('#model-anim-controls');
   if (m1Anim) m1Body.appendChild(m1Anim);
+  const m1Seg = buildSegmentRow(ps, contextMenu,
+    () => slots.sm.actions?.[ps.get('scene3d.anim.select').value]?.getClip() ?? null,
+    'scene3d.anim.segment', 'scene3d.anim.start', 'scene3d.anim.end', 'scene3d.anim.select');
+  m1Anim?.querySelector('[data-param-id="scene3d.anim.end"]')?.after(m1Seg.row);
   wrap.appendChild(m1Body);
   let _m1ClipKey = null;
   ps.get('scene3d.geo').onChange(() => refresh());
@@ -1361,8 +1428,8 @@ export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear
   importEl.addEventListener('click', e => { if (e.target.closest('button')) queueMicrotask(refresh); });
 
   const PREFIXES = ['model2', 'model3', 'model4'];
-  const bodies = [], tabBtns = [], statuses = [], rowSets = [], animRows = [], clipLines = [];
-  const ANIM_KEYS = ['anim', 'clip', 'animSpeed', 'animStart', 'animEnd', 'anchor'];
+  const bodies = [], tabBtns = [], statuses = [], rowSets = [], animRows = [], clipLines = [], segRows = [];
+  const ANIM_KEYS = ['anim', 'clip', 'animSpeed', 'animStart', 'animEnd', 'animLoop', 'animMorph', 'anchor'];
   PREFIXES.forEach((pre, i) => {
     const tb = document.createElement('button');
     tb.className = 'model-slot-tab';
@@ -1413,6 +1480,15 @@ export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear
       if (ANIM_KEYS.includes(key)) mine.push(r);
       // The clip's name, under the Clip row: the row itself is a number.
       if (key === 'clip') rows.appendChild(clipLine);
+      if (key === 'animEnd') {
+        const seg = buildSegmentRow(ps, contextMenu, () => {
+          const ci = slots.clipInfo(i, ps);
+          return ci ? slots.slots[i].clips[ci.index - 1] ?? null : null;
+        }, `${pre}.animSegment`, `${pre}.animStart`, `${pre}.animEnd`, `${pre}.clip`);
+        rows.appendChild(seg.row);
+        mine.push(seg.row);
+        segRows.push(seg);
+      }
       if (key === 'clip' || key === 'animStart' || key === 'animEnd') p.onChange(() => refresh());
     });
     mine.push(clipLine);
@@ -1456,6 +1532,7 @@ export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear
         const old = m1Anim.querySelector('[data-param-id="scene3d.anim.select"]');
         if (old) old.replaceWith(buildParamRow(selP, contextMenu));
       }
+      m1Seg.sync();
     }
     const names = slots.names();
     PREFIXES.forEach((_, i) => {
@@ -1481,6 +1558,7 @@ export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear
         clipLines[i].textContent = `Clip ${ci.index} of ${ci.n}: ${ci.name} · ${ci.duration.toFixed(1)} s`
           + (lo > 0 || hi < ci.duration ? ` · playing ${lo.toFixed(1)}–${hi.toFixed(1)} s` : '');
       }
+      segRows[i]?.sync();
     });
   }
   refresh();
