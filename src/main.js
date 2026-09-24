@@ -114,7 +114,7 @@ import { TextLayer } from "./inputs/TextLayer.js";
 import { buildWarpMaps } from "./inputs/WarpMaps.js";
 import { WarpMapEditor } from "./inputs/WarpMapEditor.js";
 import { SceneManager } from "./scene3d/SceneManager.js";
-import { ModelSlots } from "./scene3d/ModelSlots.js";
+import { ModelSlots, SLOT_PREFIXES } from "./scene3d/ModelSlots.js";
 import { EASING, PLANE_NAMES, PLANE_PAIRS, PLANE_HELP, PLANE_MENU_ORDER } from "./scene3d/HypercubeGeometry.js";
 import { Pipeline } from "./core/Pipeline.js";
 import { GestureArbitrator } from "./core/GestureArbitrator.js";
@@ -10448,9 +10448,14 @@ void main() {
 
     // Generate noise only when a layer is using it as a source (512×512 dedicated target)
     const NOISE_IDX = 5;
-    const _noiseUsed = _srcUsed(NOISE_IDX) || _analogSrcIdx === 3 || ps.get('scene3d.mat.texsrc')?.value === 6;
+    // A 3D model wearing Noise: M1 through the main Material, or M2–M4 through
+    // their own Texture (modelN.texsrc = main index + 1; 0 is Shared, which is
+    // M1's case again). Only a loaded, visible slot counts. Without the slots
+    // here, a model wearing Noise while M1 did not got a texture nobody drew.
+    const _scene3dNoise = ps.get('scene3d.mat.texsrc')?.value === 6 ||
+      SLOT_PREFIXES.some((pre, i) => modelSlots.slots[i] && ps.get(`${pre}.visible`).value && ps.get(`${pre}.texsrc`)?.value === 7);
+    const _noiseUsed = _srcUsed(NOISE_IDX) || _analogSrcIdx === 3 || _scene3dNoise;
     // A texture on the 3D material must tile, so it forces Tile on.
-    const _scene3dNoise = ps.get('scene3d.mat.texsrc')?.value === 6;
     if (_noiseUsed) {
       const nv = (id) => ps.get(id).value;
       // Tile: the shader wraps its lattice at Scale cells, so every period —

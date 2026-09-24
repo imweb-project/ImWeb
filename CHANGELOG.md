@@ -174,6 +174,12 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   settings, including the factory bank.
 
 ### Fixed
+- **A model wearing Noise as its own Texture got no noise.** Noise is drawn
+  only when something uses it, and that check read M1's Texture Source only —
+  so M2–M4 wearing Noise while M1 did not showed a texture nobody drew. The
+  check now includes any loaded, visible slot wearing Noise, which also forces
+  Tile on as the 3D material needs.
+
 - **Second screen blank after refreshing the main page.** The output window
   is found by name, so after a refresh the click handed back the OLD window
   and wrote the page into it again; its previous script's global scope was
