@@ -3272,6 +3272,11 @@ export function registerCoreParameters(ps) {
     // Start moves a fixed-length loop like an audio loop's start point.
     { key: 'animSeam',  label: 'Seam',   min: 0, max: 2,  value: 0, step: 0.01, unit: 's' },
     { key: 'animLen',   label: 'Length', min: 0, max: 30, value: 0, step: 0.01, unit: 's' },
+    // Advance: after Loops cycles of a take, go to the Next one (backwards
+    // while Anim Speed is negative) or a Random one, through Segment — so Morph
+    // blends the change. See advanceTake (ModelSlots.js).
+    { key: 'animAdvance', label: 'Advance', type: PARAM_TYPE.SELECT, options: ['Off', 'Next', 'Random'], value: 0 },
+    { key: 'animLoops',   label: 'Loops',   min: 1, max: 16, value: 2, step: 1 },
     // Load centre: the rotation point stays where the body was at import.
     // Follow body: the body is held on it while animating (see applyAnchor).
     { key: 'anchor',    label: 'Anchor',     type: PARAM_TYPE.SELECT, options: ['Load centre', 'Follow body'], value: 0 },
@@ -3901,6 +3906,9 @@ export function registerCoreParameters(ps) {
   // Seam and Length, as the slots' animSeam / animLen.
   ps.register({ id: "scene3d.anim.seam", label: "Seam",   group: "scene3d", min: 0, max: 2,  value: 0, step: 0.01, unit: "s" });
   ps.register({ id: "scene3d.anim.len",  label: "Length", group: "scene3d", min: 0, max: 30, value: 0, step: 0.01, unit: "s" });
+  // Advance and Loops, as the slots' animAdvance / animLoops.
+  ps.register({ id: "scene3d.anim.advance", label: "Advance", group: "scene3d", type: PARAM_TYPE.SELECT, options: ["Off", "Next", "Random"], value: 0 });
+  ps.register({ id: "scene3d.anim.loops",   label: "Loops",   group: "scene3d", min: 1, max: 16, value: 2, step: 1 });
   // Which take of the clip to play (0 = whole clip). Options are filled from
   // the loaded clip by buildSegmentRow (UI.js); choosing one writes Anim
   // Start / End. group 'global' — excluded from Display State capture: Start /

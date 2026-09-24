@@ -593,7 +593,12 @@ cleanly. **Morph** — seconds to blend into a new range (0 = cut): when a new
 Segment, or Start / End from a controller, would make the figure jump, the
 old loop keeps playing while the new one fades in. A change that keeps the
 playhead inside the range (dragging End, say) needs no blend and gets none.
-**Timeline** — the bar under Segment is the whole clip: takes as alternating
+**Advance** — *Next* moves on to the following take after **Loops**
+cycles of the current one (backwards while Anim Speed is negative), *Random*
+to any other take; it goes through Segment, so Morph blends each change and
+the row and timeline follow. A cycle is one wrap in Loop mode, one
+there-and-back in Ping-pong and Sine. Picking a take yourself restarts the
+count, so it always gets its full Loops. **Timeline** — the bar under Segment is the whole clip: takes as alternating
 bands (⟲ loops tinted green), cut lines, a curve of how much the figure moves,
 the playing range in yellow, and the playhead. Click a take to play it (as
 choosing it in Segment, so Morph applies); drag to set a range, or drag near

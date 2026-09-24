@@ -177,6 +177,32 @@ function place(l) {
   return { t: l.s + len * (1 - Math.cos(Math.PI * x / len)) / 2, k: 0 };
 }
 
+// The length of one cycle of lane l, in phase units: Loop wraps (a seamed
+// loop's cycle is length − seam), Ping-pong and Sine go there and back.
+function period(l) {
+  const len = Math.max(l.e - l.s, 1e-3);
+  return l.mode === 0 ? len - Math.min(l.seam, len / 3) : 2 * len;
+}
+
+/**
+ * Advance = Next / Random: after `loops` cycles of the current take, choose
+ * another through the Segment param (segId), so the change takes the normal
+ * path — Morph blends it, the row and the timeline strip follow. Next steps
+ * backwards while Anim Speed is negative. Needs at least two takes.
+ */
+export function advanceTake(ps, player, segId, advance, loops, speed) {
+  if (!advance || !player?.cur || player.loopsDone() < Math.max(1, loops)) return;
+  const seg = ps.get(segId);
+  const n = (seg?.options.length ?? 1) - 1;
+  if (n < 2) return;
+  const cur = Math.round(seg.value);
+  let next;
+  if (advance === 1) next = speed < 0 ? (cur <= 1 ? n : cur - 1) : (cur % n) + 1;
+  else { next = 1 + Math.floor(Math.random() * (n - 1)); if (next >= cur) next++; }
+  player.markLoops();
+  ps.set(segId, next);
+}
+
 // The phase u that puts lane l at time t in `mode` / `seam` over [s, e],
 // keeping the direction it was travelling in.
 function phaseOf(l, t, s, e, mode, seam) {
@@ -200,6 +226,19 @@ export class RangePlayer {
     this.cur = null;       // the lane fading in / playing
     this.fade = 1;         // 0→1 progress of the current morph
   }
+
+  /** Cycles the current take has completed since it started or was last changed (Advance). */
+  // Counted in phase from the mark, not in whole cycles, so a count restarted
+  // mid-cycle (Length on: a moved window keeps its phase) still waits for full
+  // loops.
+  loopsDone() {
+    const c = this.cur;
+    if (!c) return 0;
+    if (this._mark?.lane !== c) this._mark = { lane: c, u: 0 };
+    return Math.floor(Math.abs(c.u - this._mark.u) / period(c));
+  }
+  /** Restart the loop count from here. */
+  markLoops() { if (this.cur) this._mark = { lane: this.cur, u: this.cur.u }; }
 
   /** Where the playing loop is, in clip seconds (null when stopped) — for the timeline strip. */
   get time() { return this.cur ? place(this.cur).t : null; }
@@ -239,7 +278,10 @@ export class RangePlayer {
     }
     const cur = this.cur;
     if (cur.s !== s || cur.e !== e || cur.mode !== mode || cur.seam !== seam) {
-      const shift = Math.abs((e - s) - (cur.e - cur.s)) < 1e-6 && mode === cur.mode && seam === cur.seam;
+      // Keep the phase only for a Length window that moved — sliding Start.
+      // Without Length, a new range of the same length is a different take and
+      // starts at its beginning like any other.
+      const shift = lenSec > 0 && Math.abs((e - s) - (cur.e - cur.s)) < 1e-6 && mode === cur.mode && seam === cur.seam;
       const t = place(cur).t;
       const inside = t >= s && t <= e;
       if (shift && (Math.abs(s - cur.s) <= SLIDE || !(morph > 0))) {
@@ -250,6 +292,7 @@ export class RangePlayer {
       } else {
         this._switch(s, e, mode, seam, shift ? cur.u : 0);
       }
+      this.markLoops();                              // a new range starts its count afresh
     }
 
     if (this.lanes.length > 1) {
@@ -445,6 +488,7 @@ export class ModelSlots {
         if (v('anim') && s.actions[ci]) {
           s.cur = ci;
           s.range.update(dt, v('animSpeed'), s.actions[ci], v('animStart'), v('animEnd'), v('animLoop'), v('animMorph'), v('animSeam'), v('animLen'));
+          advanceTake(ps, s.range, `${pre}.animSegment`, v('animAdvance'), v('animLoops'), v('animSpeed'));
         } else if (s.cur !== -1) {
           s.range.stop();
           s.cur = -1;

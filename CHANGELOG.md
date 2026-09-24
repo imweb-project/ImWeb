@@ -9,6 +9,22 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Auto-advance through the takes.** *Advance* (Off / Next / Random) and
+  *Loops* (1–16, default 2) on M1 and M2–M4: after Loops cycles of the
+  current take, Next moves to the following one (backwards while Anim Speed
+  is negative), Random to any other. It goes through the Segment param, so
+  Morph blends the change and the row and timeline follow. A cycle is a wrap
+  in Loop mode (length − seam with a Seam), a there-and-back in Ping-pong and
+  Sine; any range change restarts the count, measured in phase so a restart
+  mid-cycle still waits for full loops. Needs two takes or more.
+
+### Changed
+- **A take of the same length as the current one starts at its beginning.**
+  The Length work treated any same-length range change as "the window moved"
+  and kept the loop's phase, so with Length off, picking a take as long as
+  the current one started it mid-way. Phase is now kept only while Length is
+  on (sliding Start), as intended.
+
 - **Texture = Image: a model can wear a picture of your own.** *Image* is
   appended to M1's Texture Source and to M2–M4's Texture; choosing it shows
   a *Load image* picker under the row, and loading a picture selects Image.
