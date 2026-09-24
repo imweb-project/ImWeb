@@ -151,6 +151,15 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   settings, including the factory bank.
 
 ### Fixed
+- **Second screen blank after refreshing the main page.** The output window
+  is found by name, so after a refresh the click handed back the OLD window
+  and wrote the page into it again; its previous script's global scope was
+  still there, the second `const c` threw "already declared", and nothing
+  ran. A reused window is now navigated to about:blank first (a fresh
+  global) and written once that document is ready. Verified headless with
+  real clicks: open, reload, open again — same window, fresh scope, frames
+  arriving.
+
 - **Recordings now match what you see.** With a fixed record size (720p,
   1080p…), a recording of layers that leave parts of the picture see-through
   (a 3D scene over Particles, for example) built up every earlier frame in

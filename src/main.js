@@ -2673,6 +2673,18 @@ async function main() {
         } catch { /* permission denied, one screen, or no gesture — fine */ }
       })();
 
+      // The window is found by NAME, so after the main page is refreshed the
+      // old output window is handed back, not a new one. document.write into
+      // its finished page keeps the old script's global scope: the second copy
+      // of `const c` throws "already declared", nothing runs, and the output
+      // is blank. Navigating it to about:blank first gives it a fresh global;
+      // write once the new document is there. A new window has no #out and is
+      // written at once, as before.
+      let _stale = false;
+      try { _stale = !!_outWin.document.getElementById("out"); } catch { /* not ours */ }
+      const _win = _outWin;
+      const writeOut = () => {
+      if (_outWin !== _win || _win.closed) return;   // closed or replaced meanwhile
       _outWin.document.write(`<!DOCTYPE html>
 <html>
 <head>
@@ -3548,6 +3560,20 @@ async function main() {
       _outWin.document.close();
       _outWinReady = true;
       _outFrameTick = 0;
+      };
+      if (_stale) {
+        const oldDoc = _win.document;
+        _win.location.replace("about:blank");
+        const t0 = performance.now();
+        const poll = setInterval(() => {
+          let fresh = false;
+          try { fresh = _win.document !== oldDoc && _win.document.readyState === "complete"; } catch { /* mid-navigation */ }
+          // 3 s without a new document: write anyway rather than never.
+          if (fresh || _win.closed || performance.now() - t0 > 3000) { clearInterval(poll); writeOut(); }
+        }, 20);
+      } else {
+        writeOut();
+      }
 
       // Detect popup closed by user
       const _checkClosed = setInterval(() => {
