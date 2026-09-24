@@ -516,6 +516,18 @@ export class SceneManager {
       'warpblobrimdispvtfv6' + (mat.defines?.USE_TRIPLANAR ? '_tri' : '');
   }
 
+  /**
+   * A texture source (scene3d.mat.texsrc's list) for a slot's own material:
+   * { tex, tri } — the live texture, blocked when it is the 3D render target
+   * (a feedback loop), and whether the Mapping setting makes it triplanar.
+   * Read from the last render's inputs.
+   */
+  slotTexture(srcIdx) {
+    const t = this._texSrcMap?.[srcIdx] ?? null;
+    const tex = t && t !== this.target.texture ? t : null;
+    return { tex, tri: !!this._resolveTriplanar?.(srcIdx) };
+  }
+
   _rebuildMaterial(type) {
     if (this._adoptedMesh) return this._withOwnMesh(() => this._rebuildMaterial(type));
     if (this._matType === type) return;
@@ -1207,6 +1219,10 @@ export class SceneManager {
         this.material.needsUpdate = true;
       }
       const texSrcMap = [null, inputs.camera, inputs.movie, inputs.screen, inputs.draw, inputs.buffer, inputs.noise];
+      // Kept for the slots' own materials (ModelSlots, modelN.texsrc): the same
+      // sources and the same mapping rule, read through slotTexture().
+      this._texSrcMap = texSrcMap;
+      this._resolveTriplanar = resolveTriplanar;
       const liveTex = texSrcMap[texSrcIdx] ?? null;
       // Block any texture that is the current render target — prevents WebGL feedback loop.
       // Skip the guard when instancer is adopted (its mesh is not the render target).

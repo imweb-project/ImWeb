@@ -11,6 +11,13 @@
  * mapping apply to every model. _rebuildMaterial() only re-points sm.mesh, so
  * apply() re-points the slots whenever sm.material has been replaced.
  *
+ * Unless modelN.texsrc says otherwise: then the slot wears its OWN material
+ * (_ownMaterial) — a clone of the main one with the same shader hook
+ * (sm._setupMaterial), kept in step with it every frame (standard properties
+ * by copy(), the hook's uniforms value by value) and then given its own
+ * texture, mapping and glow map. So Material, colour, roughness, warp, blob
+ * and displace still apply to every model; only what it wears differs.
+ *
  * Rendering needs nothing extra: the colour, depth and normal passes all draw
  * the whole scene.
  *
@@ -384,8 +391,10 @@ export class ModelSlots {
     this.sm.scene.remove(s.pivot);
     s.mixer?.stopAllAction();
     // Geometry and the model's own textures belong to this slot alone; the
-    // material is shared with the main object, so it is left alone.
+    // material is shared with the main object, so it is left alone — but
+    // the slot's own material, if it had one, goes with it.
     s.pivot.traverse(c => { if (c.isMesh) c.geometry?.dispose(); });
+    s.own?.dispose();
     this.slots[i] = null;
   }
 
@@ -400,9 +409,13 @@ export class ModelSlots {
       p.visible = !!v('visible');
       if (!p.visible) return;
 
-      if (s.mat !== this.sm.material) {
-        p.traverse(c => { if (c.isMesh) c.material = this.sm.material; });
-        s.mat = this.sm.material;
+      const src = v('texsrc');
+      // While the Hypercube instancer is adopted, sm.material is ITS material
+      // (with its own shader hook) — not one to clone; stay shared until then.
+      const want = src > 0 && !this.sm._adoptedMesh ? this._ownMaterial(s, src - 1) : this.sm.material;
+      if (s.mat !== want) {
+        p.traverse(c => { if (c.isMesh) c.material = want; });
+        s.mat = want;
       }
 
       // Same rule as the main object: spin accumulates, and a CHANGE to any
@@ -439,6 +452,38 @@ export class ModelSlots {
       }
       applyAnchor(p, v('anchor') === 1, s.actions[s.cur]?.getClip() ?? s.clips[0]);
     });
+  }
+
+  /**
+   * The slot's own material wearing texture source `srcIdx` (the main
+   * list's index). Rebuilt when the main material is replaced (a Material
+   * type change); otherwise synced from it each frame. A recompile is asked
+   * for only when something the program depends on changed: the main
+   * material's version, whether there is a map, or the mapping.
+   */
+  _ownMaterial(s, srcIdx) {
+    const main = this.sm.material;
+    if (!s.own || s.ownBase !== main) {
+      s.own?.dispose();
+      s.own = main.clone();
+      this.sm._setupMaterial(s.own);
+      s.ownBase = main;
+      s.ownKey = '';
+    }
+    const own = s.own;
+    own.copy(main);                       // colour, roughness, emissive, wireframe…
+    const { tex, tri } = this.sm.slotTexture(srcIdx);
+    own.map = tex ? Object.assign(tex, { wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping }) : null;
+    if (own.emissiveMap !== undefined) own.emissiveMap = own.map;   // glow with its own picture, as the main one does
+    // copy() resets MeshStandardMaterial's defines; the mapping is the slot's own.
+    own.defines = { ...(main.defines ?? {}) };
+    if (tri) own.defines.USE_TRIPLANAR = true; else delete own.defines.USE_TRIPLANAR;
+    // The hook's uniforms: warp, blob, displace, rim… — values, not objects.
+    const mu = main._shader?.uniforms, ou = own._shader?.uniforms;
+    if (mu && ou) for (const k in mu) if (ou[k]) ou[k].value = mu[k].value;
+    const key = `${main.version}|${!!own.map}|${tri}`;
+    if (key !== s.ownKey) { s.ownKey = key; own.needsUpdate = true; }
+    return own;
   }
 
   /** Clip count and the name of the clip Clip currently points at. */

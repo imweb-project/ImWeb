@@ -3245,6 +3245,12 @@ export function registerCoreParameters(ps) {
     { key: 'norm',      label: 'Normalize',  min: 0.1, max: 10, value: 2 },
     // Main = follow scene3d.wireframe (the shared material), as before.
     { key: 'wire',    label: 'Wire',  type: PARAM_TYPE.SELECT, options: ['Main', 'Solid', 'Wire'], value: 0 },
+    // What the model wears. Shared = the main Material exactly (as before);
+    // anything else gives the slot its own copy of that material wearing this
+    // source instead (ModelSlots._ownMaterial). The rest of the list MIRRORS
+    // scene3d.mat.texsrc, offset by one — extend both together, at the end.
+    { key: 'texsrc',  label: 'Texture', type: PARAM_TYPE.SELECT,
+      options: ['Shared', 'None', 'Camera', 'Movie', 'Screen', 'Draw', 'Buffer', 'Noise'], value: 0 },
     { key: 'anim',    label: 'Play',  type: PARAM_TYPE.TOGGLE, value: 1 },
     // A number, not a SELECT of clip names: a recall sets it before the
     // slot's model has loaded, and a SELECT would clamp it to 'None' then.

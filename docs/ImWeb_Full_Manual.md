@@ -558,7 +558,13 @@ into the **selected** tab. Each extra slot's tab has **+ Import**
 (with textures), **✕ Clear**, and its own placement — `model2/3/4.visible`,
 `pos.x/y/z`, `rot.x/y/z`, `spin.x/y/z`, `scale` (same ranges as the main
 object; Scale 1 = the same size as a model in the main slot). **Wire** —
-Main (follow the main object's Wireframe) / Solid / Wire, per slot. For a
+Main (follow the main object's Wireframe) / Solid / Wire, per slot.
+**Texture** — what the model wears: *Shared* (the default) is the main
+Material exactly, as M1 wears it; any source (None, Camera, Movie, Screen,
+Draw, Buffer, Noise) gives the model its own copy of the Material wearing
+that instead — colour, roughness, glow, warp, blob and displace still follow
+the main Material, only the picture differs. Mapping follows the main
+setting (Auto makes Noise seamless). For a
 model with animations: **Play**, **Clip** (a number; the clip's name and
 length are shown under it), **Anim Speed**, and **Anim Start / Anim End** —
 play and loop only that part of the clip, in % of its length (M1 has the

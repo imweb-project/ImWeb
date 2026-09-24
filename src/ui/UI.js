@@ -1533,7 +1533,7 @@ export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear
 
   const note = document.createElement('div');
   note.className = 'import-note';
-  note.textContent = 'M2–M4 share the main Material. Dropping a model file loads it into the selected tab; ⌥-drop fills the first empty slot.';
+  note.textContent = 'M2–M4 share the main Material; Texture gives a model its own picture on it. Dropping a model file loads it into the selected tab; ⌥-drop fills the first empty slot.';
   wrap.appendChild(note);
 
   importEl.appendChild(wrap);

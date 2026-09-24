@@ -9,6 +9,19 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Each model can wear its own texture.** M2–M4 get *Texture*: *Shared*
+  (default — the main Material, as before) or any texture source, which gives
+  the model its own copy of the main Material wearing that source. The copy
+  is built with the same shader hook and synced from the main one every frame
+  (standard properties by copy(), the hook's uniforms by value), so colour,
+  roughness, glow, warp, blob and displace still apply to every model; the
+  map, glow map and mapping are the model's own. A recompile is asked for only
+  when the main material's version, map presence or mapping changes. Stays
+  shared while the Hypercube instancer is adopted. Verified on WebGL2 with the
+  real SceneManager / ModelSlots: M1 green camera, M2 red noise — pixels red
+  where M2 is, green where M1 is; roughness change reaches M2; no shader
+  errors; back to Shared restores the main material.
+
 - **Animation timeline strip.** Under each model's Segment row (M1–M4), the
   clip as a bar: takes as alternating bands (⟲ tinted), cut lines, a motion
   curve (per-frame speed, splice frames left out), the playing range and a
