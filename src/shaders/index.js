@@ -76,6 +76,34 @@ export const MOTION_BG = /* glsl */ `
   }
 `;
 
+// ── Growth: Variation — one slow noise field shared by every Growth mode ──────
+// Gray-Scott has ONE stripe width, set by diffusion/feed/kill, identical
+// everywhere — which is why its detail evens out. This field lets each mode
+// vary its own size parameter across the canvas: stripe width (Single), arm
+// thickness (Frost), fine↔coarse (Nested). Value noise, three octaves, aspect
+// corrected so regions are round, drifting slowly. −1…1; 0 when off.
+const GROWTH_VAR_GLSL = /* glsl */ `
+  uniform float uVar;       // 0–1 amount
+  uniform vec3  uVarP;      // x: regions across, y: drift time, z: aspect (w/h)
+  float gvHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float gvNoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(gvHash(i), gvHash(i + vec2(1.0, 0.0)), u.x),
+               mix(gvHash(i + vec2(0.0, 1.0)), gvHash(i + vec2(1.0, 1.0)), u.x), u.y);
+  }
+  float growthVar(vec2 uv) {
+    if (uVar <= 0.0) return 0.0;
+    vec2 p = vec2(uv.x * uVarP.z, uv.y) * uVarP.x;
+    float t = uVarP.y;
+    float n = 0.57 * gvNoise(p + vec2(t, 0.37 * t))
+            + 0.29 * gvNoise(p * 2.03 + vec2(5.2 - 0.6 * t, 5.2 + t))
+            + 0.14 * gvNoise(p * 4.1 + vec2(11.7 - 0.8 * t, 11.7));
+    // Summed value noise huddles round 0.5; ×3 spreads it to use the range.
+    return clamp((n - 0.5) * 3.0, -1.0, 1.0);
+  }
+`;
+
 // ── Growth: Gray-Scott reaction-diffusion ─────────────────────────────────────
 // State texture: r = A (food), g = B (the grower). One step of
 //   A' = A + Da∇²A − AB² + f(1−A)
@@ -87,10 +115,12 @@ export const MOTION_BG = /* glsl */ `
 // Out-of-range taps clamp to the edge texel, which makes the border reflective.
 
 export const GROWTH_RD_STEP = /* glsl */ `
+${GROWTH_VAR_GLSL}
   uniform sampler2D uState;
   uniform vec2      uTexel;
   uniform sampler2D uSeed;
   uniform float     uSeedAmt;   // 0 = seed source ignored
+  uniform sampler2D uSeedPrev;  // last frame's seed — a rise means the stroke ARRIVED here
   uniform sampler2D uField;
   uniform float     uFieldAmt;  // 0 = Pattern A everywhere
   uniform vec2      uFkA;       // (feed, kill) for field = 0
@@ -137,18 +167,25 @@ export const GROWTH_RD_STEP = /* glsl */ `
     // growth. Age alone cannot tell them apart — a cell the old pattern
     // re-colonises is young too, and letting "young" neighbours in kept the
     // dead centre alive forever (measured). So every cell carries a stamp:
-    // Plant and fresh strokes write "now", a newly colonised cell takes the
-    // newest stamp among the living neighbours that colonised it, living
-    // cells keep theirs, and barren ground keeps the stamp of what died. A
-    // barren cell opens only to a living neighbour with a NEWER stamp.
+    // a seed pixel gets "now" once, when it is first seeded; a newly
+    // colonised cell takes the stamp of its PARENT — the living neighbour
+    // with the most B, the one that actually grew into it; living cells keep
+    // theirs, and barren ground keeps the stamp of what died. A barren cell
+    // opens only to a living neighbour with a NEWER stamp.
+    // Parent, not newest: inheriting the newest stamp let the last part of a
+    // stroke win wherever growth met, so a whole picture shared the final
+    // stamp and stopped at once instead of fading in drawing order.
     float stamp = texture2D(uState, vUv).a;
     float nbStamp = -1.0;                 // newest living neighbour, −1 = none
+    float parent  = -1.0;                 // stamp of the strongest living neighbour
     {
       vec2 o[4];
       o[0] = vec2(1.0, 0.0); o[1] = vec2(-1.0, 0.0); o[2] = vec2(0.0, 1.0); o[3] = vec2(0.0, -1.0);
+      float pB = 0.1;
       for (int j = 0; j < 4; j++) {
         vec4 n = texture2D(uState, vUv + o[j] * uTexel);
         if (n.g > 0.1) nbStamp = max(nbStamp, n.a);
+        if (n.g > pB) { pB = n.g; parent = n.a; }
       }
     }
     if (uLife > 0.0 && age < 0.0 && nbStamp > stamp + 1e-3) age = 0.0;
@@ -156,21 +193,35 @@ export const GROWTH_RD_STEP = /* glsl */ `
     if (uLife > 0.0) die = age < 0.0 ? 1.0 : smoothstep(uLife * 0.75, uLife, age);
     k += 0.04 * die;
 
+    // Grow time: past it a colony may not spread (below); during Fade time it
+    // DISSOLVES while still alive — extra kill ramps in with the fade, so the
+    // pattern keeps moving as it thins out, instead of freezing (the first
+    // version froze it, and the whole picture stood still).
+    float fadeP = 0.0;
+    if (uGrowTime > 0.0 && stamp > 0.0) fadeP = clamp((uNow - stamp - uGrowTime) / max(uFadeTime, 1e-3), 0.0, 1.0);
+    // Squared ramp: the extra kill stays small for most of the fade and only
+    // tips the pattern past its death line near the end, so the dissolving
+    // spans the whole Fade time (linear 0.05 killed it in half of it).
+    k += 0.012 * fadeP * fadeP;
+
     float a = c.r, b = c.g;
     float r = a * b * b;
-    a += uDiff * lap.r - r + f * (1.0 - a);
-    b += 0.5 * uDiff * lap.g + r - (f + k) * b;
+    // Variation: diffusion raised by up to 1.5 octaves by region — stripe
+    // width goes as √D, so ×1 … ×1.7. UP only: measured with 5 px seeds,
+    // coral dies below D ≈ 0.2 and maze below 0.15, while both grow on to
+    // 0.6 — a ±swing killed seeds and left islands no front could enter.
+    // Capped at 1, the 9-point stability limit.
+    float D = min(uDiff * exp2(1.5 * uVar * (0.5 + 0.5 * growthVar(vUv))), 1.0);
+    a += D * lap.r - r + f * (1.0 - a);
+    b += 0.5 * D * lap.g + r - (f + k) * b;
 
-    // ── Grow time: a colony grows for a set time from its planting, then
-    // stops, fades and clears. Per lineage — a colony shares its planting
-    // stamp (colonised cells inherit it), so the whole colony stops at once
-    // and each planting runs on its own clock. Stopped = frozen as it stood,
-    // and it may not colonise further; after the fade the ground is empty.
+    // ── Grow time: every part grows for Grow time from when IT was seeded,
+    // then stops spreading, dissolves over Fade time (kill ramp above) and
+    // clears. Each part keeps its own clock, so a stroke drawn over three
+    // seconds fades out in the order it was drawn.
     if (uGrowTime > 0.0) {
-      float since = uNow - stamp;
-      if (c.g > 0.1 && stamp > 0.0 && since > uGrowTime) { a = c.r; b = c.g; }
-      if (c.g <= 0.1 && nbStamp > 0.0 && uNow - nbStamp > uGrowTime) b = min(b, 0.05);
-      if (stamp > 0.0 && since > uGrowTime + uFadeTime) { a = 1.0; b = 0.0; age = 0.0; stamp = 0.0; }
+      if (c.g <= 0.1 && parent > 0.0 && uNow - parent > uGrowTime) b = min(b, 0.05);
+      if (stamp > 0.0 && uNow - stamp > uGrowTime + uFadeTime) { a = 1.0; b = 0.0; age = 0.0; stamp = 0.0; }
     }
 
     // Seeding moves a cell TOWARD the classic inoculum (A 0.5, B 0.25) and
@@ -185,7 +236,15 @@ export const GROWTH_RD_STEP = /* glsl */ `
       a = min(a, 1.0 - s * 0.5);
       // A deliberate seed is a new generation where it lands. Knee'd at 0.2
       // so faint residue in the seed cannot restamp the whole grid.
-      if (s > 0.2) { age = max(age, 0.0); stamp = uNow; }
+      // Stamped ONCE, when first seeded — a held stroke re-stamping "now"
+      // every frame could never reach its Grow time. After its fade clears
+      // it, a still-held seed sprouts again with a fresh stamp: a cycle.
+      // ARRIVAL also stamps, even over growth that got here first: a stroke
+      // drawn over three seconds must carry three seconds of stamps along
+      // its length, or the growth racing ahead of the pen gives the whole
+      // stroke its starting time (measured in Frost: all faded at once).
+      float sp = smoothstep(0.05, 0.3, clamp(dot(texture2D(uSeedPrev, vUv).rgb, vec3(0.299, 0.587, 0.114)) * uSeedAmt, 0.0, 1.0));
+      if (s > 0.2 && (s - sp > 0.1 || c.g <= 0.1 || stamp <= 0.0)) { age = max(age, 0.0); stamp = uNow; }
     }
     if (uPoint.z > 0.0) {
       vec2 d = (vUv - uPoint.xy) / uTexel;
@@ -206,7 +265,7 @@ export const GROWTH_RD_STEP = /* glsl */ `
     }
 
     // Colonised this step (dead → alive): inherit the colonisers' lineage.
-    if (c.g <= 0.1 && b > 0.1 && nbStamp >= 0.0) stamp = max(stamp, nbStamp);
+    if (c.g <= 0.1 && b > 0.1 && parent >= 0.0) stamp = parent;
 
     gl_FragColor = vec4(clamp(a, 0.0, 1.0), clamp(b, 0.0, 1.0), age, stamp);
   }
@@ -217,6 +276,7 @@ export const GROWTH_RD_STEP = /* glsl */ `
 // so the dense core and the thin growing edge read as different colours.
 export const GROWTH_RD_VIEW = /* glsl */ `
   uniform sampler2D uState;
+  uniform vec2  uTexel;
   uniform float uHue;       // 0–1
   uniform float uSat;       // 0–1
   uniform float uSpread;    // 0–1, hue travel across the concentration
@@ -225,6 +285,11 @@ export const GROWTH_RD_VIEW = /* glsl */ `
   uniform float uNow;       // lineage clock
   uniform float uGrowTime;  // 0 = no fade
   uniform float uFadeTime;
+  uniform float uRelief;    // 0 = flat; height-map depth
+  uniform vec3  uLight;     // unit vector toward the light (z = out of screen)
+  uniform float uGloss;     // 0–1 specular
+  uniform float uGround;    // 0–1 brightness of the low areas
+  uniform float uBevel;     // texels the relief gradient spans (1–6)
 
   varying vec2 vUv;
 
@@ -233,26 +298,74 @@ export const GROWTH_RD_VIEW = /* glsl */ `
     return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
   }
 
+  // ONE definition of what each mode shows, 0–1. Colour and relief both read
+  // it, so the lit surface is exactly the shape you see, not a second guess.
+  float heightOf(vec4 st) {
+    if (uMode < 0.5) return clamp((st.g - 0.08) * uContrast, 0.0, 1.0);            // B
+    if (uMode > 1.5) return clamp(0.5 + (st.r - 0.5) * uContrast * 0.5, 0.0, 1.0); // p
+    return clamp(0.5 + 0.5 * st.r * uContrast * 0.5, 0.0, 1.0);                    // v
+  }
+
+  // The surface relief lights: the RAW field, not heightOf(). heightOf() is
+  // contrast-clamped — plateaus with one-texel cliffs — and lighting it drew
+  // hairline outlines, not relief (measured). The raw fields are smooth domes
+  // (a Gray-Scott stripe peaks mid-stripe; the crystal interface is a ramp).
+  float surf(vec2 uv) {
+    vec4 st = texture2D(uState, uv);
+    if (uMode < 0.5) return st.g / 0.4;
+    if (uMode > 1.5) return st.r;
+    return 0.5 + 0.5 * st.r;
+  }
+
   void main() {
     vec4 st = texture2D(uState, vUv);
-    vec3 col;
+    float v = heightOf(st);
+    float hue;
+    float val = v;
     if (uMode < 0.5) {
-      float v = clamp((st.g - 0.08) * uContrast, 0.0, 1.0);
-      col = hsv2rgb(vec3(fract(uHue + uSpread * (1.0 - v)), uSat, v));
+      hue = uHue + uSpread * (1.0 - v);
     } else if (uMode > 1.5) {
-      // Crystal: the solid bright, the latent-heat halo a faint glow around
-      // it; hue walks with the temperature, so growing tips read warm.
-      float p = st.r, T = clamp(st.g, 0.0, 1.0);
-      float v = clamp(0.5 + (p - 0.5) * uContrast * 0.5, 0.0, 1.0);
-      v = max(v, 0.3 * T * (1.0 - p));
-      col = hsv2rgb(vec3(fract(uHue + uSpread * T), uSat, v));
+      // Crystal: the latent-heat halo a faint glow round the solid; hue walks
+      // with temperature, so growing tips read warm.
+      float T = clamp(st.g, 0.0, 1.0);
+      val = max(v, 0.3 * T * (1.0 - st.r));
+      hue = uHue + uSpread * T;
     } else {
-      // v ∈ [−1, 1]; Contrast sharpens around the midline. Hue walks with
-      // the scale that has been winning here (g, 0 = finest … 1 = coarsest),
-      // so each nesting level can read as its own colour.
-      float v = clamp(0.5 + 0.5 * st.r * uContrast * 0.5, 0.0, 1.0);
-      col = hsv2rgb(vec3(fract(uHue + uSpread * st.g), uSat, v));
+      // Hue walks with the scale that has been winning here (g, 0 finest …
+      // 1 coarsest), so each nesting level can read as its own colour.
+      hue = uHue + uSpread * st.g;
     }
+    // Ground: the low areas as a surface rather than a hole.
+    val = uGround + (1.0 - uGround) * val;
+    vec3 col = hsv2rgb(vec3(fract(hue), uSat, val));
+
+    // ── Relief: the surface lit ─────────────────────────────────────────────
+    // Sobel gradient of surf() over ±Bevel texels — rounded bevels, not the
+    // hairlines a 1-texel difference draws; wider = broader domes — a light
+    // from Light angle at 40°
+    // elevation, Lambert normalised so a flat area keeps its colour exactly
+    // (a slope toward the light brightens, away darkens), plus a Blinn
+    // highlight for a wet, waxy sheen.
+    if (uRelief > 0.0) {
+      vec2 e = uBevel * uTexel;
+      float tl = surf(vUv + vec2(-e.x,  e.y)), tc = surf(vUv + vec2(0.0,  e.y)), tr = surf(vUv + vec2(e.x,  e.y));
+      float ml = surf(vUv + vec2(-e.x, 0.0)),                                   mr = surf(vUv + vec2(e.x, 0.0));
+      float bl = surf(vUv + vec2(-e.x, -e.y)), bc = surf(vUv + vec2(0.0, -e.y)), br = surf(vUv + vec2(e.x, -e.y));
+      float gx = ((tr + 2.0 * mr + br) - (tl + 2.0 * ml + bl)) / (8.0 * uBevel);   // per texel
+      float gy = ((tl + 2.0 * tc + tr) - (bl + 2.0 * bc + br)) / (8.0 * uBevel);
+      vec3 n = normalize(vec3(-gx * uRelief, -gy * uRelief, 1.0));
+      // Cavity: a point below the mean of its ring sits in a hollow — a cell
+      // floor beside its walls — and darkens, so cells read deep, not flat.
+      float ring = (tl + tc + tr + ml + mr + bl + bc + br) / 8.0;
+      float cav  = 1.0 - clamp((ring - surf(vUv)) * uRelief * 0.12, 0.0, 0.65);
+      const float AMB = 0.3;
+      float flatShade = AMB + (1.0 - AMB) * uLight.z;
+      float shade = (AMB + (1.0 - AMB) * max(dot(n, uLight), 0.0)) / flatShade;
+      vec3 hv = normalize(uLight + vec3(0.0, 0.0, 1.0));
+      float spec = pow(max(dot(n, hv), 0.0), 48.0) * uGloss;
+      col = col * shade * cav + vec3(spec) * (0.25 + 0.75 * v);
+    }
+
     // A colony past its Grow time fades out over Fade time (lineage in alpha;
     // multi-scale has none, and writes 1 there).
     if (uGrowTime > 0.0 && uMode != 1.0 && st.a > 0.0) {
@@ -298,6 +411,7 @@ export const GROWTH_CR_AUX = /* glsl */ `
 `;
 
 export const GROWTH_CR_STEP = /* glsl */ `
+${GROWTH_VAR_GLSL}
   uniform sampler2D uState;
   uniform sampler2D uAux;
   uniform vec2      uTexel;
@@ -306,6 +420,7 @@ export const GROWTH_CR_STEP = /* glsl */ `
   uniform float     uSeedRand;  // per-step random offset
   uniform sampler2D uSeed;
   uniform float     uSeedAmt;
+  uniform sampler2D uSeedPrev;
   uniform vec3      uPoint;     // spore: xy uv, z radius in texels
   uniform float     uNow;       // lineage clock
   uniform float     uGrowTime;  // see GROWTH_RD_STEP
@@ -361,23 +476,33 @@ export const GROWTH_CR_STEP = /* glsl */ `
     // crystal front is a diffuse band several cells wide, and cells crossing
     // p 0.5 before any neighbour had done so inherited nothing — stamp 0, so
     // they never stopped, never faded, and regrew the crystal after its
-    // reset (measured). Anything above 2% solid carries the colony's stamp.
-    float nbS = -1.0;
-    if (xp.r > 0.02) nbS = max(nbS, xp.a);
-    if (xm.r > 0.02) nbS = max(nbS, xm.a);
-    if (yp.r > 0.02) nbS = max(nbS, yp.a);
-    if (ym.r > 0.02) nbS = max(nbS, ym.a);
-    float lin = p > 0.02 ? max(c.a, nbS) : nbS;
-    // Grow time (see GROWTH_RD_STEP): a finished crystal stops — its solid
-    // frozen, and the melt beside it may not solidify onto it.
-    if (uGrowTime > 0.0 && lin > 0.0 && uNow - lin > uGrowTime) dp = p > 0.5 ? 0.0 : min(dp, 0.0);
+    // reset (measured). Anything above 2% solid carries a stamp; an unstamped
+    // cell entering the band takes its PARENT's (the neighbour with most p),
+    // not the newest — see GROWTH_RD_STEP for why newest stopped everything.
+    float parent = -1.0, pP = 0.02;
+    if (xp.r > pP) { pP = xp.r; parent = xp.a; }
+    if (xm.r > pP) { pP = xm.r; parent = xm.a; }
+    if (yp.r > pP) { pP = yp.r; parent = yp.a; }
+    if (ym.r > pP) { pP = ym.r; parent = ym.a; }
+    float lin = (p > 0.02 && c.a > 0.0) ? c.a : parent;
+    // Grow time (see GROWTH_RD_STEP): past it, this part may no longer
+    // solidify — melting and the heat field carry on.
+    if (uGrowTime > 0.0 && lin > 0.0 && uNow - lin > uGrowTime) dp = min(dp, 0.0);
 
     float pn = clamp(p + dp, 0.0, 1.0);
-    float Tn = T + DT * lapT + uHeat * (pn - p);
+    // Variation: latent heat raised by up to 50% by region — thinner,
+    // branchier arms there. UP only: ±40% let low-heat regions fill solid.
+    float Tn = T + DT * lapT + uHeat * (1.0 + 0.5 * uVar * (0.5 + 0.5 * growthVar(vUv))) * (pn - p);
 
     float age = c.b, stamp = c.a;
-    // Newly solid: inherit the newest lineage among solid neighbours.
-    if (pn > 0.02) stamp = max(stamp, nbS);
+    // During Fade time the crystal MELTS: a linear decrement that takes full
+    // solid to melt in exactly Fade time, so thin arms go first and the
+    // picture keeps moving as it fades.
+    if (uGrowTime > 0.0 && stamp > 0.0 && uNow - stamp > uGrowTime) pn = max(0.0, pn - uAgeDt / max(uFadeTime, 1e-3));
+    // Entering the interface unstamped: inherit the parent's lineage. Melt
+    // carries none, so a cell that melts and later re-solidifies is re-parented.
+    if (pn > 0.02 && stamp <= 0.0) stamp = parent;
+    if (pn <= 0.02) stamp = 0.0;
     age = pn > 0.5 ? age + uAgeDt : 0.0;
     if (uGrowTime > 0.0 && stamp > 0.0 && uNow - stamp > uGrowTime + uFadeTime) {
       pn = 0.0; age = 0.0; stamp = 0.0;          // faded out: back to melt
@@ -387,7 +512,10 @@ export const GROWTH_CR_STEP = /* glsl */ `
       float s = clamp(dot(texture2D(uSeed, vUv).rgb, vec3(0.299, 0.587, 0.114)) * uSeedAmt, 0.0, 1.0);
       s = smoothstep(0.05, 0.3, s);
       if (s > 0.0) pn = max(pn, s);
-      if (s > 0.2) stamp = uNow;
+      // Once when first seeded, and again whenever the stroke ARRIVES (a rise
+      // since last frame) — see GROWTH_RD_STEP.
+      float sp = smoothstep(0.05, 0.3, clamp(dot(texture2D(uSeedPrev, vUv).rgb, vec3(0.299, 0.587, 0.114)) * uSeedAmt, 0.0, 1.0));
+      if (s > 0.2 && (c.a <= 0.0 || s - sp > 0.1)) stamp = uNow;
     }
     if (uPoint.z > 0.0) {
       vec2 d = (vUv - uPoint.xy) / uTexel;
@@ -430,6 +558,7 @@ export const GROWTH_MS_DOWN = /* glsl */ `
 `;
 
 export const GROWTH_MS_STEP = /* glsl */ `
+${GROWTH_VAR_GLSL}
   uniform sampler2D uState;
   uniform sampler2D uL1;
   uniform sampler2D uL2;
@@ -481,7 +610,7 @@ export const GROWTH_MS_STEP = /* glsl */ `
     L[4] = bspline(uL5, uS5, vUv);
     L[5] = bspline(uL6, uS6, vUv);
 
-    float bias = uBias;
+    float bias = uBias + 2.5 * uVar * growthVar(vUv);   // fine and coarse regions
     if (uFieldAmt > 0.0) {
       float fl = dot(texture2D(uField, vUv).rgb, vec3(0.299, 0.587, 0.114));
       bias += (fl * 2.0 - 1.0) * uFieldAmt * 2.0;

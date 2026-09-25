@@ -9,6 +9,41 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Growth: Variation — the pattern's size varies across the canvas.**
+  Variation / Var size / Var drift. One slow value-noise field (three
+  octaves, aspect-corrected, drifting on the lineage clock) shared by the
+  three step shaders (GROWTH_VAR_GLSL): Single raises diffusion by up to
+  1.5 octaves (stripe width ×1…×1.7), Frost raises latent heat by up to
+  50% (thinner, branchier arms), Nested swings the fine↔coarse bias ±2.5.
+  Up-only in Single and Frost, and measured: with 5 px seeds coral dies
+  below D ≈ 0.2 and maze below 0.15 (both grow on to 0.6), so the first
+  ±1.5-octave swing killed seeds and left islands no front entered; ±40%
+  heat filled low-heat regions solid. Variation 0 computes exactly what it
+  did before (the field returns 0).
+- **Growth: Grow time fades like the brush — in drawing order, still
+  moving.** It stopped the whole picture at once, frozen. Two causes: a
+  colonised cell inherited the NEWEST neighbouring stamp, so the end of a
+  stroke won wherever growth met and everything shared its final time; and
+  a held seed re-stamped "now" every frame. Now a cell inherits its
+  PARENT's stamp (the neighbour with most B / p), a seed stamps once — and
+  again whenever the stroke ARRIVES (a rise against last frame's seed, kept
+  in its own small target), so growth racing ahead of the pen cannot give
+  the whole stroke its start time. Past Grow time a part stops spreading
+  but keeps living; over Fade time Single dissolves (kill ramp, squared so
+  it spans the fade) and Frost melts (linear, done in exactly Fade time).
+  Measured, stroke drawn left→right over 3 s, Grow 3 / Fade 3: Single left
+  third fades 3.0→7.0 s, right 6.0→9.0 s, 80–99% of cells changing during
+  the fade; Frost left 3.0→5.5, right 5.5→7.5 (was: both together).
+- **Growth: Relief — the growth lit as a carved surface.** Relief, Bevel,
+  Light angle, Gloss, Ground. Each mode's raw field is the height (B,
+  multi-scale v, crystal p): lighting the contrast-clamped display value
+  drew hairline outlines, because it is plateaus with one-texel cliffs,
+  while the raw fields are smooth domes. Sobel gradient over ±Bevel texels,
+  Lambert normalised so flat areas keep their colour exactly, Blinn
+  highlight, and cavity shading (a point below its ring's mean darkens) so
+  cell floors read deep. Ground lifts the low areas into a surface. Relief 0
+  is bit-identical to before: 0 differing view pixels against HEAD in all
+  three modes (GPU, same state fed to both).
 - **Growth: reaction-diffusion seeded by Draw (source 33).** Gray-Scott on
   RGBA32F ping-pong targets (src/inputs/GrowthRD.js, shaders GROWTH_RD_*):
   coral, lichen, mazes, fingerprints, dividing cells growing OUT of a seed.

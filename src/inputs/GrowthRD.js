@@ -42,7 +42,7 @@
 import * as THREE from 'three';
 import {
   VERT, GROWTH_RD_STEP, GROWTH_RD_VIEW, GROWTH_RD_INIT, GROWTH_MS_DOWN, GROWTH_MS_STEP,
-  GROWTH_CR_AUX, GROWTH_CR_STEP,
+  GROWTH_CR_AUX, GROWTH_CR_STEP, PASSTHROUGH,
 } from '../shaders/index.js';
 import { GROWTH_PATTERNS } from './GrowthPatterns.js';
 
@@ -70,6 +70,7 @@ export class GrowthRD {
       uTexel:    { value: new THREE.Vector2(1, 1) },
       uSeed:     { value: null },
       uSeedAmt:  { value: 0 },
+      uSeedPrev: { value: null },
       uField:    { value: null },
       uFieldAmt: { value: 0 },
       uFkA:      { value: new THREE.Vector2() },
@@ -77,6 +78,8 @@ export class GrowthRD {
       uFkOff:    { value: new THREE.Vector2() },
       uPoint:    { value: new THREE.Vector3(0.5, 0.5, 0) },
       uDiff:     { value: 1 },
+      uVar:      { value: 0 },
+      uVarP:     { value: new THREE.Vector3(3, 0, 1) },
       uAgeDt:    { value: 0 },
       uLife:     { value: 0 },
       uRest:     { value: 0 },
@@ -94,6 +97,12 @@ export class GrowthRD {
       uNow:      { value: 0 },
       uGrowTime: { value: 0 },
       uFadeTime: { value: 3 },
+      uTexel:    { value: new THREE.Vector2(1, 1) },
+      uRelief:   { value: 0 },
+      uLight:    { value: new THREE.Vector3(0, 0, 1) },
+      uGloss:    { value: 0 },
+      uGround:   { value: 0 },
+      uBevel:    { value: 2 },
     });
     this._initMat = mat(GROWTH_RD_INIT, { uInit: { value: new THREE.Vector4(1, 0, 0, 1) } });
 
@@ -108,6 +117,7 @@ export class GrowthRD {
       uField: { value: null }, uFieldAmt: { value: 0 },
       uSeed: { value: null }, uSeedAmt: { value: 0 },
       uPoint: { value: new THREE.Vector3(0.5, 0.5, 0) },
+      uVar: { value: 0 }, uVarP: { value: new THREE.Vector3(3, 0, 1) },
     };
     for (let l = 1; l <= MS_LEVELS; l++) {
       msU[`uL${l}`] = { value: null };
@@ -124,13 +134,19 @@ export class GrowthRD {
     this._crMat = mat(GROWTH_CR_STEP, {
       uState: { value: null }, uAux: { value: null }, uTexel: { value: new THREE.Vector2(1, 1) },
       uHeat: { value: 1.6 }, uNoise: { value: 0.01 }, uSeedRand: { value: 0 },
-      uSeed: { value: null }, uSeedAmt: { value: 0 },
+      uSeed: { value: null }, uSeedAmt: { value: 0 }, uSeedPrev: { value: null },
       uPoint: { value: new THREE.Vector3(0.5, 0.5, 0) },
       uNow: { value: 0 }, uAgeDt: { value: 0 },
       uField: { value: null }, uFieldAmt: { value: 0 },
       uGrowTime: { value: 0 }, uFadeTime: { value: 3 },
+      uVar: { value: 0 }, uVarP: { value: new THREE.Vector3(3, 0, 1) },
     });
     this._aux = null;
+
+    // Last frame's seed, so a step can tell a stroke ARRIVING at a pixel (a
+    // rise) from one merely held there. 8-bit is plenty for a luma knee.
+    this._copyMat  = mat(PASSTHROUGH, { uTexture: { value: null } });
+    this._seedPrev = null;
     this._mode  = MODE_GRAY_SCOTT;
 
     this._geom  = new THREE.PlaneGeometry(2, 2);
@@ -259,6 +275,7 @@ export class GrowthRD {
     u.uTexel.value.set(1 / this._w, 1 / this._h);
     u.uSeed.value     = o.seedTex;
     u.uSeedAmt.value  = o.seedTex ? o.seedAmt : 0;
+    u.uSeedPrev.value = this._seedPrevTex();
     u.uField.value    = o.fieldTex;
     u.uFieldAmt.value = o.fieldTex ? o.fieldAmt : 0;
     u.uFkA.value.set(A.f, A.k);
@@ -276,6 +293,15 @@ export class GrowthRD {
     u.uNow.value   = this._clock;
     u.uGrowTime.value = o.growTime ?? 0;
     u.uFadeTime.value = o.fadeTime ?? 3;
+
+    // Variation — shared by all three step materials, set once per frame.
+    // Drift runs on the lineage clock (real seconds).
+    const varAmt = (o.variation ?? 0) / 100;
+    const varT   = this._clock * (o.varDrift ?? 0.05);
+    for (const m of [this._stepMat, this._msMat, this._crMat]) {
+      m.uniforms.uVar.value = varAmt;
+      m.uniforms.uVarP.value.set(o.varSize ?? 3, varT, this._w / this._h);
+    }
 
     if (mode === MODE_MULTISCALE) {
       this._stepMultiScale(n, o);
@@ -295,6 +321,14 @@ export class GrowthRD {
       this._cur ^= 1;
     }
 
+    // Remember this frame's seed for next frame's arrival test.
+    if (o.seedTex) {
+      if (!this._seedPrev) this._seedPrev = this._makeTarget(false);
+      if (this._seedPrev.width !== this._w || this._seedPrev.height !== this._h) this._seedPrev.setSize(this._w, this._h);
+      this._copyMat.uniforms.uTexture.value = o.seedTex;
+      this._blit(this._copyMat, this._seedPrev);
+    }
+
     const v = this._viewMat.uniforms;
     v.uState.value    = this._state[this._cur].texture;
     v.uHue.value      = o.hue / 360;
@@ -305,10 +339,24 @@ export class GrowthRD {
     v.uNow.value      = this._clock;
     v.uGrowTime.value = o.growTime ?? 0;
     v.uFadeTime.value = o.fadeTime ?? 3;
+    // Relief 0–100 → normal depth 0–24 against a per-texel gradient (a
+    // full-range rise over 2 texels then tilts the normal ~85°). Light: azimuth from Light angle (0° = from
+    // the right, 90° = from above, screen y up), fixed 40° elevation.
+    v.uTexel.value.set(1 / this._w, 1 / this._h);
+    v.uRelief.value = ((o.relief ?? 0) / 100) * 24;
+    v.uBevel.value  = Math.max(1, o.bevel ?? 2);
+    const az = ((o.lightAngle ?? 135) * Math.PI) / 180, el = (40 * Math.PI) / 180;
+    v.uLight.value.set(Math.cos(az) * Math.cos(el), Math.sin(az) * Math.cos(el), Math.sin(el));
+    v.uGloss.value  = (o.gloss ?? 0) / 100;
+    v.uGround.value = (o.ground ?? 0) / 100;
     this._blit(this._viewMat, this._view);
 
     this.renderer.setRenderTarget(prevTarget);
   }
+
+  // Null before the first copy: it samples black, so every seed reads as
+  // arriving — which on the first frame it has.
+  _seedPrevTex() { return this._seedPrev ? this._seedPrev.texture : null; }
 
   /** n crystal steps: ε terms into the aux target, then the phase/heat step. */
   _stepCrystal(n, o, ageDt, now) {
@@ -320,6 +368,7 @@ export class GrowthRD {
     a.uAngle.value = ((o.crAngle ?? 0) * Math.PI) / 180;
     u.uTexel.value.set(1 / this._w, 1 / this._h);
     u.uAux.value      = this._aux.texture;
+    u.uSeedPrev.value = this._seedPrevTex();
     u.uHeat.value     = o.crHeat ?? 1.6;
     u.uNoise.value    = o.crNoise ?? 0.01;
     u.uSeed.value     = o.seedTex;
@@ -397,6 +446,8 @@ export class GrowthRD {
     this._downMat.dispose();
     this._msMat.dispose();
     this._aux?.dispose();
+    this._seedPrev?.dispose();
+    this._copyMat.dispose();
     this._crAuxMat.dispose();
     this._crMat.dispose();
     this._geom.dispose();

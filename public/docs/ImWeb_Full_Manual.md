@@ -913,7 +913,7 @@ outward from that point.
 | `growth.msStep` | 0.1–4 | Nested: how far each step moves. Higher = faster, rougher |
 | `growth.msFine` / `msCoarse` | 1–5 | Nested: which scales take part (1 ≈ 2–4 px of the grid … 5 ≈ 32–64 px) |
 | `growth.msBias` | −1…+1 | Nested: −1 favours fine lace, +1 large masses |
-| `growth.growTime` | 0–120 s | **Grow time.** Each planting grows this long, then stops, fades and clears. 0 = forever. Single and Frost |
+| `growth.growTime` | 0–120 s | **Grow time.** Every part grows this long from when it was drawn or planted, then fades and clears. 0 = forever. Single and Frost |
 | `growth.fadeTime` | 0.1–30 s | **Fade time.** How long a finished colony takes to fade out |
 | `growth.crFold` | 2–12 | Frost: symmetry. 6 = snowflake, 4 = square crystal |
 | `growth.crAniso` | 0–0.1 | Frost: how strongly the symmetry steers the growing tips |
@@ -930,6 +930,14 @@ outward from that point.
 | `growth.hue` / `sat` | — | Colour of the colony |
 | `growth.spread` | 0–100 | Hue shift between the dense core and the thin growing edge |
 | `growth.contrast` | 1–12 | Stretches the colony's value band to black–white |
+| `growth.variation` | 0–100 | **Variation.** Lets the pattern's size change across the canvas: stripe width (Single), arm thickness (Frost), fine↔coarse (Nested). 0 = uniform |
+| `growth.varSize` | 0.5–10 | How many regions of variation across the canvas |
+| `growth.varDrift` | 0–1 | How fast the regions wander (0 = fixed) |
+| `growth.relief` | 0–100 | **Relief.** Lights the growth as a carved surface. 0 = flat colour |
+| `growth.bevel` | 1–6 | Width of the relief's slopes. Wider = broader, softer forms; keep it under about half the pattern's feature size |
+| `growth.lightAngle` | 0–360° | Where the light comes from (0° right, 90° top) |
+| `growth.gloss` | 0–100 | Wet, waxy highlight on the relief |
+| `growth.ground` | 0–100 | Brightness of the low areas, so cell floors read as a surface rather than black |
 
 **Why lichen has zones.** A real lichen shows several patterns at once, changing
 with the stone under it. Route Noise (or a camera) into **Field src**, raise
@@ -959,10 +967,25 @@ branchy the arms get, Branching how often they split. Plant one crystal, or
 draw: every stroke freezes into a crystal edge. Frost is the heaviest mode
 (about twice Single); at GrowRes 256 a crystal fills the frame in ~10 s.
 
-**Fade at max grow time.** With a **Grow time** set, each planting grows for
-that long, stops, fades over **Fade time** and clears, and the ground is free
-again. Every planting keeps its own clock: plant, plant again a moment later,
-and they fade one after the other. Works in Single and Frost.
+**Fade at max grow time.** Like the brush Fade, but for growth: with a
+**Grow time** set, every part grows for that long from the moment it was
+drawn, then fades over **Fade time** and clears. A stroke drawn over three
+seconds fades out in the order it was drawn, each part given the same time.
+During the fade the growth keeps moving: Single dissolves, Frost melts. A
+stroke still held in Draw sprouts again after it clears. Single and Frost.
+
+**Variation: no two areas alike.** A single Gray-Scott pattern has one stripe
+width everywhere, which is why its detail evens out. **Variation** lets a slow,
+drifting field change that size across the canvas: fine lace in one area,
+thick fleshy stripes in another, and the regions wander. In Frost it makes
+some arms thin and branchy; in Nested it makes fine and coarse regions. It only
+ever widens the pattern from your Scale, never narrows it, because a narrower
+pattern than the default is where seeds die.
+
+**Relief.** Every mode can be lit as a surface: whatever it grows becomes a
+height map, with a light, a highlight and shadowed hollows. Start with Relief
+50, Ground 30, Bevel 2–4. Nested at a low HueSpread looks carved; Frost looks
+like raised ice; Single reads as an embossed colony on a surface.
 
 **Dying from the oldest part.** Every cell remembers how long it has been
 alive. With a **Lifetime** set, a colony dies back from where it started (the

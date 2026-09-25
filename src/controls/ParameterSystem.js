@@ -6966,6 +6966,46 @@ export function registerCoreParameters(ps) {
     id: "growth.fadeTime", label: "Fade time", group: "growth",
     type: PARAM_TYPE.CONTINUOUS, min: 0.1, max: 30, value: 3, step: 0.1,
   });
+  // Relief: light the growth as a height map (whatever each mode shows is the
+  // height). 0 = flat colour, as before. Light angle: where the light comes
+  // from (0° right, 90° top, screen y up). Gloss: wet/waxy highlight.
+  // Ground: brightness of the low areas, so cell floors read as surface.
+  ps.register({
+    id: "growth.relief", label: "Relief", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 100, value: 0, step: 1,
+  });
+  ps.register({
+    id: "growth.bevel", label: "Bevel", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 1, max: 6, value: 2, step: 0.1,
+  });
+  ps.register({
+    id: "growth.lightAngle", label: "Light angle", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 360, value: 135, step: 1,
+  });
+  ps.register({
+    id: "growth.gloss", label: "Gloss", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 100, value: 20, step: 1,
+  });
+  ps.register({
+    id: "growth.ground", label: "Ground", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 100, value: 0, step: 1,
+  });
+  // Variation: one slow noise field varies each mode's SIZE across the canvas
+  // — stripe width (Single), arm thickness (Frost), fine↔coarse (Nested) —
+  // so detail stops evening out. Var size: how many regions across. Var
+  // drift: how fast they wander (0 = fixed).
+  ps.register({
+    id: "growth.variation", label: "Variation", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 100, value: 0, step: 1,
+  });
+  ps.register({
+    id: "growth.varSize", label: "Var size", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0.5, max: 10, value: 3, step: 0.1,
+  });
+  ps.register({
+    id: "growth.varDrift", label: "Var drift", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 1, value: 0.05, step: 0.01,
+  });
   ps.register({
     id: "growth.seedSrc", label: "Seed src", group: "growth",
     type: PARAM_TYPE.SELECT, options: CAPTURE_SOURCES,
