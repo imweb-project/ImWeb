@@ -233,14 +233,44 @@ export class DrawLayer {
     let dirty = false;
     const fade = ps.get('draw.fade')?.value ?? 0;
     if (fade > 0) {
-      // Apply fade every frame: draw a semi-transparent black rectangle
+      // Proportional decay: a semi-transparent black rectangle.
       // fade=1 → opacity 1 (instant clear), fade=0.01 → very slow decay
       const alpha = Math.min(1, fade * 0.5); // scale so small values feel gentle
-      this.ctx.globalCompositeOperation = 'source-over';
-      this.ctx.globalAlpha = alpha;
-      this.ctx.fillStyle = '#000000';
-      this.ctx.fillRect(0, 0, SIZE, SIZE);
-      this.ctx.globalAlpha = 1;
+
+      // The fill is a multiply by (1 − a) on an 8-bit canvas, so any value
+      // below 0.5/a levels loses less than half a level, rounds to NO CHANGE,
+      // and stays grey forever — at the Fade button's 0.04 everything under
+      // 25/255 froze as a grey ghost of every stroke (measured: stuck at 25 for
+      // 2000 frames). Two passes together remove every stall:
+      //
+      // 1. The decay is ACCUMULATED and applied in chunks of at least 2%, so
+      //    its stall floor is never above 0.5/0.02 = 25 levels. Per frame, a
+      //    slow fade (a < 0.002) cannot move even white, so it used to do
+      //    nothing at all; chunked, it keeps its average rate.
+      // 2. Below that floor, color-burn with a 254/255 source maps
+      //    v → (v − 1/255)/(254/255): exactly one level at the bottom, and a
+      //    step that only rounds away above ~128 — far above the 25-level
+      //    floor, so between them nothing can freeze. Saturating the step
+      //    instead would just move the fixed point (LEARNED 2026-09-22).
+      //    It runs at the rate the chunked fade has at its floor
+      //    (0.5 level per chunk), so the tail keeps the setting's timing.
+      this._fadeKeep = (this._fadeKeep ?? 1) * (1 - alpha);
+      if (1 - this._fadeKeep >= 0.02) {
+        this.ctx.globalCompositeOperation = 'source-over';
+        this.ctx.globalAlpha = 1 - this._fadeKeep;
+        this.ctx.fillStyle = '#000000';
+        this.ctx.fillRect(0, 0, SIZE, SIZE);
+        this.ctx.globalAlpha = 1;
+        this._fadeKeep = 1;
+      }
+      this._burnCredit = (this._burnCredit ?? 0) + 0.5 * Math.min(1, alpha / 0.02);
+      if (this._burnCredit >= 1) {
+        this._burnCredit -= 1;
+        this.ctx.globalCompositeOperation = 'color-burn';
+        this.ctx.fillStyle = 'rgb(254,254,254)';
+        this.ctx.fillRect(0, 0, SIZE, SIZE);
+        this.ctx.globalCompositeOperation = 'source-over';
+      }
       dirty = true;
     }
 

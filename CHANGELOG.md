@@ -267,6 +267,15 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   settings, including the factory bank.
 
 ### Fixed
+- **Draw fade left a grey ghost of every stroke.** The fade multiplies an
+  8-bit canvas by (1 − a), so values under 0.5/a levels rounded to no change:
+  at the Fade button's 0.04 everything below 25/255 stayed forever, and fades
+  under ~0.004 did nothing at all. The decay is now accumulated and applied
+  in ≥2% chunks (floor ≤ 25 levels), and a color-burn pass (254/255 source:
+  v → (v − 1/255)/(254/255), exactly one level at the bottom) clears below
+  that at the chunked fade's own floor rate. Measured in Chrome for Testing:
+  0.04 reaches true black in 136 frames (was: stuck at 25), 0.001 in ~90 s
+  (was: never moved); the fade curve above the floor is unchanged.
 - **A state recall scrambled a choreography round.** A recall restores
   every model's take in one frame, and choreography passed that on as a
   performance change — a round started a wave from every member at once.
