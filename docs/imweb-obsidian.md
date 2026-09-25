@@ -490,6 +490,8 @@ Three-layer system · ExtKey · All displacement modes · MIDI · LFOs · Sound 
 - ◻ An unprofiled stutter in the SDF rework
 - ◻ Three unreproduced beta-tester reports still awaiting follow-up questions
 - ◻ Circular params parked at tag `circular-params-parked`
+- ◻ Performance of the 3D animation stack unmeasured (4 models, own textures, Seam + Morph; ~0.1–0.23 s take analysis on model load)
+- ◻ BVH motion import + recording movement in the space — planned, future session
 
 ## Files & references
 
@@ -544,6 +546,32 @@ Claude Code for editing, Gemini for docs, OpenCode for cheap recon.
 > destroyed by a stale-buffer overwrite. The facts, dates, versions and hashes are
 > accurate. **The original prose is gone** — these entries are summaries, not the
 > notes that were written at the time. Entries below 2026-06-10 are original.
+
+## 2026-09-24/25 — The animation instrument: takes, loops, choreography
+
+**Commits:** 536e030 → 3bcac4c (18 commits), plus 00db4fd / abf323c (docs, .gitignore)
+**Version:** unreleased (sw cache v0.25.0-52)
+
+- **Takes, not stills.** The owner's Poser 9 COLLADA animations (Haraldur6/12, Tatto,
+  gagaAction) are short takes spliced by hard cuts — one frame where the pose jumps
+  4–15 rad. `ClipSegments.js` cuts there: Haraldur6 (98 s) → 53 takes in ~30 ms. The
+  owner's 26.6–27.1 % take proved the joins were cuts, not still moments.
+- **Playing a take.** Segment (a controllable param), a timeline strip (click a take,
+  drag a range, right-click to star), Loop / Ping-pong / Sine, Morph between ranges,
+  Seam (crossfaded wrap), Length (fixed window, slide Start like an audio loop),
+  Advance (Next / Random, starred takes only when any), Beats (a loop locked to N
+  beats of global BPM), Mirror, and a kept speed per model file (Haraldur6 ≈ 0.3).
+- **Choreography.** Follow / Offset / Delay on M1–M4: a canon from one controller;
+  a follow loop with a delay is a round. A state recall re-bases it rather than
+  passing the restore on.
+- **Per-model textures.** M2–M4 wear their own source (own material, synced from the
+  main one); Texture = Image puts the owner's own picture on any model.
+- **Fixed:** blank second screen after refreshing the main page (a named
+  `window.open` + `document.write` kept the old realm); slot Noise never drawn (the
+  generate gate read M1 only); twin-action cache growth; image orientation on recall.
+- **Not in ImWeb:** `.pz3` (a Poser scene referencing runtime geometry) — export from
+  Poser as COLLADA. **Noted for a future session:** BVH motion import and recording
+  people's movements in the space; owner is installing Daz Studio and Blender for it.
 
 ## 2026-08-12 — Audio blueprint; knowledge base lost and re-tracked
 
