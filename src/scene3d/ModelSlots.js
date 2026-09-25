@@ -504,6 +504,13 @@ export class ModelSlots {
    * a model on the take it already holds (offsets wrapping round) must still
    * pass on, or the round stops there. The count ticks when a model's take
    * changes by any means, and when choreography sets it, same take or not.
+   *
+   * A state recall is a restore, not a performance event: every model's take
+   * changes in one frame, and passing that on started a wave from every
+   * member of a round at once. So for a second after any recall, extended
+   * every frame while a recall morph glides (rebaseChoreo — restored models
+   * may still be loading and settling their Segment), followers adopt their
+   * leaders' current takes as the new starting point and pass nothing on.
    */
   choreograph(ps, dt) {
     const M = [
@@ -522,6 +529,7 @@ export class ModelSlots {
       const v = Math.round(ps.get(m.seg).value);
       if (v !== this._seen[i]) { this._seen[i] = v; this._seq[i]++; }
     });
+    const hold = this._clock < (this._holdUntil ?? 0);
     M.forEach((m, i) => {
       const f = this._follow[i];
       let lead = leadOf(i);
@@ -538,6 +546,7 @@ export class ModelSlots {
       }
       if (lead < 0) { f.lead = -1; f.queue.length = 0; return; }
       const lv = Math.round(ps.get(M[lead].seg).value), ls = this._seq[lead];
+      if (hold) { f.lead = lead; f.last = ls; f.queue.length = 0; return; }   // a restore: adopt, pass nothing on
       if (lead !== f.lead) {
         f.lead = lead; f.queue.length = 0;
         f.last = f.inLoop ? ls : null;          // in a round, join without copying
@@ -556,6 +565,9 @@ export class ModelSlots {
       }
     });
   }
+
+  /** After a state recall: re-base choreography for `sec` seconds (see choreograph). */
+  rebaseChoreo(sec = 1) { this._holdUntil = (this._clock ?? 0) + sec; }
 
   /**
    * Per frame: visibility, transform, shared-material sync.

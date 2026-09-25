@@ -1055,6 +1055,11 @@ async function main() {
 
   // Re-sync hypercube object after any state recall (onChange only fires on change,
   // so params that restored to the same value as the object's current state need this explicit push).
+  // Choreography must not treat a restore as a performance event
+  // (ModelSlots.choreograph). A gliding recall is held from the frame loop
+  // instead — see modelSlots.apply — since a morph can also be cancelled
+  // without a morphEnded event, and an event-held hold would then never lift.
+  presetMgr.addEventListener('stateRecalled', () => modelSlots.rebaseChoreo());
   presetMgr.addEventListener('stateRecalled', (e) => {
     const ds    = e.detail.state;
     const extra = ds?.extra;
@@ -10571,7 +10576,10 @@ void main() {
     // scene3d.getHypercube()?.setInstancerTexture(pipeline.prev.texture); — removed: SceneManager now owns instancer texture via _adoptMesh
     renderer.info.autoReset = false;
     renderer.info.reset();
-    if (scene3dNeeded) modelSlots.apply(ps, dt, beatPhase);
+    if (scene3dNeeded) {
+      if (presetMgr.morphing) modelSlots.rebaseChoreo();   // hold while a recall glides; lifts 1 s after it stops, however it stops
+      modelSlots.apply(ps, dt, beatPhase);
+    }
     if (scene3dNeeded)
       scene3d.render(ps, dt, {
         camera: camera3d.active ? camera3d.currentTexture : null,

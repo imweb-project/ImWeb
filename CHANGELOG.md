@@ -267,6 +267,15 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   settings, including the factory bank.
 
 ### Fixed
+- **A state recall scrambled a choreography round.** A recall restores
+  every model's take in one frame, and choreography passed that on as a
+  performance change — a round started a wave from every member at once.
+  Now, for a second after any recall (extended each frame while a recall
+  morph glides — from the frame loop, since a morph can be cancelled without
+  a morphEnded event), followers adopt their leaders' restored takes and pass
+  nothing on. Node: before, a round turned to four waves; after, the restored
+  arrangement holds and the next change travels as one wave.
+
 - **Animations leaked mixer actions when the clip kept changing.** The
   player rebuilt its pool of twin actions (Morph, Seam) every time a clip
   came back, and the mixer keeps a cached action per twin — a controller
