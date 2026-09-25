@@ -1046,7 +1046,8 @@ export class SceneManager {
             p.get('scene3d.anim.start')?.value ?? 0, p.get('scene3d.anim.end')?.value ?? 100,
             p.get('scene3d.anim.loop')?.value ?? 0, p.get('scene3d.anim.morph')?.value ?? 0,
             p.get('scene3d.anim.seam')?.value ?? 0, p.get('scene3d.anim.len')?.value ?? 0);
-          advanceTake(p, this._range, 'scene3d.anim.segment', p.get('scene3d.anim.advance')?.value ?? 0,
+          // A follower takes its takes from its leader (ModelSlots.choreograph), not its own Advance.
+          if (!p.get('scene3d.anim.follow')?.value) advanceTake(p, this._range, 'scene3d.anim.segment', p.get('scene3d.anim.advance')?.value ?? 0,
             p.get('scene3d.anim.loops')?.value ?? 2, speed);
         }
         applyAnchor(this.mesh, p.get('scene3d.anchor')?.value === 1, this.actions[animIdx]?.getClip());

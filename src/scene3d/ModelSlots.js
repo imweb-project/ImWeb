@@ -442,35 +442,78 @@ export class ModelSlots {
   }
 
   /**
-   * Choreography, per frame: each slot whose Follow names a leader copies the
-   * leader's Segment, shifted by Offset takes and Delay seconds behind. The
-   * leader is polled rather than listened to, so a take chosen by hand, a
-   * controller or the leader's own Advance all count, and a chain (M3 → M2 →
-   * M1) settles one frame per link. Offsets wrap within the FOLLOWER's takes
-   * (its model may have a different number); the whole clip maps to the whole
-   * clip. Delays run on the frame clock, so they hold while the app pauses.
+   * Choreography, per frame: each model (M1–M4) whose Follow names a leader
+   * copies the leader's Segment, shifted by Offset takes and Delay seconds
+   * behind. The leader is polled rather than listened to, so a take chosen by
+   * hand, a controller or the leader's own Advance all count, and a chain
+   * (M3 → M2 → M1) settles one frame per link. Offsets wrap within the
+   * FOLLOWER's takes (its model may have a different number); the whole clip
+   * maps to the whole clip. Delays run on the frame clock.
+   *
+   * A follow loop (M1 → M2 → M1) with delays is a ROUND and is allowed: the
+   * phrase keeps travelling round by itself. With no delay anywhere in the
+   * loop it would change takes every frame, so the loop is broken at its
+   * lowest model, which then acts as Own — the conductor.
+   *
+   * Joining: a follower in a plain chain copies its leader's current take
+   * when it starts following. One inside a loop does not — if every member
+   * copied on joining they would all move at once and march in unison. So a
+   * round waits for its first change (a take picked on any member, a
+   * controller) and carries it round as one wave.
+   *
+   * Followers watch a CHANGE COUNT per model, not its value: a wave that lands
+   * a model on the take it already holds (offsets wrapping round) must still
+   * pass on, or the round stops there. The count ticks when a model's take
+   * changes by any means, and when choreography sets it, same take or not.
    */
   choreograph(ps, dt) {
-    const SEG = ['scene3d.anim.segment', ...SLOT_PREFIXES.map(p => `${p}.animSegment`)];
+    const M = [
+      { seg: 'scene3d.anim.segment', follow: 'scene3d.anim.follow', off: 'scene3d.anim.offset', delay: 'scene3d.anim.delay',
+        loaded: () => !!this.sm.actions?.length },
+      ...SLOT_PREFIXES.map((pre, i) => ({ seg: `${pre}.animSegment`, follow: `${pre}.animFollow`, off: `${pre}.animOffset`,
+        delay: `${pre}.animDelay`, loaded: () => !!this.slots[i] })),
+    ];
+    const leadOf = m => Math.round(ps.get(M[m].follow)?.value ?? 0) - 1;   // -1 Own, 0 = M1 …
     this._clock = (this._clock ?? 0) + dt;
-    this._follow ??= SLOT_PREFIXES.map(() => ({ lead: -1, last: null, queue: [] }));
-    SLOT_PREFIXES.forEach((pre, i) => {
+    this._follow ??= M.map(() => ({ lead: -1, last: null, queue: [] }));
+    // Change counts: a take changed since last frame by hand, controller or Advance.
+    this._seq ??= M.map(() => 0);
+    this._seen ??= M.map(() => null);
+    M.forEach((m, i) => {
+      const v = Math.round(ps.get(m.seg).value);
+      if (v !== this._seen[i]) { this._seen[i] = v; this._seq[i]++; }
+    });
+    M.forEach((m, i) => {
       const f = this._follow[i];
-      const lead = Math.round(ps.get(`${pre}.animFollow`).value) - 1;   // -1 Own, 0 = M1 …
-      if (lead < 0 || lead === i + 1 || !this.slots[i]) { f.lead = -1; f.queue.length = 0; return; }
-      if (lead !== f.lead) { f.lead = lead; f.last = null; f.queue.length = 0; }
-      const lv = Math.round(ps.get(SEG[lead]).value);
-      if (lv !== f.last) {
-        f.last = lv;
-        f.queue.push({ at: this._clock + ps.get(`${pre}.animDelay`).value, lv });
+      let lead = leadOf(i);
+      if (lead === i || !m.loaded()) lead = -1;
+      if (lead >= 0) {
+        // Walk the chain: back to i means a loop. No delay in it → the
+        // lowest model of the loop conducts instead of following.
+        const loop = [i];
+        for (let k = lead; k >= 0 && !loop.includes(k); k = leadOf(k)) loop.push(k);
+        const closes = loop.length > 1 && leadOf(loop[loop.length - 1]) === i;
+        const still = closes && loop.reduce((t, k) => t + (ps.get(M[k].delay)?.value ?? 0), 0) <= 0;
+        if (still && i === Math.min(...loop)) lead = -1;   // the conductor of a loop with no delay
+        f.inLoop = closes && !still;                       // a broken loop is a plain chain
+      }
+      if (lead < 0) { f.lead = -1; f.queue.length = 0; return; }
+      const lv = Math.round(ps.get(M[lead].seg).value), ls = this._seq[lead];
+      if (lead !== f.lead) {
+        f.lead = lead; f.queue.length = 0;
+        f.last = f.inLoop ? ls : null;          // in a round, join without copying
+      }
+      if (ls !== f.last) {
+        f.last = ls;
+        f.queue.push({ at: this._clock + ps.get(m.delay).value, lv });
       }
       while (f.queue.length && f.queue[0].at <= this._clock) {
         const { lv: v } = f.queue.shift();
-        const seg = ps.get(SEG[i + 1]);
+        const seg = ps.get(m.seg);
         const n = seg.options.length - 1;
-        if (v === 0 || n < 1) { ps.set(SEG[i + 1], 0); continue; }
-        const off = Math.round(ps.get(`${pre}.animOffset`).value);
-        ps.set(SEG[i + 1], (((v - 1 + off) % n) + n) % n + 1);
+        const to = v === 0 || n < 1 ? 0 : (((v - 1 + Math.round(ps.get(m.off).value)) % n) + n) % n + 1;
+        ps.set(m.seg, to);
+        this._seen[i] = to; this._seq[i]++;    // passes on even when the take is unchanged
       }
     });
   }

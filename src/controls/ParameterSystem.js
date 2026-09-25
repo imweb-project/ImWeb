@@ -3915,6 +3915,11 @@ export function registerCoreParameters(ps) {
   // Advance and Loops, as the slots' animAdvance / animLoops.
   ps.register({ id: "scene3d.anim.advance", label: "Advance", group: "scene3d", type: PARAM_TYPE.SELECT, options: ["Off", "Next", "Random"], value: 0 });
   ps.register({ id: "scene3d.anim.loops",   label: "Loops",   group: "scene3d", min: 1, max: 16, value: 2, step: 1 });
+  // Choreography, as the slots' animFollow / animOffset / animDelay — M1 can
+  // follow too (a round when the loop has a delay; ModelSlots.choreograph).
+  ps.register({ id: "scene3d.anim.follow", label: "Follow", group: "scene3d", type: PARAM_TYPE.SELECT, options: ["Own", "M1", "M2", "M3", "M4"], value: 0 });
+  ps.register({ id: "scene3d.anim.offset", label: "Offset", group: "scene3d", min: -16, max: 16, value: 0, step: 1 });
+  ps.register({ id: "scene3d.anim.delay",  label: "Delay",  group: "scene3d", min: 0, max: 10, value: 0, step: 0.05, unit: "s" });
   // Which take of the clip to play (0 = whole clip). Options are filled from
   // the loaded clip by buildSegmentRow (UI.js); choosing one writes Anim
   // Start / End. group 'global' — excluded from Display State capture: Start /

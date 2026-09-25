@@ -9,6 +9,18 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **M1 can follow too — and a closed loop is a round.** M1 gets Follow /
+  Offset / Delay (scene3d.anim.follow / .offset / .delay); its own Advance
+  waits while it follows. A follow loop with a Delay in it is a round: one
+  change travels round the models forever. A loop with no Delay is broken at
+  its lowest model, which conducts. Round members join without copying their
+  leader (all copying at once made them march in unison), and followers now
+  watch a per-model change count rather than the take value, so a wave that
+  lands a model on the take it already holds still passes on. Verified in
+  node (zero-delay loop conducts, round carries one wave through a wrap,
+  M1 following M2, all chain checks unchanged) and in the app (M2 Advance,
+  M1 Follow M2 at −1: 13/14 → … → 18/19).
+
 - **Choreography across M1–M4.** M2–M4 get *Follow* (Own / M1–M4),
   *Offset* (−16…+16 takes) and *Delay* (0–10 s): a follower plays its
   leader's take + Offset, Delay seconds after the leader changes — a canon

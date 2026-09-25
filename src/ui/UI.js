@@ -1295,6 +1295,9 @@ export function buildGeometryButtons(ps, sceneManager, contextMenu) {
   animSection.appendChild(buildParamRow(ps.get('scene3d.anim.len'), contextMenu));
   animSection.appendChild(buildParamRow(ps.get('scene3d.anim.advance'), contextMenu));
   animSection.appendChild(buildParamRow(ps.get('scene3d.anim.loops'), contextMenu));
+  animSection.appendChild(buildParamRow(ps.get('scene3d.anim.follow'), contextMenu));
+  animSection.appendChild(buildParamRow(ps.get('scene3d.anim.offset'), contextMenu));
+  animSection.appendChild(buildParamRow(ps.get('scene3d.anim.delay'), contextMenu));
   animSection.appendChild(buildParamRow(ps.get('scene3d.anchor'), contextMenu));
   importEl.appendChild(animSection);
 
