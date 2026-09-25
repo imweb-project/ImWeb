@@ -267,6 +267,13 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   settings, including the factory bank.
 
 ### Fixed
+- **Animations leaked mixer actions when the clip kept changing.** The
+  player rebuilt its pool of twin actions (Morph, Seam) every time a clip
+  came back, and the mixer keeps a cached action per twin — a controller
+  flipping the Animation / Clip choice grew that cache without bound (8 → 32
+  → 152 actions over 50 flips). One pool per clip is now kept and reused:
+  8 after 50 flips.
+
 - **A model's image could come back upside down after a state recall.** An
   image's orientation was decided when it loaded, from whatever model was
   there at that moment — and a state restores M1's model separately, so a

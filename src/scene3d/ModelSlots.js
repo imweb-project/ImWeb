@@ -232,6 +232,11 @@ export class RangePlayer {
     this.mixer = mixer;
     this.clip = null;
     this.pool = [];        // actions for this clip: the original + twin clips
+    // One pool per clip, kept: the mixer caches an action per twin clip, so
+    // rebuilding the pool each time a clip came back (a controller flipping
+    // the Animation / Clip choice with Morph or Seam on) grew that cache
+    // without bound.
+    this._pools = new Map();
     this.lanes = [];       // { action, twin, s, e, mode, seam, u, w, w0 }
     this.cur = null;       // the lane fading in / playing
     this.fade = 1;         // 0→1 progress of the current morph
@@ -298,7 +303,8 @@ export class RangePlayer {
     if (clip !== this.clip) {
       this.stop();
       this.clip = clip;
-      this.pool = [action];
+      if (!this._pools.has(clip)) this._pools.set(clip, [action]);
+      this.pool = this._pools.get(clip);
       this.cur = this._lane(action, s, e, mode, seam);
       this.lanes = [this.cur];
       this.fade = 1;
