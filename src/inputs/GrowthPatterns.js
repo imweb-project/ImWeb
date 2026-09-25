@@ -24,7 +24,7 @@ export const GROWTH_RES = [256, 512, 1024];
 // Single = Gray-Scott (one pattern scale); Nested = multi-scale Turing.
 // ≤ 6 characters and no hyphen: a short SELECT renders as a button group
 // that abbreviates longer labels ("Gray-Scott" showed as "Scott").
-export const GROWTH_MODES = ['Single', 'Nested', 'Frost'];   // Frost = crystals
+export const GROWTH_MODES = ['Single', 'Nested', 'Frost', 'Hyphae'];   // Frost = crystals, Hyphae = 1-px threads
 
 // ── Looks ─────────────────────────────────────────────────────────────────────
 // A Look writes EVERY value that shapes the result, not just the obvious
@@ -68,4 +68,11 @@ export const GROWTH_LOOKS = [
     'growth.fadeStyle': 2, 'growth.lifetime': 20,
     'growth.details': 45, 'growth.relief': 35, 'growth.ground': 10, 'growth.gloss': 30,
     'growth.hue': 205, 'growth.sat': 30, 'growth.spread': 20, 'growth.plantSize': 2 } },
+  // Mycelium: branching threads exactly one pixel wide (the Hyphae engine),
+  // colour walking with age so old threads and fresh tips differ. Size 15 is
+  // the 1024 grid — the finest lines; this engine is cheap enough for it.
+  { name: 'Mycelium', values: { ...LOOK_BASE,
+    'growth.mode': 3, 'growth.scale': 15, 'growth.variation': 45, 'growth.hyBranch': 70,
+    'growth.relief': 0, 'growth.ground': 4, 'growth.gloss': 0,
+    'growth.hue': 40, 'growth.sat': 25, 'growth.spread': 45, 'growth.plantSize': 1 } },
 ];

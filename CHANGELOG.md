@@ -9,6 +9,21 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Growth: Mycelium — growth made only of 1-px lines (a fifth Look).** A
+  new engine (Hyphae, growth.mode 3): a cell is empty, thread, or a tip
+  with a heading; an empty cell becomes a tip only when its ONLY occupied
+  neighbour (of eight) is a tip pointing at it, so threads can never thicken
+  and keep clear of each other. Tips retire once their child exists; forks
+  come from a rare per-step side rule; headings wander and lean lightly on
+  the drifting field; colour walks with age. Strokes seed sparse tips where
+  they arrive (a stroke marked occupied could never sprout); a spore is
+  eight non-adjacent spokes. Size = grid (1024 / 512 / 256); Variation =
+  wander; Branching in Advanced. Measured on GPU at 1024: 0 filled 2×2
+  blocks (true 1-px lines), ~7 ms/frame. Three failures on the way: a share
+  of parents staying tips doubled the tip count every few steps (41 000
+  tips, grid packed in 3 s); a per-step fork chance of 1.4% forked every tip
+  ~10×/s; and the sin-based hash — at pixel coordinates up to ~1000 it let a
+  0.14% test pass 16–17% of the time (Hoskins' hash12: 0.16%, flat).
 - **Growth: Size spans ~5×, and Variation shows at any Size.** Owner: "make
   the size vary in the same canvas … make the scale a bit wider". Diffusion
   can only move within 0.2–1 (seeds die below, unstable above), so Size as

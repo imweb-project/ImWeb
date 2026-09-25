@@ -550,6 +550,11 @@ async function main() {
     if (ps.get("growth.mode").value === 2) {
       return { res: GROWTH_RES[ps.get("growth.res").value] ?? 512, diff: s };
     }
+    // Hyphae: lines are one grid pixel, so Size is simply the grid — 1024
+    // (finest), 512, 256. Cheap engine: 1024 is affordable here.
+    if (ps.get("growth.mode").value === 3) {
+      return { res: s < 0.34 ? 1024 : s < 0.67 ? 512 : 256, diff: 0.3 };
+    }
     const wf = Math.pow(Math.sqrt(20), s);          // width factor 1 … 4.47
     return wf <= Math.sqrt(5) ? { res: 512, diff: 0.2 * wf * wf }
                               : { res: 256, diff: 0.05 * wf * wf };
@@ -1421,6 +1426,7 @@ async function main() {
       0: ["patternA", "patternB", "zones", "feed", "kill", "rest"],
       1: ["msStep", "msFine", "msCoarse", "msBias"],
       2: ["crFold", "crAniso", "crAngle", "crHeat", "crNoise", "crRingGap", "res"],
+      3: ["hyBranch"],
     };
     const showFor = () => {
       const mode = Math.round(ps.get("growth.mode").value);
@@ -10874,6 +10880,7 @@ void main() {
         // multiplies by (1 − a) per frame, a = min(1, fade·0.5), so per second
         // at 60 fps the rate is −60·ln(1 − a). a = 1 would be infinite: capped.
         ..._growthFade(),
+        hyBranch: ps.get("growth.hyBranch").value,
         crFold:   ps.get("growth.crFold").value,
         crAniso:  ps.get("growth.crAniso").value,
         crAngle:  ps.get("growth.crAngle").value,

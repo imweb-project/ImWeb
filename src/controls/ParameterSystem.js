@@ -7049,6 +7049,12 @@ export function registerCoreParameters(ps) {
     id: "growth.crRingGap", label: "Ring gap", group: "growth",
     type: PARAM_TYPE.CONTINUOUS, min: 0.05, max: 3, value: 0.4, step: 0.01,
   });
+  // Hyphae: how often threads fork, and how often a tip survives to sprout
+  // again. Advanced, Hyphae only.
+  ps.register({
+    id: "growth.hyBranch", label: "Branching", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 100, value: 30, step: 1,
+  });
   ps.register({
     id: "growth.seedSrc", label: "Seed src", group: "growth",
     type: PARAM_TYPE.SELECT, options: CAPTURE_SOURCES,

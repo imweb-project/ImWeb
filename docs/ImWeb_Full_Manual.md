@@ -900,7 +900,7 @@ plants, so a Look's name always gives its look.
 
 | Control | What it does |
 |---|---|
-| **Look** | Mitosis · Lichen · Coral · Snowflake. Loads the whole look |
+| **Look** | Mitosis · Lichen · Coral · Snowflake · Mycelium. Loads the whole look |
 | **Speed** | How fast it grows |
 | **Size** | How large the pattern's features are (stripes, cells, crystal), over about 5× from 0 to 100. Sweeping it live keeps the growth: it swells or tightens |
 | **Variation** | How much the size changes across the canvas: fine lace in some areas, broad bands in others, drifting slowly. Works at any Size |
@@ -918,6 +918,11 @@ plants, so a Look's name always gives its look.
 - **Coral:** a branching coral colony with relief.
 - **Snowflake:** a six-armed ice crystal with growth rings; it grows for about
   20 s and fades before it can fill the frame.
+- **Mycelium:** branching threads exactly one pixel wide that wander and
+  keep clear of each other, spreading from a spore or sprouting along your
+  strokes. Colour shifts with age, so old threads and fresh tips differ.
+  Variation sets how much they wander, Size the fineness of the lines
+  (finest at the low end), Branching (Advanced) how often they fork.
 
 **Advanced** (collapsed) holds everything else, and shows only what applies
 to the current Look's engine: Pattern A/B and Zones, Feed/Kill offsets,

@@ -42,7 +42,7 @@
 import * as THREE from 'three';
 import {
   VERT, GROWTH_RD_STEP, GROWTH_RD_VIEW, GROWTH_RD_INIT, GROWTH_MS_DOWN, GROWTH_MS_STEP,
-  GROWTH_CR_AUX, GROWTH_CR_STEP, PASSTHROUGH,
+  GROWTH_CR_AUX, GROWTH_CR_STEP, GROWTH_HY_STEP, PASSTHROUGH,
 } from '../shaders/index.js';
 import { GROWTH_PATTERNS } from './GrowthPatterns.js';
 
@@ -53,6 +53,7 @@ const MS_LEVELS = 6;              // pyramid depth: blur radii ~2 … 64 texels
 export const MODE_GRAY_SCOTT = 0;
 export const MODE_MULTISCALE = 1;
 export const MODE_CRYSTAL    = 2;
+export const MODE_HYPHAE     = 3;
 
 export class GrowthRD {
   constructor(renderer) {
@@ -147,6 +148,17 @@ export class GrowthRD {
       uVar: { value: 0 }, uVarP: { value: new THREE.Vector3(3, 0, 1) },
     });
     this._aux = null;
+
+    // Hyphae: one pass a step, no extra targets.
+    this._hyMat = mat(GROWTH_HY_STEP, {
+      uState: { value: null }, uTexel: { value: new THREE.Vector2(1, 1) },
+      uNow: { value: 0 }, uAgeDt: { value: 0 }, uSeedRand: { value: 0 },
+      uGrowP: { value: 0.7 }, uWander: { value: 1 }, uBranch: { value: 0.3 },
+      uSeed: { value: null }, uSeedPrev: { value: null }, uSeedAmt: { value: 0 },
+      uPoint: { value: new THREE.Vector3(0.5, 0.5, 0) },
+      uGrowTime: { value: 0 }, uFadeTime: { value: 3 }, uPenRate: { value: 0 },
+      uVar: { value: 0 }, uVarP: { value: new THREE.Vector3(3, 0, 1) },
+    });
 
     // Last frame's seed, so a step can tell a stroke ARRIVING at a pixel (a
     // rise) from one merely held there. 8-bit is plenty for a luma knee.
@@ -255,7 +267,7 @@ export class GrowthRD {
 
     // The two modes read the state channels differently, so a switch starts
     // from that mode's own empty state rather than reinterpreting the other's.
-    const mode = o.mode === MODE_MULTISCALE || o.mode === MODE_CRYSTAL ? o.mode : MODE_GRAY_SCOTT;
+    const mode = [MODE_MULTISCALE, MODE_CRYSTAL, MODE_HYPHAE].includes(o.mode) ? o.mode : MODE_GRAY_SCOTT;
     if (mode !== this._mode) { this._mode = mode; this._needsInit = true; }
     if (mode === MODE_MULTISCALE && !this._pyr) this._sizePyramid();
     if (mode === MODE_CRYSTAL && !this._aux) this._aux = this._makeTarget(true);
@@ -263,7 +275,7 @@ export class GrowthRD {
     if (this._needsInit) {
       // x: A = 1 (Gray-Scott food) · v = −1 (multi-scale) · p = 0 (crystal: all
       // melt, at T = 0 — undercooled). w: lineage stamp 0.
-      const x0 = mode === MODE_MULTISCALE ? -1 : mode === MODE_CRYSTAL ? 0 : 1;
+      const x0 = mode === MODE_MULTISCALE ? -1 : (mode === MODE_CRYSTAL || mode === MODE_HYPHAE) ? 0 : 1;
       this._initMat.uniforms.uInit.value.set(x0, 0, 0, 0);
       this._blit(this._initMat, this._state[0]);
       this._blit(this._initMat, this._state[1]);
@@ -281,7 +293,9 @@ export class GrowthRD {
     // Crystal: two passes a step, trig per pixel. Half rate puts a whole
     // Kobayashi crystal (~4000 steps) at ~8 s at default Speed; 4× rate grew
     // it in ~1 s and cost 55 ms/frame at 256 (Intel UHD 630).
-    this._acc += o.speed * step * 60 * (mode === MODE_MULTISCALE ? 0.25 : mode === MODE_CRYSTAL ? 0.5 : 1);
+    // Hyphae: a tip moves up to one cell a step, so full rate crossed the
+    // frame in about a second; a quarter makes growth watchable.
+    this._acc += o.speed * step * 60 * (mode === MODE_MULTISCALE || mode === MODE_HYPHAE ? 0.25 : mode === MODE_CRYSTAL ? 0.5 : 1);
     let n = Math.min(MAX_STEPS_PER_FRAME, Math.floor(this._acc));
     this._acc -= Math.floor(this._acc);
     // A pending spore must land even while Speed is 0 — planting into a
@@ -319,7 +333,7 @@ export class GrowthRD {
     // Drift runs on the lineage clock (real seconds).
     const varAmt = (o.variation ?? 0) / 100;
     const varT   = this._clock * (o.varDrift ?? 0.05);
-    for (const m of [this._stepMat, this._msMat, this._crMat]) {
+    for (const m of [this._stepMat, this._msMat, this._crMat, this._hyMat]) {
       m.uniforms.uVar.value = varAmt;
       m.uniforms.uVarP.value.set(o.varSize ?? 3, varT, this._w / this._h);
     }
@@ -328,6 +342,8 @@ export class GrowthRD {
       this._stepMultiScale(n, o);
     } else if (mode === MODE_CRYSTAL) {
       this._stepCrystal(n, o, u.uAgeDt.value, u.uNow.value);
+    } else if (mode === MODE_HYPHAE) {
+      this._stepHyphae(n, o, u.uAgeDt.value, u.uNow.value);
     } else for (let i = 0; i < n; i++) {
       // The spore is applied on the FIRST step only; after that the reaction
       // carries it. Radius in texels, measured against the grid height.
@@ -386,6 +402,37 @@ export class GrowthRD {
   // Null before the first copy: it samples black, so every seed reads as
   // arriving — which on the first frame it has.
   _seedPrevTex() { return this._seedPrev ? this._seedPrev.texture : null; }
+
+  /** n hyphae steps. Variation sets how much threads bend. */
+  _stepHyphae(n, o, ageDt, now) {
+    const u = this._hyMat.uniforms;
+    u.uTexel.value.set(1 / this._w, 1 / this._h);
+    u.uNow.value      = now;
+    u.uAgeDt.value    = ageDt;
+    u.uWander.value   = 0.4 + 2.6 * ((o.variation ?? 0) / 100);
+    u.uBranch.value   = (o.hyBranch ?? 30) / 100;
+    u.uSeed.value     = o.seedTex;
+    u.uSeedAmt.value  = o.seedTex ? o.seedAmt : 0;
+    u.uSeedPrev.value = this._seedPrevTex();
+    u.uGrowTime.value = o.growTime ?? 0;
+    u.uFadeTime.value = o.fadeTime ?? 3;
+    u.uPenRate.value  = o.penRate ?? 0;
+    // The flow field is always on for hyphae — it is what makes neighbouring
+    // threads run together — so it does not wait for Variation.
+    u.uVar.value = 1;
+    for (let i = 0; i < n; i++) {
+      if (i === 0 && this._plant) {
+        u.uPoint.value.set(this._plant.x, this._plant.y, Math.max(1, this._plant.r * this._h));
+        this._plant = null;
+      } else {
+        u.uPoint.value.z = 0;
+      }
+      u.uSeedRand.value = Math.random() * 1000;
+      u.uState.value = this._state[this._cur].texture;
+      this._blit(this._hyMat, this._state[this._cur ^ 1]);
+      this._cur ^= 1;
+    }
+  }
 
   /** n crystal steps: ε terms into the aux target, then the phase/heat step. */
   _stepCrystal(n, o, ageDt, now) {
@@ -486,6 +533,7 @@ export class GrowthRD {
     this._seedPrev?.dispose();
     this._copyMat.dispose();
     this._crAuxMat.dispose();
+    this._hyMat.dispose();
     this._crMat.dispose();
     this._geom.dispose();
     this._stepMat.dispose();

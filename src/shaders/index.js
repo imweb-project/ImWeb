@@ -319,11 +319,18 @@ export const GROWTH_RD_VIEW = /* glsl */ `
     return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
   }
 
+  // Engines: 0 Gray-Scott, 1 multi-scale, 2 crystal, 3 hyphae. Exact tests —
+  // "uMode > 1.5" meant crystal while there were three, and would silently
+  // have claimed hyphae too.
+  #define IS_CRYSTAL (abs(uMode - 2.0) < 0.5)
+  #define IS_HYPHAE  (uMode > 2.5)
+
   // ONE definition of what each mode shows, 0–1. Colour and relief both read
   // it, so the lit surface is exactly the shape you see, not a second guess.
   float heightOf(vec4 st) {
     if (uMode < 0.5) return clamp((st.g - 0.08) * uContrast, 0.0, 1.0);            // B
-    if (uMode > 1.5) return clamp(0.5 + (st.r - 0.5) * uContrast * 0.5, 0.0, 1.0); // p
+    if (IS_HYPHAE)   return st.r > 0.5 ? 1.0 : 0.0;                                 // a thread
+    if (IS_CRYSTAL)  return clamp(0.5 + (st.r - 0.5) * uContrast * 0.5, 0.0, 1.0); // p
     return clamp(0.5 + 0.5 * st.r * uContrast * 0.5, 0.0, 1.0);                    // v
   }
 
@@ -334,7 +341,8 @@ export const GROWTH_RD_VIEW = /* glsl */ `
   float surf(vec2 uv) {
     vec4 st = texture2D(uState, uv);
     if (uMode < 0.5) return st.g / 0.4;
-    if (uMode > 1.5) {
+    if (IS_HYPHAE) return st.r > 0.5 ? 1.0 : 0.0;
+    if (IS_CRYSTAL) {
       // Rings as engraved grooves: a narrow cos² profile per ring. Its width
       // scales with the gap, not the pixel, which suits relief — a groove
       // should be a groove at any zoom.
@@ -351,7 +359,11 @@ export const GROWTH_RD_VIEW = /* glsl */ `
     float val = v;
     if (uMode < 0.5) {
       hue = uHue + uSpread * (1.0 - v);
-    } else if (uMode > 1.5) {
+    } else if (IS_HYPHAE) {
+      // Colour by age: fresh tips and young threads at Colour, older ones
+      // walk along HueSpread — the history of the growth, readable.
+      hue = uHue + uSpread * clamp(st.b / 10.0, 0.0, 1.0);
+    } else if (IS_CRYSTAL) {
       // Crystal: the latent-heat halo a faint glow round the solid; hue walks
       // with temperature, so growing tips read warm.
       float T = clamp(st.g, 0.0, 1.0);
@@ -375,7 +387,7 @@ export const GROWTH_RD_VIEW = /* glsl */ `
     // their own and new ones rise from the oldest centre. Kept ~1 px thin at
     // any spacing: distance to the ring in TEXELS = phase distance ÷ the age
     // gradient, taken from the neighbours (no derivative functions here).
-    if (uMode > 1.5 && uRings > 0.0 && st.r > 0.5) {
+    if (IS_CRYSTAL && uRings > 0.0 && st.r > 0.5) {
       float ax = texture2D(uState, vUv + vec2(uTexel.x, 0.0)).b - texture2D(uState, vUv - vec2(uTexel.x, 0.0)).b;
       float ay = texture2D(uState, vUv + vec2(0.0, uTexel.y)).b - texture2D(uState, vUv - vec2(0.0, uTexel.y)).b;
       float grad = 0.5 * length(vec2(ax, ay)) / uRingGap;             // rings per texel
@@ -617,6 +629,127 @@ ${GROWTH_VAR_GLSL}
 export const GROWTH_RD_INIT = /* glsl */ `
   uniform vec4 uInit;
   void main() { gl_FragColor = uInit; }
+`;
+
+// ── Growth: hyphae — branching threads exactly one pixel wide ─────────────────
+// A cell is empty (r 0), a thread (r 1, g −1) or a growing tip (r 1, g =
+// heading in turns, 0…1). b = age, a = lineage stamp, as in the other
+// engines. An empty cell becomes a tip only when its ONLY occupied neighbour
+// (of eight) is a tip pointing at it — the direction nearest the tip's
+// heading — so a thread can never thicken past one pixel and threads keep
+// clear of each other, as real hyphae do. A tip retires once its child
+// exists; forks come only from the side rule, rare per step so that they
+// are spaced along the thread. Headings bend along the
+// drifting Variation field (neighbouring threads flow together) and wander.
+export const GROWTH_HY_STEP = /* glsl */ `
+${GROWTH_VAR_GLSL}
+  uniform sampler2D uState;
+  uniform vec2      uTexel;
+  uniform float     uNow;
+  uniform float     uAgeDt;
+  uniform float     uSeedRand;
+  uniform float     uGrowP;     // chance a tip advances this step
+  uniform float     uWander;    // how much headings bend
+  uniform float     uBranch;    // 0–1 how often threads fork
+  uniform sampler2D uSeed;
+  uniform sampler2D uSeedPrev;
+  uniform float     uSeedAmt;
+  uniform vec3      uPoint;     // spore: xy uv, z radius in texels
+  uniform float     uGrowTime;
+  uniform float     uFadeTime;
+  uniform float     uPenRate;
+  varying vec2 vUv;
+  const float TWO_PI = 6.2831853, PI = 3.14159265;
+
+  // Hoskins' hash12 — not fract(sin(dot)·43758): on pixel coordinates up to
+  // ~1000 the sine argument reaches ~4e5, where float32 leaves too few bits
+  // for sin() to scatter, and "rare" tests pass far too often.
+  float hsh(vec2 p, float k) {
+    vec3 p3 = fract(vec3(p.xyx + vec3(uSeedRand * k * 0.37, uSeedRand * k * 0.71, uSeedRand * k * 0.13)) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+  }
+  vec2 dir8(int j) {
+    if (j == 0) return vec2( 1.0,  0.0); if (j == 1) return vec2( 1.0,  1.0);
+    if (j == 2) return vec2( 0.0,  1.0); if (j == 3) return vec2(-1.0,  1.0);
+    if (j == 4) return vec2(-1.0,  0.0); if (j == 5) return vec2(-1.0, -1.0);
+    if (j == 6) return vec2( 0.0, -1.0); return vec2( 1.0, -1.0);
+  }
+  // Past Grow time (or faded to 30% under Pen) a lineage stops growing …
+  bool stopped(float st) {
+    if (st <= 0.0) return false;
+    if (uGrowTime > 0.0 && uNow - st > uGrowTime) return true;
+    return uPenRate > 0.0 && exp(-uPenRate * (uNow - st)) < 0.3;
+  }
+  // … and once fully faded it is cleared.
+  bool gone(float st) {
+    if (st <= 0.0) return false;
+    if (uGrowTime > 0.0 && uNow - st > uGrowTime + uFadeTime) return true;
+    return uPenRate > 0.0 && exp(-uPenRate * (uNow - st)) < 1.0 / 255.0;
+  }
+
+  void main() {
+    vec4 c  = texture2D(uState, vUv);
+    vec2 px = floor(vUv / uTexel);
+    vec4 o  = c;
+    if (c.r > 0.5) {
+      o.b = c.b + uAgeDt;
+      if (c.g >= 0.0) {
+        bool child = false;
+        for (int j = 0; j < 8; j++) {
+          vec4 n = texture2D(uState, vUv + dir8(j) * uTexel);
+          if (n.r > 0.5 && n.g >= 0.0 && n.b < c.b) child = true;
+        }
+        // Grown on: now a thread. Always — letting a share of parents stay
+        // tips (the first cut) doubled the tip count every few steps and
+        // packed a 1024 grid solid in 3 s (measured: 41 000 tips).
+        if (child) o.g = -1.0;
+        if (c.b > 3.0) o.g = -1.0;                            // stuck tips give up
+      }
+      if (gone(c.a)) o = vec4(0.0);
+    } else {
+      int count = 0; vec4 par = vec4(0.0); vec2 pd = vec2(0.0);
+      for (int j = 0; j < 8; j++) {
+        vec4 n = texture2D(uState, vUv + dir8(j) * uTexel);
+        if (n.r > 0.5) { count++; par = n; pd = -dir8(j); }
+      }
+      if (count == 1 && par.g >= 0.0 && !stopped(par.a)) {
+        float h    = par.g * TWO_PI;
+        float ad   = atan(pd.y, pd.x);
+        float diff = abs(mod(ad - h + PI, TWO_PI) - PI);
+        bool ahead = diff <= 0.3927 + 1e-3;                            // nearest of 8
+        // A fork. Per step AND per candidate cell, so it must be tiny: at
+        // 0.014 each tip forked ~10×/s. Now ~every 250 px at 35, ~90 at 100.
+        bool side  = diff <= 1.1781 && hsh(px, 2.0) < uBranch * 0.004;
+        if ((ahead && hsh(px, 3.0) < uGrowP) || side) {
+          float phi = gvField(vUv) * PI;                   // the flow the threads follow
+          // A light pull toward the flow and a strong random wander: at 0.12 /
+          // 0.3 every thread lined up into parallel 45° bundles — circuit
+          // traces, not hyphae (measured by eye on GPU renders).
+          float nh  = (ahead ? h : ad) + uWander * (0.04 * sin(phi - h) + 0.6 * (hsh(px, 4.0) - 0.5));
+          o = vec4(1.0, fract(nh / TWO_PI), 0.0, par.a);
+        }
+      }
+    }
+
+    // Seeds. A stroke is a solid band, and any cell beside a band touches
+    // several occupied cells — so a stroke marked occupied could never sprout.
+    // It seeds SPARSE isolated tips instead, only where it has just arrived.
+    if (uSeedAmt > 0.0 && c.r < 0.5) {
+      float s  = smoothstep(0.05, 0.3, clamp(dot(texture2D(uSeed, vUv).rgb, vec3(0.299, 0.587, 0.114)) * uSeedAmt, 0.0, 1.0));
+      float sp = smoothstep(0.05, 0.3, clamp(dot(texture2D(uSeedPrev, vUv).rgb, vec3(0.299, 0.587, 0.114)) * uSeedAmt, 0.0, 1.0));
+      if (s - sp > 0.1 && hsh(px, 5.0) < 0.004) o = vec4(1.0, hsh(px, 6.0), 0.0, uNow);
+    }
+    // A spore: eight tips on a small ring, pointing outward, never adjacent
+    // to each other (2+ texels apart), so each can grow.
+    if (uPoint.z > 0.0) {
+      vec2 d = floor(vUv / uTexel) - floor(uPoint.xy / uTexel);
+      float R = max(2.0, floor(uPoint.z / 3.0));
+      bool spoke = (d.x == 0.0 || d.y == 0.0 || abs(d.x) == abs(d.y)) && max(abs(d.x), abs(d.y)) == R;
+      if (spoke) o = vec4(1.0, fract(atan(d.y, d.x) / TWO_PI), 0.0, uNow);
+    }
+    gl_FragColor = o;
+  }
 `;
 
 // ── Growth: multi-scale Turing patterns (J. McCabe, 2010) ─────────────────────
