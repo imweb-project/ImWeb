@@ -11,6 +11,7 @@
  *                  With Length on, a drag moves Start (the window follows)
  *   pinch / ⌥-wheel  zoom around the pointer; shift-wheel / sideways swipe pans
  *   double-click   zoom out to the whole clip
+ *   right-click    star / unstar a take (Advance then plays the starred ones)
  * Plain vertical wheel is left alone so the panel still scrolls.
  *
  * The static layers (bands, curve, cuts) are drawn once per clip / view /
@@ -18,13 +19,14 @@
  * range and playhead. The loop idles while the strip is not on screen.
  *
  * @param {object} o
- * @param {() => ({clip, segs, cuts, speed, fps}|null)} o.data
+ * @param {() => ({clip, segs, cuts, speed, fps, favs}|null)} o.data   favs: starred takes, 1-based
  * @param {() => ({s:number, e:number})} o.range   seconds
  * @param {() => (number|null)} o.time              playhead, seconds
  * @param {() => boolean} o.lenLocked               Length > 0
  * @param {(i:number) => void} o.pick               take index, 0-based
  * @param {(s:number, e:number) => void} o.setRange seconds
  * @param {(s:number) => void} o.setStart           seconds
+ * @param {(i:number) => void} [o.toggleFav]        take index, 0-based
  */
 export function createClipStrip(o) {
   const H = 38;
@@ -32,6 +34,7 @@ export function createClipStrip(o) {
   el.className = 'clip-strip';
   el.style.cssText = `display:block;width:100%;height:${H}px;margin:2px 0 6px;border-radius:3px;cursor:crosshair;touch-action:none;`;
   el.title = 'Click a take to play it · drag to set a range (near an edge trims it; with Length on, drag moves Start)\n'
+    + 'Right-click a take to star it — Advance then plays only starred takes\n'
     + 'Pinch or ⌥-scroll to zoom · shift-scroll to pan · double-click to zoom out';
   const ctx = el.getContext('2d');
   const base = document.createElement('canvas');
@@ -49,7 +52,7 @@ export function createClipStrip(o) {
   const xt = (x, W) => v0 + x / W * (v1 - v0);
 
   function drawBase(D, W, dpr) {
-    const key = `${W}|${dpr}|${v0}|${v1}|${D.segs.length}|${D.clip.uuid}`;
+    const key = `${W}|${dpr}|${v0}|${v1}|${D.segs.length}|${D.clip.uuid}|${(D.favs ?? []).join(',')}`;
     if (key === baseKey) return;
     baseKey = key;
     base.width = W * dpr; base.height = H * dpr;
@@ -85,6 +88,13 @@ export function createClipStrip(o) {
       bctx.lineTo(W, H); bctx.closePath();
       bctx.globalAlpha = 0.5; bctx.fillStyle = css('--text-2'); bctx.fill(); bctx.globalAlpha = 1;
     }
+    // Starred takes: a gold stripe along the top.
+    bctx.fillStyle = '#e0b030';
+    for (const i of D.favs ?? []) {
+      const s = D.segs[i - 1]; if (!s) continue;
+      const a = tx(s.start, W), b = tx(s.end + 1 / D.fps, W);
+      if (b >= 0 && a <= W) bctx.fillRect(a, 0, b - a, 4);
+    }
     // Cuts.
     bctx.fillStyle = css('--border-hi');
     for (const c of D.cuts) { const x = Math.round(tx(c, W)); if (x >= 0 && x <= W) bctx.fillRect(x, 0, 1, H); }
@@ -117,7 +127,7 @@ export function createClipStrip(o) {
     if (hoverX != null) {
       const ht = xt(hoverX, W);
       const i = D.segs.findIndex(s => ht >= s.start && ht < s.end + 1 / D.fps);
-      label = `${ht.toFixed(2)} s` + (i >= 0 ? ` · take ${i + 1}${D.segs[i].match < 0.1 ? ' ⟲' : ''}` : '');
+      label = `${ht.toFixed(2)} s` + (i >= 0 ? ` · take ${i + 1}${D.segs[i].match < 0.1 ? ' ⟲' : ''}${(D.favs ?? []).includes(i + 1) ? ' ★' : ''}` : '');
     }
     if (label) {
       ctx.font = '10px monospace';
@@ -165,6 +175,13 @@ export function createClipStrip(o) {
   el.addEventListener('pointerup', end);
   el.addEventListener('pointercancel', end);
   el.addEventListener('pointerleave', () => { if (!drag) hoverX = null; });
+  el.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    const D = o.data(); if (!D || !o.toggleFav) return;
+    const t = xt(px(e), el.clientWidth);
+    const i = D.segs.findIndex(s => t >= s.start && t < s.end + 1 / D.fps);
+    if (i >= 0) o.toggleFav(i);
+  });
   el.addEventListener('dblclick', () => { const d = o.data()?.clip.duration; if (d) { v0 = 0; v1 = d; } });
   el.addEventListener('wheel', e => {
     const d = o.data()?.clip.duration; if (!d) return;

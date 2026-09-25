@@ -19,6 +19,7 @@ import { buildParamRow } from './components/ParamRow.js';
 import { clipSegments } from '../scene3d/ClipSegments.js';
 import { createClipStrip } from './components/ClipStrip.js';
 import { getModelSpeed, setModelSpeed } from '../state/ModelStore.js';
+import { favKey, getFavs, toggleFav } from '../state/TakeFavs.js';
 import { openGuide } from './Guide.js';
 import { setViewportPos } from './layout/LayoutManager.js';
 const DEFAULT_FX_ORDER_SP = DEFAULT_FX_ORDER;
@@ -1332,7 +1333,7 @@ export function buildGeometryButtons(ps, sceneManager, contextMenu) {
 // Under the row, the clip as a timeline strip (ClipStrip): takes, motion,
 // range and playhead; click a take, drag a range. Its range() mirrors
 // RangePlayer's own resolution of Start / End / Length — keep them in step.
-function buildSegmentRow(ps, contextMenu, getClip, segId, startId, endId, clipId, lenId, getPlayer) {
+function buildSegmentRow(ps, contextMenu, getClip, segId, startId, endId, clipId, lenId, getPlayer, getName) {
   const p = ps.get(segId);
   const wrap = document.createElement('div');
   const rowHost = document.createElement('div');
@@ -1343,11 +1344,19 @@ function buildSegmentRow(ps, contextMenu, getClip, segId, startId, endId, clipId
     rowHost.replaceChildren(row);
   }
   const lenOf = () => Math.min(ps.get(lenId)?.value ?? 0, clip?.duration ?? 0);
+  // Starred takes of this model file's clip (TakeFavs) — shown ★ in the menu
+  // and on the strip; right-click on the strip toggles one.
+  const favs = () => getFavs(favKey(getName?.(), clip));
+  const labelTakes = () => {
+    const F = favs();
+    p.options = ['Whole clip',
+      ...segs.map((s, i) => `${F.includes(i + 1) ? '★ ' : ''}${i + 1} · ${s.start.toFixed(2)}–${s.end.toFixed(2)} s${s.match < 0.1 ? ' ⟲' : ''}`)];
+  };
   const strip = createClipStrip({
     data: () => {
       if (!clip) return null;
       const r = clipSegments(clip);
-      return { clip, segs, cuts: r.cuts, speed: r.speed, fps: r.fps };
+      return { clip, segs, cuts: r.cuts, speed: r.speed, fps: r.fps, favs: favs() };
     },
     range: () => {
       const d = clip.duration, a = ps.get(startId).value / 100 * d, b = ps.get(endId).value / 100 * d;
@@ -1360,6 +1369,7 @@ function buildSegmentRow(ps, contextMenu, getClip, segId, startId, endId, clipId
     pick: i => ps.set(segId, i + 1),
     setRange: (s, e) => { ps.set(startId, pct(s)); ps.set(endId, pct(e)); },
     setStart: s => ps.set(startId, pct(s)),
+    toggleFav: i => { toggleFav(favKey(getName?.(), clip), i + 1); labelTakes(); rebuild(); follow(); },
   });
   wrap.append(rowHost, strip.el);
   function follow() {
@@ -1379,8 +1389,7 @@ function buildSegmentRow(ps, contextMenu, getClip, segId, startId, endId, clipId
       clip = c;
       segs = clip ? clipSegments(clip).segments : [];
       if (segs.length < 2) segs = [];              // no cuts: only the whole clip
-      p.options = ['Whole clip',
-        ...segs.map((s, i) => `${i + 1} · ${s.start.toFixed(2)}–${s.end.toFixed(2)} s${s.match < 0.1 ? ' ⟲' : ''}`)];
+      labelTakes();
       p._value = p._target = 0;                    // silently: a new clip keeps its range
       rebuild();
     }
@@ -1531,7 +1540,7 @@ export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear
   const m1Seg = buildSegmentRow(ps, contextMenu,
     () => slots.sm.actions?.[ps.get('scene3d.anim.select').value]?.getClip() ?? null,
     'scene3d.anim.segment', 'scene3d.anim.start', 'scene3d.anim.end', 'scene3d.anim.select',
-    'scene3d.anim.len', () => slots.sm._range);
+    'scene3d.anim.len', () => slots.sm._range, () => slots.sm.importedModelName);
   m1Anim?.querySelector('[data-param-id="scene3d.anim.end"]')?.after(m1Seg.row);
   m1Anim?.querySelector('[data-param-id="scene3d.anim.speed"]')?.after(makeSpeedMemo(0, 'scene3d.anim.speed'));
   wrap.appendChild(m1Body);
@@ -1602,7 +1611,7 @@ export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear
           const ci = slots.clipInfo(i, ps);
           return ci ? slots.slots[i].clips[ci.index - 1] ?? null : null;
         }, `${pre}.animSegment`, `${pre}.animStart`, `${pre}.animEnd`, `${pre}.clip`,
-          `${pre}.animLen`, () => slots.slots[i]?.range);
+          `${pre}.animLen`, () => slots.slots[i]?.range, () => slots.names()[i]);
         rows.appendChild(seg.row);
         mine.push(seg.row);
         segRows.push(seg);

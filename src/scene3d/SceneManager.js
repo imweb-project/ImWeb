@@ -18,6 +18,7 @@ import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { hasComponentChannels, buildComponentClip } from './ColladaChannels.js';
 import { RangePlayer, applyAnchor, advanceTake } from './ModelSlots.js';
+import { favKey, getFavs } from '../state/TakeFavs.js';
 import { GeometryFactory, GEOMETRY_NAMES } from './GeometryFactory.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { TRIPLANAR_GLSL, TRI_MAP_FRAGMENT, TRI_EMISSIVEMAP_FRAGMENT } from './Triplanar.js';
@@ -1062,7 +1063,7 @@ export class SceneManager {
             p.get('scene3d.anim.seam')?.value ?? 0, p.get('scene3d.anim.len')?.value ?? 0);
           // A follower takes its takes from its leader (ModelSlots.choreograph), not its own Advance.
           if (!p.get('scene3d.anim.follow')?.value) advanceTake(p, this._range, 'scene3d.anim.segment', p.get('scene3d.anim.advance')?.value ?? 0,
-            p.get('scene3d.anim.loops')?.value ?? 2, speed);
+            p.get('scene3d.anim.loops')?.value ?? 2, speed, () => getFavs(favKey(this._importedModelName, this._range.clip)));
         }
         applyAnchor(this.mesh, p.get('scene3d.anchor')?.value === 1, this.actions[animIdx]?.getClip());
       } else {

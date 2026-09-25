@@ -9,6 +9,16 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Star the takes you like.** Right-click a take on the timeline strip to
+  star it (gold stripe; ★ in the Segment menu; right-click again to unstar).
+  While any are starred, Advance Next / Random choose only among them — all
+  takes while none are. Stars are kept per model file + clip in
+  localStorage `imweb.takeFavs` (src/state/TakeFavs.js), so a file finds
+  its stars in any slot; advanceTake asks for them only when it advances.
+  Choreography offsets still count all takes. Verified: node — Next 1→2→4→2,
+  reverse 1→4→2→4, Random only 2 / 4, none starred = all; app — stars on
+  14 and 16 from the strip, ★ in the menu, Next from 13: 14 → 16 → 14 → 16.
+
 - **Mirror a model.** *Mirror* (M1 in Transform: scene3d.mirror; M2–M4 after
   Wire: modelN.mirror) flips the model left↔right about its own centre —
   scale x negated before rotation, so it is the model's own axis, not the

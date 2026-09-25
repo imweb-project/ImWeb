@@ -33,6 +33,7 @@
  */
 
 import * as THREE from 'three';
+import { favKey, getFavs } from '../state/TakeFavs.js';
 
 export const SLOT_PREFIXES = ['model2', 'model3', 'model4'];
 
@@ -190,17 +191,24 @@ function period(l) {
  * path — Morph blends it, the row and the timeline strip follow. Next steps
  * backwards while Anim Speed is negative. Needs at least two takes.
  */
-export function advanceTake(ps, player, segId, advance, loops, speed) {
+export function advanceTake(ps, player, segId, advance, loops, speed, getFavs = null) {
   if (!advance || !player?.cur || player.loopsDone() < Math.max(1, loops)) return;
   const seg = ps.get(segId);
   const n = (seg?.options.length ?? 1) - 1;
   if (n < 2) return;
   const cur = Math.round(seg.value);
+  // Starred takes (TakeFavs), asked for only now, at the moment of advancing:
+  // with any starred, Next and Random choose among them alone.
+  const F = (getFavs?.() ?? []).filter(i => i >= 1 && i <= n);
   let next;
-  if (advance === 1) next = speed < 0 ? (cur <= 1 ? n : cur - 1) : (cur % n) + 1;
+  if (F.length) {
+    if (advance === 1) next = speed < 0 ? ([...F].reverse().find(i => i < cur) ?? F[F.length - 1])
+                                        : (F.find(i => i > cur) ?? F[0]);
+    else { const pool = F.filter(i => i !== cur); next = pool.length ? pool[Math.floor(Math.random() * pool.length)] : cur; }
+  } else if (advance === 1) next = speed < 0 ? (cur <= 1 ? n : cur - 1) : (cur % n) + 1;
   else { next = 1 + Math.floor(Math.random() * (n - 1)); if (next >= cur) next++; }
   player.markLoops();
-  ps.set(segId, next);
+  if (next !== cur) ps.set(segId, next);
 }
 
 // The phase u that puts lane l at time t in `mode` / `seam` over [s, e],
@@ -568,7 +576,8 @@ export class ModelSlots {
           s.cur = ci;
           s.range.update(dt, v('animSpeed'), s.actions[ci], v('animStart'), v('animEnd'), v('animLoop'), v('animMorph'), v('animSeam'), v('animLen'));
           // A follower takes its takes from its leader (choreograph), not its own Advance.
-          if (!v('animFollow')) advanceTake(ps, s.range, `${pre}.animSegment`, v('animAdvance'), v('animLoops'), v('animSpeed'));
+          if (!v('animFollow')) advanceTake(ps, s.range, `${pre}.animSegment`, v('animAdvance'), v('animLoops'), v('animSpeed'),
+            () => getFavs(favKey(s.name, s.range.clip)));
         } else if (s.cur !== -1) {
           s.range.stop();
           s.cur = -1;
