@@ -303,3 +303,16 @@ certs/
 
 # Local demo export — not for the public repo (overrides !public/assets/*.mp4)
 public/assets/imweb-demo_ALL-I.mp4
+
+# 3D authoring working files — Blender, Daz Studio, Poser. Source scenes, not
+# app content: what ImWeb loads is an EXPORT (.dae / .glb / .bvh …), which
+# goes in public/assets/ to ship or the local assets/ folder to keep. These
+# are ignored everywhere so a scene saved in the wrong folder cannot ride a
+# `git add .` (Blender also writes .blend1 / .blend2 backups beside each save).
+# Export formats (.dae .glb .fbx .bvh .obj) are deliberately NOT listed: a
+# factory model or motion in public/assets/ must be able to ship.
+*.blend
+*.blend[0-9]
+*.duf
+*.pz3
+*.pzz
