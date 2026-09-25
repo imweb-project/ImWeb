@@ -10571,7 +10571,7 @@ void main() {
     // scene3d.getHypercube()?.setInstancerTexture(pipeline.prev.texture); — removed: SceneManager now owns instancer texture via _adoptMesh
     renderer.info.autoReset = false;
     renderer.info.reset();
-    if (scene3dNeeded) modelSlots.apply(ps, dt);
+    if (scene3dNeeded) modelSlots.apply(ps, dt, beatPhase);
     if (scene3dNeeded)
       scene3d.render(ps, dt, {
         camera: camera3d.active ? camera3d.currentTexture : null,
@@ -10581,6 +10581,7 @@ void main() {
         buffer: stillsBuffer.texture,
         noise: noiseTexture,
         warpMaps,
+        beatPhase,              // the beat counter, for the models' Beats lock
         dispTex: _resolveLayerTex(ps.get('layer.ds')?.value ?? 0),
         // The hypercube's face/mask/instancer menus are OPT_SOURCES, so they
         // resolve through the SAME function the layers use rather than through

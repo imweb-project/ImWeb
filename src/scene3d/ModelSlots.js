@@ -156,6 +156,8 @@ function pickAnchorBone(pivot, clip) {
  * pick) is a jump and blends with Morph instead.
  */
 export const LOOP_MODES = ['Loop', 'Ping-pong', 'Sine'];
+// animBeats / scene3d.anim.beats: beats per loop (index 0 = Off), as the movie decks' BeatLen.
+export const BEATS = [0, 1, 2, 4, 8, 16];
 const MAX_LANES = 4;
 const MAX_ACTIONS = 8;     // lanes + their seam twins
 const SLIDE = 0.1;         // s — a per-frame shift above this is a jump
@@ -236,17 +238,29 @@ export class RangePlayer {
   }
 
   /** Cycles the current take has completed since it started or was last changed (Advance). */
-  // Counted in phase from the mark, not in whole cycles, so a count restarted
-  // mid-cycle (Length on: a moved window keeps its phase) still waits for full
-  // loops.
+  // Counted in CYCLES (phase ÷ this take's period) from the mark, not whole
+  // wraps, so a count restarted mid-cycle (Length on: a moved window keeps its
+  // phase; Beats: a take joins mid-bar) still waits for full loops. Cycles,
+  // not raw phase: under Beats the phase is SET from the beat clock scaled by
+  // the take's own period, so a take of another length would otherwise look
+  // as if it had played many loops at once.
   loopsDone() {
     const c = this.cur;
     if (!c) return 0;
-    if (this._mark?.lane !== c) this._mark = { lane: c, u: 0 };
-    return Math.floor(Math.abs(c.u - this._mark.u) / period(c));
+    if (this._mark?.lane !== c) this._mark = { lane: c, c: 0 };
+    return Math.floor(Math.abs(c.u / period(c) - this._mark.c));
   }
-  /** Restart the loop count from here. */
-  markLoops() { if (this.cur) this._mark = { lane: this.cur, u: this.cur.u }; }
+  /**
+   * Restart the loop count from here. Under Beats the mark snaps to the
+   * nearest whole cycle — the bar line — so each change lands on the grid
+   * instead of a frame or two after it, a lag that would add up change after
+   * change.
+   */
+  markLoops() {
+    if (!this.cur) return;
+    const c = this.cur.u / period(this.cur);
+    this._mark = { lane: this.cur, c: this._beatLocked ? Math.round(c) : c };
+  }
 
   /** Where the playing loop is, in clip seconds (null when stopped) — for the timeline strip. */
   get time() { return this.cur ? place(this.cur).t : null; }
@@ -263,8 +277,13 @@ export class RangePlayer {
    * @param action  the clip's action from the mixer
    * @param seam    s of wrap blend in Loop mode (0 = hard wrap)
    * @param lenSec  s; > 0 replaces End with Start + lenSec
+   * @param beatCycles  Beats lock: cycles elapsed on the beat clock (beat
+   *   counter ÷ beats per loop), or null when off. Every lane's phase is then
+   *   SET from it — one cycle per N beats, on the grid — instead of advanced
+   *   by dt × speed; Anim Speed keeps only its direction. Unwrapped, so the
+   *   loop count (Advance) keeps working.
    */
-  update(dt, speed, action, startPct, endPct, mode, morph, seam = 0, lenSec = 0) {
+  update(dt, speed, action, startPct, endPct, mode, morph, seam = 0, lenSec = 0, beatCycles = null) {
     const clip = action.getClip(), d = clip.duration;
     if (!(d > 0)) return;
     let s, e;
@@ -284,7 +303,9 @@ export class RangePlayer {
       this.lanes = [this.cur];
       this.fade = 1;
     }
+    this._beatLocked = beatCycles != null;
     const cur = this.cur;
+    let remark = false;
     if (cur.s !== s || cur.e !== e || cur.mode !== mode || cur.seam !== seam) {
       // Keep the phase only for a Length window that moved — sliding Start.
       // Without Length, a new range of the same length is a different take and
@@ -300,7 +321,7 @@ export class RangePlayer {
       } else {
         this._switch(s, e, mode, seam, shift ? cur.u : 0);
       }
-      this.markLoops();                              // a new range starts its count afresh
+      remark = true;                                 // a new range starts its count afresh
     }
 
     if (this.lanes.length > 1) {
@@ -312,7 +333,8 @@ export class RangePlayer {
     }
     for (const l of this.lanes) {
       l.w = l === this.cur ? (this.lanes.length > 1 ? this.fade : 1) : l.w0 * (1 - this.fade);
-      l.u += dt * speed;
+      if (beatCycles != null) l.u = (speed < 0 ? -beatCycles : beatCycles) * period(l);
+      else l.u += dt * speed;
       const needTwin = l.mode === 0 && l.seam > 0;
       if (needTwin && !l.twin) { l.twin = this._acquire(); l.twin?.reset().play(); }
       if (!needTwin && l.twin) { l.twin.stop(); l.twin = null; }
@@ -325,6 +347,9 @@ export class RangePlayer {
         l.twin.setEffectiveWeight(l.w * k);
       }
     }
+    // Mark AFTER the phases are set for this frame — under Beats the new
+    // lane's phase is only known now.
+    if (remark) this.markLoops();
     this.mixer.update(0);
   }
 
@@ -526,8 +551,11 @@ export class ModelSlots {
     });
   }
 
-  /** Per frame: visibility, transform, shared-material sync. */
-  apply(ps, dt) {
+  /**
+   * Per frame: visibility, transform, shared-material sync.
+   * @param beatPhase  main.js's beat counter (beats, grows at global.bpm) — for Beats lock
+   */
+  apply(ps, dt, beatPhase = 0) {
     this.choreograph(ps, dt);
     const toRad = Math.PI / 180;
     SLOT_PREFIXES.forEach((pre, i) => {
@@ -574,7 +602,9 @@ export class ModelSlots {
         const ci = Math.min(Math.round(v('clip')) - 1, s.actions.length - 1);
         if (v('anim') && s.actions[ci]) {
           s.cur = ci;
-          s.range.update(dt, v('animSpeed'), s.actions[ci], v('animStart'), v('animEnd'), v('animLoop'), v('animMorph'), v('animSeam'), v('animLen'));
+          const beats = BEATS[v('animBeats')] ?? 0;
+          s.range.update(dt, v('animSpeed'), s.actions[ci], v('animStart'), v('animEnd'), v('animLoop'), v('animMorph'), v('animSeam'), v('animLen'),
+            beats ? beatPhase / beats : null);
           // A follower takes its takes from its leader (choreograph), not its own Advance.
           if (!v('animFollow')) advanceTake(ps, s.range, `${pre}.animSegment`, v('animAdvance'), v('animLoops'), v('animSpeed'),
             () => getFavs(favKey(s.name, s.range.clip)));

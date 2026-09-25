@@ -17,7 +17,7 @@ import { STLLoader }  from 'three/addons/loaders/STLLoader.js';
 import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { hasComponentChannels, buildComponentClip } from './ColladaChannels.js';
-import { RangePlayer, applyAnchor, advanceTake } from './ModelSlots.js';
+import { RangePlayer, applyAnchor, advanceTake, BEATS } from './ModelSlots.js';
 import { favKey, getFavs } from '../state/TakeFavs.js';
 import { GeometryFactory, GEOMETRY_NAMES } from './GeometryFactory.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -1060,7 +1060,8 @@ export class SceneManager {
           this._range.update(dt, speed, this.actions[animIdx],
             p.get('scene3d.anim.start')?.value ?? 0, p.get('scene3d.anim.end')?.value ?? 100,
             p.get('scene3d.anim.loop')?.value ?? 0, p.get('scene3d.anim.morph')?.value ?? 0,
-            p.get('scene3d.anim.seam')?.value ?? 0, p.get('scene3d.anim.len')?.value ?? 0);
+            p.get('scene3d.anim.seam')?.value ?? 0, p.get('scene3d.anim.len')?.value ?? 0,
+            (b => b ? (inputs.beatPhase ?? 0) / b : null)(BEATS[p.get('scene3d.anim.beats')?.value ?? 0] ?? 0));
           // A follower takes its takes from its leader (ModelSlots.choreograph), not its own Advance.
           if (!p.get('scene3d.anim.follow')?.value) advanceTake(p, this._range, 'scene3d.anim.segment', p.get('scene3d.anim.advance')?.value ?? 0,
             p.get('scene3d.anim.loops')?.value ?? 2, speed, () => getFavs(favKey(this._importedModelName, this._range.clip)));

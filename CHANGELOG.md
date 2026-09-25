@@ -9,6 +9,20 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Beats: lock an animation loop to the tempo.** *Beats* (Off / 1 / 2 / 4
+  / 8 / 16) on M1 and M2–M4: one loop of the current take lasts exactly N
+  beats of global.bpm, phase-locked to main.js's beat counter (passed to
+  ModelSlots.apply and in scene3d.render's inputs), as the movie decks' BPM
+  Sync. RangePlayer SETS each lane's phase from the beat clock instead of
+  advancing it; Anim Speed keeps only its direction. Loop counting is now in
+  cycles (phase ÷ the take's period) and restarts after the frame's phases
+  are set — measured in raw phase, a take of another length looked as if it
+  had played many loops and Advance fired every frame — and under Beats the
+  restart snaps to the bar line so changes do not drift. Verified: node —
+  Loop / Ping-pong / reverse on the grid, Advance every 8 beats for ten
+  changes; real SceneManager + Haraldur6 — take every 2.00 s at 4 beats,
+  120 bpm; app — 14 @0.9 s, 15 @2.9 s, 16 @4.9 s.
+
 - **Star the takes you like.** Right-click a take on the timeline strip to
   star it (gold stripe; ★ in the Segment menu; right-click again to unstar).
   While any are starred, Advance Next / Random choose only among them — all

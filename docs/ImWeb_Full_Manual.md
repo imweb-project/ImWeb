@@ -609,6 +609,12 @@ count, so it always gets its full Loops. Right-click a take on the
 timeline to **star** it (a gold stripe; ★ in the Segment menu): while any
 are starred, Next and Random play only those — the rest of the clip is still
 there to pick by hand. Stars are kept per model file in this browser.
+**Beats** — lock the loop to the tempo (global BPM, tap tempo or auto-BPM):
+one loop of the current take lasts exactly 1, 2, 4, 8 or 16 beats, on the
+beat grid (in Ping-pong and Sine, one there-and-back). Anim Speed then only
+sets the direction. A take picked while locked joins mid-bar, where the beat
+is, as the movie decks' BPM Sync does; with Advance, "Next every 2 loops"
+becomes "next take every 2 × N beats", changing on the bar line.
 **Follow / Offset / Delay**
 (M1–M4) — choreography: *Follow* a leader (M1–M4, or *Own*), play its take
 shifted by *Offset* takes, *Delay* seconds behind it. Drive one model's

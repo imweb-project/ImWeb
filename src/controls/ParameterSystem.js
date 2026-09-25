@@ -3281,6 +3281,9 @@ export function registerCoreParameters(ps) {
     // blends the change. See advanceTake (ModelSlots.js).
     { key: 'animAdvance', label: 'Advance', type: PARAM_TYPE.SELECT, options: ['Off', 'Next', 'Random'], value: 0 },
     { key: 'animLoops',   label: 'Loops',   min: 1, max: 16, value: 2, step: 1 },
+    // Beats: lock one loop of the take to N beats of global.bpm, on the beat
+    // grid (Anim Speed then only sets direction). As the movie decks' BeatLen.
+    { key: 'animBeats',   label: 'Beats',   type: PARAM_TYPE.SELECT, options: ['Off', '1 beat', '2 beats', '4 beats', '8 beats', '16 beats'], value: 0 },
     // Choreography: Follow another model's Segment, Offset takes from it,
     // Delay seconds behind it — a canon from one controller. While following,
     // the slot's own Advance is paused. See ModelSlots.choreograph().
@@ -3919,6 +3922,7 @@ export function registerCoreParameters(ps) {
   // Advance and Loops, as the slots' animAdvance / animLoops.
   ps.register({ id: "scene3d.anim.advance", label: "Advance", group: "scene3d", type: PARAM_TYPE.SELECT, options: ["Off", "Next", "Random"], value: 0 });
   ps.register({ id: "scene3d.anim.loops",   label: "Loops",   group: "scene3d", min: 1, max: 16, value: 2, step: 1 });
+  ps.register({ id: "scene3d.anim.beats",   label: "Beats",   group: "scene3d", type: PARAM_TYPE.SELECT, options: ["Off", "1 beat", "2 beats", "4 beats", "8 beats", "16 beats"], value: 0 });
   // Choreography, as the slots' animFollow / animOffset / animDelay — M1 can
   // follow too (a round when the loop has a delay; ModelSlots.choreograph).
   ps.register({ id: "scene3d.anim.follow", label: "Follow", group: "scene3d", type: PARAM_TYPE.SELECT, options: ["Own", "M1", "M2", "M3", "M4"], value: 0 });
