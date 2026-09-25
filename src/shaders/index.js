@@ -296,6 +296,7 @@ export const GROWTH_RD_VIEW = /* glsl */ `
   uniform float uHue;       // 0–1
   uniform float uSat;       // 0–1
   uniform float uSpread;    // 0–1, hue travel across the concentration
+  uniform float uColonies;  // 0–1, per-colony hue swing (lineage stamp)
   uniform float uContrast;
   uniform float uMode;      // 0 = Gray-Scott, 1 = multi-scale, 2 = crystal
   uniform float uNow;       // lineage clock
@@ -373,6 +374,18 @@ export const GROWTH_RD_VIEW = /* glsl */ `
       // Hue walks with the scale that has been winning here (g, 0 finest …
       // 1 coarsest), so each nesting level can read as its own colour.
       hue = uHue + uSpread * st.g;
+    }
+    // Colonies: a hue per lineage. The stamp is the planting time in seconds,
+    // so a random value per second, eased between seconds: a spore gets one
+    // colour, a stroke (stamped all along its length) drifts smoothly instead
+    // of breaking into confetti. Hoskins' hash — the stamp is small, but see
+    // LEARNED 2026-09-25 on fract(sin). Multi-scale writes no lineage.
+    if (uColonies > 0.0 && uMode != 1.0 && st.a > 0.0) {
+      float i = floor(st.a), f = fract(st.a);
+      vec2 p = fract(vec2(i, i + 1.0) * 0.1031);
+      p *= p + 33.33;
+      p *= p + p;
+      hue += uColonies * (mix(fract(p.x), fract(p.y), f * f * (3.0 - 2.0 * f)) - 0.5);
     }
     // Ground: the low areas as a surface rather than a hole.
     val = uGround + (1.0 - uGround) * val;

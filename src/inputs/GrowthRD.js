@@ -94,6 +94,7 @@ export class GrowthRD {
       uHue:      { value: 0 },
       uSat:      { value: 0 },
       uSpread:   { value: 0 },
+      uColonies: { value: 0 },
       uContrast: { value: 4 },
       uMode:     { value: 0 },
       uNow:      { value: 0 },
@@ -259,7 +260,7 @@ export class GrowthRD {
    * @param {object} o
    *   res, aspect, speed (steps per 1/60 s), seedTex, seedAmt (0–1),
    *   fieldTex, fieldAmt (0–1), patternA, patternB (indices), feed, kill
-   *   (offsets), hue (deg), sat, spread, contrast
+   *   (offsets), hue (deg), sat, spread, colonies, contrast
    */
   render(dt, o) {
     this._ensureSize(o.res, o.aspect);
@@ -371,6 +372,7 @@ export class GrowthRD {
     v.uHue.value      = o.hue / 360;
     v.uSat.value      = o.sat;
     v.uSpread.value   = o.spread;
+    v.uColonies.value = o.colonies ?? 0;
     v.uContrast.value = o.contrast;
     v.uMode.value     = mode;
     v.uNow.value      = this._clock;

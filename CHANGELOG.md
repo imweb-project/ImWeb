@@ -9,6 +9,17 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Growth: Colonies — a colour per planting.** Owner's lichen photo: separate
+  coloured patches meeting at borders. Every engine but Nested already stamps
+  each cell with its colony's planting time (alpha, inherited by whatever the
+  colony grows into), so the view offsets hue by a random value per second of
+  that stamp, eased between seconds — one colour per spore, a smooth drift
+  along a stroke rather than per-frame confetti. Advanced param
+  `growth.colonies` (± share of the hue wheel, 0 = off, hidden in Nested);
+  Lichen sets 35, LOOK_BASE 0. Hash is Hoskins', not fract(sin). Measured on
+  GPU (Chrome for Testing, three spores 2.5 s apart): Lichen 73/76/73° → 7/83/111°,
+  Coral 20/20/20° → 310/30/58°, Snowflake 277/276/273° → 224/283/303°; Nested
+  0 bytes changed. Mycelium's age-walk still dominates its colour there.
 - **Growth: Mycelium — growth made only of 1-px lines (a fifth Look).** A
   new engine (Hyphae, growth.mode 3): a cell is empty, thread, or a tip
   with a heading; an empty cell becomes a tip only when its ONLY occupied

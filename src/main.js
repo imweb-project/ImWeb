@@ -1436,6 +1436,9 @@ async function main() {
           if (row) row.style.display = Number(m) === mode ? "" : "none";
         }
       }
+      // Colonies is the reverse: every engine but Nested, which has no lineage.
+      const col = document.querySelector('#growth-adv-params [data-param-id="growth.colonies"]');
+      if (col) col.style.display = mode === 1 ? "none" : "";
     };
     ps.get("growth.mode").onChange(showFor);
     showFor();
@@ -10891,6 +10894,7 @@ void main() {
         hue:      ps.get("growth.hue").value,
         sat:      ps.get("growth.sat").value / 100,
         spread:   ps.get("growth.spread").value / 100,
+        colonies: ps.get("growth.colonies").value / 100,
         contrast: ps.get("growth.contrast").value,
       });
     }

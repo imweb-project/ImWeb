@@ -914,7 +914,9 @@ plants, so a Look's name always gives its look.
 - **Mitosis:** a spore splits into cells that keep dividing until the frame is
   a living field; with Fade = Ring they keep dying and dividing.
 - **Lichen:** a patchwork of zones, labyrinth in some places and cells in
-  others, drifting slowly.
+  others, drifting slowly. Each colony takes its own colour (Colonies, in
+  Advanced): press **Plant** again at another PlantX/Y, or draw, and the new
+  colony grows in a different hue where it meets the others.
 - **Coral:** a branching coral colony with relief.
 - **Snowflake:** a six-armed ice crystal with growth rings; it grows for about
   20 s and fades before it can fill the frame.
@@ -929,7 +931,9 @@ to the current Look's engine: Pattern A/B and Zones, Feed/Kill offsets,
 Regrow delay (Single); the Nested controls; Fold, Aniso, Angle, Heat,
 Branching and Ring gap (Frost); and for all of them Field, Relief, Bevel,
 Light angle, Gloss, Ground, Var size/drift, seeding, Plant position and size,
-resolution, saturation, hue spread and contrast. Changing Advanced values
+resolution, saturation, hue spread, contrast, and **Colonies** — how far
+each planting's hue swings from Colour (0 = one colour; every engine but
+Nested, which has no colonies). Changing Advanced values
 moves away from the Look; choose the Look again to return to it.
 
 A few behaviours worth knowing:

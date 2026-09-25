@@ -7102,6 +7102,13 @@ export function registerCoreParameters(ps) {
     id: "growth.spread", label: "HueSpread", group: "growth",
     type: PARAM_TYPE.CONTINUOUS, min: 0, max: 100, value: 15, step: 1,
   });
+  // Colonies: each planting gets its own hue, ± this share of the wheel (100 =
+  // anywhere), keyed on its lineage stamp — so colonies meet at borders in
+  // different colours, like lichens on a rock. Nested has no lineage.
+  ps.register({
+    id: "growth.colonies", label: "Colonies", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 100, value: 0, step: 1,
+  });
   ps.register({
     id: "growth.contrast", label: "GrowContrast", group: "growth",
     type: PARAM_TYPE.CONTINUOUS, min: 1, max: 12, value: 4, step: 0.1,
