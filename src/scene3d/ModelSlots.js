@@ -558,6 +558,7 @@ export class ModelSlots {
       // Normalize (default 2 = the main object's default Normalization), so a
       // slot at Scale 1 comes in the same size as a model imported into M1.
       p.scale.setScalar(v('scale') * v('norm') * (p.userData.baseScale ?? 1));
+      if (v('mirror')) p.scale.x = -p.scale.x;     // left↔right, the model's own x
 
       s.wire = v('wire');
 

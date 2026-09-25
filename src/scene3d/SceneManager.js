@@ -1109,6 +1109,9 @@ export class SceneManager {
       ? s * n * this._importedBaseScale
       : s;
     this.mesh.scale.setScalar(S);
+    // Mirror: left↔right about the model's own centre (scale is applied
+    // before rotation, so it is the model's own x, not the screen's).
+    if (p.get('scene3d.mirror')?.value) this.mesh.scale.x = -S;
 
     // Position
     const px = p.get('scene3d.pos.x').value;

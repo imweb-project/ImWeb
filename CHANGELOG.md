@@ -9,6 +9,15 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Mirror a model.** *Mirror* (M1 in Transform: scene3d.mirror; M2–M4 after
+  Wire: modelN.mirror) flips the model left↔right about its own centre —
+  scale x negated before rotation, so it is the model's own axis, not the
+  screen's. For a rigged figure that is its motion with the sides swapped,
+  doubling the takes; three flips the face winding for the negative scale.
+  A toggle, so a controller can flip it on a beat. Verified on WebGL2 with a
+  deliberately lopsided fixture: unmirrored matches its own reflection 94 %,
+  mirrored 99.9 %; same pixel count and brightness (winding right).
+
 - **Keep a speed per model file.** A line under Anim Speed (M1, M2–M4):
   *Keep* remembers the current speed for that file, and importing it again —
   button or drop, any slot — plays it at that speed; ✕ forgets. Saved only

@@ -3245,6 +3245,10 @@ export function registerCoreParameters(ps) {
     { key: 'norm',      label: 'Normalize',  min: 0.1, max: 10, value: 2 },
     // Main = follow scene3d.wireframe (the shared material), as before.
     { key: 'wire',    label: 'Wire',  type: PARAM_TYPE.SELECT, options: ['Main', 'Solid', 'Wire'], value: 0 },
+    // Mirror left↔right about the model's own centre. For a rigged figure this
+    // IS its motion with the sides swapped: a right-hand wave becomes a
+    // left-hand one. three flips the face winding for a negative scale.
+    { key: 'mirror',  label: 'Mirror', type: PARAM_TYPE.TOGGLE, value: 0 },
     // What the model wears. Shared = the main Material exactly (as before);
     // anything else gives the slot its own copy of that material wearing this
     // source instead (ModelSlots._ownMaterial). The rest of the list MIRRORS
@@ -3927,6 +3931,8 @@ export function registerCoreParameters(ps) {
   // custom range would overwrite it.
   ps.register({ id: "scene3d.anim.segment", label: "Segment", group: "global", type: PARAM_TYPE.SELECT, options: ["Whole clip"], value: 0 });
   ps.register({ id: "scene3d.anchor", label: "Anchor", group: "scene3d", type: PARAM_TYPE.SELECT, options: ["Load centre", "Follow body"], value: 0 });
+  // Mirror left↔right, as the slots' mirror (see there).
+  ps.register({ id: "scene3d.mirror", label: "Mirror", group: "scene3d", type: PARAM_TYPE.TOGGLE, value: 0 });
   ps.register({
     id: "scene3d.clone.mode",
     label: "Cloner",

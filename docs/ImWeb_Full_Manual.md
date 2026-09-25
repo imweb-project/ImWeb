@@ -559,7 +559,10 @@ into the **selected** tab. Each extra slot's tab has **+ Import**
 `pos.x/y/z`, `rot.x/y/z`, `spin.x/y/z`, `scale` (same ranges as the main
 object; Scale 1 = the same size as a model in the main slot). **Wire** —
 Main (follow the main object's Wireframe) / Solid / Wire, per slot.
-**Texture** — what the model wears: *Shared* (the default) is the main
+**Mirror** — left↔right about the model's own
+centre. For an animated figure that is its motion with the sides swapped: a
+right-hand wave becomes a left-hand one, so every take has a twin. M1 has
+Mirror in its Transform. **Texture** — what the model wears: *Shared* (the default) is the main
 Material exactly, as M1 wears it; any source (None, Camera, Movie, Screen,
 Draw, Buffer, Noise, Image) gives the model its own copy of the Material
 wearing that instead — colour, roughness, glow, warp, blob and displace still

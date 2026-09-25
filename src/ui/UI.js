@@ -1151,7 +1151,7 @@ export function buildGeometryButtons(ps, sceneManager, contextMenu) {
     ['scene3d.pos.x','scene3d.pos.y','scene3d.pos.z',
      'scene3d.rot.x','scene3d.rot.y','scene3d.rot.z',
      'scene3d.spin.x','scene3d.spin.y','scene3d.spin.z',
-     'scene3d.scale','scene3d.norm',
+     'scene3d.scale','scene3d.norm','scene3d.mirror',
     ].forEach(id => {
       const p = ps.get(id);
       if (p) transformEl.appendChild(buildParamRow(p, contextMenu));
