@@ -85,7 +85,7 @@ export class GrowthRD {
       uRest:     { value: 0 },
       uNow:      { value: 0 },
       uGrowTime: { value: 0 },
-      uFadeTime: { value: 3 },
+      uFadeTime: { value: 3 }, uPenRate: { value: 0 },
     });
     this._viewMat = mat(GROWTH_RD_VIEW, {
       uState:    { value: null },
@@ -96,7 +96,7 @@ export class GrowthRD {
       uMode:     { value: 0 },
       uNow:      { value: 0 },
       uGrowTime: { value: 0 },
-      uFadeTime: { value: 3 },
+      uFadeTime: { value: 3 }, uPenRate: { value: 0 },
       uTexel:    { value: new THREE.Vector2(1, 1) },
       uRelief:   { value: 0 },
       uLight:    { value: new THREE.Vector3(0, 0, 1) },
@@ -138,7 +138,7 @@ export class GrowthRD {
       uPoint: { value: new THREE.Vector3(0.5, 0.5, 0) },
       uNow: { value: 0 }, uAgeDt: { value: 0 },
       uField: { value: null }, uFieldAmt: { value: 0 },
-      uGrowTime: { value: 0 }, uFadeTime: { value: 3 },
+      uGrowTime: { value: 0 }, uFadeTime: { value: 3 }, uPenRate: { value: 0 },
       uVar: { value: 0 }, uVarP: { value: new THREE.Vector3(3, 0, 1) },
     });
     this._aux = null;
@@ -293,6 +293,7 @@ export class GrowthRD {
     u.uNow.value   = this._clock;
     u.uGrowTime.value = o.growTime ?? 0;
     u.uFadeTime.value = o.fadeTime ?? 3;
+    u.uPenRate.value  = o.penRate ?? 0;
 
     // Variation — shared by all three step materials, set once per frame.
     // Drift runs on the lineage clock (real seconds).
@@ -339,6 +340,7 @@ export class GrowthRD {
     v.uNow.value      = this._clock;
     v.uGrowTime.value = o.growTime ?? 0;
     v.uFadeTime.value = o.fadeTime ?? 3;
+    v.uPenRate.value  = o.penRate ?? 0;
     // Relief 0–100 → normal depth 0–24 against a per-texel gradient (a
     // full-range rise over 2 texels then tilts the normal ~85°). Light: azimuth from Light angle (0° = from
     // the right, 90° = from above, screen y up), fixed 40° elevation.
@@ -379,6 +381,7 @@ export class GrowthRD {
     u.uAgeDt.value    = ageDt;
     u.uGrowTime.value = o.growTime ?? 0;
     u.uFadeTime.value = o.fadeTime ?? 3;
+    u.uPenRate.value  = o.penRate ?? 0;
     for (let i = 0; i < n; i++) {
       a.uState.value = this._state[this._cur].texture;
       this._blit(this._crAuxMat, this._aux);

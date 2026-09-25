@@ -134,6 +134,7 @@ ${GROWTH_VAR_GLSL}
   uniform float     uNow;       // lineage clock, seconds — stamps new plantings
   uniform float     uGrowTime;  // seconds a colony grows from its planting; 0 = forever
   uniform float     uFadeTime;  // seconds it then takes to fade and clear
+  uniform float     uPenRate;   // Pen fade: decay per second (0 = off) — the pen's own curve
 
   varying vec2 vUv;
 
@@ -199,6 +200,9 @@ ${GROWTH_VAR_GLSL}
     // version froze it, and the whole picture stood still).
     float fadeP = 0.0;
     if (uGrowTime > 0.0 && stamp > 0.0) fadeP = clamp((uNow - stamp - uGrowTime) / max(uFadeTime, 1e-3), 0.0, 1.0);
+    // Pen fade: the pen's curve instead of hold-then-fade — every part starts
+    // decaying the moment it was drawn, exp(−rate·age), newest brightest.
+    if (uPenRate > 0.0 && stamp > 0.0) fadeP = 1.0 - exp(-uPenRate * (uNow - stamp));
     // Squared ramp: the extra kill stays small for most of the fade and only
     // tips the pattern past its death line near the end, so the dissolving
     // spans the whole Fade time (linear 0.05 killed it in half of it).
@@ -223,6 +227,9 @@ ${GROWTH_VAR_GLSL}
       if (c.g <= 0.1 && parent > 0.0 && uNow - parent > uGrowTime) b = min(b, 0.05);
       if (stamp > 0.0 && uNow - stamp > uGrowTime + uFadeTime) { a = 1.0; b = 0.0; age = 0.0; stamp = 0.0; }
     }
+    // Pen fade clears a part once it is darker than one 8-bit level — where
+    // the pen's own strokes reach black.
+    if (uPenRate > 0.0 && stamp > 0.0 && fadeP > 1.0 - 1.0 / 255.0) { a = 1.0; b = 0.0; age = 0.0; stamp = 0.0; }
 
     // Seeding moves a cell TOWARD the classic inoculum (A 0.5, B 0.25) and
     // never away from it: B only rises, A only falls, so a held seed (a drawn
@@ -234,8 +241,7 @@ ${GROWTH_VAR_GLSL}
       float s = clamp(dot(sc, vec3(0.299, 0.587, 0.114)) * uSeedAmt, 0.0, 1.0);
       b = max(b, s * 0.25);
       a = min(a, 1.0 - s * 0.5);
-      // A deliberate seed is a new generation where it lands. Knee'd at 0.2
-      // so faint residue in the seed cannot restamp the whole grid.
+      // A seed is a new generation where it lands.
       // Stamped ONCE, when first seeded — a held stroke re-stamping "now"
       // every frame could never reach its Grow time. After its fade clears
       // it, a still-held seed sprouts again with a fresh stamp: a cycle.
@@ -244,7 +250,10 @@ ${GROWTH_VAR_GLSL}
       // its length, or the growth racing ahead of the pen gives the whole
       // stroke its starting time (measured in Frost: all faded at once).
       float sp = smoothstep(0.05, 0.3, clamp(dot(texture2D(uSeedPrev, vUv).rgb, vec3(0.299, 0.587, 0.114)) * uSeedAmt, 0.0, 1.0));
-      if (s > 0.2 && (s - sp > 0.1 || c.g <= 0.1 || stamp <= 0.0)) { age = max(age, 0.0); stamp = uNow; }
+      // Wherever a seed acts at all, it stamps: a faint seed that inoculated
+      // without stamping grew a colony no fade could ever reach (measured in
+      // Frost). Residue under 5% is already cut by the knee above.
+      if (s > 0.0 && (s - sp > 0.1 || c.g <= 0.1 || stamp <= 0.0)) { age = max(age, 0.0); stamp = uNow; }
     }
     if (uPoint.z > 0.0) {
       vec2 d = (vUv - uPoint.xy) / uTexel;
@@ -285,6 +294,7 @@ export const GROWTH_RD_VIEW = /* glsl */ `
   uniform float uNow;       // lineage clock
   uniform float uGrowTime;  // 0 = no fade
   uniform float uFadeTime;
+  uniform float uPenRate;   // Pen fade (see GROWTH_RD_STEP)
   uniform float uRelief;    // 0 = flat; height-map depth
   uniform vec3  uLight;     // unit vector toward the light (z = out of screen)
   uniform float uGloss;     // 0–1 specular
@@ -371,6 +381,7 @@ export const GROWTH_RD_VIEW = /* glsl */ `
     if (uGrowTime > 0.0 && uMode != 1.0 && st.a > 0.0) {
       col *= 1.0 - clamp((uNow - st.a - uGrowTime) / max(uFadeTime, 1e-3), 0.0, 1.0);
     }
+    if (uPenRate > 0.0 && uMode != 1.0 && st.a > 0.0) col *= exp(-uPenRate * (uNow - st.a));
     gl_FragColor = vec4(col, 1.0);
   }
 `;
@@ -425,6 +436,7 @@ ${GROWTH_VAR_GLSL}
   uniform float     uNow;       // lineage clock
   uniform float     uGrowTime;  // see GROWTH_RD_STEP
   uniform float     uFadeTime;
+  uniform float     uPenRate;   // Pen fade (see GROWTH_RD_STEP)
   uniform float     uAgeDt;
   uniform sampler2D uField;
   uniform float     uFieldAmt;  // field lowers the melt's temperature locally
@@ -499,12 +511,16 @@ ${GROWTH_VAR_GLSL}
     // solid to melt in exactly Fade time, so thin arms go first and the
     // picture keeps moving as it fades.
     if (uGrowTime > 0.0 && stamp > 0.0 && uNow - stamp > uGrowTime) pn = max(0.0, pn - uAgeDt / max(uFadeTime, 1e-3));
+    // Pen fade: solid capped at twice the remaining brightness, so the
+    // crystal melts through the second half of its decay, thin arms first.
+    float penKeep = (uPenRate > 0.0 && stamp > 0.0) ? exp(-uPenRate * (uNow - stamp)) : 1.0;
+    pn = min(pn, 2.0 * penKeep);
     // Entering the interface unstamped: inherit the parent's lineage. Melt
     // carries none, so a cell that melts and later re-solidifies is re-parented.
     if (pn > 0.02 && stamp <= 0.0) stamp = parent;
     if (pn <= 0.02) stamp = 0.0;
     age = pn > 0.5 ? age + uAgeDt : 0.0;
-    if (uGrowTime > 0.0 && stamp > 0.0 && uNow - stamp > uGrowTime + uFadeTime) {
+    if ((uGrowTime > 0.0 && stamp > 0.0 && uNow - stamp > uGrowTime + uFadeTime) || penKeep < 1.0 / 255.0) {
       pn = 0.0; age = 0.0; stamp = 0.0;          // faded out: back to melt
     }
 
@@ -515,7 +531,7 @@ ${GROWTH_VAR_GLSL}
       // Once when first seeded, and again whenever the stroke ARRIVES (a rise
       // since last frame) — see GROWTH_RD_STEP.
       float sp = smoothstep(0.05, 0.3, clamp(dot(texture2D(uSeedPrev, vUv).rgb, vec3(0.299, 0.587, 0.114)) * uSeedAmt, 0.0, 1.0));
-      if (s > 0.2 && (c.a <= 0.0 || s - sp > 0.1)) stamp = uNow;
+      if (s > 0.0 && (c.a <= 0.0 || s - sp > 0.1)) stamp = uNow;   // any acting seed stamps
     }
     if (uPoint.z > 0.0) {
       vec2 d = (vUv - uPoint.xy) / uTexel;

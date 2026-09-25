@@ -530,6 +530,13 @@ async function main() {
   // field source), so the fixpoint needs its index — by key.
   const growthRD = new GrowthRD(renderer);
   const GROWTH_IDX = SOURCE_KEYS.indexOf("growth");
+  function _growthFade() {
+    if (ps.get("growth.penFade").value) {
+      const a = Math.min(0.999, (ps.get("draw.fade")?.value ?? 0) * 0.5);
+      return { growTime: 0, fadeTime: 3, penRate: a > 0 ? -60 * Math.log(1 - a) : 0 };
+    }
+    return { growTime: ps.get("growth.growTime").value, fadeTime: ps.get("growth.fadeTime").value, penRate: 0 };
+  }
   // Ring depth and working resolution, both reallocating (history is discarded
   // either way, so they share VideoDelayLine._realloc). Resolution is the lever
   // that makes a long echo affordable — 30 frames at Native costs 237 MB for
@@ -10791,8 +10798,10 @@ void main() {
         gloss:      ps.get("growth.gloss").value,
         bevel:      ps.get("growth.bevel").value,
         ground:     ps.get("growth.ground").value,
-        growTime: ps.get("growth.growTime").value,
-        fadeTime: ps.get("growth.fadeTime").value,
+        // Pen fade replaces Grow/Fade time with the pen's own decay: DrawLayer
+        // multiplies by (1 − a) per frame, a = min(1, fade·0.5), so per second
+        // at 60 fps the rate is −60·ln(1 − a). a = 1 would be infinite: capped.
+        ..._growthFade(),
         crFold:   ps.get("growth.crFold").value,
         crAniso:  ps.get("growth.crAniso").value,
         crAngle:  ps.get("growth.crAngle").value,

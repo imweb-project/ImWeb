@@ -9,6 +9,17 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Growth: Pen fade — growth fades with the pen's own Fade.** A toggle;
+  while on, each part decays as exp(−rate·age) from its stamp with
+  rate = −60·ln(1 − a), a = min(1, draw.fade·0.5) — DrawLayer's per-frame
+  curve at 60 fps — and clears below one 8-bit level. Single dissolves
+  (the squared kill ramp on 1 − keep), Frost melts (solid capped at twice
+  the remaining brightness). Replaces Grow time / Fade time while on.
+  Measured, stroke drawn over 3 s with the seed fading as the pen does at
+  Fade 0.04: brightness halves every ~0.57 s from drawing, left third gone
+  by 5.5 s, right by 8 s, cells still changing throughout. Found on the
+  way: a faint seed inoculated Frost without stamping it, and that crystal
+  could never fade — any acting seed now stamps.
 - **Growth: Variation — the pattern's size varies across the canvas.**
   Variation / Var size / Var drift. One slow value-noise field (three
   octaves, aspect-corrected, drifting on the lineage clock) shared by the

@@ -914,6 +914,7 @@ outward from that point.
 | `growth.msFine` / `msCoarse` | 1–5 | Nested: which scales take part (1 ≈ 2–4 px of the grid … 5 ≈ 32–64 px) |
 | `growth.msBias` | −1…+1 | Nested: −1 favours fine lace, +1 large masses |
 | `growth.growTime` | 0–120 s | **Grow time.** Every part grows this long from when it was drawn or planted, then fades and clears. 0 = forever. Single and Frost |
+| `growth.penFade` | on/off | **Pen fade.** Growth fades with the pen's own Fade, on the same curve, from the moment each part was drawn. Replaces Grow time / Fade time while on |
 | `growth.fadeTime` | 0.1–30 s | **Fade time.** How long a finished colony takes to fade out |
 | `growth.crFold` | 2–12 | Frost: symmetry. 6 = snowflake, 4 = square crystal |
 | `growth.crAniso` | 0–0.1 | Frost: how strongly the symmetry steers the growing tips |
@@ -973,6 +974,13 @@ drawn, then fades over **Fade time** and clears. A stroke drawn over three
 seconds fades out in the order it was drawn, each part given the same time.
 During the fade the growth keeps moving: Single dissolves, Frost melts. A
 stroke still held in Draw sprouts again after it clears. Single and Frost.
+
+**Pen fade: one fader for drawing and growth.** Switch on **Pen fade** and
+Growth follows the pen's own **Fade**: every part starts dimming the moment it
+is drawn, on exactly the pen's curve, newest brightest, and clears where the
+pen's strokes reach black. Growth keeps moving while it fades. Turn the pen's
+Fade up and both the strokes and their growth fade faster; Fade 0 = neither
+fades.
 
 **Variation: no two areas alike.** A single Gray-Scott pattern has one stripe
 width everywhere, which is why its detail evens out. **Variation** lets a slow,

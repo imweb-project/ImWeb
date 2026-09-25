@@ -7006,6 +7006,13 @@ export function registerCoreParameters(ps) {
     id: "growth.varDrift", label: "Var drift", group: "growth",
     type: PARAM_TYPE.CONTINUOUS, min: 0, max: 1, value: 0.05, step: 0.01,
   });
+  // Pen fade: Growth fades with the PEN's Fade (draw.fade) — the same curve
+  // from the moment each part was drawn, so one fader fades the drawing and
+  // its growth together. Replaces Grow time / Fade time while on. Pen Fade 0
+  // = no fade, as for the pen. Single and Frost.
+  ps.register({
+    id: "growth.penFade", label: "Pen fade", group: "growth", type: PARAM_TYPE.TOGGLE, value: 0,
+  });
   ps.register({
     id: "growth.seedSrc", label: "Seed src", group: "growth",
     type: PARAM_TYPE.SELECT, options: CAPTURE_SOURCES,
