@@ -76,6 +76,459 @@ export const MOTION_BG = /* glsl */ `
   }
 `;
 
+// ── Growth: Gray-Scott reaction-diffusion ─────────────────────────────────────
+// State texture: r = A (food), g = B (the grower). One step of
+//   A' = A + Da∇²A − AB² + f(1−A)
+//   B' = B + Db∇²B + AB² − (f+k)B
+// with Δt = 1, Da = uDiff (≤ 1), Db = Da/2 — stable for this 9-point Laplacian
+// (centre −1, edges 0.2, corners 0.05). Da sets the feature size in texels
+// (~√(Da/f)), so it is exposed as Scale. (f, k) is blended per pixel from two
+// patterns by the field's luminance, then offset by the performable knobs.
+// Out-of-range taps clamp to the edge texel, which makes the border reflective.
+
+export const GROWTH_RD_STEP = /* glsl */ `
+  uniform sampler2D uState;
+  uniform vec2      uTexel;
+  uniform sampler2D uSeed;
+  uniform float     uSeedAmt;   // 0 = seed source ignored
+  uniform sampler2D uField;
+  uniform float     uFieldAmt;  // 0 = Pattern A everywhere
+  uniform vec2      uFkA;       // (feed, kill) for field = 0
+  uniform vec2      uFkB;       // (feed, kill) for field = 1
+  uniform vec2      uFkOff;     // performable offsets
+  uniform vec3      uPoint;     // spore: xy in uv, z radius in texels (0 = none)
+  uniform float     uDiff;      // Da; Db = Da/2. Sets the pattern's size in texels
+  uniform float     uAgeDt;     // real seconds this step stands for
+  uniform float     uLife;      // seconds a cell may live; 0 = immortal
+  uniform float     uRest;      // seconds dead ground stays barren after dying
+  uniform float     uNow;       // lineage clock, seconds — stamps new plantings
+  uniform float     uGrowTime;  // seconds a colony grows from its planting; 0 = forever
+  uniform float     uFadeTime;  // seconds it then takes to fade and clear
+
+  varying vec2 vUv;
+
+  vec2 S(vec2 o) { return texture2D(uState, vUv + o * uTexel).rg; }
+
+  void main() {
+    vec2 c   = S(vec2(0.0));
+    vec2 lap = -c
+      + 0.2  * (S(vec2( 1.0, 0.0)) + S(vec2(-1.0, 0.0)) + S(vec2(0.0, 1.0)) + S(vec2(0.0, -1.0)))
+      + 0.05 * (S(vec2( 1.0, 1.0)) + S(vec2(-1.0, 1.0)) + S(vec2(1.0, -1.0)) + S(vec2(-1.0, -1.0)));
+
+    float m = 0.0;
+    if (uFieldAmt > 0.0) {
+      vec3 fc = texture2D(uField, vUv).rgb;
+      m = clamp(dot(fc, vec3(0.299, 0.587, 0.114)) * uFieldAmt, 0.0, 1.0);
+    }
+    vec2 fk = mix(uFkA, uFkB, m) + uFkOff;
+    float f = max(fk.x, 0.0);
+    float k = max(fk.y, 0.0);
+
+    // ── Age (blue channel, real seconds) ──────────────────────────────────
+    // > 0: alive that long. < 0: died of age, barren for −age more seconds.
+    // Old cells get extra kill, ramping in over the last quarter of their
+    // life, so a colony dies back from its OLDEST part — the centre of a
+    // spore, the first stroke — while the young edge keeps advancing. Barren
+    // ground is held dead (full extra kill) until its rest runs out, then the
+    // living edge can recolonise it: rings, fronts and regrowth cycles.
+    float age  = texture2D(uState, vUv).b;
+    // ── Lineage (alpha: the time this colony was planted) ─────────────────
+    // Barren ground is barred to the colony that died there, not to new
+    // growth. Age alone cannot tell them apart — a cell the old pattern
+    // re-colonises is young too, and letting "young" neighbours in kept the
+    // dead centre alive forever (measured). So every cell carries a stamp:
+    // Plant and fresh strokes write "now", a newly colonised cell takes the
+    // newest stamp among the living neighbours that colonised it, living
+    // cells keep theirs, and barren ground keeps the stamp of what died. A
+    // barren cell opens only to a living neighbour with a NEWER stamp.
+    float stamp = texture2D(uState, vUv).a;
+    float nbStamp = -1.0;                 // newest living neighbour, −1 = none
+    {
+      vec2 o[4];
+      o[0] = vec2(1.0, 0.0); o[1] = vec2(-1.0, 0.0); o[2] = vec2(0.0, 1.0); o[3] = vec2(0.0, -1.0);
+      for (int j = 0; j < 4; j++) {
+        vec4 n = texture2D(uState, vUv + o[j] * uTexel);
+        if (n.g > 0.1) nbStamp = max(nbStamp, n.a);
+      }
+    }
+    if (uLife > 0.0 && age < 0.0 && nbStamp > stamp + 1e-3) age = 0.0;
+    float die  = 0.0;
+    if (uLife > 0.0) die = age < 0.0 ? 1.0 : smoothstep(uLife * 0.75, uLife, age);
+    k += 0.04 * die;
+
+    float a = c.r, b = c.g;
+    float r = a * b * b;
+    a += uDiff * lap.r - r + f * (1.0 - a);
+    b += 0.5 * uDiff * lap.g + r - (f + k) * b;
+
+    // ── Grow time: a colony grows for a set time from its planting, then
+    // stops, fades and clears. Per lineage — a colony shares its planting
+    // stamp (colonised cells inherit it), so the whole colony stops at once
+    // and each planting runs on its own clock. Stopped = frozen as it stood,
+    // and it may not colonise further; after the fade the ground is empty.
+    if (uGrowTime > 0.0) {
+      float since = uNow - stamp;
+      if (c.g > 0.1 && stamp > 0.0 && since > uGrowTime) { a = c.r; b = c.g; }
+      if (c.g <= 0.1 && nbStamp > 0.0 && uNow - nbStamp > uGrowTime) b = min(b, 0.05);
+      if (stamp > 0.0 && since > uGrowTime + uFadeTime) { a = 1.0; b = 0.0; age = 0.0; stamp = 0.0; }
+    }
+
+    // Seeding moves a cell TOWARD the classic inoculum (A 0.5, B 0.25) and
+    // never away from it: B only rises, A only falls, so a held seed (a drawn
+    // line) cannot scrub the growth around it. Food has to drop as well —
+    // raising B alone on a full-food cell (A 1, B 0.5) inoculates some
+    // patterns and simply dies out in others (Spots, from a spore).
+    if (uSeedAmt > 0.0) {
+      vec3 sc = texture2D(uSeed, vUv).rgb;
+      float s = clamp(dot(sc, vec3(0.299, 0.587, 0.114)) * uSeedAmt, 0.0, 1.0);
+      b = max(b, s * 0.25);
+      a = min(a, 1.0 - s * 0.5);
+      // A deliberate seed is a new generation where it lands. Knee'd at 0.2
+      // so faint residue in the seed cannot restamp the whole grid.
+      if (s > 0.2) { age = max(age, 0.0); stamp = uNow; }
+    }
+    if (uPoint.z > 0.0) {
+      vec2 d = (vUv - uPoint.xy) / uTexel;
+      if (dot(d, d) < uPoint.z * uPoint.z) { a = 0.5; b = 0.25; age = 0.0; stamp = uNow; }
+    }
+
+    // Alive = the same threshold the eye uses (the view starts at B 0.08).
+    // A living cell ages; one that falls below it either died of age (→ goes
+    // barren) or was just a gap in the pattern (→ age resets, no memory).
+    if (b > 0.1) {
+      age += uAgeDt;
+    } else if (uLife > 0.0 && age >= uLife * 0.75) {
+      age = -max(uRest, uAgeDt);
+    } else if (age > 0.0) {
+      age = 0.0;
+    } else {
+      age = min(0.0, age + uAgeDt);
+    }
+
+    // Colonised this step (dead → alive): inherit the colonisers' lineage.
+    if (c.g <= 0.1 && b > 0.1 && nbStamp >= 0.0) stamp = max(stamp, nbStamp);
+
+    gl_FragColor = vec4(clamp(a, 0.0, 1.0), clamp(b, 0.0, 1.0), age, stamp);
+  }
+`;
+
+// B sits between ~0.1 and ~0.45 wherever something is growing, so the view
+// stretches that band by Contrast. Spread walks the hue along the concentration,
+// so the dense core and the thin growing edge read as different colours.
+export const GROWTH_RD_VIEW = /* glsl */ `
+  uniform sampler2D uState;
+  uniform float uHue;       // 0–1
+  uniform float uSat;       // 0–1
+  uniform float uSpread;    // 0–1, hue travel across the concentration
+  uniform float uContrast;
+  uniform float uMode;      // 0 = Gray-Scott, 1 = multi-scale, 2 = crystal
+  uniform float uNow;       // lineage clock
+  uniform float uGrowTime;  // 0 = no fade
+  uniform float uFadeTime;
+
+  varying vec2 vUv;
+
+  vec3 hsv2rgb(vec3 c) {
+    vec3 p = abs(fract(c.xxx + vec3(1.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
+    return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
+  }
+
+  void main() {
+    vec4 st = texture2D(uState, vUv);
+    vec3 col;
+    if (uMode < 0.5) {
+      float v = clamp((st.g - 0.08) * uContrast, 0.0, 1.0);
+      col = hsv2rgb(vec3(fract(uHue + uSpread * (1.0 - v)), uSat, v));
+    } else if (uMode > 1.5) {
+      // Crystal: the solid bright, the latent-heat halo a faint glow around
+      // it; hue walks with the temperature, so growing tips read warm.
+      float p = st.r, T = clamp(st.g, 0.0, 1.0);
+      float v = clamp(0.5 + (p - 0.5) * uContrast * 0.5, 0.0, 1.0);
+      v = max(v, 0.3 * T * (1.0 - p));
+      col = hsv2rgb(vec3(fract(uHue + uSpread * T), uSat, v));
+    } else {
+      // v ∈ [−1, 1]; Contrast sharpens around the midline. Hue walks with
+      // the scale that has been winning here (g, 0 = finest … 1 = coarsest),
+      // so each nesting level can read as its own colour.
+      float v = clamp(0.5 + 0.5 * st.r * uContrast * 0.5, 0.0, 1.0);
+      col = hsv2rgb(vec3(fract(uHue + uSpread * st.g), uSat, v));
+    }
+    // A colony past its Grow time fades out over Fade time (lineage in alpha;
+    // multi-scale has none, and writes 1 there).
+    if (uGrowTime > 0.0 && uMode != 1.0 && st.a > 0.0) {
+      col *= 1.0 - clamp((uNow - st.a - uGrowTime) / max(uFadeTime, 1e-3), 0.0, 1.0);
+    }
+    gl_FragColor = vec4(col, 1.0);
+  }
+`;
+
+// ── Growth: crystals — phase-field dendritic solidification (Kobayashi 1993) ──
+// How ice and snowflakes grow. p is the phase (0 liquid … 1 solid), T the
+// temperature (0 = undercooled melt, 1 = melting point). Solidifying releases
+// latent heat (K), which slows the front where it is crowded; tips reaching
+// into cold liquid grow fastest, and a small noise term splits them into
+// side branches — fractal dendrites. The interface energy ε varies with the
+// front's angle as 1 + δ·cos(j(θ − θ0)): j-fold symmetry (4 square, 6 snow).
+// State: r = p, g = T, b = age, a = lineage stamp. Two passes per step: the
+// anisotropic terms differentiate products of ε and ∇p, so ε at the
+// neighbours is needed — the first pass writes it, the second uses it.
+// Constants are Kobayashi's own (dx 0.03, dt 1e-4, τ 3e-4, ε̄ 0.01, α 0.9,
+// γ 10); K, δ, j, θ0 and the noise are the performable ones.
+
+export const GROWTH_CR_AUX = /* glsl */ `
+  uniform sampler2D uState;
+  uniform vec2      uTexel;
+  uniform float     uAniso;     // δ
+  uniform float     uFold;      // j
+  uniform float     uAngle;     // θ0, radians
+  varying vec2 vUv;
+  const float DX = 0.03, EB = 0.01;
+  void main() {
+    float pxp = texture2D(uState, vUv + vec2(uTexel.x, 0.0)).r;
+    float pxm = texture2D(uState, vUv - vec2(uTexel.x, 0.0)).r;
+    float pyp = texture2D(uState, vUv + vec2(0.0, uTexel.y)).r;
+    float pym = texture2D(uState, vUv - vec2(0.0, uTexel.y)).r;
+    float px = (pxp - pxm) / (2.0 * DX);
+    float py = (pyp - pym) / (2.0 * DX);
+    float th  = atan(py, px + 1e-12);
+    float eps  = EB * (1.0 + uAniso * cos(uFold * (th - uAngle)));
+    float deps = -EB * uFold * uAniso * sin(uFold * (th - uAngle));
+    gl_FragColor = vec4(eps * deps * px, eps * deps * py, eps * eps, 1.0);
+  }
+`;
+
+export const GROWTH_CR_STEP = /* glsl */ `
+  uniform sampler2D uState;
+  uniform sampler2D uAux;
+  uniform vec2      uTexel;
+  uniform float     uHeat;      // K, latent heat
+  uniform float     uNoise;     // side-branch noise amplitude
+  uniform float     uSeedRand;  // per-step random offset
+  uniform sampler2D uSeed;
+  uniform float     uSeedAmt;
+  uniform vec3      uPoint;     // spore: xy uv, z radius in texels
+  uniform float     uNow;       // lineage clock
+  uniform float     uGrowTime;  // see GROWTH_RD_STEP
+  uniform float     uFadeTime;
+  uniform float     uAgeDt;
+  uniform sampler2D uField;
+  uniform float     uFieldAmt;  // field lowers the melt's temperature locally
+  varying vec2 vUv;
+  const float DX = 0.03, DT = 1e-4, TAU = 3e-4, ALPHA = 0.9, GAMMA = 10.0, TEQ = 1.0;
+  const float PI = 3.14159265;
+
+  float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7)) + uSeedRand) * 43758.5453); }
+
+  void main() {
+    vec4 c  = texture2D(uState, vUv);
+    vec4 xp = texture2D(uState, vUv + vec2(uTexel.x, 0.0));
+    vec4 xm = texture2D(uState, vUv - vec2(uTexel.x, 0.0));
+    vec4 yp = texture2D(uState, vUv + vec2(0.0, uTexel.y));
+    vec4 ym = texture2D(uState, vUv - vec2(0.0, uTexel.y));
+    vec4 a0  = texture2D(uAux, vUv);
+    vec4 axp = texture2D(uAux, vUv + vec2(uTexel.x, 0.0));
+    vec4 axm = texture2D(uAux, vUv - vec2(uTexel.x, 0.0));
+    vec4 ayp = texture2D(uAux, vUv + vec2(0.0, uTexel.y));
+    vec4 aym = texture2D(uAux, vUv - vec2(0.0, uTexel.y));
+
+    float p = c.r, T = c.g;
+    // 9-point isotropic Laplacian. The 5-point one prefers the grid's axes
+    // strongly enough to swamp a 6-fold anisotropy — a "snowflake" grew as a
+    // cross (measured). Weights: edges 4/6, corners 1/6, centre −20/6.
+    vec2 d1 = texture2D(uState, vUv + uTexel).rg;
+    vec2 d2 = texture2D(uState, vUv - uTexel).rg;
+    vec2 d3 = texture2D(uState, vUv + vec2(uTexel.x, -uTexel.y)).rg;
+    vec2 d4 = texture2D(uState, vUv + vec2(-uTexel.x, uTexel.y)).rg;
+    vec2 edges = xp.rg + xm.rg + yp.rg + ym.rg;
+    vec2 lap   = (4.0 * edges + (d1 + d2 + d3 + d4) - 20.0 * c.rg) / (6.0 * DX * DX);
+    float lapP = lap.x;
+    float lapT = lap.y;
+    float px = (xp.r - xm.r) / (2.0 * DX);
+    float py = (yp.r - ym.r) / (2.0 * DX);
+
+    float term1 =  (ayp.x - aym.x) / (2.0 * DX);          // ∂/∂y(εε′ ∂p/∂x)
+    float term2 = -(axp.y - axm.y) / (2.0 * DX);          // −∂/∂x(εε′ ∂p/∂y)
+    vec2  gE2   = vec2(axp.z - axm.z, ayp.z - aym.z) / (2.0 * DX);
+    float term3 = a0.z * lapP + dot(gE2, vec2(px, py));  // ∇·(ε²∇p)
+
+    float Tl = T;
+    if (uFieldAmt > 0.0) Tl -= uFieldAmt * 0.5 * dot(texture2D(uField, vUv).rgb, vec3(0.299, 0.587, 0.114));
+    float m  = ALPHA / PI * atan(GAMMA * (TEQ - Tl));
+    float pp = p * (1.0 - p);
+    float dp = DT / TAU * (term1 + term2 + term3 + pp * (p - 0.5 + m) + uNoise * pp * (hash(vUv) - 0.5));
+
+    // Lineage travels through the whole INTERFACE, not just the solid: a
+    // crystal front is a diffuse band several cells wide, and cells crossing
+    // p 0.5 before any neighbour had done so inherited nothing — stamp 0, so
+    // they never stopped, never faded, and regrew the crystal after its
+    // reset (measured). Anything above 2% solid carries the colony's stamp.
+    float nbS = -1.0;
+    if (xp.r > 0.02) nbS = max(nbS, xp.a);
+    if (xm.r > 0.02) nbS = max(nbS, xm.a);
+    if (yp.r > 0.02) nbS = max(nbS, yp.a);
+    if (ym.r > 0.02) nbS = max(nbS, ym.a);
+    float lin = p > 0.02 ? max(c.a, nbS) : nbS;
+    // Grow time (see GROWTH_RD_STEP): a finished crystal stops — its solid
+    // frozen, and the melt beside it may not solidify onto it.
+    if (uGrowTime > 0.0 && lin > 0.0 && uNow - lin > uGrowTime) dp = p > 0.5 ? 0.0 : min(dp, 0.0);
+
+    float pn = clamp(p + dp, 0.0, 1.0);
+    float Tn = T + DT * lapT + uHeat * (pn - p);
+
+    float age = c.b, stamp = c.a;
+    // Newly solid: inherit the newest lineage among solid neighbours.
+    if (pn > 0.02) stamp = max(stamp, nbS);
+    age = pn > 0.5 ? age + uAgeDt : 0.0;
+    if (uGrowTime > 0.0 && stamp > 0.0 && uNow - stamp > uGrowTime + uFadeTime) {
+      pn = 0.0; age = 0.0; stamp = 0.0;          // faded out: back to melt
+    }
+
+    if (uSeedAmt > 0.0) {
+      float s = clamp(dot(texture2D(uSeed, vUv).rgb, vec3(0.299, 0.587, 0.114)) * uSeedAmt, 0.0, 1.0);
+      s = smoothstep(0.05, 0.3, s);
+      if (s > 0.0) pn = max(pn, s);
+      if (s > 0.2) stamp = uNow;
+    }
+    if (uPoint.z > 0.0) {
+      vec2 d = (vUv - uPoint.xy) / uTexel;
+      if (dot(d, d) < uPoint.z * uPoint.z) { pn = 1.0; stamp = uNow; age = 0.0; }
+    }
+    gl_FragColor = vec4(pn, Tn, age, stamp);
+  }
+`;
+
+// Gray-Scott starts as pure food (A 1, B 0); multi-scale as uniform −1, which
+// is exactly stable (every blur equals every other), so nothing happens until
+// something is seeded.
+export const GROWTH_RD_INIT = /* glsl */ `
+  uniform vec4 uInit;
+  void main() { gl_FragColor = uInit; }
+`;
+
+// ── Growth: multi-scale Turing patterns (J. McCabe, 2010) ─────────────────────
+// Several activator/inhibitor pairs at doubling radii run at once; at each
+// pixel the scale whose activator and inhibitor differ LEAST wins and moves
+// the value toward its winning side. Coarse scales take bigger steps, so large
+// structures form first and finer ones grow inside them: patterns made of
+// patterns. The blurs come from a pyramid (each level half the last), sampled
+// with a cubic B-spline so coarse levels do not show their texel grid.
+
+// One pyramid level from the one below: four bilinear taps. uOff is 1.0 for a
+// linear-filtered source (each tap a 2×2 average → a 4×4 tent) and 0.5 for the
+// nearest-filtered float state (taps on texel centres → exact 2×2 box).
+export const GROWTH_MS_DOWN = /* glsl */ `
+  uniform sampler2D uSrc;
+  uniform vec2      uSrcTexel;
+  uniform float     uOff;
+  varying vec2 vUv;
+  void main() {
+    vec2 o = uSrcTexel * uOff;
+    float v = texture2D(uSrc, vUv + vec2(-o.x, -o.y)).r + texture2D(uSrc, vUv + vec2(o.x, -o.y)).r
+            + texture2D(uSrc, vUv + vec2(-o.x,  o.y)).r + texture2D(uSrc, vUv + vec2(o.x,  o.y)).r;
+    gl_FragColor = vec4(v * 0.25, 0.0, 0.0, 1.0);
+  }
+`;
+
+export const GROWTH_MS_STEP = /* glsl */ `
+  uniform sampler2D uState;
+  uniform sampler2D uL1;
+  uniform sampler2D uL2;
+  uniform sampler2D uL3;
+  uniform sampler2D uL4;
+  uniform sampler2D uL5;
+  uniform sampler2D uL6;
+  uniform vec2      uS1;  uniform vec2 uS2;  uniform vec2 uS3;
+  uniform vec2      uS4;  uniform vec2 uS5;  uniform vec2 uS6;   // level sizes, texels
+  uniform vec2      uTexel;
+  uniform float     uStep;      // overall step multiplier
+  uniform float     uFine;      // lowest scale index in play (0–4)
+  uniform float     uCoarse;    // highest scale index in play (0–4)
+  uniform float     uBias;      // −1 favour fine … +1 favour coarse
+  uniform sampler2D uField;
+  uniform float     uFieldAmt;  // field shifts the bias per pixel
+  uniform sampler2D uSeed;
+  uniform float     uSeedAmt;
+  uniform vec3      uPoint;     // spore: xy uv, z radius in texels (0 = none)
+
+  varying vec2 vUv;
+
+  // Cubic B-spline from four bilinear taps (Sigg & Hadwiger, GPU Gems 2 ch.20).
+  float bspline(sampler2D t, vec2 size, vec2 uv) {
+    vec2 st = uv * size - 0.5;
+    vec2 i  = floor(st);
+    vec2 f  = st - i;
+    vec2 f2 = f * f, f3 = f2 * f;
+    vec2 w0 = (1.0 - 3.0 * f + 3.0 * f2 - f3) / 6.0;
+    vec2 w1 = (4.0 - 6.0 * f2 + 3.0 * f3) / 6.0;
+    vec2 w2 = (1.0 + 3.0 * f + 3.0 * f2 - 3.0 * f3) / 6.0;
+    vec2 w3 = f3 / 6.0;
+    vec2 s0 = w0 + w1, s1 = w2 + w3;
+    vec2 c0 = (i - 0.5 + w1 / s0) / size;
+    vec2 c1 = (i + 1.5 + w3 / s1) / size;
+    return s0.y * (s0.x * texture2D(t, vec2(c0.x, c0.y)).r + s1.x * texture2D(t, vec2(c1.x, c0.y)).r)
+         + s1.y * (s0.x * texture2D(t, vec2(c0.x, c1.y)).r + s1.x * texture2D(t, vec2(c1.x, c1.y)).r);
+  }
+
+  void main() {
+    vec4 st = texture2D(uState, vUv);
+    float v = st.r;
+
+    float L[6];
+    L[0] = bspline(uL1, uS1, vUv);
+    L[1] = bspline(uL2, uS2, vUv);
+    L[2] = bspline(uL3, uS3, vUv);
+    L[3] = bspline(uL4, uS4, vUv);
+    L[4] = bspline(uL5, uS5, vUv);
+    L[5] = bspline(uL6, uS6, vUv);
+
+    float bias = uBias;
+    if (uFieldAmt > 0.0) {
+      float fl = dot(texture2D(uField, vUv).rgb, vec3(0.299, 0.587, 0.114));
+      bias += (fl * 2.0 - 1.0) * uFieldAmt * 2.0;
+    }
+
+    // Scale i: activator L[i], inhibitor L[i+1]. Smallest |difference| wins.
+    float best = 1e9, dir = 0.0, amt = 0.0, win = 0.0;
+    for (int i = 0; i < 5; i++) {
+      float fi = float(i);
+      if (fi < uFine - 0.5 || fi > uCoarse + 0.5) continue;
+      float d = L[i] - L[i + 1];
+      float var = abs(d);
+      if (var < best) {
+        best = var;
+        // Dead band: the pyramid is half-float, so two "equal" blurs differ
+        // by up to ~1e-4 of rounding. sign() of that is noise, and it
+        // patterned an untouched grid edge to edge the moment its value sat
+        // anywhere but exactly ±1. Real fronts differ by 0.01 and up.
+        dir  = var > 2e-3 ? sign(d) : 0.0;
+        // Coarser scales step further (0.01 … 0.05, McCabe's proportions);
+        // bias tilts that ladder toward the fine or the coarse end.
+        amt  = 0.01 * (fi + 1.0) * pow(2.0, bias * (fi - 2.0));
+        win  = fi / 4.0;
+      }
+    }
+    v = clamp(v + dir * amt * uStep, -1.0, 1.0);
+
+    // Which scale has been winning here, smoothed — the colour channel.
+    float g = mix(st.g, win, 0.05);
+
+    // Seeds push toward +1 and never pull down: max(), as in Gray-Scott.
+    // Near-black does not seed: max(v, 2s − 1) turns ANY faint residue into a
+    // floor across the whole grid (a 1/255 seed lifted every cell to −0.992),
+    // which breaks the stillness this mode relies on. 5% knee, smooth ramp.
+    if (uSeedAmt > 0.0) {
+      float s = clamp(dot(texture2D(uSeed, vUv).rgb, vec3(0.299, 0.587, 0.114)) * uSeedAmt, 0.0, 1.0);
+      s = smoothstep(0.05, 0.3, s);
+      if (s > 0.0) v = max(v, s * 2.0 - 1.0);
+    }
+    if (uPoint.z > 0.0) {
+      vec2 dd = (vUv - uPoint.xy) / uTexel;
+      if (dot(dd, dd) < uPoint.z * uPoint.z) v = 1.0;
+    }
+    gl_FragColor = vec4(v, g, 0.0, 1.0);
+  }
+`;
+
 // ── RGB Channel Delay ─────────────────────────────────────────────────────────
 // Three frames of ONE delay ring, one colour channel taken from each. A moving
 // edge separates into coloured fringes trailing its own past, because each

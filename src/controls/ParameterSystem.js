@@ -24,6 +24,7 @@ import { isPagedBinding } from './controlInput.js';
 // Same rule, same reason: a SELECT stores an INDEX, so the axis menus must be
 // built from the one list the index itself reads, never retyped beside it.
 import { DESCRIPTOR_LABELS } from '../audio/corpus-index.js';
+import { GROWTH_PATTERNS, GROWTH_RES, GROWTH_MODES } from '../inputs/GrowthPatterns.js';
 
 /**
  * How the performer is listening (§8.6). ONE list, read twice: the labels are
@@ -1136,6 +1137,10 @@ export const SOURCE_DEFS = [
   // 32 — the motion matte. White where the picture moves, black where it does
   // not; meant for the keyer's key source rather than for looking at directly.
   { key: "motion",    label: "Motion"    }, // 32
+  // 33 — Gray-Scott reaction-diffusion, seeded by a source (Draw by default).
+  // Appended at the true end; the indirect capture entries move with it, kept in
+  // register by the base stamp in migrateCaptureBase().
+  { key: "growth",    label: "Growth"    }, // 33
 ];
 
 /** Source indices of the three mix buses, in evaluation order (1 → 2 → 3). */
@@ -1159,7 +1164,7 @@ export const SOURCE_DISPLAY_ORDER = [
   { header: "Generators" },     3 /* Color */, 4 /* Color2 */, 5 /* Noise */,
                                 16 /* Particles */, 21 /* SDF */, 30 /* SDF Depth */,
                                 11 /* Text */,
-                                7 /* Draw */, 6 /* 3D Scene */, 20 /* 3D Depth */,
+                                7 /* Draw */, 33 /* Growth */, 6 /* 3D Scene */, 20 /* 3D Depth */,
                                 23 /* Analog */, 29 /* Rutt-Etra */,
   { header: "From the Signal" }, 8 /* Output */, 13 /* Delay */, 31 /* RGB Delay */,
                                 32 /* Motion */, 24 /* TimeDisp */,
@@ -6830,6 +6835,187 @@ export function registerCoreParameters(ps) {
     group: "motion",
     type: PARAM_TYPE.CONTINUOUS,
     min: 0, max: 4, value: 0, step: 0.05,
+  });
+
+  // ── Growth: reaction-diffusion (source 33) ──────────────────────────────────
+  // Group 'growth', captured by Display States. The SELECTs index append-only
+  // lists (GROWTH_PATTERNS, CAPTURE_SOURCES, GROWTH_RES), so a saved index
+  // means the same thing on every machine. Seed/Field src are declared against
+  // CAPTURE_SOURCES, which is what enrols them in the capture-base migration.
+  // Gray-Scott: one pattern scale, the lichen/coral/maze family, with
+  // Lifetime. Multi-scale (McCabe): several scales nested, patterns made of
+  // patterns. Switching restarts the colony — the two read the state
+  // differently. Pattern/Feed/Kill/Scale/Lifetime belong to Gray-Scott; the
+  // ms* controls to Multi-scale; seeding, Plant, Field and colour to both.
+  ps.register({
+    id: "growth.mode", label: "GrowMode", group: "growth",
+    type: PARAM_TYPE.SELECT, options: GROWTH_MODES, value: 0,
+  });
+  ps.register({
+    id: "growth.speed", label: "GrowSpeed", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 40, value: 16, step: 1,
+  });
+  ps.register({
+    id: "growth.patternA", label: "Pattern", group: "growth",
+    type: PARAM_TYPE.SELECT, options: GROWTH_PATTERNS.map((p) => p.label), value: 0,
+  });
+  ps.register({
+    id: "growth.patternB", label: "Pattern B", group: "growth",
+    type: PARAM_TYPE.SELECT, options: GROWTH_PATTERNS.map((p) => p.label), value: 4,
+  });
+  // The field blends Pattern A → B per pixel by its luminance — one colony,
+  // several textures, boundaries drifting with the field. 0 = A everywhere,
+  // and the field source is then not read (nor kept alive) at all.
+  ps.register({
+    id: "growth.fieldSrc", label: "Field src", group: "growth",
+    type: PARAM_TYPE.SELECT, options: CAPTURE_SOURCES,
+    value: SOURCE_KEYS.indexOf("noise"),
+  });
+  ps.register({
+    id: "growth.fieldAmt", label: "Field amt", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 100, value: 0, step: 1,
+  });
+  // Offsets on top of the pattern's (feed, kill), in THOUSANDTHS — main.js
+  // divides by 1000. In raw units the range fields printed "-0.0 / 0.0",
+  // which says nothing. Narrow on purpose: the living Gray-Scott region is a
+  // sliver a few thousandths wide. At ±20 (the first cut) half the Feed travel
+  // was dead — measured, pure Coral dies outright from +15 up.
+  ps.register({
+    id: "growth.feed", label: "Feed ±", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: -10, max: 10, value: 0, step: 0.1,
+  });
+  ps.register({
+    id: "growth.kill", label: "Kill ±", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: -5, max: 5, value: 0, step: 0.1,
+  });
+  // Diffusion rate (Da; Db is half). The pattern's features are ~√(D/f) texels
+  // across, so this is a continuous SIZE knob that needs no grid change. It is
+  // also a survival knob: a seed has to be large against that length, so at
+  // high Scale a thin stroke or a small spore can die out before it takes.
+  // 0.21 is the classic lattice value, where every built-in pattern takes from
+  // a drawn line. Max 1: past that the 9-point Laplacian at Δt 1 goes unstable.
+  ps.register({
+    id: "growth.scale", label: "GrowScale", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0.1, max: 1, value: 0.21, step: 0.01,
+  });
+  // Lifetime: cells older than this die back, oldest first (0 = immortal).
+  // Rest: how long dead ground stays barren before the living edge may
+  // recolonise it. Together they turn a colony that fills the frame and stops
+  // into one that travels — rings, fronts, regrowth cycles.
+  ps.register({
+    id: "growth.life", label: "Lifetime", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 120, value: 0, step: 0.1,
+  });
+  ps.register({
+    id: "growth.rest", label: "Regrow delay", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 60, value: 4, step: 0.1,
+  });
+  // Multi-scale. Scale 1 ≈ 2–4 texels … scale 5 ≈ 32–64. Finest/Coarsest pick
+  // which scales take part; Fine↔Coarse tilts their step sizes, so the same
+  // seed grows mostly fine lace or mostly large masses. With a Field, the bias
+  // varies per pixel.
+  ps.register({
+    id: "growth.msStep", label: "MS step", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0.1, max: 4, value: 1, step: 0.05,
+  });
+  ps.register({
+    id: "growth.msFine", label: "Finest", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 1, max: 5, value: 1, step: 1,
+  });
+  ps.register({
+    id: "growth.msCoarse", label: "Coarsest", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 1, max: 5, value: 5, step: 1,
+  });
+  ps.register({
+    id: "growth.msBias", label: "Fine↔Coarse", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: -1, max: 1, value: 0, step: 0.01,
+  });
+  // Frost (crystals, Kobayashi phase field). Fold: symmetry (4 square,
+  // 6 snowflake). Aniso: how strongly that symmetry steers the tips. Heat:
+  // latent heat — high = thin, fast, branchy dendrites; low = compact,
+  // faceted. Branching: noise that splits the tips into side branches.
+  ps.register({
+    id: "growth.crFold", label: "Fold", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 2, max: 12, value: 6, step: 1,
+  });
+  ps.register({
+    id: "growth.crAniso", label: "Aniso", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 0.1, value: 0.04, step: 0.001,
+  });
+  ps.register({
+    id: "growth.crAngle", label: "CrysAngle", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 360, value: 0, step: 1,
+  });
+  ps.register({
+    id: "growth.crHeat", label: "Heat", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0.6, max: 2.4, value: 1.6, step: 0.01,
+  });
+  ps.register({
+    id: "growth.crNoise", label: "Branching", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 0.1, value: 0.01, step: 0.001,
+  });
+  // Grow time: each planting (Plant or a fresh stroke) grows this long, then
+  // stops, fades out over Fade time and clears. 0 = grows forever. Runs per
+  // colony on its planting stamp, so several plantings each keep their own
+  // clock. Single and Frost only (Nested carries no lineage).
+  ps.register({
+    id: "growth.growTime", label: "Grow time", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 120, value: 0, step: 0.1,
+  });
+  ps.register({
+    id: "growth.fadeTime", label: "Fade time", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0.1, max: 30, value: 3, step: 0.1,
+  });
+  ps.register({
+    id: "growth.seedSrc", label: "Seed src", group: "growth",
+    type: PARAM_TYPE.SELECT, options: CAPTURE_SOURCES,
+    value: SOURCE_KEYS.indexOf("draw"),
+  });
+  ps.register({
+    id: "growth.seedAmt", label: "Seed amt", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 100, value: 100, step: 1,
+  });
+  // Plant: one spore at (PlantX, PlantY), y-up 0–100 like draw.x/draw.y.
+  ps.register({
+    id: "growth.plantX", label: "PlantX", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 100, value: 50, step: 0.1,
+  });
+  ps.register({
+    id: "growth.plantY", label: "PlantY", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 100, value: 50, step: 0.1,
+  });
+  ps.register({
+    id: "growth.plantSize", label: "PlantSize", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0.5, max: 20, value: 2, step: 0.1,
+  });
+  ps.register({
+    id: "growth.plant", label: "Plant", group: "growth", type: PARAM_TYPE.TRIGGER,
+  });
+  ps.register({
+    id: "growth.clear", label: "ClearGrowth", group: "growth", type: PARAM_TYPE.TRIGGER,
+  });
+  // Grid size along the longer axis; the other follows the canvas aspect.
+  // Finer grid = finer pattern (the cell size is fixed in texels). Changing it
+  // restarts the colony — a resized grid holds no meaningful state.
+  ps.register({
+    id: "growth.res", label: "GrowRes", group: "growth",
+    type: PARAM_TYPE.SELECT, options: GROWTH_RES.map(String), value: 1,
+  });
+  ps.register({
+    id: "growth.hue", label: "GrowHue", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 360, value: 70, step: 1,
+  });
+  ps.register({
+    id: "growth.sat", label: "GrowSat", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 100, value: 45, step: 1,
+  });
+  ps.register({
+    id: "growth.spread", label: "HueSpread", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 100, value: 15, step: 1,
+  });
+  ps.register({
+    id: "growth.contrast", label: "GrowContrast", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 1, max: 12, value: 4, step: 0.1,
   });
 
   // ── Particles ─────────────────────────────────────────────────────────────

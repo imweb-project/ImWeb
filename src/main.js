@@ -93,6 +93,8 @@ import { SequenceBuffer } from "./inputs/SequenceBuffer.js";
 import { VideoDelayLine } from "./inputs/VideoDelayLine.js";
 import { RGBDelay } from "./inputs/RGBDelay.js";
 import { MotionExtract } from "./inputs/MotionExtract.js";
+import { GrowthRD } from "./inputs/GrowthRD.js";
+import { GROWTH_RES } from "./inputs/GrowthPatterns.js";
 import { TimeDisplaceEngine } from "./inputs/TimeDisplaceEngine.js";
 import { VectorscopeInput } from "./inputs/VectorscopeInput.js";
 import { SlitScanBuffer } from "./inputs/SlitScanBuffer.js";
@@ -523,6 +525,11 @@ async function main() {
   // Same rule, same reason: the particle system is both a source and (through
   // its luma mask) a consumer, so the fixpoint needs its index by key.
   const PARTICLES_IDX = SOURCE_KEYS.indexOf("particles");
+  // Reaction-diffusion growth. Targets allocate on first render, so a project
+  // that never routes it pays no VRAM. Also a puller (it reads a seed and a
+  // field source), so the fixpoint needs its index — by key.
+  const growthRD = new GrowthRD(renderer);
+  const GROWTH_IDX = SOURCE_KEYS.indexOf("growth");
   // Ring depth and working resolution, both reallocating (history is discarded
   // either way, so they share VideoDelayLine._realloc). Resolution is the lever
   // that makes a long echo affordable — 30 frames at Native costs 237 MB for
@@ -6060,6 +6067,9 @@ async function main() {
     if (key === "sdfdepth") return sdfGen.depthTexture ?? pipeline.prev.texture;
     if (key === "rgbdelay") return rgbDelay.texture;
     if (key === "motion")   return motionExtract.texture;
+    // Null until its first render — which the fixpoint schedules only once
+    // something consumes it — so a fresh route shows Output for one frame.
+    if (key === "growth")   return growthRD.texture ?? pipeline.prev.texture;
     if (key === "seq1") return seq1.texture;
     if (key === "seq2") return seq2.texture;
     if (key === "seq3") return seq3.texture;
@@ -6211,6 +6221,12 @@ async function main() {
 
   // Draw layer triggers
   ps.get("draw.clear").onTrigger(() => drawLayer.clear());
+  ps.get("growth.clear").onTrigger(() => growthRD.clear());
+  ps.get("growth.plant").onTrigger(() => growthRD.plant(
+    ps.get("growth.plantX").value / 100,
+    ps.get("growth.plantY").value / 100,
+    ps.get("growth.plantSize").value / 100,
+  ));
 
   // Stroke looper transport params (MIDI-pad friendly: rec is a toggle-style
   // trigger — arm/record, press again to stop+play)
@@ -6514,7 +6530,20 @@ async function main() {
       ps.set("keyer.active", 1);
       ps.set("keyer.extkey", 1);
     });
-    drawControls.append(btnWarp, btnKey);
+    // Growth does nothing on its own: the fixpoint only steps it while a
+    // consumer reads it, so its whole panel is inert until something routes
+    // it. This is that one step, the same shape as Warp/Key above.
+    const btnGrow = document.createElement("button");
+    btnGrow.className = "import-btn";
+    btnGrow.textContent = "⇢ Grow";
+    btnGrow.title =
+      "Reaction-diffusion grows out of your strokes (Foreground → Growth, seeded by Draw)";
+    btnGrow.addEventListener("click", () => {
+      ps.set("layer.fg", GROWTH_IDX);
+      ps.set("growth.seedSrc", SOURCE_KEYS.indexOf("draw"));
+      if (!(ps.get("growth.seedAmt").value > 0)) ps.set("growth.seedAmt", 100);
+    });
+    drawControls.append(btnWarp, btnKey, btnGrow);
 
     // Stroke looper transport — 4 slots × Rec/Play/Clear. Buttons drive the
     // drawloop{n}.* params so MIDI/keyboard paths stay identical. Built via
@@ -10032,6 +10061,10 @@ void main() {
     // tick only when they are needed.
     const _pmCap = PARTICLE_MASK_SRC[ps.get("particle.masksrc").value] ?? null;
     const _pmIdx = _pmCap == null ? -1 : _captureIdx(_pmCap);
+    // Growth reads a seed and a field — each only while its amount is above 0,
+    // since the step shader skips the sample entirely at 0.
+    const _cGrowSeed  = ps.get("growth.seedAmt").value  > 0 ? _captureIdx(ps.get("growth.seedSrc").value)  : -1;
+    const _cGrowField = ps.get("growth.fieldAmt").value > 0 ? _captureIdx(ps.get("growth.fieldSrc").value) : -1;
 
     // The bokeh mask is a real consumer of whatever it points at, the same
     // shape as the keyer's external key: only while the effect is actually
@@ -10116,24 +10149,34 @@ void main() {
       _direct(i) ||
       _bus.some((b) => b.needed && ((b.aReaches && b.srcA === i) || (b.bReaches && b.srcB === i)));
 
-    // Motion pulls its own source in behind it: if anything needs the matte,
-    // the thing the matte watches is needed too. Seeded from _usedBase rather
-    // than from _srcUsed so that a Motion watching Motion terminates instead of
-    // recursing — in that case the flag is already true and adds nothing.
-    // Two mutually-recursive pullers now: Motion pulls the source it watches,
-    // and the particle system pulls the source its luma mask reads. Each can
-    // name the other, so both are seeded from _usedBase and then closed by hand
-    // — two nodes, two terms, no loop needed. Self-reference terminates because
-    // the flag is already true and the extra term adds nothing.
-    const _motionBase = _usedBase(MOTION_IDX);
-    const _particlesNeeded =
-      _usedBase(PARTICLES_IDX) || (_motionBase && _cMotion === PARTICLES_IDX);
-    const _motionNeeded = _motionBase || (_particlesNeeded && _pmIdx === MOTION_IDX);
+    // PULLERS: sources that read other sources, but only while they are
+    // themselves needed — Motion (the source it watches), Particles (its luma
+    // mask), Growth (its seed and field). Any can name any other, so this is a
+    // closure: seed from _usedBase, then keep adding pullers read by needed
+    // pullers until nothing changes. It was hand-closed while there were two
+    // (two nodes, two terms); a third made that a 3×3 of terms, so it became
+    // the loop. Self-reference terminates because a needed puller is not
+    // re-added. At most one pass per puller.
+    // Add a new puller HERE, as a row — do not write a term beside this.
+    const _pullers = [
+      { idx: MOTION_IDX,    reads: [_cMotion] },
+      { idx: PARTICLES_IDX, reads: [_pmIdx] },
+      { idx: GROWTH_IDX,    reads: [_cGrowSeed, _cGrowField] },
+    ];
+    const _pulled = new Set(_pullers.filter((p) => _usedBase(p.idx)).map((p) => p.idx));
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const p of _pullers) {
+        if (!_pulled.has(p.idx)) continue;
+        for (const r of p.reads) {
+          if (!_pulled.has(r) && _pullers.some((q) => q.idx === r)) { _pulled.add(r); grew = true; }
+        }
+      }
+    }
 
     const _srcUsed = (i) =>
       _usedBase(i) ||
-      (_motionNeeded && i === _cMotion) ||
-      (_particlesNeeded && i === _pmIdx);
+      _pullers.some((p) => _pulled.has(p.idx) && p.reads.includes(i));
 
     // ── Idle-deck upload gating (v0.12 Step 5) ──────────────────────────────
     // Skip the texImage2D upload for a deck that cannot contribute to this
@@ -10626,6 +10669,7 @@ void main() {
       delay: videoDelay.getTexture(ps.get("delay.frames").value),
       rgbdelay: rgbDelay.texture,
       motion: motionExtract.texture,
+      growth: growthRD.texture,
       // The keyer's external key, resolved here rather than in Pipeline because
       // CAPTURE_SOURCES includes the indirect FG/BG/DS Src entries and only
       // main.js knows how to follow them (_captureIdx).
@@ -10715,6 +10759,44 @@ void main() {
           blur:         ps.get("motion.blur").value,
         },
       );
+    }
+
+    // Growth — after Motion, so a colony seeded by the motion matte reads this
+    // frame's matte; before the composite, which samples the view in place.
+    // Gated on the fixpoint: routed nowhere, it neither steps nor allocates.
+    if (_srcUsed(GROWTH_IDX)) {
+      growthRD.render(dt, {
+        res:      GROWTH_RES[ps.get("growth.res").value] ?? 512,
+        aspect:   canvas.width / Math.max(1, canvas.height),
+        speed:    ps.get("growth.speed").value,
+        seedTex:  _cGrowSeed  >= 0 ? _resolveCaptureTex(ps.get("growth.seedSrc").value)  : null,
+        seedAmt:  ps.get("growth.seedAmt").value / 100,
+        fieldTex: _cGrowField >= 0 ? _resolveCaptureTex(ps.get("growth.fieldSrc").value) : null,
+        fieldAmt: ps.get("growth.fieldAmt").value / 100,
+        patternA: ps.get("growth.patternA").value,
+        patternB: ps.get("growth.patternB").value,
+        feed:     ps.get("growth.feed").value / 1000,   // param is in thousandths
+        kill:     ps.get("growth.kill").value / 1000,
+        diff:     ps.get("growth.scale").value,
+        mode:     ps.get("growth.mode").value,
+        msStep:   ps.get("growth.msStep").value,
+        msFine:   ps.get("growth.msFine").value,
+        msCoarse: ps.get("growth.msCoarse").value,
+        msBias:   ps.get("growth.msBias").value,
+        growTime: ps.get("growth.growTime").value,
+        fadeTime: ps.get("growth.fadeTime").value,
+        crFold:   ps.get("growth.crFold").value,
+        crAniso:  ps.get("growth.crAniso").value,
+        crAngle:  ps.get("growth.crAngle").value,
+        crHeat:   ps.get("growth.crHeat").value,
+        crNoise:  ps.get("growth.crNoise").value,
+        life:     ps.get("growth.life").value,
+        rest:     ps.get("growth.rest").value,
+        hue:      ps.get("growth.hue").value,
+        sat:      ps.get("growth.sat").value / 100,
+        spread:   ps.get("growth.spread").value / 100,
+        contrast: ps.get("growth.contrast").value,
+      });
     }
 
     // Run compositing pipeline

@@ -391,6 +391,7 @@ export function buildMappingPanels(ps, contextMenu) {
     'delay-params':        ps.getGroup('delay'),
     'rgbdelay-params':     ps.getGroup('rgbdelay'),
     'motion-params':       ps.getGroup('motion'),
+    'growth-params':       ps.getGroup('growth'),
     'tdisp-params':        ps.getGroup('td'),
     'vectorscope-params':  ps.getGroup('vectorscope'),
     'slitscan-params':     ps.getGroup('slitscan'),

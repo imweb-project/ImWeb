@@ -1573,6 +1573,7 @@ export class Pipeline {
     if (key === 'sdfdepth'  && inputs.sdfdepth)  return inputs.sdfdepth;
     if (key === 'rgbdelay'  && inputs.rgbdelay)  return inputs.rgbdelay;
     if (key === 'motion'    && inputs.motion)    return inputs.motion;
+    if (key === 'growth'    && inputs.growth)    return inputs.growth;
     return inputs.color ?? this._getFallbackTexture();
   }
 

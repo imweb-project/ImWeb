@@ -9,6 +9,81 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Growth: reaction-diffusion seeded by Draw (source 33).** Gray-Scott on
+  RGBA32F ping-pong targets (src/inputs/GrowthRD.js, shaders GROWTH_RD_*):
+  coral, lichen, mazes, fingerprints, dividing cells growing OUT of a seed.
+  Seed src (default Draw) inoculates wherever it is bright, every frame —
+  paint a line and coral grows from it; Plant drops one spore at
+  (PlantX, PlantY). Field src (default Noise) blends Pattern A → B per
+  pixel, so one colony grows several textures in zones, like lichen on
+  stone. Feed ± / Kill ± (in thousandths: ±10 / ±5) / Scale are the
+  performable knobs. Seeding moves a
+  cell toward the classic A 0.5 / B 0.25 inoculum (B only rises, A only
+  falls); raising B alone on full food let Spots die from a spore. Scale is
+  the diffusion rate: at a fixed Da = 1 three of ten patterns died from a
+  drawn line; at the 0.21 default all ten take from a line (measured on GPU;
+  Worms re-tuned to f .050 / k .063 — the common .078 / .061 died at every
+  Scale). Mitosis and Spots still need more than a small spore.
+  Steps are fixed-size and counted against real dt, so frame rate changes
+  smoothness, not speed; the grid follows the canvas aspect. Allocated on
+  first use, stepped only when the consumption fixpoint says it is needed.
+  Panel: Draw workspace → Growth.
+- **Growth: Frost mode — growing crystals.** Kobayashi's phase-field model
+  of dendritic solidification (1993): phase p and temperature T, latent heat
+  K slowing the crowded front, j-fold anisotropy ε = ε̄(1 + δcos j(θ − θ0)),
+  noise splitting the tips. Two passes a step (ε terms, then the step — the
+  anisotropic terms differentiate products of ε and ∇p). Isotropic 9-point
+  Laplacian: with the 5-point one a 6-fold crystal grew as a cross.
+  Fold / Aniso / CrysAngle / Heat / Branching; Field lowers the local melt
+  temperature. Half rate: ~8 s for a whole crystal. Measured (Intel UHD 630,
+  A/B alternated after warm-up): 11 ms/frame at 256, 18 at 512×288 — about
+  twice Single.
+- **Growth: Grow time + Fade time — fade at max grow time.** Each planting
+  grows for Grow time, stops (frozen, and it may not colonise further),
+  fades over Fade time and clears. Per colony, through a lineage stamp in
+  the state's alpha: Plant and fresh strokes write "now", colonised cells
+  inherit their colonisers' stamp. Verified on GPU, two plantings 2 s apart:
+  each grows 3 s, holds its size while fading 2 s, clears, 2 s apart
+  (Single and Frost). In Frost the stamp travels through the diffuse
+  interface (p > 2%): carried only by solid cells, front cells crossed 0.5
+  unstamped and regrew the crystal after its reset.
+- **Growth: Nested mode — patterns made of patterns.** McCabe's multi-scale
+  Turing patterns (2010) beside Gray-Scott (growth.mode Single / Nested): five
+  activator/inhibitor pairs at doubling radii; per pixel the pair with the
+  smallest |activator − inhibitor| moves the value toward its winning side,
+  coarse pairs stepping further, so large structure forms first and finer
+  grows inside it. Blurs from a six-level HalfFloat pyramid rebuilt each
+  step, sampled with a cubic B-spline (four bilinear taps) so coarse levels
+  show no grid. Starts from a uniform −1, which is exactly stable, so it
+  grows outward from Plant / Draw / a noise seed. Field → per-pixel
+  fine↔coarse bias; HueSpread colours by the winning scale. Runs at a
+  quarter of Speed (a step moves far more than a Gray-Scott step): a spore
+  fills the frame in ~10 s. Measured on Intel UHD 630, 512×288, Speed 16,
+  alternating conditions after warm-up: Multi-scale 5.1–5.5 ms/frame,
+  Gray-Scott 6.7–7.2. iPad not measured.
+  An untouched grid must stay still, and did not: a seed of faint residue
+  (1/255) lifted every cell off −1, and the pyramid's half-float rounding
+  (~1e-4 between "equal" blurs) then patterned the whole frame at once.
+  Seeds now ignore luminance below 5% and a step needs a difference above
+  2e-3; still-grid cases (no seed, black, 1/255, 12/255, mode switch) stay
+  at exactly −1 while spores and strokes still grow.
+- **Growth dies from its oldest part: Lifetime + Regrow delay.** The state's
+  spare blue channel holds each cell's age in real seconds (the frame's dt
+  shared across its steps, so Speed does not change it and a paused colony
+  stops ageing). Past 75% of Lifetime a cell gets extra kill; one that dies
+  of age goes barren (negative age) for Regrow delay seconds, held dead,
+  then the living edge may take it back. Long delay → an expanding ring
+  with a dead centre, as lichen and fairy rings grow; short delay → the
+  colony renews itself from the inside. Verified on GPU: with Lifetime 0
+  the oldest cell reaches 16 s and nothing dies; with 4 s the oldest stays
+  near 4 s and barren ground grows 232 → 9302 cells over 16 s.
+- **⇢ Grow** in the Draw workspace (next to ⇢ Warp / ⇢ Key): one click
+  routes Foreground → Growth seeded by Draw. Growth only steps while
+  something consumes it, so without a route its whole panel was inert.
+- **The consumption fixpoint's pullers are now a closure, not hand terms.**
+  Motion, Particles and Growth each read other sources only while needed
+  themselves; `_pullers` in main.js lists them as rows and a loop closes the
+  set. Two pullers were hand-closed; a third would have been nine terms.
 - **Beats: lock an animation loop to the tempo.** *Beats* (Off / 1 / 2 / 4
   / 8 / 16) on M1 and M2–M4: one loop of the current take lasts exactly N
   beats of global.bpm, phase-locked to main.js's beat counter (passed to
@@ -267,6 +342,14 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   settings, including the factory bank.
 
 ### Fixed
+- **Growth: a new Plant or stroke in a dead centre did not grow.** Barren
+  ground (Regrow delay) killed ALL growth, including the owner's new
+  planting. Letting "young" neighbours in failed (measured: a re-colonised
+  cell inside the old colony is young too, and the dead centre never died)
+  and was reverted. Now barren ground keeps the lineage stamp of what died
+  there and opens only to a living neighbour with a newer one: the dead
+  centre stays dead (60% → 0%), a replant spreads over it (barren 96% → 0%
+  in 2 s around it).
 - **Draw fade left a grey ghost of every stroke.** The fade multiplies an
   8-bit canvas by (1 − a), so values under 0.5/a levels rounded to no change:
   at the Fade button's 0.04 everything below 25/255 stayed forever, and fades
