@@ -595,6 +595,7 @@ export class ModelSlots {
     }
     const own = s.own;
     own.copy(main);                       // colour, roughness, emissive, wireframe…
+    this.sm.syncImageFlip(i + 1, s.name);
     const { tex, tri } = this.sm.slotTexture(srcIdx, i);
     own.map = tex ? Object.assign(tex, { wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping }) : null;
     if (own.emissiveMap !== undefined) own.emissiveMap = own.map;   // glow with its own picture, as the main one does

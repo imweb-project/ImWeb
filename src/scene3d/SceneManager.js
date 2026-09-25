@@ -557,6 +557,20 @@ export class SceneManager {
     }
   }
 
+  /**
+   * Keep model i's image oriented for the model it is on NOW: glTF expects
+   * images unflipped, COLLADA / OBJ / STL flipped. Called every frame, so the
+   * order a state restores model and image in does not matter — an image
+   * that arrived before its model is re-oriented once the model is there.
+   * Re-uploads only when the answer changes.
+   */
+  syncImageFlip(i, modelName) {
+    const img = this._images[i];
+    if (!img || !modelName) return;
+    const want = !/\.gl(b|tf)$/i.test(modelName);
+    if (img.tex.flipY !== want) { img.tex.flipY = want; img.tex.needsUpdate = true; }
+  }
+
   /** The image name per model (null = none) — what a state records. */
   imageNames() { return this._images.map(x => x?.name ?? null); }
 
@@ -1253,6 +1267,7 @@ export class SceneManager {
         else delete this.material.defines.USE_TRIPLANAR;
         this.material.needsUpdate = true;
       }
+      this.syncImageFlip(0, this._importedModelName);
       const texSrcMap = [null, inputs.camera, inputs.movie, inputs.screen, inputs.draw, inputs.buffer, inputs.noise,
         this._images[0]?.tex ?? null];   // 7 Image — M1's own; a slot's comes from slotTexture()
       // Kept for the slots' own materials (ModelSlots, modelN.texsrc): the same

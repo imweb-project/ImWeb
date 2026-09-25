@@ -226,6 +226,14 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   settings, including the factory bank.
 
 ### Fixed
+- **A model's image could come back upside down after a state recall.** An
+  image's orientation was decided when it loaded, from whatever model was
+  there at that moment — and a state restores M1's model separately, so a
+  glTF M1 could get its picture flipped the COLLADA way. Orientation now
+  follows the model the image is on every frame (SceneManager.syncImageFlip,
+  M1 and M2–M4), re-uploading only when it changes, so restore order no
+  longer matters.
+
 - **A model wearing Noise as its own Texture got no noise.** Noise is drawn
   only when something uses it, and that check read M1's Texture Source only —
   so M2–M4 wearing Noise while M1 did not showed a texture nobody drew. The
