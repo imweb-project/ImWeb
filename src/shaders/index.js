@@ -295,6 +295,8 @@ export const GROWTH_RD_VIEW = /* glsl */ `
   uniform float uGrowTime;  // 0 = no fade
   uniform float uFadeTime;
   uniform float uPenRate;   // Pen fade (see GROWTH_RD_STEP)
+  uniform float uRings;     // Frost: growth-ring strength, 0 = off
+  uniform float uRingGap;   // Frost: seconds of growth between rings
   uniform float uRelief;    // 0 = flat; height-map depth
   uniform vec3  uLight;     // unit vector toward the light (z = out of screen)
   uniform float uGloss;     // 0–1 specular
@@ -323,7 +325,13 @@ export const GROWTH_RD_VIEW = /* glsl */ `
   float surf(vec2 uv) {
     vec4 st = texture2D(uState, uv);
     if (uMode < 0.5) return st.g / 0.4;
-    if (uMode > 1.5) return st.r;
+    if (uMode > 1.5) {
+      // Rings as engraved grooves: a narrow cos² profile per ring. Its width
+      // scales with the gap, not the pixel, which suits relief — a groove
+      // should be a groove at any zoom.
+      float g = uRings > 0.0 && st.r > 0.5 ? pow(0.5 + 0.5 * cos(6.2831853 * st.b / uRingGap), 12.0) : 0.0;
+      return st.r - 0.12 * uRings * g;
+    }
     return 0.5 + 0.5 * st.r;
   }
 
@@ -349,6 +357,25 @@ export const GROWTH_RD_VIEW = /* glsl */ `
     val = uGround + (1.0 - uGround) * val;
     vec3 col = hsv2rgb(vec3(fract(hue), uSat, val));
 
+    // ── Frost growth rings ──────────────────────────────────────────────────
+    // b holds how long each solid cell has been solid, so a line wherever it
+    // crosses a multiple of Ring gap is a growth ring: where the front stood
+    // that long ago. Every cell keeps ageing, so the rings drift outward on
+    // their own and new ones rise from the oldest centre. Kept ~1 px thin at
+    // any spacing: distance to the ring in TEXELS = phase distance ÷ the age
+    // gradient, taken from the neighbours (no derivative functions here).
+    if (uMode > 1.5 && uRings > 0.0 && st.r > 0.5) {
+      float ax = texture2D(uState, vUv + vec2(uTexel.x, 0.0)).b - texture2D(uState, vUv - vec2(uTexel.x, 0.0)).b;
+      float ay = texture2D(uState, vUv + vec2(0.0, uTexel.y)).b - texture2D(uState, vUv - vec2(0.0, uTexel.y)).b;
+      float grad = 0.5 * length(vec2(ax, ay)) / uRingGap;             // rings per texel
+      float ph   = abs(fract(st.b / uRingGap + 0.5) - 0.5);            // 0 on a ring
+      float line = 1.0 - smoothstep(0.5, 1.5, ph / max(grad, 1e-4));   // ~1 px wide
+      // Where age barely changes across a texel (the oldest core, or a flat
+      // plateau) the ring would smear into a band: fade it out there.
+      line *= smoothstep(0.004, 0.02, grad);
+      col = mix(col, col * 0.35, line * uRings);
+    }
+
     // ── Relief: the surface lit ─────────────────────────────────────────────
     // Sobel gradient of surf() over ±Bevel texels — rounded bevels, not the
     // hairlines a 1-texel difference draws; wider = broader domes — a light
@@ -372,7 +399,10 @@ export const GROWTH_RD_VIEW = /* glsl */ `
       float flatShade = AMB + (1.0 - AMB) * uLight.z;
       float shade = (AMB + (1.0 - AMB) * max(dot(n, uLight), 0.0)) / flatShade;
       vec3 hv = normalize(uLight + vec3(0.0, 0.0, 1.0));
-      float spec = pow(max(dot(n, hv), 0.0), 48.0) * uGloss;
+      // Exponent 16, not 48: at 48 the highlight was a pin-prick only steep
+      // slopes facing the half-vector ever hit, and Gloss 20 → 90 changed the
+      // picture by 1–2/255 in every mode (measured).
+      float spec = pow(max(dot(n, hv), 0.0), 16.0) * uGloss * 1.5;
       col = col * shade * cav + vec3(spec) * (0.25 + 0.75 * v);
     }
 

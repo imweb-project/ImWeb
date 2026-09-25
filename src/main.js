@@ -10807,6 +10807,8 @@ void main() {
         crAngle:  ps.get("growth.crAngle").value,
         crHeat:   ps.get("growth.crHeat").value,
         crNoise:  ps.get("growth.crNoise").value,
+        crRings:  ps.get("growth.crRings").value,
+        crRingGap: ps.get("growth.crRingGap").value,
         life:     ps.get("growth.life").value,
         rest:     ps.get("growth.rest").value,
         hue:      ps.get("growth.hue").value,

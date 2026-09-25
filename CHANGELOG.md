@@ -9,6 +9,16 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Growth: Frost growth rings — thin inner lines that drift.** Rings /
+  Ring gap. View only: a line wherever a solid cell's time-as-solid (the
+  age channel, real seconds) crosses a multiple of Ring gap — where the
+  front stood that long ago. Every cell ages, so the rings drift outward by
+  themselves and new ones rise from the centre. Kept ~1 px thin at any gap:
+  texel distance = phase distance ÷ the age gradient from the neighbours;
+  faded where the gradient is ~0 so plateaus do not smear into bands. With
+  Relief they are grooves (a cos¹² profile in the relief surface). Shows a
+  hexagonal nucleus ring and chevrons along each arm. Rings 0 adds exactly
+  zero to both paths.
 - **Growth: Pen fade — growth fades with the pen's own Fade.** A toggle;
   while on, each part decays as exp(−rate·age) from its stamp with
   rate = −60·ln(1 − a), a = min(1, draw.fade·0.5) — DrawLayer's per-frame
@@ -388,6 +398,12 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   settings, including the factory bank.
 
 ### Fixed
+- **Growth: Gloss and Branching barely did anything.** A per-control audit
+  (same start, one control changed, GPU) found every control wired and
+  effective except these: Gloss 20 → 90 moved the picture 1–2/255 (a
+  pow-48 highlight only steep slopes ever reached — now pow 16, ×1.5:
+  10–13/255), and Branching 0 → 0.04 moved Frost 5/255 (range now 0–0.5,
+  where it saturates at 13/255; default unchanged).
 - **Growth: a new Plant or stroke in a dead centre did not grow.** Barren
   ground (Regrow delay) killed ALL growth, including the owner's new
   planting. Letting "young" neighbours in failed (measured: a re-colonised

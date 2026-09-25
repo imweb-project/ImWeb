@@ -920,7 +920,9 @@ outward from that point.
 | `growth.crAniso` | 0–0.1 | Frost: how strongly the symmetry steers the growing tips |
 | `growth.crAngle` | 0–360° | Frost: rotation of the crystal axes |
 | `growth.crHeat` | 0.6–2.4 | Frost: latent heat. High = thin, branchy dendrites; low = compact, solid |
-| `growth.crNoise` | 0–0.1 | Frost: **Branching.** Splits the tips into side branches |
+| `growth.crNoise` | 0–0.5 | Frost: **Branching.** Makes the arms irregular and uneven; strongest around 0.3–0.5 |
+| `growth.crRings` | 0–100 | Frost: **Rings.** Thin growth rings inside the crystal, drifting outward. 0 = off |
+| `growth.crRingGap` | 0.05–3 s | Frost: seconds of growth between two rings |
 | `growth.seedSrc` | SELECT | Source that inoculates where it is bright, every frame (default Draw) |
 | `growth.seedAmt` | 0–100 | Seed strength. 0 = seed source ignored |
 | `growth.plantX` / `plantY` | 0–100 | Where Plant drops its spore (y up, like DrawX/DrawY) |
@@ -967,6 +969,15 @@ ahead and split into side branches. Fold sets the symmetry, Heat how thin and
 branchy the arms get, Branching how often they split. Plant one crystal, or
 draw: every stroke freezes into a crystal edge. Frost is the heaviest mode
 (about twice Single); at GrowRes 256 a crystal fills the frame in ~10 s.
+
+**Growth rings (Frost).** Every crystal cell remembers how long it has been
+solid, so **Rings** can draw thin lines wherever that time crosses a multiple
+of **Ring gap**: each line shows where the front stood that long ago. You see
+the hexagonal nucleus at the centre and chevrons along every arm, the
+crystal's own growth history. Because every cell keeps ageing, the rings drift
+slowly outward and new ones rise from the centre, so the inside keeps moving
+after the crystal has stopped growing. With Relief the rings become engraved
+grooves.
 
 **Fade at max grow time.** Like the brush Fade, but for growth: with a
 **Grow time** set, every part grows for that long from the moment it was

@@ -103,6 +103,8 @@ export class GrowthRD {
       uGloss:    { value: 0 },
       uGround:   { value: 0 },
       uBevel:    { value: 2 },
+      uRings:    { value: 0 },
+      uRingGap:  { value: 0.5 },
     });
     this._initMat = mat(GROWTH_RD_INIT, { uInit: { value: new THREE.Vector4(1, 0, 0, 1) } });
 
@@ -341,6 +343,8 @@ export class GrowthRD {
     v.uGrowTime.value = o.growTime ?? 0;
     v.uFadeTime.value = o.fadeTime ?? 3;
     v.uPenRate.value  = o.penRate ?? 0;
+    v.uRings.value    = (o.crRings ?? 0) / 100;
+    v.uRingGap.value  = Math.max(0.05, o.crRingGap ?? 0.5);
     // Relief 0–100 → normal depth 0–24 against a per-texel gradient (a
     // full-range rise over 2 texels then tilts the normal ~85°). Light: azimuth from Light angle (0° = from
     // the right, 90° = from above, screen y up), fixed 40° elevation.

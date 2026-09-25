@@ -6952,7 +6952,9 @@ export function registerCoreParameters(ps) {
   });
   ps.register({
     id: "growth.crNoise", label: "Branching", group: "growth",
-    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 0.1, value: 0.01, step: 0.001,
+    // Max 0.5, not 0.1: measured, 0 → 0.04 changed the crystal by 5/255 and
+    // the effect only saturates near 0.5 (13/255, arms turn irregular).
+    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 0.5, value: 0.01, step: 0.001,
   });
   // Grow time: each planting (Plant or a fresh stroke) grows this long, then
   // stops, fades out over Fade time and clears. 0 = grows forever. Runs per
@@ -7012,6 +7014,17 @@ export function registerCoreParameters(ps) {
   // = no fade, as for the pen. Single and Frost.
   ps.register({
     id: "growth.penFade", label: "Pen fade", group: "growth", type: PARAM_TYPE.TOGGLE, value: 0,
+  });
+  // Frost growth rings: thin lines where each crystal cell's time-as-solid
+  // crosses a multiple of Ring gap — where the front stood that long ago.
+  // They drift outward on their own. With Relief they become grooves.
+  ps.register({
+    id: "growth.crRings", label: "Rings", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 100, value: 0, step: 1,
+  });
+  ps.register({
+    id: "growth.crRingGap", label: "Ring gap", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0.05, max: 3, value: 0.4, step: 0.01,
   });
   ps.register({
     id: "growth.seedSrc", label: "Seed src", group: "growth",
