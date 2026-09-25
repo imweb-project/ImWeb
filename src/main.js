@@ -70,7 +70,7 @@ import { MovieCues, CUE_SLOTS } from "./inputs/MovieCues.js";
 import { CueBank } from "./core/CueBank.js";
 import { MappingAutosave } from "./state/MappingAutosave.js";
 import { StillsAutosave } from "./state/StillsAutosave.js";
-import { saveModelFiles, loadModelFiles, MODEL_FILE, initModelStore, hasStoredModel, saveImageFile, loadImageFile } from "./state/ModelStore.js";
+import { saveModelFiles, loadModelFiles, MODEL_FILE, initModelStore, hasStoredModel, saveImageFile, loadImageFile, getModelSpeed } from "./state/ModelStore.js";
 import { ProjMapMesh } from "./inputs/ProjMapMesh.js";
 
 /**
@@ -1007,6 +1007,14 @@ async function main() {
     _modelSlotsUI.refreshImages?.();
   }
 
+  // A model file imported again plays at the speed kept for it (ModelStore).
+  // Import paths only — a recalled state carries its own speed.
+  // i: 0 = M1, 1–3 = M2–M4.
+  const _applyKeptSpeed = (i, name) => {
+    const v = getModelSpeed(name);
+    if (v != null) ps.set(i === 0 ? 'scene3d.anim.speed' : `${SLOT_PREFIXES[i - 1]}.animSpeed`, v);
+  };
+
   // Put each extra model slot back as a recalled state had it. A state saved
   // before slots existed has no list: leave the slots alone rather than
   // clearing models the user loaded since. null = that slot was empty.
@@ -1575,6 +1583,7 @@ async function main() {
       try {
         await modelSlots.load(i, main, files);
         saveModelFiles(main.name, files);
+        _applyKeptSpeed(i + 1, main.name);
         ps.set("scene3d.active", 1);
       } catch (err) {
         console.error(`[3D] Model ${i + 2} failed to load:`, err);
@@ -1772,6 +1781,7 @@ async function main() {
       const { name, files } = e.detail ?? {};
       if (name) presetMgr.setMediaRef('scene3d', name);
       if (name && files) saveModelFiles(name, files);
+      if (name) _applyKeptSpeed(0, name);
       if (ps.get("layer.fg").value === 0) ps.set("layer.fg", 5);
       ps.set("scene3d.active", 1);
       ps.set("scene3d.anim.active", 1);
@@ -5797,6 +5807,7 @@ async function main() {
         try {
           await modelSlots.load(i, file, files);
           saveModelFiles(file.name, files);
+          _applyKeptSpeed(i + 1, file.name);
           ps.set("scene3d.active", 1);
           _modelSlotsUI.refresh();
           console.info(`[3D] Model ${i + 2}: ${file.name}`);
@@ -5807,6 +5818,7 @@ async function main() {
         try {
           await scene3d.loadModel(file, ps, files);
           saveModelFiles(file.name, files);
+          _applyKeptSpeed(0, file.name);
           // Auto-activate 3D: if FG is not already a useful source, route it to 3D
           if (ps.get("layer.fg").value === 3 /* Color */) ps.set("layer.fg", 5); // 5 = 3D scene
           ps.set("scene3d.active", 1);

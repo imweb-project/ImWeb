@@ -9,6 +9,14 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Keep a speed per model file.** A line under Anim Speed (M1, M2–M4):
+  *Keep* remembers the current speed for that file, and importing it again —
+  button or drop, any slot — plays it at that speed; ✕ forgets. Saved only
+  by pressing Keep (a controller on Anim Speed must not rewrite it), applied
+  only on import (a recalled state carries its own speed). localStorage
+  `imweb.modelSpeed`, per origin. Verified in the app: keep 0.30 for
+  Haraldur6 in M2, set 1.00, re-import → 0.30; ✕ forgets.
+
 - **M1 can follow too — and a closed loop is a round.** M1 gets Follow /
   Offset / Delay (scene3d.anim.follow / .offset / .delay); its own Advance
   waits while it follows. A follow loop with a Delay in it is a round: one

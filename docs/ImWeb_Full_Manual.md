@@ -573,7 +573,11 @@ flagged in red. It follows the model's own UVs, the right way up for its
 format (glTF unflipped, COLLADA / OBJ / STL flipped). For a
 model with animations: **Play**, **Clip** (a number; the clip's name and
 length are shown under it), **Anim Speed**, and **Anim Start / Anim End** —
-play and loop only that part of the clip, in % of its length (M1 has the
+play and loop only that part of the clip, in % of its length. Under Anim
+Speed, **Keep** remembers the current speed for that model FILE: import the
+file again and it plays at that speed (a baked clip can run at the wrong
+rate — Haraldur6 is natural at about 0.3). ✕ forgets it. A recalled state
+keeps its own speed (M1 has the
 same pair beside its animation controls). **Segment** — the takes the
 clip is spliced from. A baked Poser animation is short takes joined by hard
 cuts (one frame where the whole pose jumps), and each take between two cuts is

@@ -5702,3 +5702,9 @@ body.midi-map-mode .param-row:hover {
 .model-slot-tab.active { border-color: var(--accent); color: var(--accent); }
 .model-slot-btns { display: flex; gap: 6px; padding: 2px 10px 6px; }
 .model-slot-btns .import-btn { padding: 3px 8px; font-size: 10px; }
+
+/* Kept-speed line under a model's Anim Speed (UI.js makeSpeedMemo). Layout in
+   CSS, not inline: the slot panel shows / hides its anim rows with
+   style.display = '', which would wipe an inline flex. */
+.model-speed-memo { display: flex; align-items: center; gap: 6px; margin: 0 0 4px; }
+.model-speed-memo > span { flex: 1; }

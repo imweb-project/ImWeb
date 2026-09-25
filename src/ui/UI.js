@@ -18,6 +18,7 @@ import { openCtrlPopover as _openCtrlPopover } from './components/CtrlPopover.js
 import { buildParamRow } from './components/ParamRow.js';
 import { clipSegments } from '../scene3d/ClipSegments.js';
 import { createClipStrip } from './components/ClipStrip.js';
+import { getModelSpeed, setModelSpeed } from '../state/ModelStore.js';
 import { openGuide } from './Guide.js';
 import { setViewportPos } from './layout/LayoutManager.js';
 const DEFAULT_FX_ORDER_SP = DEFAULT_FX_ORDER;
@@ -1445,6 +1446,40 @@ export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear
     return { el, refresh };
   };
   const refreshPickers = () => pickers.forEach(r => r());
+  // Kept speed: a line under Anim Speed — the speed this model FILE loads at
+  // when imported again (ModelStore.getModelSpeed). Saved only by pressing
+  // Keep: a controller on Anim Speed must not rewrite it every frame.
+  // i: 0 = M1, 1–3 = M2–M4.
+  const speedMemos = [];
+  const makeSpeedMemo = (i, speedId) => {
+    const el = document.createElement('div');
+    el.className = 'model-speed-memo import-note';
+    const txt = document.createElement('span');
+    const keep = document.createElement('button');
+    keep.className = 'import-btn';
+    const forget = document.createElement('button');
+    forget.className = 'import-btn';
+    forget.textContent = '✕';
+    forget.title = 'Forget the kept speed for this model file';
+    const name = () => (i === 0 ? slots.sm.importedModelName : slots.names()[i - 1])?.split('/').pop() ?? null;
+    keep.addEventListener('click', () => { const n = name(); if (n) { setModelSpeed(n, +ps.get(speedId).value.toFixed(3)); refresh(); } });
+    forget.addEventListener('click', () => { const n = name(); if (n) { setModelSpeed(n, null); refresh(); } });
+    el.append(txt, keep, forget);
+    const refresh = () => {
+      const n = name();
+      el.style.display = n ? '' : 'none';     // layout lives in .model-speed-memo (style.css)
+      if (!n) return;
+      const kept = getModelSpeed(n), cur = ps.get(speedId).value;
+      txt.textContent = kept != null ? `${n} loads at ${kept.toFixed(2)}` : `No speed kept for ${n}`;
+      keep.textContent = `Keep ${cur.toFixed(2)}`;
+      keep.title = `Import ${n} at Anim Speed ${cur.toFixed(2)} from now on`;
+      keep.style.display = kept != null && Math.abs(kept - cur) < 1e-3 ? 'none' : '';
+      forget.style.display = kept != null ? '' : 'none';
+    };
+    ps.get(speedId).onChange(() => refresh());
+    speedMemos.push(refresh);
+    return el;
+  };
   {
     const m1Row = document.querySelector('#material-params [data-param-id="scene3d.mat.texsrc"]');
     if (m1Row) m1Row.after(makePicker(0, 'scene3d.mat.texsrc', 7).el);
@@ -1498,6 +1533,7 @@ export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear
     'scene3d.anim.segment', 'scene3d.anim.start', 'scene3d.anim.end', 'scene3d.anim.select',
     'scene3d.anim.len', () => slots.sm._range);
   m1Anim?.querySelector('[data-param-id="scene3d.anim.end"]')?.after(m1Seg.row);
+  m1Anim?.querySelector('[data-param-id="scene3d.anim.speed"]')?.after(makeSpeedMemo(0, 'scene3d.anim.speed'));
   wrap.appendChild(m1Body);
   let _m1ClipKey = null;
   ps.get('scene3d.geo').onChange(() => refresh());
@@ -1560,6 +1596,7 @@ export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear
       // The clip's name, under the Clip row: the row itself is a number.
       if (key === 'clip') rows.appendChild(clipLine);
       if (key === 'texsrc') rows.appendChild(makePicker(i + 1, p.id, 8).el);
+      if (key === 'animSpeed') { const m = makeSpeedMemo(i + 1, p.id); rows.appendChild(m); mine.push(m); }
       if (key === 'animEnd') {
         const seg = buildSegmentRow(ps, contextMenu, () => {
           const ci = slots.clipInfo(i, ps);
@@ -1616,6 +1653,7 @@ export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear
       m1Seg.sync();
     }
     refreshPickers();
+    speedMemos.forEach(r => r());
     const names = slots.names();
     PREFIXES.forEach((_, i) => {
       const n = names[i];

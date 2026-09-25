@@ -130,3 +130,27 @@ export async function loadImageFile(name) {
     return null;
   }
 }
+
+// ── Kept speed per model file ────────────────────────────────────────────────
+// A baked clip can run at the wrong rate for its motion (Haraldur6: natural at
+// about 0.3). The speed you keep for a file is applied when that file is
+// IMPORTED again — never on a state recall, which carries its own speed.
+// localStorage, per origin, like the other small per-browser settings.
+const SPEED_KEY = 'imweb.modelSpeed';
+const _speeds = () => { try { return JSON.parse(localStorage.getItem(SPEED_KEY)) ?? {}; } catch { return {}; } };
+const _base = name => String(name ?? '').split('/').pop();
+
+/** The kept Anim Speed for a model file, or null. */
+export function getModelSpeed(name) {
+  const v = _speeds()[_base(name)];
+  return typeof v === 'number' ? v : null;
+}
+
+/** Keep (number) or forget (null) the Anim Speed for a model file. */
+export function setModelSpeed(name, speed) {
+  try {
+    const all = _speeds();
+    if (speed == null) delete all[_base(name)]; else all[_base(name)] = speed;
+    localStorage.setItem(SPEED_KEY, JSON.stringify(all));
+  } catch { /* storage blocked: the speed just is not kept */ }
+}
