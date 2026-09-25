@@ -94,7 +94,7 @@ import { VideoDelayLine } from "./inputs/VideoDelayLine.js";
 import { RGBDelay } from "./inputs/RGBDelay.js";
 import { MotionExtract } from "./inputs/MotionExtract.js";
 import { GrowthRD } from "./inputs/GrowthRD.js";
-import { GROWTH_RES } from "./inputs/GrowthPatterns.js";
+import { GROWTH_RES, GROWTH_LOOKS } from "./inputs/GrowthPatterns.js";
 import { TimeDisplaceEngine } from "./inputs/TimeDisplaceEngine.js";
 import { VectorscopeInput } from "./inputs/VectorscopeInput.js";
 import { SlitScanBuffer } from "./inputs/SlitScanBuffer.js";
@@ -530,12 +530,43 @@ async function main() {
   // field source), so the fixpoint needs its index — by key.
   const growthRD = new GrowthRD(renderer);
   const GROWTH_IDX = SOURCE_KEYS.indexOf("growth");
-  function _growthFade() {
-    if (ps.get("growth.penFade").value) {
-      const a = Math.min(0.999, (ps.get("draw.fade")?.value ?? 0) * 0.5);
-      return { growTime: 0, fadeTime: 3, penRate: a > 0 ? -60 * Math.log(1 - a) : 0 };
+  // Fade + Lifetime → the engine's three mechanisms. ONE choice of how growth
+  // goes, one number for how long it lives — they were three overlapping
+  // systems (Lifetime/Regrow, Grow time/Fade time, Pen fade) in the panel.
+  //   Pen  — the pen's own Fade curve: DrawLayer multiplies by (1 − a) per
+  //          frame, a = min(1, fade·0.5), so per second at 60 fps the rate is
+  //          −60·ln(1 − a); a = 1 would be infinite, so it is capped.
+  //   Hold — each part grows for Lifetime, then fades over a quarter of it.
+  //   Ring — dies back from its oldest part after Lifetime (Single only;
+  //          Frost has no die-back, so it holds instead).
+  // Size (0–100) → grid + diffusion. Stripe width goes as √D × (canvas/grid),
+  // and D must stay in 0.2–1 (seeds die below, unstable above), so diffusion
+  // alone spans only √5 ≈ 2.2×. Past that the grid drops 512 → 256 — the same
+  // D then draws features twice as wide — for ~4.5× in all, continuous across
+  // the switch (512 at D 1 = 256 at D 0.25). GrowthRD resamples, not wipes.
+  // Frost keeps its own grid (Advanced) and reads Size as crystal size.
+  function _growthSize() {
+    const s = ps.get("growth.scale").value / 100;
+    if (ps.get("growth.mode").value === 2) {
+      return { res: GROWTH_RES[ps.get("growth.res").value] ?? 512, diff: s };
     }
-    return { growTime: ps.get("growth.growTime").value, fadeTime: ps.get("growth.fadeTime").value, penRate: 0 };
+    const wf = Math.pow(Math.sqrt(20), s);          // width factor 1 … 4.47
+    return wf <= Math.sqrt(5) ? { res: 512, diff: 0.2 * wf * wf }
+                              : { res: 256, diff: 0.05 * wf * wf };
+  }
+
+  function _growthFade() {
+    const style = ps.get("growth.fadeStyle").value;
+    const lt = ps.get("growth.lifetime").value;
+    const off = { growTime: 0, fadeTime: 3, penRate: 0, life: 0 };
+    if (style === 1) {
+      const a = Math.min(0.999, (ps.get("draw.fade")?.value ?? 0) * 0.5);
+      return { ...off, penRate: a > 0 ? -60 * Math.log(1 - a) : 0 };
+    }
+    const hold = { ...off, growTime: lt, fadeTime: Math.max(0.5, lt * 0.25) };
+    if (style === 2) return hold;
+    if (style === 3) return ps.get("growth.mode").value === 0 ? { ...off, life: lt } : hold;
+    return off;
   }
   // Ring depth and working resolution, both reallocating (history is discarded
   // either way, so they share VideoDelayLine._realloc). Resolution is the lever
@@ -1380,6 +1411,29 @@ async function main() {
   const contextMenu = new ContextMenu(ps, ctrl, presetMgr, tableManager);
   buildLayerButtons(ps, contextMenu);
   buildMappingPanels(ps, contextMenu);
+
+  // Growth Advanced shows only the controls of the engine in use — Frost's
+  // Fold/Heat mean nothing in Single, and showing all 30 at once was the
+  // confusion the owner reported. Rows stay built (mappings, badges); only
+  // their visibility follows growth.mode.
+  {
+    const ENGINE_ONLY = {
+      0: ["patternA", "patternB", "zones", "feed", "kill", "rest"],
+      1: ["msStep", "msFine", "msCoarse", "msBias"],
+      2: ["crFold", "crAniso", "crAngle", "crHeat", "crNoise", "crRingGap", "res"],
+    };
+    const showFor = () => {
+      const mode = Math.round(ps.get("growth.mode").value);
+      for (const [m, ids] of Object.entries(ENGINE_ONLY)) {
+        for (const id of ids) {
+          const row = document.querySelector(`#growth-adv-params [data-param-id="growth.${id}"]`);
+          if (row) row.style.display = Number(m) === mode ? "" : "none";
+        }
+      }
+    };
+    ps.get("growth.mode").onChange(showFor);
+    showFor();
+  }
 
   // ── Audio engine ──────────────────────────────────────────────────────────
   // Started by the audio.enable TRIGGER, never on load: an AudioContext created
@@ -6229,6 +6283,23 @@ async function main() {
   // Draw layer triggers
   ps.get("draw.clear").onTrigger(() => drawLayer.clear());
   ps.get("growth.clear").onTrigger(() => growthRD.clear());
+  // Look: write every value of the chosen look, then clear and plant one
+  // spore at the centre so the look is on screen at once. A loader — see
+  // growth.look in ParameterSystem for why it is group 'global'.
+  const applyGrowthLook = (i) => {
+    const look = GROWTH_LOOKS[Math.round(i)];
+    if (!look) return;
+    for (const [id, v] of Object.entries(look.values)) ps.set(id, v);
+    ps.set("growth.plantX", 50);
+    ps.set("growth.plantY", 50);
+    ps.trigger("growth.clear");
+    ps.trigger("growth.plant");
+  };
+  ps.get("growth.look").onChange(applyGrowthLook);
+  // Picking the Look already shown must apply it too — the app starts with
+  // "Mitosis" shown, so choosing Mitosis was no change and did nothing: a
+  // black frame, measured in the app while the same values grew in isolation.
+  ps.get("growth.look").onReselect(applyGrowthLook);
   ps.get("growth.plant").onTrigger(() => growthRD.plant(
     ps.get("growth.plantX").value / 100,
     ps.get("growth.plantY").value / 100,
@@ -10773,7 +10844,7 @@ void main() {
     // Gated on the fixpoint: routed nowhere, it neither steps nor allocates.
     if (_srcUsed(GROWTH_IDX)) {
       growthRD.render(dt, {
-        res:      GROWTH_RES[ps.get("growth.res").value] ?? 512,
+        ..._growthSize(),
         aspect:   canvas.width / Math.max(1, canvas.height),
         speed:    ps.get("growth.speed").value,
         seedTex:  _cGrowSeed  >= 0 ? _resolveCaptureTex(ps.get("growth.seedSrc").value)  : null,
@@ -10784,7 +10855,6 @@ void main() {
         patternB: ps.get("growth.patternB").value,
         feed:     ps.get("growth.feed").value / 1000,   // param is in thousandths
         kill:     ps.get("growth.kill").value / 1000,
-        diff:     ps.get("growth.scale").value,
         mode:     ps.get("growth.mode").value,
         msStep:   ps.get("growth.msStep").value,
         msFine:   ps.get("growth.msFine").value,
@@ -10794,6 +10864,8 @@ void main() {
         varSize:    ps.get("growth.varSize").value,
         varDrift:   ps.get("growth.varDrift").value,
         relief:     ps.get("growth.relief").value,
+        details:    ps.get("growth.details").value,
+        zones:      ps.get("growth.zones").value,
         lightAngle: ps.get("growth.lightAngle").value,
         gloss:      ps.get("growth.gloss").value,
         bevel:      ps.get("growth.bevel").value,
@@ -10807,9 +10879,7 @@ void main() {
         crAngle:  ps.get("growth.crAngle").value,
         crHeat:   ps.get("growth.crHeat").value,
         crNoise:  ps.get("growth.crNoise").value,
-        crRings:  ps.get("growth.crRings").value,
         crRingGap: ps.get("growth.crRingGap").value,
-        life:     ps.get("growth.life").value,
         rest:     ps.get("growth.rest").value,
         hue:      ps.get("growth.hue").value,
         sat:      ps.get("growth.sat").value / 100,

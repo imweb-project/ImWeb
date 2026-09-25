@@ -79,6 +79,7 @@ export class GrowthRD {
       uPoint:    { value: new THREE.Vector3(0.5, 0.5, 0) },
       uDiff:     { value: 1 },
       uVar:      { value: 0 },
+      uZones:    { value: 0 },
       uVarP:     { value: new THREE.Vector3(3, 0, 1) },
       uAgeDt:    { value: 0 },
       uLife:     { value: 0 },
@@ -105,6 +106,8 @@ export class GrowthRD {
       uBevel:    { value: 2 },
       uRings:    { value: 0 },
       uRingGap:  { value: 0.5 },
+      uLines:    { value: 0 },
+      uFill:     { value: 1 },
     });
     this._initMat = mat(GROWTH_RD_INIT, { uInit: { value: new THREE.Vector4(1, 0, 0, 1) } });
 
@@ -131,11 +134,11 @@ export class GrowthRD {
     // Crystal: aux pass (ε terms) + step. Aux target allocated on first use.
     this._crAuxMat = mat(GROWTH_CR_AUX, {
       uState: { value: null }, uTexel: { value: new THREE.Vector2(1, 1) },
-      uAniso: { value: 0.04 }, uFold: { value: 6 }, uAngle: { value: 0 },
+      uAniso: { value: 0.04 }, uFold: { value: 6 }, uAngle: { value: 0 }, uDX: { value: 0.03 },
     });
     this._crMat = mat(GROWTH_CR_STEP, {
       uState: { value: null }, uAux: { value: null }, uTexel: { value: new THREE.Vector2(1, 1) },
-      uHeat: { value: 1.6 }, uNoise: { value: 0.01 }, uSeedRand: { value: 0 },
+      uHeat: { value: 1.6 }, uNoise: { value: 0.01 }, uSeedRand: { value: 0 }, uDX: { value: 0.03 },
       uSeed: { value: null }, uSeedAmt: { value: 0 }, uSeedPrev: { value: null },
       uPoint: { value: new THREE.Vector3(0.5, 0.5, 0) },
       uNow: { value: 0 }, uAgeDt: { value: 0 },
@@ -190,15 +193,29 @@ export class GrowthRD {
     if (this._state && w === this._w && h === this._h) return;
     this._w = w;
     this._h = h;
+    if (this._pyr) this._sizePyramid();
+    if (this._aux) this._aux.setSize(w, h);
     if (!this._state) {
       this._state = [this._makeTarget(true), this._makeTarget(true)];
       this._view  = this._makeTarget(false);
-    } else {
-      for (const t of [...this._state, this._view]) t.setSize(w, h);
+      this._needsInit = true;
+      return;
     }
-    if (this._pyr) this._sizePyramid();
-    if (this._aux) this._aux.setSize(w, h);
-    this._needsInit = true;   // a resized grid holds no meaningful state
+    // RESAMPLE, don't wipe: Size crosses between the 512 and 256 grids live,
+    // and wiping the colony at the crossing would make Size unplayable. The
+    // old state is copied into the new grid (nearest, float — values, ages
+    // and lineage stamps carry over); the pattern then re-settles at the new
+    // scale, which reads as the growth swelling or tightening.
+    const old = this._state;
+    this._state = [this._makeTarget(true), this._makeTarget(true)];
+    const prev = this.renderer.getRenderTarget();
+    this._copyMat.uniforms.uTexture.value = old[this._cur].texture;
+    this._blit(this._copyMat, this._state[0]);
+    this._blit(this._copyMat, this._state[1]);
+    this.renderer.setRenderTarget(prev);
+    for (const t of old) t.dispose();
+    this._cur = 0;
+    this._view.setSize(w, h);
   }
 
   // HalfFloat + Linear: the pyramid is SAMPLED between texels (that is the
@@ -284,6 +301,7 @@ export class GrowthRD {
     u.uFkB.value.set(B.f, B.k);
     u.uFkOff.value.set(o.feed, o.kill);
     u.uDiff.value = o.diff ?? 1;
+    u.uZones.value = (o.zones ?? 0) / 100;
     // The frame's real time is shared across its steps, so age is in real
     // seconds whatever Speed is — and a paused colony (no steps) stops ageing.
     u.uAgeDt.value = n > 0 ? step / n : 0;
@@ -343,8 +361,13 @@ export class GrowthRD {
     v.uGrowTime.value = o.growTime ?? 0;
     v.uFadeTime.value = o.fadeTime ?? 3;
     v.uPenRate.value  = o.penRate ?? 0;
-    v.uRings.value    = (o.crRings ?? 0) / 100;
+    // Details: first half = line strength (outlines; Frost rings), second
+    // half = the fill fading until only line art remains.
+    const det = (o.details ?? 0) / 100;
+    v.uRings.value    = Math.min(1, det * 2);
     v.uRingGap.value  = Math.max(0.05, o.crRingGap ?? 0.5);
+    v.uLines.value    = Math.min(1, det * 2);
+    v.uFill.value     = 1 - Math.max(0, det * 2 - 1);
     // Relief 0–100 → normal depth 0–24 against a per-texel gradient (a
     // full-range rise over 2 texels then tilts the normal ~85°). Light: azimuth from Light angle (0° = from
     // the right, 90° = from above, screen y up), fixed 40° elevation.
@@ -372,6 +395,13 @@ export class GrowthRD {
     a.uAniso.value = o.crAniso ?? 0.04;
     a.uFold.value  = o.crFold ?? 6;
     a.uAngle.value = ((o.crAngle ?? 0) * Math.PI) / 180;
+    // Size in Frost = grid spacing: features are ~1/DX pixels, so a bigger
+    // Size (o.diff, 0–1 here) is a smaller DX — 0.045 at 0 down to the 0.02
+    // floor near 1, below which the heat equation's explicit step
+    // (dt 1e-4 / dx²) goes unstable.
+    const dx = Math.min(0.05, Math.max(0.02, 0.045 * Math.pow(0.5, 1.2 * (o.diff ?? 0.37))));
+    a.uDX.value = dx;
+    this._crMat.uniforms.uDX.value = dx;
     u.uTexel.value.set(1 / this._w, 1 / this._h);
     u.uAux.value      = this._aux.texture;
     u.uSeedPrev.value = this._seedPrevTex();

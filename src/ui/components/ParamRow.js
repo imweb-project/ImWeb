@@ -340,6 +340,7 @@ export function buildParamRow(param, contextMenu) {
                    : opt.length <= 6   ? opt : opt.slice(0, 4);
         btn.textContent = abbr;
         btn.addEventListener('click', () => {
+          if (param.reselect && i === param.value) param.fireReselect();
           param.value = i;
           btns.forEach((b, j) => b.classList.toggle('active', j === param.value));
           updateDisplay();
@@ -383,7 +384,10 @@ export function buildParamRow(param, contextMenu) {
       // Custom dark dropdown for large option sets
       // Source dropdowns (mix*.srcA/srcB, td.captureSource) get the taxonomy
       // display order; identity check keeps every other SELECT untouched.
-      const sel = _mkSelect(opts, param.value, i => { param.value = i; updateDisplay(); }, 'param-select',
+      const sel = _mkSelect(opts, param.value, i => {
+        if (param.reselect && i === param.value) param.fireReselect();
+        param.value = i; updateDisplay();
+      }, 'param-select',
         param.displayOrder ?? (opts === SOURCES ? SOURCE_DISPLAY_ORDER : null), param.optionHelp);
       binding.sync(() => { sel.value = param.value; });
       valueEl.appendChild(sel);

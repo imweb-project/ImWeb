@@ -9,6 +9,54 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Growth: Size spans ~5×, and Variation shows at any Size.** Owner: "make
+  the size vary in the same canvas … make the scale a bit wider". Diffusion
+  can only move within 0.2–1 (seeds die below, unstable above), so Size as
+  diffusion gave 2× in stripe width and Variation, which only widened, had no
+  room near the top of Size. Now Size (0–100) picks the grid too — 512, then
+  256 past the middle, continuous across the switch (512 at D 1 = 256 at
+  D 0.25) — and a grid change RESAMPLES the colony (nearest copy of the float
+  state, ages and stamps included) instead of wiping it. Variation swings
+  diffusion ±2.3 octaves clamped to the living band. Measured (stripe width,
+  px of a 1024 canvas): Size 0/50/100 → 10/24/48; Variation 100 at Size 50
+  spreads 10–38 px across one canvas; a colony crossing 512 → 256 went 6.6% →
+  8% alive → 34% and kept growing. Frost reads Size as grid spacing
+  (0.045 · 0.5^(1.2·s), floor 0.02). Look values converted to the new scale.
+- **Growth: Looks and a live set — the panel rebuilt around what you play.**
+  45 controls, most irrelevant to the mode on screen, and settings that
+  silently broke a named look (Feed +5.8 and a Lifetime turned "Mitosis"
+  into static dots with a dead centre) — the owner's verdict: confusing and
+  apparently broken. Now:
+  - **Look** (Mitosis · Lichen · Coral · Snowflake) writes every value that
+    shapes the result, clears and plants. A loader, group 'global' like
+    glsl.preset, so Display States capture the real values. Re-picking the
+    Look already shown re-applies it — new `reselect` flag on SELECT params,
+    UI-only so a MIDI knob repeating one index cannot reset it; without it
+    the app started on "Mitosis", choosing Mitosis changed nothing, and the
+    frame stayed black.
+  - Each Look verified in the built app: Mitosis needed Kill −2 to divide
+    from a spore at all (1 → 68 → 237 cells in 15 s; 7 other settings grew
+    nothing); Snowflake needed 512 / Size 0.25 / Heat 2.0 to stay inside
+    the frame (every 256 setting reached the edges by 12 s).
+  - **Live set:** Look · Speed · Size · Variation · Fade · Lifetime ·
+    Details · Colour · Plant · Clear. **Advanced** (collapsed) shows only
+    the current engine's controls.
+  - **Fade** (Off · Pen · Hold · Ring) + **Lifetime** replace Lifetime /
+    Grow time / Fade time / Pen fade. **Details** replaces Lines and Rings:
+    first half 1-px outlines (Frost: growth rings), second half fades the
+    fill to pure line art. **Zones** (Advanced) blends Pattern A → B from the
+    built-in drifting field, so Lichen does not depend on the Noise source's
+    setup. **Size** also sets Frost's grid spacing (crystal size).
+  - Removed params: growth.life, growTime, fadeTime, penFade, lines,
+    crRings (unknown ids in saved data are skipped).
+- **Growth: Lines — the growth as 1-px line art.** View only, every mode:
+  the ½ contour of the raw surface Relief lights, one grid texel wide at
+  any slope (height distance ÷ gradient per texel), faded on flat ground;
+  Frost's rings join in; background = Ground. Measured lit runs 1.9–2.2
+  texels (Single, Nested), 3.7 (Frost, rings beside the outline). A Line
+  levels control (several contours) was built, measured and removed: these
+  fields are steep cliffs, so extra contours merged into a fill (runs of
+  6–8 texels) or, kept apart, faded to nearly nothing.
 - **Growth: Frost growth rings — thin inner lines that drift.** Rings /
   Ring gap. View only: a line wherever a solid cell's time-as-solid (the
   age channel, real seconds) crosses a multiple of Ring gap — where the

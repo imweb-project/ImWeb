@@ -92,8 +92,8 @@ const GROWTH_VAR_GLSL = /* glsl */ `
     return mix(mix(gvHash(i), gvHash(i + vec2(1.0, 0.0)), u.x),
                mix(gvHash(i + vec2(0.0, 1.0)), gvHash(i + vec2(1.0, 1.0)), u.x), u.y);
   }
-  float growthVar(vec2 uv) {
-    if (uVar <= 0.0) return 0.0;
+  // The raw field, −1…1, whatever uVar is — Zones reads it too.
+  float gvField(vec2 uv) {
     vec2 p = vec2(uv.x * uVarP.z, uv.y) * uVarP.x;
     float t = uVarP.y;
     float n = 0.57 * gvNoise(p + vec2(t, 0.37 * t))
@@ -102,6 +102,7 @@ const GROWTH_VAR_GLSL = /* glsl */ `
     // Summed value noise huddles round 0.5; ×3 spreads it to use the range.
     return clamp((n - 0.5) * 3.0, -1.0, 1.0);
   }
+  float growthVar(vec2 uv) { return uVar > 0.0 ? gvField(uv) : 0.0; }
 `;
 
 // ── Growth: Gray-Scott reaction-diffusion ─────────────────────────────────────
@@ -135,6 +136,7 @@ ${GROWTH_VAR_GLSL}
   uniform float     uGrowTime;  // seconds a colony grows from its planting; 0 = forever
   uniform float     uFadeTime;  // seconds it then takes to fade and clear
   uniform float     uPenRate;   // Pen fade: decay per second (0 = off) — the pen's own curve
+  uniform float     uZones;     // 0–1: Pattern A → B by region, from the built-in field
 
   varying vec2 vUv;
 
@@ -151,6 +153,9 @@ ${GROWTH_VAR_GLSL}
       vec3 fc = texture2D(uField, vUv).rgb;
       m = clamp(dot(fc, vec3(0.299, 0.587, 0.114)) * uFieldAmt, 0.0, 1.0);
     }
+    // Zones: the same drifting field Variation uses, another slice of it
+    // (offset), so the patchwork does not depend on the Noise source's setup.
+    if (uZones > 0.0) m = max(m, uZones * smoothstep(-0.25, 0.25, gvField(vUv + vec2(17.3, 5.1))));
     vec2 fk = mix(uFkA, uFkB, m) + uFkOff;
     float f = max(fk.x, 0.0);
     float k = max(fk.y, 0.0);
@@ -210,12 +215,14 @@ ${GROWTH_VAR_GLSL}
 
     float a = c.r, b = c.g;
     float r = a * b * b;
-    // Variation: diffusion raised by up to 1.5 octaves by region — stripe
-    // width goes as √D, so ×1 … ×1.7. UP only: measured with 5 px seeds,
-    // coral dies below D ≈ 0.2 and maze below 0.15, while both grow on to
-    // 0.6 — a ±swing killed seeds and left islands no front could enter.
-    // Capped at 1, the 9-point stability limit.
-    float D = min(uDiff * exp2(1.5 * uVar * (0.5 + 0.5 * growthVar(vUv))), 1.0);
+    // Variation: diffusion swung ±2.3 octaves by region, CLAMPED to the band
+    // where patterns live — 0.2 (measured: coral dies below it, maze below
+    // 0.15) to 1 (the 9-point stability limit). Stripe width goes as √D, so
+    // up to ~2.2× across one canvas at ANY Size. The first version only
+    // widened from Size, so near the top of Size there was no room and the
+    // canvas stayed uniform (owner's screenshot); an unclamped ± swing
+    // killed seeds and left islands.
+    float D = clamp(uDiff * exp2(2.3 * uVar * growthVar(vUv)), 0.2, 1.0);
     a += D * lap.r - r + f * (1.0 - a);
     b += 0.5 * D * lap.g + r - (f + k) * b;
 
@@ -297,6 +304,8 @@ export const GROWTH_RD_VIEW = /* glsl */ `
   uniform float uPenRate;   // Pen fade (see GROWTH_RD_STEP)
   uniform float uRings;     // Frost: growth-ring strength, 0 = off
   uniform float uRingGap;   // Frost: seconds of growth between rings
+  uniform float uLines;     // Details, first half: strength of the 1-px lines
+  uniform float uFill;      // Details, second half: 1 = full fill … 0 = pure line art
   uniform float uRelief;    // 0 = flat; height-map depth
   uniform vec3  uLight;     // unit vector toward the light (z = out of screen)
   uniform float uGloss;     // 0–1 specular
@@ -357,6 +366,8 @@ export const GROWTH_RD_VIEW = /* glsl */ `
     val = uGround + (1.0 - uGround) * val;
     vec3 col = hsv2rgb(vec3(fract(hue), uSat, val));
 
+    float ringLine = 0.0;   // Frost ring coverage, reused by the Lines view
+
     // ── Frost growth rings ──────────────────────────────────────────────────
     // b holds how long each solid cell has been solid, so a line wherever it
     // crosses a multiple of Ring gap is a growth ring: where the front stood
@@ -374,6 +385,7 @@ export const GROWTH_RD_VIEW = /* glsl */ `
       // plateau) the ring would smear into a band: fade it out there.
       line *= smoothstep(0.004, 0.02, grad);
       col = mix(col, col * 0.35, line * uRings);
+      ringLine = line * uRings;
     }
 
     // ── Relief: the surface lit ─────────────────────────────────────────────
@@ -406,6 +418,30 @@ export const GROWTH_RD_VIEW = /* glsl */ `
       col = col * shade * cav + vec3(spec) * (0.25 + 0.75 * v);
     }
 
+    // ── Details: 1-px lines over the growth, then line art alone ────────────
+    // The outline — the ½ contour of the same raw surface Relief lights —
+    // kept one grid texel wide at any slope, as the rings are: height
+    // distance to the contour ÷ the height gradient per texel. Flat ground
+    // has no gradient and no contour, so it is faded out there rather than
+    // smeared. Frost's rings join the lines. One knob: the first half draws
+    // the lines over the growth, the second fades the fill away until only
+    // the line art is left, on the Ground colour.
+    // One contour, not several: a Levels control was built and measured —
+    // these fields are steep cliffs, so extra contours either merged into a
+    // fill or, spaced apart, were faded to nearly nothing. A dead control.
+    if (uLines > 0.0) {
+      float hc = surf(vUv);
+      float gx = surf(vUv + vec2(uTexel.x, 0.0)) - surf(vUv - vec2(uTexel.x, 0.0));
+      float gy = surf(vUv + vec2(0.0, uTexel.y)) - surf(vUv - vec2(0.0, uTexel.y));
+      float gr = 0.5 * length(vec2(gx, gy));                           // height per texel
+      float ln = (1.0 - smoothstep(0.5, 1.5, abs(hc - 0.5) / max(gr, 1e-4))) * smoothstep(0.002, 0.01, gr);
+      ln = max(ln, ringLine);
+      vec3 ink  = hsv2rgb(vec3(fract(hue), uSat * 0.5, 1.0));
+      vec3 over = mix(col, ink, ln * uLines);
+      vec3 art  = mix(hsv2rgb(vec3(fract(hue), uSat, uGround)), ink, ln);
+      col = mix(art, over, uFill);
+    }
+
     // A colony past its Grow time fades out over Fade time (lineage in alpha;
     // multi-scale has none, and writes 1 there).
     if (uGrowTime > 0.0 && uMode != 1.0 && st.a > 0.0) {
@@ -435,8 +471,10 @@ export const GROWTH_CR_AUX = /* glsl */ `
   uniform float     uAniso;     // δ
   uniform float     uFold;      // j
   uniform float     uAngle;     // θ0, radians
+  uniform float     uDX;        // grid spacing — Size: smaller = bigger crystal in pixels
   varying vec2 vUv;
-  const float DX = 0.03, EB = 0.01;
+  #define DX uDX
+  const float EB = 0.01;
   void main() {
     float pxp = texture2D(uState, vUv + vec2(uTexel.x, 0.0)).r;
     float pxm = texture2D(uState, vUv - vec2(uTexel.x, 0.0)).r;
@@ -470,8 +508,10 @@ ${GROWTH_VAR_GLSL}
   uniform float     uAgeDt;
   uniform sampler2D uField;
   uniform float     uFieldAmt;  // field lowers the melt's temperature locally
+  uniform float     uDX;        // grid spacing (see GROWTH_CR_AUX)
   varying vec2 vUv;
-  const float DX = 0.03, DT = 1e-4, TAU = 3e-4, ALPHA = 0.9, GAMMA = 10.0, TEQ = 1.0;
+  #define DX uDX
+  const float DT = 1e-4, TAU = 3e-4, ALPHA = 0.9, GAMMA = 10.0, TEQ = 1.0;
   const float PI = 3.14159265;
 
   float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7)) + uSeedRand) * 43758.5453); }

@@ -153,6 +153,14 @@ export function buildLayerButtons(ps, contextMenu) {
 
 // ── Populate mapping panels ───────────────────────────────────────────────────
 
+// Growth's live set, in panel order — what a performer reaches for. The rest
+// of group 'growth' goes to the collapsed Advanced subsection.
+const GROWTH_LIVE = [
+  'growth.look', 'growth.speed', 'growth.scale', 'growth.variation',
+  'growth.fadeStyle', 'growth.lifetime', 'growth.details', 'growth.hue',
+  'growth.plant', 'growth.clear',
+];
+
 export function buildMappingPanels(ps, contextMenu) {
   /**
    * Named params in a stated order, for panels split out of one group.
@@ -332,7 +340,7 @@ export function buildMappingPanels(ps, contextMenu) {
                              .concat(['projmap.edit','projmap.grid','projmap.meshSlot','projmap.meshStore','projmap.meshAllHandles','projmap.meshHandlesClear']
                                .map(id => ps.get(id)).filter(Boolean)),
     'global-params':       ps.getGroup('global').filter(p =>
-      p.id !== 'glsl.preset' && p.id !== 'displace.warpSlot' &&
+      p.id !== 'glsl.preset' && p.id !== 'displace.warpSlot' && p.id !== 'growth.look' &&
       // Segment rows live in each model's animation block (buildSegmentRow).
       !/^(scene3d\.anim\.segment|model[234]\.animSegment)$/.test(p.id) &&
       p.id !== 'noise.recipe' &&
@@ -391,7 +399,10 @@ export function buildMappingPanels(ps, contextMenu) {
     'delay-params':        ps.getGroup('delay'),
     'rgbdelay-params':     ps.getGroup('rgbdelay'),
     'motion-params':       ps.getGroup('motion'),
-    'growth-params':       ps.getGroup('growth'),
+    // Growth: the live set first (Look is group 'global' — a loader, see
+    // ParameterSystem — so it is appended by id), everything else Advanced.
+    'growth-params':       GROWTH_LIVE.map(id => ps.get(id)).filter(Boolean),
+    'growth-adv-params':   ps.getGroup('growth').filter(p => !GROWTH_LIVE.includes(p.id)),
     'tdisp-params':        ps.getGroup('td'),
     'vectorscope-params':  ps.getGroup('vectorscope'),
     'slitscan-params':     ps.getGroup('slitscan'),

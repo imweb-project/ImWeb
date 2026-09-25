@@ -24,7 +24,7 @@ import { isPagedBinding } from './controlInput.js';
 // Same rule, same reason: a SELECT stores an INDEX, so the axis menus must be
 // built from the one list the index itself reads, never retyped beside it.
 import { DESCRIPTOR_LABELS } from '../audio/corpus-index.js';
-import { GROWTH_PATTERNS, GROWTH_RES, GROWTH_MODES } from '../inputs/GrowthPatterns.js';
+import { GROWTH_PATTERNS, GROWTH_RES, GROWTH_MODES, GROWTH_LOOKS } from '../inputs/GrowthPatterns.js';
 
 /**
  * How the performer is listening (§8.6). ONE list, read twice: the labels are
@@ -313,6 +313,14 @@ export class Parameter {
      */
     this.setup = config.setup ?? false;
     this.select = config.select ?? false; // force native <select> dropdown regardless of option count
+    // SELECT only: picking the option that is ALREADY selected, in the panel,
+    // fires onReselect. For loaders (growth.look), where choosing the current
+    // entry must re-apply it. Deliberately UI-only: a MIDI knob sends the same
+    // index many times while turning within one option, and re-applying on
+    // each would reset the thing over and over — controllers still reach
+    // onChange on a real change only.
+    this.reselect = config.reselect ?? false;
+    this._reselectListeners = new Set();
     this.invert = false;
     this.cycle = false; // for SELECT: cycle on trigger
     this.slew = 0; // 0=instant, 0.001–1.0 seconds (lag time)
@@ -694,6 +702,13 @@ export class Parameter {
     this._triggerListeners.add(fn);
     return () => this._triggerListeners.delete(fn);
   }
+
+  /** SELECT with `reselect: true` — the current option picked again in the panel. */
+  onReselect(fn) {
+    this._reselectListeners.add(fn);
+    return () => this._reselectListeners.delete(fn);
+  }
+  fireReselect() { this._reselectListeners.forEach((fn) => fn(this._value, this)); }
 
   /** Fire onChange listeners immediately (e.g. after badge assignment). */
   notify() {
@@ -6851,8 +6866,40 @@ export function registerCoreParameters(ps) {
     id: "growth.mode", label: "GrowMode", group: "growth",
     type: PARAM_TYPE.SELECT, options: GROWTH_MODES, value: 0,
   });
+  // ── The live set ────────────────────────────────────────────────────────────
+  // Look: a LOADER, not a state. Choosing one writes every underlying value
+  // for that look (engine, pattern, size, relief, colour …), clears and plants,
+  // so a name always gives its look. Group 'global' so Display States capture
+  // the real values rather than an index that would re-apply over them on
+  // recall — the glsl.preset pattern. APPEND-ONLY: GROWTH_LOOKS in main.js.
   ps.register({
-    id: "growth.speed", label: "GrowSpeed", group: "growth",
+    id: "growth.look", label: "Look", group: "global",
+    // A dropdown, not the ≤8-option button group, which abbreviates labels
+    // ("Mito", "Snow").
+    type: PARAM_TYPE.SELECT, options: GROWTH_LOOKS.map((l) => l.name), value: 0, select: true,
+    reselect: true,   // choosing the Look already shown re-applies it
+  });
+  // Fade: HOW growth goes. Off · Pen (the pen's own Fade curve, from when each
+  // part was drawn) · Hold (grows for Lifetime, then fades) · Ring (dies back
+  // from its oldest part after Lifetime; Single only — Frost treats it as
+  // Hold). APPEND-ONLY. Replaces Lifetime/Grow time/Fade time/Pen fade.
+  ps.register({
+    id: "growth.fadeStyle", label: "Fade", group: "growth",
+    type: PARAM_TYPE.SELECT, options: ["Off", "Pen", "Hold", "Ring"], value: 0,
+  });
+  // Lifetime: how long each part lives before Fade takes it (Hold, Ring).
+  ps.register({
+    id: "growth.lifetime", label: "Lifetime", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 1, max: 120, value: 12, step: 0.1,
+  });
+  // Details: fine 1-px inner lines — outlines in Single/Nested, growth rings
+  // in Frost. 0 = none.
+  ps.register({
+    id: "growth.details", label: "Details", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 100, value: 0, step: 1,
+  });
+  ps.register({
+    id: "growth.speed", label: "Speed", group: "growth",
     type: PARAM_TYPE.CONTINUOUS, min: 0, max: 40, value: 16, step: 1,
   });
   ps.register({
@@ -6866,6 +6913,13 @@ export function registerCoreParameters(ps) {
   // The field blends Pattern A → B per pixel by its luminance — one colony,
   // several textures, boundaries drifting with the field. 0 = A everywhere,
   // and the field source is then not read (nor kept alive) at all.
+  // Zones: blends Pattern A → B by region using the built-in drifting noise
+  // (the Variation field, another slice of it) — lichen's patchwork without
+  // depending on how the Noise source happens to be set up. Single only.
+  ps.register({
+    id: "growth.zones", label: "Zones", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 100, value: 0, step: 1,
+  });
   ps.register({
     id: "growth.fieldSrc", label: "Field src", group: "growth",
     type: PARAM_TYPE.SELECT, options: CAPTURE_SOURCES,
@@ -6888,24 +6942,18 @@ export function registerCoreParameters(ps) {
     id: "growth.kill", label: "Kill ±", group: "growth",
     type: PARAM_TYPE.CONTINUOUS, min: -5, max: 5, value: 0, step: 0.1,
   });
-  // Diffusion rate (Da; Db is half). The pattern's features are ~√(D/f) texels
-  // across, so this is a continuous SIZE knob that needs no grid change. It is
-  // also a survival knob: a seed has to be large against that length, so at
-  // high Scale a thin stroke or a small spore can die out before it takes.
-  // 0.21 is the classic lattice value, where every built-in pattern takes from
-  // a drawn line. Max 1: past that the 9-point Laplacian at Δt 1 goes unstable.
+  // Size 0–100: how large the pattern's features are, over ~4.5× in stripe
+  // width. Single/Nested: main.js turns it into a grid (512, then 256 past the
+  // middle) and a diffusion inside the band where patterns live (0.2–1; width
+  // goes as √D), continuous across the switch, which resamples rather than
+  // wipes. Frost: the grid spacing (crystal size). Diffusion alone gave only
+  // 2× — it cannot leave that band.
   ps.register({
-    id: "growth.scale", label: "GrowScale", group: "growth",
-    type: PARAM_TYPE.CONTINUOUS, min: 0.1, max: 1, value: 0.21, step: 0.01,
+    id: "growth.scale", label: "Size", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 100, value: 20, step: 1,
   });
-  // Lifetime: cells older than this die back, oldest first (0 = immortal).
-  // Rest: how long dead ground stays barren before the living edge may
-  // recolonise it. Together they turn a colony that fills the frame and stops
-  // into one that travels — rings, fronts, regrowth cycles.
-  ps.register({
-    id: "growth.life", label: "Lifetime", group: "growth",
-    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 120, value: 0, step: 0.1,
-  });
+  // Regrow delay (Fade = Ring): how long ground that died of age stays
+  // barren before the living edge may recolonise it.
   ps.register({
     id: "growth.rest", label: "Regrow delay", group: "growth",
     type: PARAM_TYPE.CONTINUOUS, min: 0, max: 60, value: 4, step: 0.1,
@@ -6956,18 +7004,6 @@ export function registerCoreParameters(ps) {
     // the effect only saturates near 0.5 (13/255, arms turn irregular).
     type: PARAM_TYPE.CONTINUOUS, min: 0, max: 0.5, value: 0.01, step: 0.001,
   });
-  // Grow time: each planting (Plant or a fresh stroke) grows this long, then
-  // stops, fades out over Fade time and clears. 0 = grows forever. Runs per
-  // colony on its planting stamp, so several plantings each keep their own
-  // clock. Single and Frost only (Nested carries no lineage).
-  ps.register({
-    id: "growth.growTime", label: "Grow time", group: "growth",
-    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 120, value: 0, step: 0.1,
-  });
-  ps.register({
-    id: "growth.fadeTime", label: "Fade time", group: "growth",
-    type: PARAM_TYPE.CONTINUOUS, min: 0.1, max: 30, value: 3, step: 0.1,
-  });
   // Relief: light the growth as a height map (whatever each mode shows is the
   // height). 0 = flat colour, as before. Light angle: where the light comes
   // from (0° right, 90° top, screen y up). Gloss: wet/waxy highlight.
@@ -7008,20 +7044,7 @@ export function registerCoreParameters(ps) {
     id: "growth.varDrift", label: "Var drift", group: "growth",
     type: PARAM_TYPE.CONTINUOUS, min: 0, max: 1, value: 0.05, step: 0.01,
   });
-  // Pen fade: Growth fades with the PEN's Fade (draw.fade) — the same curve
-  // from the moment each part was drawn, so one fader fades the drawing and
-  // its growth together. Replaces Grow time / Fade time while on. Pen Fade 0
-  // = no fade, as for the pen. Single and Frost.
-  ps.register({
-    id: "growth.penFade", label: "Pen fade", group: "growth", type: PARAM_TYPE.TOGGLE, value: 0,
-  });
-  // Frost growth rings: thin lines where each crystal cell's time-as-solid
-  // crosses a multiple of Ring gap — where the front stood that long ago.
-  // They drift outward on their own. With Relief they become grooves.
-  ps.register({
-    id: "growth.crRings", label: "Rings", group: "growth",
-    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 100, value: 0, step: 1,
-  });
+  // Frost growth rings (drawn by Details): Ring gap = seconds between rings.
   ps.register({
     id: "growth.crRingGap", label: "Ring gap", group: "growth",
     type: PARAM_TYPE.CONTINUOUS, min: 0.05, max: 3, value: 0.4, step: 0.01,
@@ -7062,7 +7085,7 @@ export function registerCoreParameters(ps) {
     type: PARAM_TYPE.SELECT, options: GROWTH_RES.map(String), value: 1,
   });
   ps.register({
-    id: "growth.hue", label: "GrowHue", group: "growth",
+    id: "growth.hue", label: "Colour", group: "growth",
     type: PARAM_TYPE.CONTINUOUS, min: 0, max: 360, value: 70, step: 1,
   });
   ps.register({

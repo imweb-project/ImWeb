@@ -887,142 +887,57 @@ Three independent loopers (`drawloop1`, `drawloop2`, `drawloop3`).
 
 #### Growth (source 33)
 
-Reaction-diffusion: an organic surface (coral, lichen, mazes, fingerprints,
-dividing cells) that **grows out of whatever you seed it with**. The controls
-are in the Draw workspace, under Brush, because Draw is the default seed.
+**Generative drawing:** organic growth (dividing cells, lichen, coral, snow
+crystals) that grows out of what you draw. The controls are in the Draw
+workspace under **Growth**, because your strokes are its seed.
 
-**Quick start:** set a layer's Foreground to **Growth**, open the Draw
-workspace, pick Pen and draw a line. Coral grows out of the stroke. Give Draw
-some Fade and the strokes disappear while the colony keeps growing by itself.
-Or skip drawing and press **Plant**: one spore at (PlantX, PlantY) grows
-outward from that point.
+**Quick start:** click **⇢ Grow** (routes Foreground to Growth), choose a
+**Look**, and draw, or press **Plant** for one spore in the centre. Choosing a
+Look (even the one already shown) sets everything for that look, clears and
+plants, so a Look's name always gives its look.
 
-| Parameter | Range | Description |
-|-----------|-------|-------------|
-| `growth.mode` | Single / Nested / Frost | **Single**: Gray-Scott, one pattern scale (coral, lichen, mazes). **Nested**: multi-scale, patterns inside patterns. **Frost**: growing crystals (snowflakes, dendrites) |
-| `growth.speed` | 0–40 | Simulation steps per 1/60 s. 0 freezes the colony (Plant still lands) |
-| `growth.patternA` | SELECT | Coral · Mitosis · Worms · Spots · Maze · Holes · Chaos · Fingerprint · U-Skate · Waves |
-| `growth.patternB` | SELECT | The second pattern the field blends toward |
-| `growth.fieldSrc` | SELECT | Source whose brightness blends Pattern A → B per pixel (default Noise) |
-| `growth.fieldAmt` | 0–100 | 0 = Pattern A everywhere; the field source is then not read at all |
-| `growth.feed` | ±10 | Offset on the pattern's feed rate, in thousandths. Coral dies above about +10 |
-| `growth.kill` | ±5 | Offset on the pattern's kill rate, in thousandths. An LFO here makes a colony breathe |
-| `growth.scale` | 0.1–1 | Size of the pattern's features. High values make thin seeds die out |
-| `growth.life` | 0–120 s | **Lifetime.** Cells older than this die back, oldest first. 0 = immortal |
-| `growth.rest` | 0–60 s | **Regrow delay.** How long dead ground stays barren before the living edge may recolonise it |
-| `growth.msStep` | 0.1–4 | Nested: how far each step moves. Higher = faster, rougher |
-| `growth.msFine` / `msCoarse` | 1–5 | Nested: which scales take part (1 ≈ 2–4 px of the grid … 5 ≈ 32–64 px) |
-| `growth.msBias` | −1…+1 | Nested: −1 favours fine lace, +1 large masses |
-| `growth.growTime` | 0–120 s | **Grow time.** Every part grows this long from when it was drawn or planted, then fades and clears. 0 = forever. Single and Frost |
-| `growth.penFade` | on/off | **Pen fade.** Growth fades with the pen's own Fade, on the same curve, from the moment each part was drawn. Replaces Grow time / Fade time while on |
-| `growth.fadeTime` | 0.1–30 s | **Fade time.** How long a finished colony takes to fade out |
-| `growth.crFold` | 2–12 | Frost: symmetry. 6 = snowflake, 4 = square crystal |
-| `growth.crAniso` | 0–0.1 | Frost: how strongly the symmetry steers the growing tips |
-| `growth.crAngle` | 0–360° | Frost: rotation of the crystal axes |
-| `growth.crHeat` | 0.6–2.4 | Frost: latent heat. High = thin, branchy dendrites; low = compact, solid |
-| `growth.crNoise` | 0–0.5 | Frost: **Branching.** Makes the arms irregular and uneven; strongest around 0.3–0.5 |
-| `growth.crRings` | 0–100 | Frost: **Rings.** Thin growth rings inside the crystal, drifting outward. 0 = off |
-| `growth.crRingGap` | 0.05–3 s | Frost: seconds of growth between two rings |
-| `growth.seedSrc` | SELECT | Source that inoculates where it is bright, every frame (default Draw) |
-| `growth.seedAmt` | 0–100 | Seed strength. 0 = seed source ignored |
-| `growth.plantX` / `plantY` | 0–100 | Where Plant drops its spore (y up, like DrawX/DrawY) |
-| `growth.plantSize` | 0.5–20 | Spore radius, % of the height |
-| `growth.plant` | TRIGGER | Drop one spore |
-| `growth.clear` | TRIGGER | Wipe the colony |
-| `growth.res` | 256/512/1024 | Grid size on the long axis. Finer grid = finer pattern. Changing it restarts |
-| `growth.hue` / `sat` | — | Colour of the colony |
-| `growth.spread` | 0–100 | Hue shift between the dense core and the thin growing edge |
-| `growth.contrast` | 1–12 | Stretches the colony's value band to black–white |
-| `growth.variation` | 0–100 | **Variation.** Lets the pattern's size change across the canvas: stripe width (Single), arm thickness (Frost), fine↔coarse (Nested). 0 = uniform |
-| `growth.varSize` | 0.5–10 | How many regions of variation across the canvas |
-| `growth.varDrift` | 0–1 | How fast the regions wander (0 = fixed) |
-| `growth.relief` | 0–100 | **Relief.** Lights the growth as a carved surface. 0 = flat colour |
-| `growth.bevel` | 1–6 | Width of the relief's slopes. Wider = broader, softer forms; keep it under about half the pattern's feature size |
-| `growth.lightAngle` | 0–360° | Where the light comes from (0° right, 90° top) |
-| `growth.gloss` | 0–100 | Wet, waxy highlight on the relief |
-| `growth.ground` | 0–100 | Brightness of the low areas, so cell floors read as a surface rather than black |
+**The live controls:**
 
-**Why lichen has zones.** A real lichen shows several patterns at once, changing
-with the stone under it. Route Noise (or a camera) into **Field src**, raise
-**Field amt**, and pick two different patterns: one colony grows mazes where the
-field is dark and spots where it is bright, and the boundary drifts as the field
-moves.
+| Control | What it does |
+|---|---|
+| **Look** | Mitosis · Lichen · Coral · Snowflake. Loads the whole look |
+| **Speed** | How fast it grows |
+| **Size** | How large the pattern's features are (stripes, cells, crystal), over about 5× from 0 to 100. Sweeping it live keeps the growth: it swells or tightens |
+| **Variation** | How much the size changes across the canvas: fine lace in some areas, broad bands in others, drifting slowly. Works at any Size |
+| **Fade** | How growth goes: **Off** · **Pen** (fades with the pen's own Fade, from when each part was drawn) · **Hold** (grows for Lifetime, then fades) · **Ring** (dies back from its oldest part after Lifetime, like lichen and fairy rings; Coral/Lichen/Mitosis) |
+| **Lifetime** | Seconds each part lives, for Hold and Ring |
+| **Details** | Fine 1-pixel lines: outlines, and growth rings in Snowflake. Past half-way the fill fades until only the line art is left |
+| **Colour** | Hue of the growth |
+| **Plant / Clear** | One spore at the centre / wipe |
 
-**Patterns made of patterns (Nested).** In nature the same motif often
-appears at several sizes at once: small spots gathered into larger spots,
-which form still larger ones. Gray-Scott has one built-in size, so its patterns
-look uniform. **Nested** mode (after Jonathan McCabe's multi-scale Turing
-patterns, 2010) runs five pattern processes at doubling sizes together; at
-every pixel the one that is changing least wins. Large structures form first
-and finer ones grow inside them. **HueSpread** colours each part by the size
-that formed it, so the nesting shows. Plant, a Draw stroke, or Seed src =
-Noise starts it: an empty grid is perfectly still until disturbed, and then
-the pattern grows outward from the disturbance. With a **Field**, the noise
-decides where fine structure or large structure dominates. Pattern, Feed,
-Kill, Scale and Lifetime apply to Single only; switching mode restarts the
-colony.
+**The Looks:**
+- **Mitosis:** a spore splits into cells that keep dividing until the frame is
+  a living field; with Fade = Ring they keep dying and dividing.
+- **Lichen:** a patchwork of zones, labyrinth in some places and cells in
+  others, drifting slowly.
+- **Coral:** a branching coral colony with relief.
+- **Snowflake:** a six-armed ice crystal with growth rings; it grows for about
+  20 s and fades before it can fill the frame.
 
-**Growing crystals (Frost).** How ice and snowflakes actually grow (the
-Kobayashi phase-field model): the solid releases heat as it forms, which slows
-its own growth where it is crowded, so the tips that reach into cold melt run
-ahead and split into side branches. Fold sets the symmetry, Heat how thin and
-branchy the arms get, Branching how often they split. Plant one crystal, or
-draw: every stroke freezes into a crystal edge. Frost is the heaviest mode
-(about twice Single); at GrowRes 256 a crystal fills the frame in ~10 s.
+**Advanced** (collapsed) holds everything else, and shows only what applies
+to the current Look's engine: Pattern A/B and Zones, Feed/Kill offsets,
+Regrow delay (Single); the Nested controls; Fold, Aniso, Angle, Heat,
+Branching and Ring gap (Frost); and for all of them Field, Relief, Bevel,
+Light angle, Gloss, Ground, Var size/drift, seeding, Plant position and size,
+resolution, saturation, hue spread and contrast. Changing Advanced values
+moves away from the Look; choose the Look again to return to it.
 
-**Growth rings (Frost).** Every crystal cell remembers how long it has been
-solid, so **Rings** can draw thin lines wherever that time crosses a multiple
-of **Ring gap**: each line shows where the front stood that long ago. You see
-the hexagonal nucleus at the centre and chevrons along every arm, the
-crystal's own growth history. Because every cell keeps ageing, the rings drift
-slowly outward and new ones rise from the centre, so the inside keeps moving
-after the crystal has stopped growing. With Relief the rings become engraved
-grooves.
-
-**Fade at max grow time.** Like the brush Fade, but for growth: with a
-**Grow time** set, every part grows for that long from the moment it was
-drawn, then fades over **Fade time** and clears. A stroke drawn over three
-seconds fades out in the order it was drawn, each part given the same time.
-During the fade the growth keeps moving: Single dissolves, Frost melts. A
-stroke still held in Draw sprouts again after it clears. Single and Frost.
-
-**Pen fade: one fader for drawing and growth.** Switch on **Pen fade** and
-Growth follows the pen's own **Fade**: every part starts dimming the moment it
-is drawn, on exactly the pen's curve, newest brightest, and clears where the
-pen's strokes reach black. Growth keeps moving while it fades. Turn the pen's
-Fade up and both the strokes and their growth fade faster; Fade 0 = neither
-fades.
-
-**Variation: no two areas alike.** A single Gray-Scott pattern has one stripe
-width everywhere, which is why its detail evens out. **Variation** lets a slow,
-drifting field change that size across the canvas: fine lace in one area,
-thick fleshy stripes in another, and the regions wander. In Frost it makes
-some arms thin and branchy; in Nested it makes fine and coarse regions. It only
-ever widens the pattern from your Scale, never narrows it, because a narrower
-pattern than the default is where seeds die.
-
-**Relief.** Every mode can be lit as a surface: whatever it grows becomes a
-height map, with a light, a highlight and shadowed hollows. Start with Relief
-50, Ground 30, Bevel 2–4. Nested at a low HueSpread looks carved; Frost looks
-like raised ice; Single reads as an embossed colony on a surface.
-
-**Dying from the oldest part.** Every cell remembers how long it has been
-alive. With a **Lifetime** set, a colony dies back from where it started (the
-centre of a spore, your first stroke) while its young edge keeps advancing.
-A long **Regrow delay** (10 s or more) gives an expanding ring with a dead
-centre, the way lichen and fairy rings grow. A short one (2–4 s) lets the
-edge recolonise the dead ground, so the colony keeps renewing itself from the
-inside. A paused colony (Speed 0) stops ageing. The Regrow delay only bars the
-colony that died there: a new Plant or stroke in a dead centre grows right away.
-
-**Other seeds.** Any source can be the seed. Motion seeds growth wherever
-something moves; a camera's highlights spread coral from the bright parts of
-the picture. Growth can also be routed back into anything that takes a source,
-including Displace and the keyer.
-
-Not every pattern takes from every seed. Mitosis and Spots need a drawn stroke
-or a larger Plant size; a tiny spore dies out. A higher Scale needs a thicker
-seed.
+A few behaviours worth knowing:
+- **Growth only runs while something shows it**, so its panel does nothing
+  until Foreground (or another input) is set to Growth; ⇢ Grow does that.
+- **Each part keeps its own clock** from when it was drawn. A stroke drawn
+  over three seconds fades in the order it was drawn, and the growth keeps
+  moving while it fades.
+- **A new stroke or Plant in a dead centre grows**; only the colony that died
+  there is kept out for the Regrow delay.
+- **Details** stays one pixel of the Growth grid wide; GrowRes 1024 (Advanced)
+  gives the finest lines on screen.
+- Snowflake is the heaviest Look (about twice the others).
 
 ---
 
