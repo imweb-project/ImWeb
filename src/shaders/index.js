@@ -841,32 +841,30 @@ ${GROWTH_VAR_GLSL}
 // coverage, b = birth time (lineage clock), a = lineage stamp.
 export const GROWTH_CURVE_VERT = /* glsl */ `
   attribute vec4 aSeg;    // x0, y0, x1, y1 in target pixels
-  attribute vec2 aMeta;   // birth time, lineage stamp
+  attribute vec3 aMeta;   // birth time, lineage stamp, half line width (px)
   uniform vec2  uSize;    // target size, pixels
-  uniform float uHalfW;   // half line width, pixels
   varying vec2 vPix;
   varying vec4 vSeg;
-  varying vec2 vMeta;
+  varying vec3 vMeta;
   void main() {
     vec2 a = aSeg.xy, b = aSeg.zw, d = b - a;
     float len = length(d);
     vec2 t = len > 1e-5 ? d / len : vec2(1.0, 0.0);
     vec2 n = vec2(-t.y, t.x);
-    float r = uHalfW + 1.0;            // + 1 px for the anti-aliased rim
+    float r = aMeta.z + 1.0;           // + 1 px for the anti-aliased rim
     vec2 p = (position.x < 0.0 ? a - t * r : b + t * r) + n * position.y * r;
     vPix = p; vSeg = aSeg; vMeta = aMeta;
     gl_Position = vec4(p / uSize * 2.0 - 1.0, 0.0, 1.0);
   }
 `;
 export const GROWTH_CURVE_FRAG = /* glsl */ `
-  uniform float uHalfW;
   varying vec2 vPix;
   varying vec4 vSeg;
-  varying vec2 vMeta;
+  varying vec3 vMeta;
   void main() {
     vec2 a = vSeg.xy, ba = vSeg.zw - a, pa = vPix - a;
     float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
-    float cov = clamp(uHalfW + 0.5 - length(pa - ba * h), 0.0, 1.0);
+    float cov = clamp(vMeta.z + 0.5 - length(pa - ba * h), 0.0, 1.0);
     if (cov <= 0.0) discard;
     gl_FragColor = vec4(cov, 0.0, vMeta.x, vMeta.y);
   }

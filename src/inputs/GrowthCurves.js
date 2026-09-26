@@ -24,6 +24,11 @@ const MAX_SEGS  = 16384;    // segments drawn per frame (instance buffer size)
 const LOOK      = 1.6;      // cells ahead a tip checks for another thread
 const SIM_DT    = 1 / 60;   // fixed sim step, seconds
 const SEED_W    = 128;      // stroke read-back grid (sprouting along strokes)
+// Thickness by generation: a spore's (or stroke's) first threads are the
+// thickest, each fork 28% thinner than the thread it left — trunk to
+// hair, as real mycelium and roots taper. In sim cells, never under a pixel.
+const W_TRUNK   = 2.2;
+const W_TAPER   = 0.72;
 
 export class GrowthCurves {
   /** @param blit (material, target) → draws a full-screen quad, from GrowthRD */
@@ -49,14 +54,14 @@ export class GrowthCurves {
       -1, -1, 0,  1, -1, 0,  1, 1, 0,  -1, 1, 0]), 3));
     g.setIndex([0, 1, 2, 0, 2, 3]);
     this._segA = new Float32Array(MAX_SEGS * 4);
-    this._metaA = new Float32Array(MAX_SEGS * 2);
+    this._metaA = new Float32Array(MAX_SEGS * 3);
     g.setAttribute('aSeg',  new THREE.InstancedBufferAttribute(this._segA, 4).setUsage(THREE.DynamicDrawUsage));
-    g.setAttribute('aMeta', new THREE.InstancedBufferAttribute(this._metaA, 2).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('aMeta', new THREE.InstancedBufferAttribute(this._metaA, 3).setUsage(THREE.DynamicDrawUsage));
     g.instanceCount = 0;
     this._geom = g;
     this._segMat = new THREE.ShaderMaterial({
       vertexShader: GROWTH_CURVE_VERT, fragmentShader: GROWTH_CURVE_FRAG,
-      uniforms: { uSize: { value: new THREE.Vector2(1, 1) }, uHalfW: { value: 0.8 } },
+      uniforms: { uSize: { value: new THREE.Vector2(1, 1) } },
       depthTest: false, depthWrite: false,
       blending: this._maxBlend ? THREE.CustomBlending : THREE.NoBlending,
       blendEquation: THREE.MaxEquation, blendEquationAlpha: THREE.MaxEquation,
@@ -116,8 +121,11 @@ export class GrowthCurves {
 
   _spawn(x, y, h, stamp) {
     if (this._tips.length >= MAX_TIPS) return;
-    this._tips.push({ x, y, h, w: 0, stamp });
+    this._tips.push({ x, y, h, w: 0, stamp, gen: 0 });
   }
+
+  /** Line width of a generation, in sim cells. */
+  _width(gen) { return W_TRUNK * Math.pow(W_TAPER, gen); }
 
   _size(gridRes, aspect, viewRes) {
     const a = aspect > 0 && isFinite(aspect) ? aspect : 1;
@@ -164,20 +172,31 @@ export class GrowthCurves {
     return t * t * (3 - 2 * t);
   }
 
-  _mark(x0, y0, x1, y1, stamp) {
-    const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 2));
+  // Marks the cells a segment covers — a band as wide as the line, so a
+  // neighbour keeps clear of a thick trunk's EDGE, not just its centre.
+  _mark(x0, y0, x1, y1, stamp, width) {
+    const len = Math.hypot(x1 - x0, y1 - y0);
+    const n = Math.max(1, Math.ceil(len * 2));
+    const nx = len > 0 ? -(y1 - y0) / len : 0, ny = len > 0 ? (x1 - x0) / len : 0;
+    const r = Math.max(0, (width - 1) / 2);
+    const m = Math.ceil(r * 2);
     for (let i = 1; i <= n; i++) {
-      const cx = Math.floor(x0 + (x1 - x0) * i / n), cy = Math.floor(y0 + (y1 - y0) * i / n);
-      if (cx >= 0 && cy >= 0 && cx < this._gw && cy < this._gh) this._occ[cy * this._gw + cx] = stamp;
+      const px = x0 + (x1 - x0) * i / n, py = y0 + (y1 - y0) * i / n;
+      for (let j = -m; j <= m; j++) {
+        const o = m ? (j / m) * r : 0;
+        const cx = Math.floor(px + nx * o), cy = Math.floor(py + ny * o);
+        if (cx >= 0 && cy >= 0 && cx < this._gw && cy < this._gh) this._occ[cy * this._gw + cx] = stamp;
+      }
     }
   }
 
-  _pushSeg(x0, y0, x1, y1, birth, stamp) {
+  _pushSeg(x0, y0, x1, y1, birth, stamp, width) {
     if (this._nSeg >= MAX_SEGS) return;
     const sx = this._tw / this._gw, sy = this._th / this._gh, i = this._nSeg++;
     this._segA[i * 4] = x0 * sx; this._segA[i * 4 + 1] = y0 * sy;
     this._segA[i * 4 + 2] = x1 * sx; this._segA[i * 4 + 3] = y1 * sy;
-    this._metaA[i * 2] = birth; this._metaA[i * 2 + 1] = stamp;
+    this._metaA[i * 3] = birth; this._metaA[i * 3 + 1] = stamp;
+    this._metaA[i * 3 + 2] = Math.max(0.5, 0.5 * width * sx);   // half width, target px
   }
 
   /** One fixed sim step for every tip. */
@@ -198,18 +217,21 @@ export class GrowthCurves {
       const dx = Math.cos(t.h), dy = Math.sin(t.h);
       const nx = t.x + dx * step, ny = t.y + dy * step;
       if (nx < 0 || ny < 0 || nx >= this._gw || ny >= this._gh) continue;
-      // Look ahead: another thread there ends this one (they keep clear).
-      const px = Math.floor(nx + dx * LOOK), py = Math.floor(ny + dy * LOOK);
+      // Look ahead — past this thread's own edge — for another thread: one
+      // there ends this one (they keep clear).
+      const wd = this._width(t.gen), look = LOOK + wd / 2;
+      const px = Math.floor(nx + dx * look), py = Math.floor(ny + dy * look);
       if (px >= 0 && py >= 0 && px < this._gw && py < this._gh && !this._free(this._occ[py * this._gw + px], o)) continue;
-      this._mark(t.x, t.y, nx, ny, t.stamp);
-      this._pushSeg(t.x, t.y, nx, ny, o.now, t.stamp);
+      this._mark(t.x, t.y, nx, ny, t.stamp, wd);
+      this._pushSeg(t.x, t.y, nx, ny, o.now, t.stamp, wd);
       t.x = nx; t.y = ny;
       next.push(t);
       // A fork: a new tip off to one side, chance per cell of length.
       if (next.length + this._tips.length < MAX_TIPS * 2 && Math.random() < branch * 0.02 * step * er) {
         const side = Math.random() < 0.5 ? -1 : 1;
         const h = t.h + side * (0.6 + 0.5 * Math.random());
-        next.push({ x: nx + Math.cos(h) * 0.8, y: ny + Math.sin(h) * 0.8, h, w: -t.w, stamp: t.stamp });
+        const off = 0.8 + wd / 2;   // start clear of the parent's edge
+        next.push({ x: nx + Math.cos(h) * off, y: ny + Math.sin(h) * off, h, w: -t.w, stamp: t.stamp, gen: t.gen + 1 });
       }
     }
     this._tips = next.length > MAX_TIPS ? next.slice(0, MAX_TIPS) : next;
@@ -318,9 +340,6 @@ export class GrowthCurves {
       this._geom.attributes.aSeg.needsUpdate = true;
       this._geom.attributes.aMeta.needsUpdate = true;
       this._segMat.uniforms.uSize.value.set(this._tw, this._th);
-      // A thread is one sim cell wide, as Hyphae's is one grid pixel — but
-      // anti-aliased, and never under a pixel.
-      this._segMat.uniforms.uHalfW.value = Math.max(0.5, 0.5 * this._tw / this._gw);
       this.renderer.setRenderTarget(this._t[this._cur]);
       const ac = this.renderer.autoClear;
       this.renderer.autoClear = false;
