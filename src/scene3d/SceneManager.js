@@ -19,6 +19,7 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { hasComponentChannels, buildComponentClip } from './ColladaChannels.js';
 import { RangePlayer, applyAnchor, advanceTake, BEATS } from './ModelSlots.js';
 import { favKey, getFavs } from '../state/TakeFavs.js';
+import { TEXSRC_TO_SOURCE } from '../controls/ParameterSystem.js';
 import { GeometryFactory, GEOMETRY_NAMES } from './GeometryFactory.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { TRIPLANAR_GLSL, TRI_MAP_FRAGMENT, TRI_EMISSIVEMAP_FRAGMENT } from './Triplanar.js';
@@ -1274,7 +1275,10 @@ export class SceneManager {
       }
       this.syncImageFlip(0, this._importedModelName);
       const texSrcMap = [null, inputs.camera, inputs.movie, inputs.screen, inputs.draw, inputs.buffer, inputs.noise,
-        this._images[0]?.tex ?? null];   // 7 Image — M1's own; a slot's comes from slotTexture()
+        this._images[0]?.tex ?? null,    // 7 Image — M1's own; a slot's comes from slotTexture()
+        // 8+ — every other source (TEXSRC_OPTIONS), resolved by the same
+        // function the layers use, so Mix buses and Growth work as they do there.
+        ...TEXSRC_TO_SOURCE.slice(8).map((i) => inputs.resolveSource?.(i) ?? null)];
       // Kept for the slots' own materials (ModelSlots, modelN.texsrc): the same
       // sources and the same mapping rule, read through slotTexture().
       this._texSrcMap = texSrcMap;

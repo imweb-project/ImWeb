@@ -43,6 +43,7 @@ import {
   PARTICLE_MASK_SRC,
   PARAM_TYPE,
   MIDI_PAGES,
+  TEXSRC_TO_SOURCE,
 } from "./controls/ParameterSystem.js";
 
 /**
@@ -10269,12 +10270,30 @@ void main() {
     // the loop. Self-reference terminates because a needed puller is not
     // re-added. At most one pass per puller.
     // Add a new puller HERE, as a row — do not write a term beside this.
+    // The 3D scene (and its depth pass, the same render) reads the sources its
+    // Material, T-Disp and visible model slots wear (TEXSRC_OPTIONS). Without
+    // these rows a lazily-rendered source chosen there — Growth, SDF, a Mix
+    // bus — got a texture nobody drew (LEARNED 2026-09-25, the gate lesson).
+    // The scene row is also seeded by scene3d.active, the other thing that
+    // renders the scene (see scene3dNeeded below).
+    const _s3d = (sel) => TEXSRC_TO_SOURCE[sel] ?? -1;
+    const _dispSel = ps.get("scene3d.mat.dispsrc")?.value ?? 0;
+    const _s3dReads = [
+      _s3d(ps.get("scene3d.mat.texsrc")?.value ?? 0),
+      _dispSel >= 2 ? _s3d(_dispSel - 2) : -1,   // 0 = the surface's own, 1 = the DS layer (_cDs)
+      ...SLOT_PREFIXES.map((pre) => {
+        const v = ps.get(`${pre}.texsrc`)?.value ?? 0;   // 0 = Shared
+        return ps.get(`${pre}.visible`)?.value && v > 0 ? _s3d(v - 1) : -1;
+      }),
+    ].filter((i) => i >= 0);
     const _pullers = [
       { idx: MOTION_IDX,    reads: [_cMotion] },
       { idx: PARTICLES_IDX, reads: [_pmIdx] },
       { idx: GROWTH_IDX,    reads: [_cGrowSeed, _cGrowField] },
+      { idx: SOURCE_KEYS.indexOf("scene3d"), reads: _s3dReads, seed: !!ps.get("scene3d.active")?.value },
+      { idx: SOURCE_KEYS.indexOf("depth3d"), reads: _s3dReads },
     ];
-    const _pulled = new Set(_pullers.filter((p) => _usedBase(p.idx)).map((p) => p.idx));
+    const _pulled = new Set(_pullers.filter((p) => p.seed || _usedBase(p.idx)).map((p) => p.idx));
     for (let grew = true; grew; ) {
       grew = false;
       for (const p of _pullers) {

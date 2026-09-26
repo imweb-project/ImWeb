@@ -564,13 +564,15 @@ centre. For an animated figure that is its motion with the sides swapped: a
 right-hand wave becomes a left-hand one, so every take has a twin. M1 has
 Mirror in its Transform. **Texture** — what the model wears: *Shared* (the default) is the main
 Material exactly, as M1 wears it; any source (None, Camera, Movie, Screen,
-Draw, Buffer, Noise, Image) gives the model its own copy of the Material
+Draw, Buffer, Noise, Image, and after those every other source — Growth, SDF,
+Particles, Analog, the Mix buses and the rest) gives the model its own copy of the Material
 wearing that instead — colour, roughness, glow, warp, blob and displace still
 follow the main Material, only the picture differs. Mapping follows the main
 setting (Auto makes Noise seamless). **Image** — a picture of your own (JPG,
 PNG, WebP): choose Image and a *Load image* button appears under the row;
-loading one selects Image for you. M1 has Image too, at the end of the
-Material's Texture Source. The picture is kept in this browser and Display
+loading one selects Image for you. M1 has Image too, in the
+Material's Texture Source, which offers the same full list of sources (so
+does T-Disp Source); a source chosen there runs whenever the 3D scene is on. The picture is kept in this browser and Display
 States record which one each model wears; one this browser does not hold is
 flagged in red. It follows the model's own UVs, the right way up for its
 format (glTF unflipped, COLLADA / OBJ / STL flipped). For a

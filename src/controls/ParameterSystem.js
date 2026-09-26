@@ -1328,6 +1328,30 @@ export function migrateStatesNoiseParams(states) {
 export const OPT_SOURCES = ['None', ...SOURCES];
 
 /**
+ * The 3D Material's texture sources — scene3d.mat.texsrc, modelN.texsrc
+ * (offset 1: 0 is Shared) and scene3d.mat.dispsrc (offset 2). The first
+ * eight are the original hand-written menu and keep their indices; every
+ * source after them is DERIVED from SOURCE_DEFS, so a new source reaches the
+ * 3D Material without anyone remembering to add it (owner, 2026-09-26:
+ * "missing Growth among other sources" — the menu had stopped at eight while
+ * SOURCE_DEFS grew to 34).
+ *
+ * Append-only by construction: SOURCE_DEFS is append-only, and TEXSRC_SKIP
+ * must NEVER change — adding or removing a key there shifts every later
+ * index under saved projects. It skips the sources the hand-written eight
+ * already name (Screen is Output) and the scene's own outputs, which would
+ * feed the 3D scene back into itself.
+ */
+const TEXSRC_HAND = ['None', 'Camera', 'Movie', 'Screen', 'Draw', 'Buffer', 'Noise', 'Image'];
+const TEXSRC_HAND_SRC = [-1, 'camera', 'movie', 'output', 'draw', 'buffer', 'noise', -1]
+  .map((k) => (k === -1 ? -1 : SOURCE_KEYS.indexOf(k)));
+const TEXSRC_SKIP = new Set(['camera', 'movie', 'output', 'draw', 'buffer', 'noise', 'scene3d', 'depth3d']);
+const TEXSRC_EXTRA = SOURCE_DEFS.map((d, i) => ({ ...d, i })).filter((d) => !TEXSRC_SKIP.has(d.key));
+export const TEXSRC_OPTIONS = [...TEXSRC_HAND, ...TEXSRC_EXTRA.map((d) => d.label)];
+/** texsrc index → SOURCE_DEFS index; −1 for None and Image (not sources). */
+export const TEXSRC_TO_SOURCE = [...TEXSRC_HAND_SRC, ...TEXSRC_EXTRA.map((d) => d.i)];
+
+/**
  * Indirect entries appended to the capture-source lists: "whatever that layer is
  * currently showing" rather than a fixed source.
  *
@@ -3274,7 +3298,7 @@ export function registerCoreParameters(ps) {
     // source instead (ModelSlots._ownMaterial). The rest of the list MIRRORS
     // scene3d.mat.texsrc, offset by one — extend both together, at the end.
     { key: 'texsrc',  label: 'Texture', type: PARAM_TYPE.SELECT,
-      options: ['Shared', 'None', 'Camera', 'Movie', 'Screen', 'Draw', 'Buffer', 'Noise', 'Image'], value: 0 },
+      options: ['Shared', ...TEXSRC_OPTIONS], value: 0 },
     { key: 'anim',    label: 'Play',  type: PARAM_TYPE.TOGGLE, value: 1 },
     // A number, not a SELECT of clip names: a recall sets it before the
     // slot's model has loaded, and a SELECT would clamp it to 'None' then.
@@ -3525,10 +3549,9 @@ export function registerCoreParameters(ps) {
     group: "scene3d",
     type: PARAM_TYPE.SELECT,
     select: true,
-    // "Image" (7) is the model's own picture (SceneManager.setModelImage) —
-    // appended, so saved indices keep their meaning. scene3d.mat.dispsrc does
-    // not mirror it (yet): displacing by an image is its own job.
-    options: ["None", "Camera", "Movie", "Screen", "Draw", "Buffer", "Noise", "Image"],
+    // "Image" (7) is the model's own picture (SceneManager.setModelImage);
+    // 8+ are every other source, derived — see TEXSRC_OPTIONS.
+    options: TEXSRC_OPTIONS,
     value: 0,
   });
   ps.register({
@@ -3717,17 +3740,9 @@ export function registerCoreParameters(ps) {
     group: "scene3d",
     type: PARAM_TYPE.SELECT,
     select: true,
-    options: [
-      "Same as Surface",
-      "Displace Layer",
-      "None",
-      "Camera",
-      "Movie",
-      "Screen",
-      "Draw",
-      "Buffer",
-      "Noise",
-    ],
+    // Image (9) joins now that the list is shared: without it every derived
+    // entry would sit one place off its texsrc twin under DISPSRC_TEX_BASE.
+    options: ["Same as Surface", "Displace Layer", ...TEXSRC_OPTIONS],
     value: 0,
   });
   ps.register({

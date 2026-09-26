@@ -8,6 +8,21 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Fixed
+- **3D Material textures: every source, Growth included** (owner: "Texture
+  Source is missing Growth among other sources"). Material ▸ Texture Source,
+  each model's Texture and T-Disp Source shared a hand-written eight-entry
+  list while SOURCE_DEFS grew to 34. The eight keep their indices; after them
+  every source is now DERIVED (TEXSRC_OPTIONS) — minus 3D Scene / 3D Depth,
+  the scene reading itself — so new sources arrive on their own. T-Disp gained
+  Image so the three lists stay in register at their offsets. A lazily
+  rendered source chosen there is switched on by new 3D Scene / 3D Depth
+  puller rows in main.js — without them Growth would have worn the Output
+  fallback. Verified in the app: Growth named → drawn and worn; not named →
+  not drawn. `tests/audit-material-texsrc.mjs` holds the alignment, the
+  every-source-or-deliberately-skipped rule and the gate rows (calibrated:
+  removing the 3D Depth row fails it).
+
 ### Added
 - **Growth: Curves — mycelium as free-moving smooth threads** (GrowMode 4;
   `GrowthCurves.js`). Hyphae steps one cell in one of 8 directions; here each
