@@ -927,6 +927,13 @@ plants, so a Look's name always gives its look.
   so fresh tips stand out from old threads.
   Variation sets how much they wander, Size the fineness of the lines
   (finest at the low end), Branching (Advanced) how often they fork.
+  **GrowMode → Curves** (Advanced) grows the same mycelium as smooth,
+  anti-aliased curves instead of pixel steps: trunks thick near the spore,
+  finer with every fork. Its extras: **Density** (higher = bushier, fuller
+  colonies), and **Field src/amt** as light — threads grow toward the
+  bright parts of the field (try the Camera). Under **Pen** fade each piece
+  of thread fades from when it was drawn, so the tips stay bright and leave
+  a fading trail.
 
 **Advanced** (collapsed) holds everything else, and shows only what applies
 to the current Look's engine: Pattern A/B and Zones, Feed/Kill offsets,

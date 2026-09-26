@@ -9,6 +9,24 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Growth: Curves — mycelium as free-moving smooth threads** (GrowMode 4;
+  `GrowthCurves.js`). Hyphae steps one cell in one of 8 directions; here each
+  tip is an agent with a float position and a drifting turning rate, and
+  every step is an anti-aliased instanced segment drawn at canvas
+  resolution, into the same state layout the view reads (r coverage, b birth,
+  a lineage) — Colour, Colonies, Edge, Details all work. Threads taper by
+  generation (2.2 cells, ×0.72 per fork); tips turn away from other threads
+  instead of dying; **Density** (Advanced) sets the look-ahead — measured,
+  a longer one lets more tips survive to branch (2.4–2.8% of the frame at
+  the short end, 5.3–6.6% at the long); **Field src** is light the threads
+  grow toward (dark→bright ramp: 40–54% → 90–94% of the colony on the
+  bright half); **Pen** fades each piece from its own birth and never stops
+  the tips (brightness by age measured on exp(−rate·age)). Strokes and the
+  field are read back through a fenced pixel-pack buffer, not a synchronous
+  readPixels (that stalled ~10 ms; Curves now costs 0.02–0.37 ms/frame), and
+  not three r168's readRenderTargetPixelsAsync, which leaves the buffer bound
+  and makes every other readPixels in the app fail with GL error 1282.
+  Contrast and Field src are hidden for Hyphae, which never read them.
 - **Growth: Edge — growth thins out before the frame** (Advanced,
   `growth.edge`, % of frame height, 0 = off). One helper, `edgeRoom()`, in the
   shared Variation GLSL; each engine brakes its own way: Single raises kill,
