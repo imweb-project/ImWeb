@@ -6894,15 +6894,16 @@ export function registerCoreParameters(ps) {
     type: PARAM_TYPE.SELECT, options: GROWTH_LOOKS.map((l) => l.name), value: 0, select: true,
     reselect: true,   // choosing the Look already shown re-applies it
   });
-  // Fade: HOW growth goes. Off · Pen (the pen's own Fade curve, from when each
-  // part was drawn) · Hold (grows for Lifetime, then fades) · Ring (dies back
+  // Fade: HOW growth goes. Off · Pen (the pen's curve, from when each part was
+  // drawn, gone after Lifetime) · Hold (grows for Lifetime, then fades) · Ring (dies back
   // from its oldest part after Lifetime; Single only — Frost treats it as
   // Hold). APPEND-ONLY. Replaces Lifetime/Grow time/Fade time/Pen fade.
   ps.register({
     id: "growth.fadeStyle", label: "Fade", group: "growth",
     type: PARAM_TYPE.SELECT, options: ["Off", "Pen", "Hold", "Ring"], value: 0,
   });
-  // Lifetime: how long each part lives before Fade takes it (Hold, Ring).
+  // Lifetime: how long each part lives before Fade takes it (Hold, Ring),
+  // or how long it takes to fade out from when it was drawn (Pen).
   ps.register({
     id: "growth.lifetime", label: "Lifetime", group: "growth",
     type: PARAM_TYPE.CONTINUOUS, min: 1, max: 120, value: 12, step: 0.1,

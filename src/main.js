@@ -534,9 +534,8 @@ async function main() {
   // Fade + Lifetime → the engine's three mechanisms. ONE choice of how growth
   // goes, one number for how long it lives — they were three overlapping
   // systems (Lifetime/Regrow, Grow time/Fade time, Pen fade) in the panel.
-  //   Pen  — the pen's own Fade curve: DrawLayer multiplies by (1 − a) per
-  //          frame, a = min(1, fade·0.5), so per second at 60 fps the rate is
-  //          −60·ln(1 − a); a = 1 would be infinite, so it is capped.
+  //   Pen  — the pen's curve (each part decays from when it was drawn,
+  //          newest brightest), gone after Lifetime: rate = ln 255 / Lifetime.
   //   Hold — each part grows for Lifetime, then fades over a quarter of it.
   //   Ring — dies back from its oldest part after Lifetime (Single only;
   //          Frost has no die-back, so it holds instead).
@@ -570,10 +569,12 @@ async function main() {
     const style = ps.get("growth.fadeStyle").value;
     const lt = ps.get("growth.lifetime").value;
     const off = { growTime: 0, fadeTime: 3, penRate: 0, life: 0 };
-    if (style === 1) {
-      const a = Math.min(0.999, (ps.get("draw.fade")?.value ?? 0) * 0.5);
-      return { ...off, penRate: a > 0 ? -60 * Math.log(1 - a) : 0 };
-    }
+    // Pen: the pen's CURVE — every part decays from the moment it was drawn,
+    // exp(−rate·age), newest brightest — at LIFETIME's speed: a part reaches
+    // the last 8-bit level (1/255, where it is cleared) at exactly Lifetime
+    // seconds. It used to take the Draw layer's Fade instead, so Lifetime did
+    // nothing under Pen and 120 still faded in seconds (owner, 2026-09-26).
+    if (style === 1) return { ...off, penRate: Math.log(255) / Math.max(1, lt) };
     const hold = { ...off, growTime: lt, fadeTime: Math.max(0.5, lt * 0.25) };
     if (style === 2) return hold;
     if (style === 3) return ps.get("growth.mode").value === 0 ? { ...off, life: lt } : hold;
@@ -10924,9 +10925,7 @@ void main() {
         gloss:      ps.get("growth.gloss").value,
         bevel:      ps.get("growth.bevel").value,
         ground:     ps.get("growth.ground").value,
-        // Pen fade replaces Grow/Fade time with the pen's own decay: DrawLayer
-        // multiplies by (1 − a) per frame, a = min(1, fade·0.5), so per second
-        // at 60 fps the rate is −60·ln(1 − a). a = 1 would be infinite: capped.
+        // Fade + Lifetime → growTime/fadeTime (Hold), life (Ring) or penRate (Pen).
         ..._growthFade(),
         hyBranch: ps.get("growth.hyBranch").value,
         hyDensity: ps.get("growth.hyDensity").value,

@@ -906,8 +906,8 @@ plants, so a Look's name always gives its look.
 | **Speed** | How fast it grows |
 | **Size** | How large the pattern's features are (stripes, cells, crystal), over about 5× from 0 to 100. Sweeping it live keeps the growth: it swells or tightens |
 | **Variation** | How much the size changes across the canvas: fine lace in some areas, broad bands in others, drifting slowly. Works at any Size |
-| **Fade** | How growth goes: **Off** · **Pen** (fades with the pen's own Fade, from when each part was drawn) · **Hold** (grows for Lifetime, then fades) · **Ring** (dies back from its oldest part after Lifetime, like lichen and fairy rings; Coral/Lichen/Mitosis) |
-| **Lifetime** | Seconds each part lives, for Hold and Ring |
+| **Fade** | How growth goes: **Off** · **Pen** (each part fades from the moment it was drawn, newest brightest, gone after Lifetime) · **Hold** (grows for Lifetime, then fades) · **Ring** (dies back from its oldest part after Lifetime, like lichen and fairy rings; Coral/Lichen/Mitosis) |
+| **Lifetime** | Seconds each part lives: how long it takes to fade out under Pen, how long it grows under Hold and Ring |
 | **Details** | Fine 1-pixel lines: outlines, and growth rings in Snowflake. Past half-way the fill fades until only the line art is left |
 | **Colour** | Hue of the growth |
 | **Plant / Clear** | One spore at the centre / wipe |

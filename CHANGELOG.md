@@ -9,6 +9,11 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Changed
+- **Growth: Lifetime sets the Pen fade** (owner: "fades too quick on 120").
+  Pen took its speed from the Draw layer's Fade, so Lifetime did nothing under
+  Pen. Now each part fades on the same curve from when it was drawn and
+  reaches the last visible level at exactly Lifetime seconds (rate
+  ln 255 / Lifetime), in every engine. Pen no longer follows DrawFade.
 - **Growth: the Mycelium Look now uses Curves** (owner) — smooth, tapering
   threads instead of Hyphae's one-pixel steps. Same Look values otherwise;
   Hyphae stays one GrowMode away in Advanced.
