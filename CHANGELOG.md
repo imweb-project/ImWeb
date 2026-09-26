@@ -59,10 +59,17 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
     holds once mature, so only the rim moves. The rule itself always runs
     at its trained rate — slowing cells made healing wounds blow up
     (|x| 38 vs 0.71).
+  - Colour from the pen: a colony wears the colour it was sown with, and the
+    colour spreads and heals with it. Only the lichen's orange takes the
+    pen's hue (weighted by saturation and closeness to the orange), keeping
+    each pixel's brightness, so the white crust and dark discs stay — a blue
+    pen grows a blue-lavender lichen. White/grey pens and Plant keep the
+    photo's colours. The pen now counts by its brightest channel, so a
+    saturated blue (luma 0.11) plants too.
   Model choice: of three Colab runs, lichenB (128 hidden) had the most
   detail and was the only one whose held wipes did not leak a spreading flat
-  zone (`tools/nca/scar.py`). Colour, Relief and the other view settings do
-  not apply to Neural yet.
+  zone (`tools/nca/scar.py`). The Colour/Relief view settings do not apply
+  to Neural.
 - **Growth: Curves — mycelium as free-moving smooth threads** (GrowMode 4;
   `GrowthCurves.js`). Hyphae steps one cell in one of 8 directions; here each
   tip is an agent with a float position and a drifting turning rate, and

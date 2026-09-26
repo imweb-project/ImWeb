@@ -988,6 +988,10 @@ export const GROWTH_NCA_ZERO = /* glsl */ `
 // A bare cell joins with probability 1 − (1 − uSpread)^n for n living
 // 8-neighbours (an Eden front: ragged, like a real colony's rim). The frame
 // edge does not wrap — a colony stops at it.
+// Attachment 1 is the colony's TINT: rgb = the pen colour it was sown with,
+// a = 1 if it has one (Plant sows untinted). A joining cell takes the tint of
+// the neighbour it takes its colony age from, so a colour spreads with its
+// colony and comes back when a wound heals. GROWTH_NCA_VIEW applies it.
 // The pen acts where a stroke ARRIVES (bright now, not last update — uSeed vs
 // uSeedPrev, first update of a frame only): on bare rock it plants; on lichen
 // it wounds — the cell becomes bare with no delay, so the colony regrows into
@@ -1000,11 +1004,12 @@ export const GROWTH_NCA_ZERO = /* glsl */ `
 export const GROWTH_NCA_MASK = /* glsl */ `
   precision highp float;
   precision highp int;
-  uniform sampler2D uMask, uSeed, uSeedPrev;
+  uniform sampler2D uMask, uTint, uSeed, uSeedPrev;
   uniform ivec2 uSize;
   uniform float uStep, uSpread, uFadeIn, uSeedAmt, uAgeDt, uLife, uFade, uRest;
   uniform vec3 uPoint;          // plant: x, y (0–1), radius in texels (0 = none)
   layout(location = 0) out vec4 o;
+  layout(location = 1) out vec4 ot;
   uint pcg(uint v) {
     uint s = v * 747796405u + 2891336453u;
     uint w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
@@ -1016,14 +1021,17 @@ export const GROWTH_NCA_MASK = /* glsl */ `
     vec4 c = texelFetch(uMask, q, 0);
     return c.b > 0.5 ? c.a : -1.0;
   }
-  float luma(sampler2D t, vec2 uv) { return dot(texture(t, uv).rgb, vec3(0.299, 0.587, 0.114)); }
+  // Pen presence by its brightest channel, not luma: a saturated blue
+  // (luma 0.11) must plant as surely as white.
+  float ink(sampler2D t, vec2 uv) { vec3 c = texture(t, uv).rgb; return max(c.r, max(c.g, c.b)); }
   void main() {
     ivec2 p = ivec2(gl_FragCoord.xy);
     vec4 m = texelFetch(uMask, p, 0);
     vec2 uv = (vec2(p) + 0.5) / vec2(uSize);
-    bool arrive = uSeedAmt > 0.0 && luma(uSeed, uv) * uSeedAmt > 0.5 && luma(uSeedPrev, uv) * uSeedAmt <= 0.5;
+    bool arrive = uSeedAmt > 0.0 && ink(uSeed, uv) * uSeedAmt > 0.5 && ink(uSeedPrev, uv) * uSeedAmt <= 0.5;
     bool plant = uPoint.z > 0.0 && distance(vec2(p) + 0.5, uPoint.xy * vec2(uSize)) < uPoint.z;
     bool hold = uRest < 0.0;
+    ot = vec4(0.0);
     if (m.b > 0.5) {
       if (arrive) { o = vec4(0.0); return; }                       // wound: bare, heals at once
       float age = m.r + uAgeDt, col = m.a + uAgeDt;
@@ -1031,21 +1039,26 @@ export const GROWTH_NCA_MASK = /* glsl */ `
         o = vec4(hold ? -60000.0 : -uRest, 0.0, 0.0, 0.0); return;
       }
       o = vec4(age, min(1.0, m.g + uFadeIn), min(2048.0, m.b + 1.0), col);
+      ot = texelFetch(uTint, p, 0);
       return;
     }
     float rest = min(0.0, m.r + uAgeDt);
     float n = 0.0, oldest = -1.0;
+    vec4 tint = vec4(0.0);
     for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) {
-      float c = colony(p + ivec2(dx, dy));
-      if (c >= 0.0) { n += 1.0; oldest = max(oldest, c); }
+      ivec2 q = p + ivec2(dx, dy);
+      float c = colony(q);
+      if (c >= 0.0) { n += 1.0; if (c > oldest) { oldest = c; tint = texelFetch(uTint, q, 0); } }
     }
     // Hold: a colony past its Lifetime no longer spreads.
     bool grows = n > 0.0 && !(hold && uLife > 0.0 && oldest > uLife);
     uint h = pcg(uint(p.x) ^ pcg(uint(p.y) ^ pcg(uint(uStep) ^ 0x5bd1e995u)));
     bool on = rest >= 0.0 && grows && float(h) / 4294967296.0 < 1.0 - pow(1.0 - uSpread, n);
     float col = on ? oldest : 0.0;
-    if (arrive || plant) { on = true; col = 0.0; }                // sown: a new colony
+    if (plant) { on = true; col = 0.0; tint = vec4(0.0); }        // sown by Plant: natural colour
+    if (arrive) { on = true; col = 0.0; tint = vec4(texture(uSeed, uv).rgb, 1.0); }   // by the pen: its colour
     o = on ? vec4(0.0, 0.0, 1.0, col) : vec4(rest, 0.0, 0.0, 0.0);
+    ot = on ? tint : vec4(0.0);
   }
 `;
 
@@ -1068,15 +1081,35 @@ export const GROWTH_NCA_CAPTURE = /* glsl */ `
   }
 `;
 
-// Picture at grid size (one pixel per cell): the settled photo; coverage
-// (fade-in × Lifetime fade-out) blends it over the bare ground.
+// Picture at grid size (one pixel per cell): the settled photo, tinted by
+// its colony's pen colour; coverage (fade-in × Lifetime fade-out) blends it
+// over the bare ground. Tint recolours only what is ORANGE — weight from the
+// pixel's saturation and its hue's closeness to the lichen's (LICHEN_HUE) —
+// to the pen's hue, keeping the pixel's own brightness, saturation scaled by
+// the pen's. The pale crust and dark discs are left as they are, so a green
+// pen gives green lichen with white crust and dark discs. (Rotating EVERY
+// pixel's hue first was tried: the crust's faint random hues were boosted to
+// rainbow speckle and the discs turned olive.) A grey or white pen
+// (saturation < 0.15) keeps the photo's natural colours.
 export const GROWTH_NCA_VIEW = /* glsl */ `
   precision highp float;
-  uniform sampler2D uPhoto, uMask;
+  uniform sampler2D uPhoto, uMask, uTint;
   uniform vec3 uGround;
   uniform float uLife, uFade, uRest;
   in vec2 vUv;
   layout(location = 0) out vec4 o;
+  const float LICHEN_HUE = 0.065;   // the photo's orange, ~23°
+  vec3 rgb2hsv(vec3 c) {
+    vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+    vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+    vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+    float d = q.x - min(q.w, q.y);
+    return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + 1e-10)), d / (q.x + 1e-10), q.x);
+  }
+  vec3 hsv2rgb(vec3 c) {
+    vec3 p = abs(fract(c.xxx + vec3(1.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
+    return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);   // saturation blends toward grey
+  }
   void main() {
     ivec2 p = ivec2(gl_FragCoord.xy);
     vec4 m = texelFetch(uMask, p, 0);
@@ -1084,7 +1117,21 @@ export const GROWTH_NCA_VIEW = /* glsl */ `
     // by the cell's own age (Ring) or its colony's (Hold: fades as one).
     float age = uRest < 0.0 ? m.a : m.r;
     float cov = m.b > 0.5 ? m.g * (uLife > 0.0 ? 1.0 - smoothstep(uLife, uLife + uFade, age) : 1.0) : 0.0;
-    o = vec4(mix(uGround, texelFetch(uPhoto, p, 0).rgb, cov), 1.0);
+    vec3 c = texelFetch(uPhoto, p, 0).rgb;
+    vec4 t = texelFetch(uTint, p, 0);
+    if (t.a > 0.5) {
+      vec3 pen = rgb2hsv(t.rgb);
+      if (pen.y > 0.15) {
+        vec3 h = rgb2hsv(c);
+        float dh = abs(fract(h.x - LICHEN_HUE + 0.5) - 0.5);          // circular hue distance
+        float w = smoothstep(0.12, 0.4, h.y) * (1.0 - smoothstep(0.06, 0.16, dh));
+        // The lichen keeps its own saturation, scaled by the pen's: a full pen
+        // is exactly as rich as the photo's orange, a pastel pen is paler.
+        vec3 re = hsv2rgb(vec3(pen.x, h.y * pen.y, h.z));
+        c = mix(c, re, w);
+      }
+    }
+    o = vec4(mix(uGround, c, cov), 1.0);
   }
 `;
 
