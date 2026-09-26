@@ -939,7 +939,8 @@ cost), saturation, hue spread, contrast, and **Colonies** — how far
 each planting's hue swings from Colour (0 = one colour; every engine but
 Nested, which has no colonies), and **Edge** — growth thins out over this
 margin (% of the frame height) and stops short of the frame instead of
-being cut off by it; the margin has rounded corners and wanders slowly. Changing Advanced values
+being cut off by it; the margin has rounded corners and wanders slowly.
+Edge is a setting for the whole stage: it stays as you switch Looks. Changing Advanced values
 moves away from the Look; choose the Look again to return to it.
 
 A few behaviours worth knowing:

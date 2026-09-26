@@ -32,12 +32,15 @@ export const GROWTH_MODES = ['Single', 'Nested', 'Frost', 'Hyphae'];   // Frost 
 // static dots with a dead centre (owner, 2026-09-25). Values are param values
 // as the panel shows them. APPEND-ONLY — growth.look persists the index.
 // Optional `plants`: extra colonies main.js sows after the centre spore.
+// Edge (growth.edge) is deliberately NOT here: it sets how growth meets the
+// frame — a stage setting that holds across Looks (owner, 2026-09-26) — and
+// unlike the leftovers above it cannot make a Look fail, only trim it.
 // Each one is verified on the GPU to look like its name (CHANGELOG).
 const LOOK_BASE = {
   'growth.speed': 16, 'growth.feed': 0, 'growth.kill': 0, 'growth.fieldAmt': 0,
   'growth.zones': 0, 'growth.variation': 0, 'growth.varSize': 3, 'growth.varDrift': 0.05,
   'growth.fadeStyle': 0, 'growth.lifetime': 12, 'growth.rest': 4, 'growth.details': 0,
-  'growth.sat': 45, 'growth.spread': 15, 'growth.colonies': 0, 'growth.edge': 0, 'growth.contrast': 4,
+  'growth.sat': 45, 'growth.spread': 15, 'growth.colonies': 0, 'growth.contrast': 4,
   'growth.relief': 45, 'growth.bevel': 2, 'growth.lightAngle': 135, 'growth.gloss': 25, 'growth.ground': 12,
   'growth.res': 1, 'growth.seedAmt': 100, 'growth.plantSize': 3,
   'growth.crFold': 6, 'growth.crAniso': 0.04, 'growth.crAngle': 0, 'growth.crHeat': 1.6, 'growth.crNoise': 0.02, 'growth.crRingGap': 0.4,

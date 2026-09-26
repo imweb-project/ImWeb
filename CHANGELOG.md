@@ -20,6 +20,7 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   20.7% → 0.0%, Snowflake 31.0% → 8.2%, Nested 35.8% → 0.3%, interiors
   unchanged. Nested still reads boxy (its dynamics draw a rim along any
   boundary); Mycelium did not reach the frame in the 25 s test.
+  Edge is NOT written by the Looks (owner): it holds across Look changes.
 
 ### Changed
 - **Growth: Nested is drawn smooth, at output resolution** (owner: "still
