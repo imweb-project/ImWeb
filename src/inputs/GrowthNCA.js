@@ -76,6 +76,7 @@ export class GrowthNCA {
         uPhoto: { value: null }, uMask: { value: null }, uTint: { value: null },
         uGround: { value: new THREE.Vector3(...GROUND) },
         uLife: { value: 0 }, uFade: { value: 1 }, uRest: { value: 0 },
+        uRelief: { value: 0 }, uGloss: { value: 0 }, uLight: { value: new THREE.Vector3(0, 0, 1) },
       },
       vertexShader: /* glsl */ `out vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position, 1.0); }`,
       fragmentShader: GROWTH_NCA_VIEW, depthTest: false, depthWrite: false,
@@ -181,7 +182,7 @@ export class GrowthNCA {
         uS0: { value: null }, uS1: { value: null }, uS2: { value: null },
         uW: { value: tex }, uMask: { value: null },
         uSize: { value: new THREE.Vector2() },
-        uStep: { value: 0 }, uFire: { value: this._model.fire },
+        uStep: { value: 0 }, uFire: { value: this._model.fire }, uRot: { value: new THREE.Vector2(1, 0) },
       },
       depthTest: false, depthWrite: false,
     });
@@ -240,7 +241,8 @@ export class GrowthNCA {
 
   /**
    * @param o { w, h, dt, speed (0–40), seedTex, seedAmt (0–1), plant {x,y,r} | null,
-   *            life (s, 0 = forever), fade (s), rest (s; < 0 = never regrow) }
+   *            life (s, 0 = forever), fade (s), rest (s; < 0 = never regrow),
+   *            rot (radians: the whole texture's turn, 0 = as trained) }
    * Returns false until the model has loaded (nothing drawn yet).
    */
   render(o) {
@@ -261,6 +263,7 @@ export class GrowthNCA {
 
     const u = this._stepMat.uniforms, mu = this._maskMat.uniforms;
     u.uSize.value.set(this._w, this._h);
+    u.uRot.value.set(Math.cos(o.rot ?? 0), Math.sin(o.rot ?? 0));
     mu.uSize.value.set(this._w, this._h);
     mu.uSeed.value = o.seedTex;
     mu.uSeedPrev.value = this._seedPrev?.texture ?? null;   // null samples black: all arrives
@@ -309,9 +312,15 @@ export class GrowthNCA {
     return true;
   }
 
-  /** Draw the current state's colour into `target` (any size; Linear upscale). */
-  view(target) {
+  /**
+   * Draw the picture into `target` (any size; Linear upscale).
+   * @param look { relief (normal depth, 0 = flat), gloss (0–1), light (Vector3, unit) }
+   */
+  view(target, look = {}) {
     const v = this._viewMat.uniforms;
+    v.uRelief.value = look.relief ?? 0;
+    v.uGloss.value = look.gloss ?? 0;
+    if (look.light) v.uLight.value.copy(look.light);
     v.uPhoto.value = this._photo[this._pcur].texture;
     v.uMask.value = this._mask[this._mcur].textures[0];
     v.uTint.value = this._mask[this._mcur].textures[1];

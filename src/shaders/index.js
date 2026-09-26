@@ -903,6 +903,14 @@ export const GROWTH_CURVE_CLEAN = /* glsl */ `
 //   texel 12     .x = b1[j]
 //   texel 13+t   W2 column j for channels t*4..t*4+3
 //
+// Steering: uRot = (cos, sin) turns every cell's Sobel pair before the
+// network sees it, so the texture grows rotated — grain, drip and the photo's
+// baked-in light all turn with it (tools/nca/rot.py: stable at every angle,
+// drift turned +93° for 90°). (1, 0) = as trained. ONE angle for the whole
+// grid only: per-cell angles (colonies grown along the pen's travel) blew
+// up under overlapping strokes — 160 917 cells past |x| 2.5, values to 1e6,
+// against 0 with one angle (runs/gltest/storm.html, 2026-09-26).
+//
 // Every living cell runs the rule at the TRAINED rate, always. Settling is
 // done in the picture (GROWTH_NCA_CAPTURE), not here: slowing or freezing
 // cells put neighbours at different rates, which the rule never saw in
@@ -916,6 +924,7 @@ export const GROWTH_NCA_STEP = /* glsl */ `
   uniform sampler2D uS0, uS1, uS2, uW, uMask;
   uniform ivec2 uSize;
   uniform float uStep, uFire;
+  uniform vec2 uRot;
   layout(location = 0) out vec4 o0;
   layout(location = 1) out vec4 o1;
   layout(location = 2) out vec4 o2;
@@ -945,6 +954,10 @@ export const GROWTH_NCA_STEP = /* glsl */ `
     perceive(uS0, p, id0, sx0, sy0, lp0);
     perceive(uS1, p, id1, sx1, sy1, lp1);
     perceive(uS2, p, id2, sx2, sy2, lp2);
+    vec4 t;
+    t = uRot.x * sx0 + uRot.y * sy0; sy0 = -uRot.y * sx0 + uRot.x * sy0; sx0 = t;
+    t = uRot.x * sx1 + uRot.y * sy1; sy1 = -uRot.y * sx1 + uRot.x * sy1; sx1 = t;
+    t = uRot.x * sx2 + uRot.y * sy2; sy2 = -uRot.y * sx2 + uRot.x * sy2; sx2 = t;
     vec4 d0 = vec4(0.0), d1 = vec4(0.0), d2 = vec4(0.0);
     for (int j = 0; j < HID; j++) {
       float h = texelFetch(uW, ivec2(12, j), 0).x
@@ -1091,14 +1104,32 @@ export const GROWTH_NCA_CAPTURE = /* glsl */ `
 // pixel's hue first was tried: the crust's faint random hues were boosted to
 // rainbow speckle and the discs turned olive.) A grey or white pen
 // (saturation < 0.15) keeps the photo's natural colours.
+// Relief (uRelief > 0) lifts the lichen off the rock: a height map — the
+// colony's coverage, plus a little of the picture's brightness for the crust
+// and discs — is lit from uLight (Light angle, 40° up), so colonies read as
+// thick with a lit and a shaded rim, the crust as embossed, and the rock
+// takes a shadow on the side away from the light. uRelief 0 = the flat
+// picture, unchanged. Picture only: the rule never sees any of it.
 export const GROWTH_NCA_VIEW = /* glsl */ `
   precision highp float;
   uniform sampler2D uPhoto, uMask, uTint;
   uniform vec3 uGround;
-  uniform float uLife, uFade, uRest;
+  uniform float uLife, uFade, uRest, uRelief, uGloss;
+  uniform vec3 uLight;
   in vec2 vUv;
   layout(location = 0) out vec4 o;
   const float LICHEN_HUE = 0.065;   // the photo's orange, ~23°
+  float coverAt(ivec2 q) {
+    vec4 m = texelFetch(uMask, q, 0);
+    float age = uRest < 0.0 ? m.a : m.r;
+    return m.b > 0.5 ? m.g * (uLife > 0.0 ? 1.0 - smoothstep(uLife, uLife + uFade, age) : 1.0) : 0.0;
+  }
+  float heightAt(ivec2 q) {
+    ivec2 sz = textureSize(uMask, 0);
+    q = clamp(q, ivec2(0), sz - 1);
+    float cv = coverAt(q);
+    return cv * (0.6 + 0.4 * dot(texelFetch(uPhoto, q, 0).rgb, vec3(0.299, 0.587, 0.114)));
+  }
   vec3 rgb2hsv(vec3 c) {
     vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
     vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
@@ -1112,11 +1143,9 @@ export const GROWTH_NCA_VIEW = /* glsl */ `
   }
   void main() {
     ivec2 p = ivec2(gl_FragCoord.xy);
-    vec4 m = texelFetch(uMask, p, 0);
     // Fade-in after joining; with a Lifetime, fade-out over its last uFade s —
     // by the cell's own age (Ring) or its colony's (Hold: fades as one).
-    float age = uRest < 0.0 ? m.a : m.r;
-    float cov = m.b > 0.5 ? m.g * (uLife > 0.0 ? 1.0 - smoothstep(uLife, uLife + uFade, age) : 1.0) : 0.0;
+    float cov = coverAt(p);
     vec3 c = texelFetch(uPhoto, p, 0).rgb;
     vec4 t = texelFetch(uTint, p, 0);
     if (t.a > 0.5) {
@@ -1131,7 +1160,31 @@ export const GROWTH_NCA_VIEW = /* glsl */ `
         c = mix(c, re, w);
       }
     }
-    o = vec4(mix(uGround, c, cov), 1.0);
+    vec3 col = mix(uGround, c, cov);
+    if (uRelief > 0.0) {
+      // Sobel of the height field → surface normal, lit from uLight. Divided
+      // by the flat response (uLight.z) so level ground keeps its colour.
+      float hx = (heightAt(p + ivec2(1, 1)) + 2.0 * heightAt(p + ivec2(1, 0)) + heightAt(p + ivec2(1, -1))
+                - heightAt(p + ivec2(-1, 1)) - 2.0 * heightAt(p + ivec2(-1, 0)) - heightAt(p + ivec2(-1, -1))) / 8.0;
+      float hy = (heightAt(p + ivec2(-1, 1)) + 2.0 * heightAt(p + ivec2(0, 1)) + heightAt(p + ivec2(1, 1))
+                - heightAt(p + ivec2(-1, -1)) - 2.0 * heightAt(p + ivec2(0, -1)) - heightAt(p + ivec2(1, -1))) / 8.0;
+      vec3 n = normalize(vec3(-hx * uRelief, -hy * uRelief, 1.0));
+      // Capped at ×1.25: facets turned to the light brightened past full and
+      // washed the orange out to plaster at Relief 45.
+      float lit = clamp(max(dot(n, uLight), 0.0) / max(uLight.z, 0.2), 0.35, 1.25);
+      float spec = uGloss * pow(max(dot(reflect(-uLight, n), vec3(0.0, 0.0, 1.0)), 0.0), 24.0);
+      col = col * mix(1.0, lit, cov) + spec * cov;
+      // Cast shadow on the rock: lichen standing between this spot and the
+      // light, a few cells toward it, falling off with distance.
+      vec2 toL = normalize(uLight.xy + 1e-6);
+      float h0 = heightAt(p), sh = 0.0;
+      for (int k = 1; k <= 5; k++) {
+        float hk = heightAt(p + ivec2(round(toL * float(k))));
+        sh = max(sh, hk - h0 - float(k) * 0.12);
+      }
+      col *= 1.0 - clamp(sh * uRelief * 0.08, 0.0, 0.6);
+    }
+    o = vec4(col, 1.0);
   }
 `;
 

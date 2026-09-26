@@ -60,6 +60,10 @@ export const MODE_CURVES     = 4;
 export const MODE_NEURAL     = 5;
 // The Neural engine's trained rule (tools/nca). One model for now.
 const NCA_MODEL_URL = 'nca/lichen.json';
+// Sign so that a larger Light angle turns the texture counter-clockwise on
+// screen, as the other engines' light moves (0° = from the right, 90° = from
+// above). Measured on the GPU (runs/gltest/rot.html): +1 turned it clockwise.
+const NCA_ROT_SIGN = -1;
 
 export class GrowthRD {
   constructor(renderer) {
@@ -296,10 +300,20 @@ export class GrowthRD {
         seedTex: o.seedTex, seedAmt: o.seedTex ? o.seedAmt : 0, plant: this._plant,
         life, fade: o.life > 0 ? Math.max(0.5, life * 0.25) : o.growTime > 0 ? o.fadeTime : life * 0.25,
         rest: o.life > 0 ? (o.rest ?? 0) : -1,
+        // Light angle turns the whole texture — and the sunlight baked into
+        // the photo with it. 135 (the Looks' default) = as trained.
+        rot: (((o.lightAngle ?? 135) - 135) * Math.PI) / 180 * NCA_ROT_SIGN,
       });
       this._plant = null;
       this._view.setSize(this._w, this._h);
-      if (drawn) this._nca.view(this._view);
+      // Relief lifts the lichen off the rock, lit from Light angle — the same
+      // depth scale and 40° elevation as the other engines' view (below).
+      const az = ((o.lightAngle ?? 135) * Math.PI) / 180, el = (40 * Math.PI) / 180;
+      this._ncaLight ??= new THREE.Vector3();
+      this._ncaLight.set(Math.cos(az) * Math.cos(el), Math.sin(az) * Math.cos(el), Math.sin(el));
+      if (drawn) this._nca.view(this._view, {
+        relief: ((o.relief ?? 0) / 100) * 24, gloss: (o.gloss ?? 0) / 100, light: this._ncaLight,
+      });
       else { this.renderer.setRenderTarget(this._view); this.renderer.clear(); }   // model still loading
       this.renderer.setRenderTarget(prevTarget);
       return;

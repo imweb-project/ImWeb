@@ -91,5 +91,8 @@ export const GROWTH_LOOKS = [
   // so the piece keeps living instead of freezing once covered.
   { name: 'Neural lichen', values: { ...LOOK_BASE,
     'growth.mode': 5, 'growth.scale': 50, 'growth.plantSize': 8,
-    'growth.fadeStyle': 3, 'growth.lifetime': 20, 'growth.rest': 3 } },
+    'growth.fadeStyle': 3, 'growth.lifetime': 20, 'growth.rest': 3,
+    // Relief lifts the lichen off the rock; 30, not LOOK_BASE's 45, which
+    // paled the photo's orange noticeably.
+    'growth.relief': 30 } },
 ];

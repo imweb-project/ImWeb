@@ -66,10 +66,19 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
     pen grows a blue-lavender lichen. White/grey pens and Plant keep the
     photo's colours. The pen now counts by its brightest channel, so a
     saturated blue (luma 0.11) plants too.
+  - Light angle turns the whole Neural texture — grain, drip and the
+    sunlight baked into the photo (135 = as trained): the rule's Sobel pair
+    is rotated before it sees it. Stable at every angle, and under a 60-
+    stroke storm at 225°. Per-colony angles (lichen grown along the pen's
+    travel) were built and REVERTED: overlapping strokes made a patchwork of
+    angles that blew the rule up (160 917 cells, values to 1e6).
+  - Relief lifts the lichen off the rock: a height map (coverage plus a
+    little of the picture's brightness) lit from Light angle — raised
+    colony edges, embossed crust, a cast shadow on the rock. Picture only;
+    Relief 0 is pixel-identical to the flat view. The Look sets 30.
   Model choice: of three Colab runs, lichenB (128 hidden) had the most
   detail and was the only one whose held wipes did not leak a spreading flat
-  zone (`tools/nca/scar.py`). The Colour/Relief view settings do not apply
-  to Neural.
+  zone (`tools/nca/scar.py`). Colour and Details do not apply to Neural.
 - **Growth: Curves — mycelium as free-moving smooth threads** (GrowMode 4;
   `GrowthCurves.js`). Hyphae steps one cell in one of 8 directions; here each
   tip is an agent with a float position and a drifting turning rate, and
