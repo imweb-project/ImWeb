@@ -375,11 +375,13 @@ export const GROWTH_RD_VIEW = /* glsl */ `
   // have claimed hyphae too.
   #define IS_CRYSTAL (abs(uMode - 2.0) < 0.5)
   #define IS_HYPHAE  (uMode > 2.5)
+  #define IS_CURVES  (uMode > 3.5)   // Curves: r = coverage, b = birth time
 
   // ONE definition of what each mode shows, 0–1. Colour and relief both read
   // it, so the lit surface is exactly the shape you see, not a second guess.
   float heightOf(vec4 st) {
     if (uMode < 0.5) return clamp((st.g - 0.08) * uContrast, 0.0, 1.0);            // B
+    if (IS_CURVES)   return clamp(st.r, 0.0, 1.0);                                  // anti-aliased
     if (IS_HYPHAE)   return st.r > 0.5 ? 1.0 : 0.0;                                 // a thread
     if (IS_CRYSTAL)  return clamp(0.5 + (st.r - 0.5) * uContrast * 0.5, 0.0, 1.0); // p
     return clamp(0.5 + 0.5 * st.r * uContrast * 0.5, 0.0, 1.0);                    // v
@@ -392,6 +394,7 @@ export const GROWTH_RD_VIEW = /* glsl */ `
   float surf(vec2 uv) {
     vec4 st = texture2D(uState, uv);
     if (uMode < 0.5) return st.g / 0.4;
+    if (IS_CURVES) return clamp(st.r, 0.0, 1.0);
     if (IS_HYPHAE) return st.r > 0.5 ? 1.0 : 0.0;
     if (IS_CRYSTAL) {
       // Rings as engraved grooves: a narrow cos² profile per ring. Its width
@@ -414,10 +417,13 @@ export const GROWTH_RD_VIEW = /* glsl */ `
     } else if (IS_HYPHAE) {
       // Colour by age: fresh tips and young threads at Colour, older ones
       // walk along HueSpread — the history of the growth, readable.
-      hue = uHue + uSpread * clamp(st.b / 10.0, 0.0, 1.0);
+      // Curves stores BIRTH time in b (a segment is drawn once, never
+      // stepped), so its age is the lineage clock minus that.
+      float age = IS_CURVES ? max(0.0, uNow - st.b) : st.b;
+      hue = uHue + uSpread * clamp(age / 10.0, 0.0, 1.0);
       // …and fade a little as they age (owner): brightness toward 60% and
       // saturation toward 70%, easing over ~20 s, so fresh tips stand out.
-      float fade = exp(-st.b / 20.0);
+      float fade = exp(-age / 20.0);
       val *= 0.6 + 0.4 * fade;
       sat *= 0.7 + 0.3 * fade;
     } else if (IS_CRYSTAL) {
@@ -825,6 +831,58 @@ ${GROWTH_VAR_GLSL}
       if (spoke) o = vec4(1.0, fract(atan(d.y, d.x) / TWO_PI), 0.0, uNow);
     }
     gl_FragColor = o;
+  }
+`;
+
+// ── Growth: Curves — hyphae as free-moving tips (GrowthCurves.js) ─────────────
+// Each tip step is one segment, drawn as an instanced quad in TARGET pixels
+// and shaded by distance to the segment: anti-aliased, round-capped, so the
+// joints between steps are seamless. State layout as the other engines: r =
+// coverage, b = birth time (lineage clock), a = lineage stamp.
+export const GROWTH_CURVE_VERT = /* glsl */ `
+  attribute vec4 aSeg;    // x0, y0, x1, y1 in target pixels
+  attribute vec2 aMeta;   // birth time, lineage stamp
+  uniform vec2  uSize;    // target size, pixels
+  uniform float uHalfW;   // half line width, pixels
+  varying vec2 vPix;
+  varying vec4 vSeg;
+  varying vec2 vMeta;
+  void main() {
+    vec2 a = aSeg.xy, b = aSeg.zw, d = b - a;
+    float len = length(d);
+    vec2 t = len > 1e-5 ? d / len : vec2(1.0, 0.0);
+    vec2 n = vec2(-t.y, t.x);
+    float r = uHalfW + 1.0;            // + 1 px for the anti-aliased rim
+    vec2 p = (position.x < 0.0 ? a - t * r : b + t * r) + n * position.y * r;
+    vPix = p; vSeg = aSeg; vMeta = aMeta;
+    gl_Position = vec4(p / uSize * 2.0 - 1.0, 0.0, 1.0);
+  }
+`;
+export const GROWTH_CURVE_FRAG = /* glsl */ `
+  uniform float uHalfW;
+  varying vec2 vPix;
+  varying vec4 vSeg;
+  varying vec2 vMeta;
+  void main() {
+    vec2 a = vSeg.xy, ba = vSeg.zw - a, pa = vPix - a;
+    float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
+    float cov = clamp(uHalfW + 0.5 - length(pa - ba * h), 0.0, 1.0);
+    if (cov <= 0.0) discard;
+    gl_FragColor = vec4(cov, 0.0, vMeta.x, vMeta.y);
+  }
+`;
+// Wipes pixels whose lineage has fully faded (same rule as the view's fade),
+// so MAX blending cannot resurrect an old line under new growth.
+export const GROWTH_CURVE_CLEAN = /* glsl */ `
+  uniform sampler2D uSrc;
+  uniform float uNow, uGrowTime, uFadeTime, uPenRate;
+  varying vec2 vUv;
+  void main() {
+    vec4 c = texture2D(uSrc, vUv);
+    float st = c.a;
+    bool gone = st > 0.0 && ((uGrowTime > 0.0 && uNow - st > uGrowTime + uFadeTime)
+                          || (uPenRate > 0.0 && exp(-uPenRate * (uNow - st)) < 1.0 / 255.0));
+    gl_FragColor = gone ? vec4(0.0) : c;
   }
 `;
 

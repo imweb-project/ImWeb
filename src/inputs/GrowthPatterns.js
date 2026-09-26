@@ -24,7 +24,7 @@ export const GROWTH_RES = [256, 512, 1024];
 // Single = Gray-Scott (one pattern scale); Nested = multi-scale Turing.
 // ≤ 6 characters and no hyphen: a short SELECT renders as a button group
 // that abbreviates longer labels ("Gray-Scott" showed as "Scott").
-export const GROWTH_MODES = ['Single', 'Nested', 'Frost', 'Hyphae'];   // Frost = crystals, Hyphae = 1-px threads
+export const GROWTH_MODES = ['Single', 'Nested', 'Frost', 'Hyphae', 'Curves'];   // Frost = crystals, Hyphae = 1-px threads, Curves = free-moving smooth threads
 
 // ── Looks ─────────────────────────────────────────────────────────────────────
 // A Look writes EVERY value that shapes the result, not just the obvious

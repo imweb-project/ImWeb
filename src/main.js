@@ -557,7 +557,7 @@ async function main() {
     if (ps.get("growth.mode").value === 2) return { res: grid(512), diff: s };
     // Hyphae: lines are one grid pixel, so Size is simply the grid — 1024
     // (finest), 512, 256. Cheap engine: 1024 is affordable here.
-    if (ps.get("growth.mode").value === 3) {
+    if (ps.get("growth.mode").value === 3 || ps.get("growth.mode").value === 4) {
       return { res: grid(s < 0.34 ? 1024 : s < 0.67 ? 512 : 256), diff: 0.3 };
     }
     const wf = Math.pow(Math.sqrt(20), s);          // width factor 1 … 4.47
@@ -1432,14 +1432,18 @@ async function main() {
       1: ["msStep", "msFine", "msCoarse", "msBias"],
       2: ["crFold", "crAniso", "crAngle", "crHeat", "crNoise", "crRingGap"],
       3: ["hyBranch"],
+      4: ["hyBranch"],
     };
+    // A row shows if its id is listed for the CURRENT engine — so one id can
+    // belong to several engines (Branching: Hyphae and Curves). The old loop
+    // wrote each row once per engine, so the last listing won.
+    const allIds = [...new Set(Object.values(ENGINE_ONLY).flat())];
     const showFor = () => {
       const mode = Math.round(ps.get("growth.mode").value);
-      for (const [m, ids] of Object.entries(ENGINE_ONLY)) {
-        for (const id of ids) {
-          const row = document.querySelector(`#growth-adv-params [data-param-id="growth.${id}"]`);
-          if (row) row.style.display = Number(m) === mode ? "" : "none";
-        }
+      const mine = new Set(ENGINE_ONLY[mode] ?? []);
+      for (const id of allIds) {
+        const row = document.querySelector(`#growth-adv-params [data-param-id="growth.${id}"]`);
+        if (row) row.style.display = mine.has(id) ? "" : "none";
       }
       // Colonies is the reverse: every engine but Nested, which has no lineage.
       const col = document.querySelector('#growth-adv-params [data-param-id="growth.colonies"]');

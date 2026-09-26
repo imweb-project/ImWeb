@@ -45,6 +45,7 @@ import {
   GROWTH_CR_AUX, GROWTH_CR_STEP, GROWTH_HY_STEP, PASSTHROUGH, GROWTH_UPSAMPLE,
 } from '../shaders/index.js';
 import { GROWTH_PATTERNS } from './GrowthPatterns.js';
+import { GrowthCurves } from './GrowthCurves.js';
 
 const MAX_STEPS_PER_FRAME = 64;   // a long dt must not stall the render loop
 const MS_LEVELS = 6;              // pyramid depth: blur radii ~2 … 64 texels
@@ -54,6 +55,7 @@ export const MODE_GRAY_SCOTT = 0;
 export const MODE_MULTISCALE = 1;
 export const MODE_CRYSTAL    = 2;
 export const MODE_HYPHAE     = 3;
+export const MODE_CURVES     = 4;
 
 export class GrowthRD {
   constructor(renderer) {
@@ -255,7 +257,7 @@ export class GrowthRD {
   plant(x, y, r) { this._plant = { x, y, r }; }
 
   /** Wipe back to pure food (A = 1, B = 0) on the next render. */
-  clear() { this._needsInit = true; }
+  clear() { this._needsInit = true; this._curves?.clear(); }
 
   /**
    * @param {number} dt  seconds since the last frame
@@ -270,7 +272,7 @@ export class GrowthRD {
 
     // The two modes read the state channels differently, so a switch starts
     // from that mode's own empty state rather than reinterpreting the other's.
-    const mode = [MODE_MULTISCALE, MODE_CRYSTAL, MODE_HYPHAE].includes(o.mode) ? o.mode : MODE_GRAY_SCOTT;
+    const mode = [MODE_MULTISCALE, MODE_CRYSTAL, MODE_HYPHAE, MODE_CURVES].includes(o.mode) ? o.mode : MODE_GRAY_SCOTT;
     if (mode !== this._mode) { this._mode = mode; this._needsInit = true; }
     if (mode === MODE_MULTISCALE && !this._pyr) this._sizePyramid();
     if (mode === MODE_CRYSTAL && !this._aux) this._aux = this._makeTarget(true);
@@ -348,6 +350,18 @@ export class GrowthRD {
       this._stepCrystal(n, o, u.uAgeDt.value, u.uNow.value);
     } else if (mode === MODE_HYPHAE) {
       this._stepHyphae(n, o, u.uAgeDt.value, u.uNow.value);
+    } else if (mode === MODE_CURVES) {
+      // Curves runs its own fixed-step clock on real time (see GrowthCurves).
+      this._curves ??= new GrowthCurves(this.renderer, (m, t) => this._blit(m, t));
+      this._curves.render({
+        gridRes: this._w >= this._h ? this._w : this._h, aspect: o.aspect, viewRes: o.viewRes,
+        dt: o.speed > 0 ? step : 0, speed: o.speed, variation: o.variation,
+        branch: (o.hyBranch ?? 30) / 100, edge: (o.edge ?? 0) / 100,
+        now: this._clock, growTime: o.growTime, fadeTime: o.fadeTime, penRate: o.penRate,
+        seedTex: o.seedTex, seedAmt: o.seedTex ? o.seedAmt : 0,
+        plant: this._plant, copyMat: this._copyMat,
+      });
+      this._plant = null;
     } else for (let i = 0; i < n; i++) {
       // The spore is applied on the FIRST step only; after that the reaction
       // carries it. Radius in texels, measured against the grid height.
@@ -424,6 +438,15 @@ export class GrowthRD {
       this._upMat.uniforms.uGrid.value.set(this._w, this._h);
       this._blit(this._upMat, this._up);
       v.uState.value = this._up.texture;
+    }
+    // Curves draws its threads at output resolution already: the view reads
+    // that target 1:1, and a texel is one of ITS pixels (Details lines stay
+    // one pixel wide on screen).
+    if (mode === MODE_CURVES && this._curves?.texture) {
+      vw = this._curves.width;
+      vh = this._curves.height;
+      v.uState.value = this._curves.texture;
+      v.uTexel.value.set(1 / vw, 1 / vh);
     }
     this._view.setSize(vw, vh);
     this._blit(this._viewMat, this._view);
@@ -565,6 +588,7 @@ export class GrowthRD {
     this._seedPrev?.dispose();
     this._smooth?.dispose();
     this._up?.dispose();
+    this._curves?.dispose();
     this._upMat.dispose();
     this._copyMat.dispose();
     this._crAuxMat.dispose();
