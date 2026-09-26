@@ -1432,13 +1432,13 @@ async function main() {
       1: ["msStep", "msFine", "msCoarse", "msBias"],
       2: ["crFold", "crAniso", "crAngle", "crHeat", "crNoise", "crRingGap"],
       3: ["hyBranch"],
-      4: ["hyBranch"],
+      4: ["hyBranch", "hyDensity"],
     };
     // A row shows if its id is listed for the CURRENT engine — so one id can
     // belong to several engines (Branching: Hyphae and Curves). The old loop
     // wrote each row once per engine, so the last listing won.
     const allIds = [...new Set(Object.values(ENGINE_ONLY).flat())];
-    const ENGINE_NOT = { colonies: [1], fieldSrc: [3], fieldAmt: [3] };
+    const ENGINE_NOT = { colonies: [1], fieldSrc: [3], fieldAmt: [3], contrast: [3, 4] };
     const showFor = () => {
       const mode = Math.round(ps.get("growth.mode").value);
       const mine = new Set(ENGINE_ONLY[mode] ?? []);
@@ -10910,6 +10910,7 @@ void main() {
         // at 60 fps the rate is −60·ln(1 − a). a = 1 would be infinite: capped.
         ..._growthFade(),
         hyBranch: ps.get("growth.hyBranch").value,
+        hyDensity: ps.get("growth.hyDensity").value,
         crFold:   ps.get("growth.crFold").value,
         crAniso:  ps.get("growth.crAniso").value,
         crAngle:  ps.get("growth.crAngle").value,

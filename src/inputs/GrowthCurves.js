@@ -21,7 +21,6 @@ import { GROWTH_CURVE_VERT, GROWTH_CURVE_FRAG, GROWTH_CURVE_CLEAN } from '../sha
 
 const MAX_TIPS  = 3000;     // no branching past this — Hyphae once hit 41 000
 const MAX_SEGS  = 16384;    // segments drawn per frame (instance buffer size)
-const LOOK      = 1.6;      // cells ahead a tip checks for another thread
 const SIM_DT    = 1 / 60;   // fixed sim step, seconds
 const SEED_W    = 128;      // stroke read-back grid (sprouting along strokes)
 const FIELD_W   = 64;       // field read-back grid (the light threads turn toward)
@@ -102,6 +101,10 @@ export class GrowthCurves {
     this._maxBlend = !!renderer.extensions.get('EXT_float_blend');
     this._tips = [];
     this._occ = null;          // Float32Array gw×gh of lineage stamps
+    this._occId = null;        // Int32Array: the tip that marked each cell …
+    this._occT = null;         // Int32Array: … and on which sim step
+    this._nextId = 1;
+    this._simStep = 0;
     this._gw = 0; this._gh = 0;
     this._tw = 0; this._th = 0;
     this._t = [null, null];    // float targets (second only for cleaning)
@@ -184,7 +187,22 @@ export class GrowthCurves {
 
   _spawn(x, y, h, stamp) {
     if (this._tips.length >= MAX_TIPS) return;
-    this._tips.push({ x, y, h, w: 0, stamp, gen: 0 });
+    this._tips.push({ x, y, h, w: 0, stamp, gen: 0, stuck: 0, id: this._nextId++ });
+  }
+
+  /**
+   * Is the cell `dist` cells ahead of (x, y) along heading h free for tip t?
+   * A tip's OWN last few cells do not count: without that, a check had to
+   * reach past the tip's fresh trail, and at a short look-ahead the "right
+   * in front" test reached further than the look-ahead itself — so blocked
+   * tips died instead of turning.
+   */
+  _clear(x, y, h, dist, o, t) {
+    const px = Math.floor(x + Math.cos(h) * dist), py = Math.floor(y + Math.sin(h) * dist);
+    if (px < 0 || py < 0 || px >= this._gw || py >= this._gh) return true;
+    const c = py * this._gw + px;
+    if (this._occId[c] === t.id && this._simStep - this._occT[c] < t.selfSteps) return true;
+    return this._free(this._occ[c], o);
   }
 
   /** Line width of a generation, in sim cells. */
@@ -202,6 +220,8 @@ export class GrowthCurves {
       if (this._gw) for (const t of this._tips) { t.x *= gw / this._gw; t.y *= gh / this._gh; }
       this._gw = gw; this._gh = gh;
       this._occ = new Float32Array(gw * gh);
+      this._occId = new Int32Array(gw * gh);
+      this._occT = new Int32Array(gw * gh);
     }
     if (tw !== this._tw || th !== this._th) {
       this._tw = tw; this._th = th;
@@ -237,7 +257,7 @@ export class GrowthCurves {
 
   // Marks the cells a segment covers — a band as wide as the line, so a
   // neighbour keeps clear of a thick trunk's EDGE, not just its centre.
-  _mark(x0, y0, x1, y1, stamp, width) {
+  _mark(x0, y0, x1, y1, stamp, width, id) {
     const len = Math.hypot(x1 - x0, y1 - y0);
     const n = Math.max(1, Math.ceil(len * 2));
     const nx = len > 0 ? -(y1 - y0) / len : 0, ny = len > 0 ? (x1 - x0) / len : 0;
@@ -248,7 +268,10 @@ export class GrowthCurves {
       for (let j = -m; j <= m; j++) {
         const o = m ? (j / m) * r : 0;
         const cx = Math.floor(px + nx * o), cy = Math.floor(py + ny * o);
-        if (cx >= 0 && cy >= 0 && cx < this._gw && cy < this._gh) this._occ[cy * this._gw + cx] = stamp;
+        if (cx >= 0 && cy >= 0 && cx < this._gw && cy < this._gh) {
+          const c = cy * this._gw + cx;
+          this._occ[c] = stamp; this._occId[c] = id; this._occT[c] = this._simStep;
+        }
       }
     }
   }
@@ -264,6 +287,7 @@ export class GrowthCurves {
 
   /** One fixed sim step for every tip. */
   _step(o) {
+    this._simStep++;
     const speed = o.cellsPerSec * SIM_DT;
     const wander = o.wander, branch = o.branch;
     const next = [];
@@ -286,15 +310,28 @@ export class GrowthCurves {
         if (g > 1e-3) t.h += o.fieldAmt * Math.min(1, g * 6) * Math.sin(Math.atan2(gy, gx) - t.h) * SIM_DT * 4;
       }
       const step = speed * er;
-      const dx = Math.cos(t.h), dy = Math.sin(t.h);
-      const nx = t.x + dx * step, ny = t.y + dy * step;
+      let nx = t.x + Math.cos(t.h) * step, ny = t.y + Math.sin(t.h) * step;
       if (nx < 0 || ny < 0 || nx >= this._gw || ny >= this._gh) continue;
-      // Look ahead — past this thread's own edge — for another thread: one
-      // there ends this one (they keep clear).
-      const wd = this._width(t.gen), look = LOOK + wd / 2;
-      const px = Math.floor(nx + dx * look), py = Math.floor(ny + dy * look);
-      if (px >= 0 && py >= 0 && px < this._gw && py < this._gh && !this._free(this._occ[py * this._gw + px], o)) continue;
-      this._mark(t.x, t.y, nx, ny, t.stamp, wd);
+      // Avoidance, not collision: a tip whose look-ahead (Density sets how
+      // far, past its own edge) finds another thread curves toward whichever
+      // side is free and keeps growing. It dies only when another thread is
+      // right against its edge, or it has turned away for ~25 steps without
+      // finding room. A longer look-ahead means earlier warning, so more tips
+      // survive to branch: that — not closer packing — is what makes the
+      // colony denser (measured; see growth.hyDensity).
+      const wd = this._width(t.gen), look = o.look + wd / 2;
+      // Own trail: the steps this tip needs to leave its look-ahead behind.
+      t.selfSteps = Math.ceil((look + wd) / Math.max(step, 1e-3)) + 2;
+      if (!this._clear(nx, ny, t.h, look, o, t)) {
+        const L = this._clear(nx, ny, t.h + 0.5, look, o, t), R = this._clear(nx, ny, t.h - 0.5, look, o, t);
+        if (L || R) t.h += (L && (!R || Math.random() < 0.5) ? 1 : -1) * 0.12;
+        t.w *= 0.5;
+        // Dies only if another thread is right against its edge.
+        if (++t.stuck > 25 || !this._clear(t.x, t.y, t.h, wd / 2 + 0.5, o, t)) continue;
+        nx = t.x + Math.cos(t.h) * step; ny = t.y + Math.sin(t.h) * step;   // along the new heading
+        if (nx < 0 || ny < 0 || nx >= this._gw || ny >= this._gh) continue;
+      } else t.stuck = 0;
+      this._mark(t.x, t.y, nx, ny, t.stamp, wd, t.id);
       this._pushSeg(t.x, t.y, nx, ny, o.now, t.stamp, wd);
       t.x = nx; t.y = ny;
       next.push(t);
@@ -303,7 +340,7 @@ export class GrowthCurves {
         const side = Math.random() < 0.5 ? -1 : 1;
         const h = t.h + side * (0.6 + 0.5 * Math.random());
         const off = 0.8 + wd / 2;   // start clear of the parent's edge
-        next.push({ x: nx + Math.cos(h) * off, y: ny + Math.sin(h) * off, h, w: -t.w, stamp: t.stamp, gen: t.gen + 1 });
+        next.push({ x: nx + Math.cos(h) * off, y: ny + Math.sin(h) * off, h, w: -t.w, stamp: t.stamp, gen: t.gen + 1, stuck: 0, id: this._nextId++ });
       }
     }
     this._tips = next.length > MAX_TIPS ? next.slice(0, MAX_TIPS) : next;
@@ -367,6 +404,7 @@ export class GrowthCurves {
       for (const t of this._t) { this.renderer.setRenderTarget(t); this.renderer.setClearColor(0x000000, 0); this.renderer.clear(); }
       this._tips = [];
       this._occ.fill(0);
+      this._occId.fill(0);
       this._needsClear = false;
       this._acc = 0;
     }
@@ -376,6 +414,7 @@ export class GrowthCurves {
       cellsPerSec: 1.5 * (o.speed ?? 16),
       wander: 0.4 + 2.6 * ((o.variation ?? 0) / 100),
       branch: o.branch ?? 0.3, edge: o.edge ?? 0, fieldAmt: o.fieldAmt ?? 0,
+      look: 0.5 + 3.5 * (o.density ?? 0.31),   // cells past its own edge a tip watches (Density)
     };
     this._now = o.now;   // stamp for tips an async stroke read-back spawns
     if (o.plant) this.plant(o.plant.x, o.plant.y, o.plant.r, o.now);

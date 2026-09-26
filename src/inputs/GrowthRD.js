@@ -356,7 +356,7 @@ export class GrowthRD {
       this._curves.render({
         gridRes: this._w >= this._h ? this._w : this._h, aspect: o.aspect, viewRes: o.viewRes,
         dt: o.speed > 0 ? step : 0, speed: o.speed, variation: o.variation,
-        branch: (o.hyBranch ?? 30) / 100, edge: (o.edge ?? 0) / 100,
+        branch: (o.hyBranch ?? 30) / 100, edge: (o.edge ?? 0) / 100, density: (o.hyDensity ?? 31) / 100,
         now: this._clock, growTime: o.growTime, fadeTime: o.fadeTime, penRate: o.penRate,
         seedTex: o.seedTex, seedAmt: o.seedTex ? o.seedAmt : 0,
         fieldTex: o.fieldTex, fieldAmt: o.fieldTex ? o.fieldAmt : 0,

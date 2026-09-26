@@ -43,7 +43,7 @@ const LOOK_BASE = {
   'growth.sat': 45, 'growth.spread': 15, 'growth.colonies': 0, 'growth.contrast': 4,
   'growth.relief': 45, 'growth.bevel': 2, 'growth.lightAngle': 135, 'growth.gloss': 25, 'growth.ground': 12,
   'growth.res': 1, 'growth.seedAmt': 100, 'growth.plantSize': 3,
-  'growth.crFold': 6, 'growth.crAniso': 0.04, 'growth.crAngle': 0, 'growth.crHeat': 1.6, 'growth.crNoise': 0.02, 'growth.crRingGap': 0.4,
+  'growth.hyDensity': 31, 'growth.crFold': 6, 'growth.crAniso': 0.04, 'growth.crAngle': 0, 'growth.crHeat': 1.6, 'growth.crNoise': 0.02, 'growth.crRingGap': 0.4,
 };
 export const GROWTH_LOOKS = [
   // Mitosis only divides from a spore in a slightly more fertile medium:

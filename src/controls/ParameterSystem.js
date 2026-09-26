@@ -7055,6 +7055,17 @@ export function registerCoreParameters(ps) {
     id: "growth.hyBranch", label: "Branching", group: "growth",
     type: PARAM_TYPE.CONTINUOUS, min: 0, max: 100, value: 30, step: 1,
   });
+  // Curves: Density. Sets how far ahead a tip watches for other threads
+  // (0.5–4 cells past its own edge). Named for what it DOES, not how: a
+  // tip that sees a neighbour early has room to turn away and lives on to
+  // branch, one that sees it late dies — so a longer look-ahead grows the
+  // bushier, denser colony (measured: 2.4–2.8% of the frame drawn at the
+  // short end, 5.3–6.6% at 3 cells). It was first built as "Spacing", lower
+  // = denser, and measured the other way round. 31 = the original 1.6.
+  ps.register({
+    id: "growth.hyDensity", label: "Density", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 100, value: 31, step: 1,
+  });
   ps.register({
     id: "growth.seedSrc", label: "Seed src", group: "growth",
     type: PARAM_TYPE.SELECT, options: CAPTURE_SOURCES,
