@@ -1438,6 +1438,7 @@ async function main() {
     // belong to several engines (Branching: Hyphae and Curves). The old loop
     // wrote each row once per engine, so the last listing won.
     const allIds = [...new Set(Object.values(ENGINE_ONLY).flat())];
+    const ENGINE_NOT = { colonies: [1], fieldSrc: [3], fieldAmt: [3] };
     const showFor = () => {
       const mode = Math.round(ps.get("growth.mode").value);
       const mine = new Set(ENGINE_ONLY[mode] ?? []);
@@ -1445,9 +1446,12 @@ async function main() {
         const row = document.querySelector(`#growth-adv-params [data-param-id="growth.${id}"]`);
         if (row) row.style.display = mine.has(id) ? "" : "none";
       }
-      // Colonies is the reverse: every engine but Nested, which has no lineage.
-      const col = document.querySelector('#growth-adv-params [data-param-id="growth.colonies"]');
-      if (col) col.style.display = mode === 1 ? "none" : "";
+      // The reverse: controls for every engine but these, which ignore them —
+      // Nested has no lineage for Colonies; Hyphae never reads the field.
+      for (const [id, off] of Object.entries(ENGINE_NOT)) {
+        const row = document.querySelector(`#growth-adv-params [data-param-id="growth.${id}"]`);
+        if (row) row.style.display = off.includes(mode) ? "none" : "";
+      }
     };
     ps.get("growth.mode").onChange(showFor);
     showFor();

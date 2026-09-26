@@ -24,11 +24,73 @@ const MAX_SEGS  = 16384;    // segments drawn per frame (instance buffer size)
 const LOOK      = 1.6;      // cells ahead a tip checks for another thread
 const SIM_DT    = 1 / 60;   // fixed sim step, seconds
 const SEED_W    = 128;      // stroke read-back grid (sprouting along strokes)
+const FIELD_W   = 64;       // field read-back grid (the light threads turn toward)
 // Thickness by generation: a spore's (or stroke's) first threads are the
 // thickest, each fork 28% thinner than the thread it left — trunk to
 // hair, as real mycelium and roots taper. In sim cells, never under a pixel.
 const W_TRUNK   = 2.2;
 const W_TAPER   = 0.72;
+
+// A GPU → CPU read-back that never stalls. A synchronous readPixels waits
+// for the GPU to finish the frame — measured ~10 ms each for Curves' stroke
+// read-back, 2.6–2.9 ms/frame averaged, when the whole tip simulation cost
+// 0.05 ms. So: readPixels into a pixel-pack buffer, fence, and collect on a
+// later frame once the fence has signalled (Chrome updates a fence only
+// between tasks, so never within one frame). Not three's
+// readRenderTargetPixelsAsync: in r168 it leaves the pack buffer BOUND while
+// it waits, and every synchronous readPixels elsewhere in the app then fails
+// with INVALID_OPERATION (measured: GL error 1282). Here the buffer is
+// unbound straight after each use.
+class AsyncRead {
+  constructor(renderer, blit) {
+    this.renderer = renderer;
+    this._blit = blit;
+    this._rt = null;
+    this._pbo = null;
+    this._pend = null;
+  }
+  /** The last request's pixels once they have landed ({ buf, w, h, tag }), else null. */
+  poll() {
+    if (!this._pend) return null;
+    const gl = this.renderer.getContext();
+    if (gl.getSyncParameter(this._pend.sync, gl.SYNC_STATUS) !== gl.SIGNALED) return null;
+    const p = this._pend;
+    this._pend = null;
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this._pbo);
+    gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, p.buf);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    gl.deleteSync(p.sync);
+    return p;
+  }
+  get busy() { return !!this._pend; }
+  /** Copy `tex` down to w×h and start reading it back. `tag` comes back with the pixels. */
+  request(tex, copyMat, w, h, tag) {
+    if (this._pend) return;
+    const gl = this.renderer.getContext();
+    if (!this._rt || this._rt.width !== w || this._rt.height !== h) {
+      this._rt?.dispose();
+      this._rt = new THREE.WebGLRenderTarget(w, h, { depthBuffer: false, stencilBuffer: false });
+      if (this._pbo) gl.deleteBuffer(this._pbo);
+      this._pbo = gl.createBuffer();
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this._pbo);
+      gl.bufferData(gl.PIXEL_PACK_BUFFER, w * h * 4, gl.STREAM_READ);
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    }
+    copyMat.uniforms.uTexture.value = tex;
+    this._blit(copyMat, this._rt);            // leaves _rt bound for reading
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this._pbo);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, 0);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    this._pend = { sync: gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0), buf: new Uint8Array(w * h * 4), w, h, tag };
+    gl.flush();
+  }
+  dispose() {
+    const gl = this.renderer.getContext();
+    if (this._pend) gl.deleteSync(this._pend.sync);
+    if (this._pbo) gl.deleteBuffer(this._pbo);
+    this._rt?.dispose();
+  }
+}
 
 export class GrowthCurves {
   /** @param blit (material, target) → draws a full-screen quad, from GrowthRD */
@@ -86,9 +148,10 @@ export class GrowthCurves {
     });
 
     // Stroke read-back (small, every few frames).
-    this._seedRT = null;
-    this._seedBuf = null;
-    this._seedPrev = null;
+    this._seedRead  = new AsyncRead(renderer, blit);
+    this._seedPrev  = null;     // last stroke luma, for the arrival test
+    this._fieldRead = new AsyncRead(renderer, blit);
+    this._field     = null;     // { lum: Float32Array, w, h } — the light to grow toward
     this._copyMat = null;
   }
 
@@ -213,6 +276,15 @@ export class GrowthCurves {
       t.w += (Math.random() - 0.5) * wander * 6 * SIM_DT;
       t.w *= 0.97;
       t.h += t.w * SIM_DT * 6;
+      // Toward the light: turn along the field's brightness gradient,
+      // harder where it is steeper, scaled by Field amt.
+      if (o.fieldAmt > 0 && this._field) {
+        const e = 2 * this._gw / this._field.w;         // ± two field cells
+        const gx = this._lum(t.x + e, t.y) - this._lum(t.x - e, t.y);
+        const gy = this._lum(t.x, t.y + e) - this._lum(t.x, t.y - e);
+        const g = Math.hypot(gx, gy);
+        if (g > 1e-3) t.h += o.fieldAmt * Math.min(1, g * 6) * Math.sin(Math.atan2(gy, gx) - t.h) * SIM_DT * 4;
+      }
       const step = speed * er;
       const dx = Math.cos(t.h), dy = Math.sin(t.h);
       const nx = t.x + dx * step, ny = t.y + dy * step;
@@ -237,60 +309,50 @@ export class GrowthCurves {
     this._tips = next.length > MAX_TIPS ? next.slice(0, MAX_TIPS) : next;
   }
 
-  // Sprouting along strokes: a tiny read-back of the seed every few frames;
+  // Sprouting along strokes: a small read-back of the seed every few frames;
   // where a stroke has just ARRIVED a few tips start, heading anywhere.
-  // ASYNC: a synchronous readPixels waits for the GPU to finish the frame —
-  // measured ~10 ms each, 2.6–2.9 ms/frame averaged, when the whole tip
-  // simulation cost 0.05 ms. So: readPixels into a pixel-pack buffer, fence,
-  // and collect on a later frame once the fence has signalled.
-  // Not three's readRenderTargetPixelsAsync: in r168 it leaves the pack
-  // buffer BOUND while it waits, and every synchronous readPixels elsewhere
-  // in the app then fails with INVALID_OPERATION (measured: GL error 1282).
-  // Here the buffer is unbound straight after each use.
-  _sprout(seedTex, seedAmt, o) {
-    const gl = this.renderer.getContext();
-    if (this._pend) {
-      if (gl.getSyncParameter(this._pend.sync, gl.SYNC_STATUS) !== gl.SIGNALED) return;
-      const p = this._pend;
-      this._pend = null;
-      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, p.pbo);
-      gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, p.buf);
-      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
-      gl.deleteSync(p.sync);
-      if (p.gw === this._gw && p.gh === this._gh && p.buf === this._seedBuf) this._sproutFrom(p);
+  _sprout(seedTex, seedAmt, copyMat) {
+    const got = this._seedRead.poll();
+    if (got && got.tag.gw === this._gw && got.tag.gh === this._gh) {
+      const { buf, w, h } = got, n = w * h;
+      if (!this._seedPrev || this._seedPrev.length !== n) this._seedPrev = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        const l = (0.299 * buf[i * 4] + 0.587 * buf[i * 4 + 1] + 0.114 * buf[i * 4 + 2]) / 255 * got.tag.seedAmt;
+        if (l > 0.3 && l - this._seedPrev[i] > 0.1 && Math.random() < 0.08) {
+          const x = ((i % w) + Math.random()) / w * this._gw, y = (Math.floor(i / w) + Math.random()) / h * this._gh;
+          this._spawn(x, y, Math.random() * Math.PI * 2, this._now);
+        }
+        this._seedPrev[i] = l;
+      }
     }
     if (!seedTex || seedAmt <= 0 || this._frame % 4) return;
-    const sw = SEED_W, sh = Math.max(1, Math.round(SEED_W * this._gh / this._gw));
-    if (!this._seedRT || this._seedRT.width !== sw || this._seedRT.height !== sh) {
-      this._seedRT?.dispose();
-      this._seedRT = new THREE.WebGLRenderTarget(sw, sh, { depthBuffer: false, stencilBuffer: false });
-      this._seedBuf = new Uint8Array(sw * sh * 4);
-      this._seedPrev = new Float32Array(sw * sh);
-      if (this._pbo) gl.deleteBuffer(this._pbo);
-      this._pbo = gl.createBuffer();
-      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this._pbo);
-      gl.bufferData(gl.PIXEL_PACK_BUFFER, this._seedBuf.byteLength, gl.STREAM_READ);
-      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
-    }
-    o.copyMat.uniforms.uTexture.value = seedTex;
-    this._blit(o.copyMat, this._seedRT);          // leaves _seedRT bound
-    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this._pbo);
-    gl.readPixels(0, 0, sw, sh, gl.RGBA, gl.UNSIGNED_BYTE, 0);
-    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
-    this._pend = { sync: gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0), pbo: this._pbo,
-                   buf: this._seedBuf, sw, sh, gw: this._gw, gh: this._gh, seedAmt };
-    gl.flush();
+    const sh = Math.max(1, Math.round(SEED_W * this._gh / this._gw));
+    this._seedRead.request(seedTex, copyMat, SEED_W, sh, { gw: this._gw, gh: this._gh, seedAmt });
   }
 
-  _sproutFrom({ buf, sw, sh, gw, gh, seedAmt }) {
-    for (let i = 0; i < sw * sh; i++) {
-      const l = (0.299 * buf[i * 4] + 0.587 * buf[i * 4 + 1] + 0.114 * buf[i * 4 + 2]) / 255 * seedAmt;
-      if (l > 0.3 && l - this._seedPrev[i] > 0.1 && Math.random() < 0.08) {
-        const x = ((i % sw) + Math.random()) / sw * gw, y = (Math.floor(i / sw) + Math.random()) / sh * gh;
-        this._spawn(x, y, Math.random() * Math.PI * 2, this._now);
-      }
-      this._seedPrev[i] = l;
+  // Field src as LIGHT: threads turn toward brighter parts of the field
+  // (phototropism). A coarse luma copy, refreshed every 8 frames — light
+  // moves slowly next to a thread tip, and 64 columns is plenty to steer by.
+  _readField(fieldTex, fieldAmt, copyMat) {
+    const got = this._fieldRead.poll();
+    if (got) {
+      const { buf, w, h } = got, lum = new Float32Array(w * h);
+      for (let i = 0; i < w * h; i++) lum[i] = (0.299 * buf[i * 4] + 0.587 * buf[i * 4 + 1] + 0.114 * buf[i * 4 + 2]) / 255;
+      this._field = { lum, w, h };
     }
+    if (!fieldTex || fieldAmt <= 0) { this._field = null; return; }
+    if (this._frame % 8) return;
+    this._fieldRead.request(fieldTex, copyMat, FIELD_W, Math.max(1, Math.round(FIELD_W * this._gh / this._gw)), null);
+  }
+
+  /** Field luma at sim position (x, y), bilinear. */
+  _lum(x, y) {
+    const f = this._field;
+    const fx = Math.min(f.w - 1.001, Math.max(0, x / this._gw * f.w - 0.5));
+    const fy = Math.min(f.h - 1.001, Math.max(0, y / this._gh * f.h - 0.5));
+    const ix = Math.floor(fx), iy = Math.floor(fy), tx = fx - ix, ty = fy - iy, L = f.lum, W = f.w;
+    const a = L[iy * W + ix], b = L[iy * W + ix + 1], c = L[(iy + 1) * W + ix], d = L[(iy + 1) * W + ix + 1];
+    return (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty;
   }
 
   /**
@@ -313,11 +375,12 @@ export class GrowthCurves {
       // Speed 16 (the Look) ≈ 24 cells/s: a spore reaches the frame in ~20 s.
       cellsPerSec: 1.5 * (o.speed ?? 16),
       wander: 0.4 + 2.6 * ((o.variation ?? 0) / 100),
-      branch: o.branch ?? 0.3, edge: o.edge ?? 0,
+      branch: o.branch ?? 0.3, edge: o.edge ?? 0, fieldAmt: o.fieldAmt ?? 0,
     };
     this._now = o.now;   // stamp for tips an async stroke read-back spawns
     if (o.plant) this.plant(o.plant.x, o.plant.y, o.plant.r, o.now);
-    this._sprout(o.seedTex, o.seedAmt ?? 0, { ...oo, copyMat: o.copyMat });
+    this._sprout(o.seedTex, o.seedAmt ?? 0, o.copyMat);
+    this._readField(o.fieldTex, o.fieldAmt ?? 0, o.copyMat);
     this._frame++;
 
     this._nSeg = 0;
@@ -353,10 +416,8 @@ export class GrowthCurves {
 
   dispose() {
     for (const t of this._t) t?.dispose();
-    this._seedRT?.dispose();
-    const gl = this.renderer.getContext();
-    if (this._pend) gl.deleteSync(this._pend.sync);
-    if (this._pbo) gl.deleteBuffer(this._pbo);
+    this._seedRead.dispose();
+    this._fieldRead.dispose();
     this._geom.dispose();
     this._segMat.dispose();
     this._cleanMat.dispose();

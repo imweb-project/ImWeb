@@ -359,6 +359,7 @@ export class GrowthRD {
         branch: (o.hyBranch ?? 30) / 100, edge: (o.edge ?? 0) / 100,
         now: this._clock, growTime: o.growTime, fadeTime: o.fadeTime, penRate: o.penRate,
         seedTex: o.seedTex, seedAmt: o.seedTex ? o.seedAmt : 0,
+        fieldTex: o.fieldTex, fieldAmt: o.fieldTex ? o.fieldAmt : 0,
         plant: this._plant, copyMat: this._copyMat,
       });
       this._plant = null;
