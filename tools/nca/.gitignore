@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pt
+*_preview.png
+runs/
+lichen.png

@@ -887,6 +887,207 @@ export const GROWTH_CURVE_CLEAN = /* glsl */ `
   }
 `;
 
+// ── Growth: Neural (engine 5, GrowthNCA) ─────────────────────────────────────
+// A texture NCA trained offline (tools/nca/train_texture.py): 12 state
+// channels in three RGBA float attachments, one update per draw. GLSL3 for
+// MRT and texelFetch. Must match the update rule in train_texture.py's header
+// exactly — tools/nca/render.py is the reference it is checked against.
+//
+// Orientation: torch row 0 is the TOP of the image, GL row 0 the bottom, so
+// kernel row i reads GL dy = 1 − i (and column j reads dx = j − 1). Sobel-y
+// therefore takes (below − above) in GL terms, as torch's (y+1) − (y−1).
+//
+// Weights texture uW, one row per hidden unit j (HID rows, 16 texels):
+//   texel t*4+k  (t = attachment 0–2, k = id/sx/sy/lap): W1 for channels
+//                t*4..t*4+3 under filter k
+//   texel 12     .x = b1[j]
+//   texel 13+t   W2 column j for channels t*4..t*4+3
+//
+// Every living cell runs the rule at the TRAINED rate, always. Settling is
+// done in the picture (GROWTH_NCA_CAPTURE), not here: slowing or freezing
+// cells put neighbours at different rates, which the rule never saw in
+// training — wounds healing beside frozen cells blew up to |x| ≈ 38 (141
+// cells) where the same wounds at full rate stayed under 0.71 (measured,
+// runs/gltest/blow.html, 2026-09-26).
+export const GROWTH_NCA_STEP = /* glsl */ `
+  precision highp float;
+  precision highp int;
+  precision highp sampler2D;
+  uniform sampler2D uS0, uS1, uS2, uW, uMask;
+  uniform ivec2 uSize;
+  uniform float uStep, uFire;
+  layout(location = 0) out vec4 o0;
+  layout(location = 1) out vec4 o1;
+  layout(location = 2) out vec4 o2;
+
+  uint pcg(uint v) {
+    uint s = v * 747796405u + 2891336453u;
+    uint w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
+    return (w >> 22u) ^ w;
+  }
+  vec4 tap(sampler2D s, ivec2 p) { return texelFetch(s, (p + uSize) % uSize, 0); }
+  // Identity, Sobel x, Sobel y, Laplacian of one attachment (4 channels).
+  void perceive(sampler2D s, ivec2 p, out vec4 id, out vec4 sx, out vec4 sy, out vec4 lp) {
+    vec4 nw = tap(s, p + ivec2(-1, 1)), n = tap(s, p + ivec2(0, 1)), ne = tap(s, p + ivec2(1, 1));
+    vec4 w  = tap(s, p + ivec2(-1, 0)), c = tap(s, p),               e  = tap(s, p + ivec2(1, 0));
+    vec4 sw = tap(s, p + ivec2(-1,-1)), so = tap(s, p + ivec2(0,-1)), se = tap(s, p + ivec2(1,-1));
+    id = c;
+    sx = (ne + 2.0 * e + se - nw - 2.0 * w - sw) / 8.0;
+    sy = (sw + 2.0 * so + se - nw - 2.0 * n - ne) / 8.0;
+    lp = (nw + ne + sw + se + 2.0 * (n + w + e + so) - 12.0 * c) / 16.0;
+  }
+  void main() {
+    ivec2 p = ivec2(gl_FragCoord.xy);
+    // Outside the colony the state is held empty — what the texture grows
+    // from (bare cells skip the network).
+    if (texelFetch(uMask, p, 0).b < 0.5) { o0 = vec4(0.0); o1 = vec4(0.0); o2 = vec4(0.0); return; }
+    vec4 id0, sx0, sy0, lp0, id1, sx1, sy1, lp1, id2, sx2, sy2, lp2;
+    perceive(uS0, p, id0, sx0, sy0, lp0);
+    perceive(uS1, p, id1, sx1, sy1, lp1);
+    perceive(uS2, p, id2, sx2, sy2, lp2);
+    vec4 d0 = vec4(0.0), d1 = vec4(0.0), d2 = vec4(0.0);
+    for (int j = 0; j < HID; j++) {
+      float h = texelFetch(uW, ivec2(12, j), 0).x
+        + dot(texelFetch(uW, ivec2(0, j), 0), id0) + dot(texelFetch(uW, ivec2(1, j), 0), sx0)
+        + dot(texelFetch(uW, ivec2(2, j), 0), sy0) + dot(texelFetch(uW, ivec2(3, j), 0), lp0)
+        + dot(texelFetch(uW, ivec2(4, j), 0), id1) + dot(texelFetch(uW, ivec2(5, j), 0), sx1)
+        + dot(texelFetch(uW, ivec2(6, j), 0), sy1) + dot(texelFetch(uW, ivec2(7, j), 0), lp1)
+        + dot(texelFetch(uW, ivec2(8, j), 0), id2) + dot(texelFetch(uW, ivec2(9, j), 0), sx2)
+        + dot(texelFetch(uW, ivec2(10, j), 0), sy2) + dot(texelFetch(uW, ivec2(11, j), 0), lp2);
+      h = max(h, 0.0);
+      d0 += h * texelFetch(uW, ivec2(13, j), 0);
+      d1 += h * texelFetch(uW, ivec2(14, j), 0);
+      d2 += h * texelFetch(uW, ivec2(15, j), 0);
+    }
+    // Stochastic update: each cell fires with probability uFire per step.
+    uint r = pcg(uint(p.x) ^ pcg(uint(p.y) ^ pcg(uint(uStep))));
+    float fire = float(r) / 4294967296.0 < uFire ? 1.0 : 0.0;
+    o0 = id0 + fire * d0;
+    o1 = id1 + fire * d1;
+    o2 = id2 + fire * d2;
+  }
+`;
+
+// Zero all three attachments (Clear).
+export const GROWTH_NCA_ZERO = /* glsl */ `
+  layout(location = 0) out vec4 o0;
+  layout(location = 1) out vec4 o1;
+  layout(location = 2) out vec4 o2;
+  void main() { o0 = vec4(0.0); o1 = vec4(0.0); o2 = vec4(0.0); }
+`;
+
+// Colony mask (HalfFloat), one texel per cell:
+//   r  alive: seconds since the cell joined (Lifetime). bare: −(seconds of
+//      Regrow delay left); it may be recolonised once this reaches 0.
+//   g  fade-in, 0 → 1 over 1/uFadeIn updates after joining, so the growing
+//      edge shows lichen arriving rather than the grey empty state.
+//   b  updates since joining, capped at 2048 (settling); 0 = bare.
+//   a  COLONY age: seconds since its colony was sown. A planted cell starts
+//      at 0; a cell that joins inherits its oldest living neighbour's, so a
+//      whole colony shares one clock.
+// A bare cell joins with probability 1 − (1 − uSpread)^n for n living
+// 8-neighbours (an Eden front: ragged, like a real colony's rim). The frame
+// edge does not wrap — a colony stops at it.
+// The pen acts where a stroke ARRIVES (bright now, not last update — uSeed vs
+// uSeedPrev, first update of a frame only): on bare rock it plants; on lichen
+// it wounds — the cell becomes bare with no delay, so the colony regrows into
+// the wound from its edges. Lifetime (uLife > 0), two ways:
+//   Ring (uRest ≥ 0): each CELL dies uLife + uFade s after it joined (the
+//     view fades it over uFade) and stays bare uRest s — the oldest parts go
+//     first, the rim keeps spreading, the rock is recolonised: waves.
+//   Hold (uRest < 0): the COLONY spreads for uLife s, stops, fades as one
+//     over uFade and is gone for good (until sown again).
+export const GROWTH_NCA_MASK = /* glsl */ `
+  precision highp float;
+  precision highp int;
+  uniform sampler2D uMask, uSeed, uSeedPrev;
+  uniform ivec2 uSize;
+  uniform float uStep, uSpread, uFadeIn, uSeedAmt, uAgeDt, uLife, uFade, uRest;
+  uniform vec3 uPoint;          // plant: x, y (0–1), radius in texels (0 = none)
+  layout(location = 0) out vec4 o;
+  uint pcg(uint v) {
+    uint s = v * 747796405u + 2891336453u;
+    uint w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
+    return (w >> 22u) ^ w;
+  }
+  // Colony age of a living neighbour, −1 if bare or off the frame.
+  float colony(ivec2 q) {
+    if (q.x < 0 || q.y < 0 || q.x >= uSize.x || q.y >= uSize.y) return -1.0;
+    vec4 c = texelFetch(uMask, q, 0);
+    return c.b > 0.5 ? c.a : -1.0;
+  }
+  float luma(sampler2D t, vec2 uv) { return dot(texture(t, uv).rgb, vec3(0.299, 0.587, 0.114)); }
+  void main() {
+    ivec2 p = ivec2(gl_FragCoord.xy);
+    vec4 m = texelFetch(uMask, p, 0);
+    vec2 uv = (vec2(p) + 0.5) / vec2(uSize);
+    bool arrive = uSeedAmt > 0.0 && luma(uSeed, uv) * uSeedAmt > 0.5 && luma(uSeedPrev, uv) * uSeedAmt <= 0.5;
+    bool plant = uPoint.z > 0.0 && distance(vec2(p) + 0.5, uPoint.xy * vec2(uSize)) < uPoint.z;
+    bool hold = uRest < 0.0;
+    if (m.b > 0.5) {
+      if (arrive) { o = vec4(0.0); return; }                       // wound: bare, heals at once
+      float age = m.r + uAgeDt, col = m.a + uAgeDt;
+      if (uLife > 0.0 && (hold ? col : age) > uLife + uFade) {     // died of age
+        o = vec4(hold ? -60000.0 : -uRest, 0.0, 0.0, 0.0); return;
+      }
+      o = vec4(age, min(1.0, m.g + uFadeIn), min(2048.0, m.b + 1.0), col);
+      return;
+    }
+    float rest = min(0.0, m.r + uAgeDt);
+    float n = 0.0, oldest = -1.0;
+    for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) {
+      float c = colony(p + ivec2(dx, dy));
+      if (c >= 0.0) { n += 1.0; oldest = max(oldest, c); }
+    }
+    // Hold: a colony past its Lifetime no longer spreads.
+    bool grows = n > 0.0 && !(hold && uLife > 0.0 && oldest > uLife);
+    uint h = pcg(uint(p.x) ^ pcg(uint(p.y) ^ pcg(uint(uStep) ^ 0x5bd1e995u)));
+    bool on = rest >= 0.0 && grows && float(h) / 4294967296.0 < 1.0 - pow(1.0 - uSpread, n);
+    float col = on ? oldest : 0.0;
+    if (arrive || plant) { on = true; col = 0.0; }                // sown: a new colony
+    o = on ? vec4(0.0, 0.0, 1.0, col) : vec4(rest, 0.0, 0.0, 0.0);
+  }
+`;
+
+// Settling, in the picture: a PHOTO of each cell's colour follows the live
+// state while the cell is young and stops following as it matures (mask .b =
+// updates since joining: follows fully until uSettle.x, held from uSettle.y).
+// The rim lives, the interior holds still — and the rule underneath keeps
+// running as trained (see GROWTH_NCA_STEP for why it must).
+export const GROWTH_NCA_CAPTURE = /* glsl */ `
+  precision highp float;
+  uniform sampler2D uS0, uMask, uPhoto;
+  uniform vec2 uSettle;
+  layout(location = 0) out vec4 o;
+  void main() {
+    ivec2 p = ivec2(gl_FragCoord.xy);
+    float b = texelFetch(uMask, p, 0).b;
+    vec3 live = clamp(texelFetch(uS0, p, 0).rgb + 0.5, 0.0, 1.0);
+    float follow = b < 0.5 ? 1.0 : 1.0 - smoothstep(uSettle.x, uSettle.y, b);
+    o = vec4(mix(texelFetch(uPhoto, p, 0).rgb, live, follow), 1.0);
+  }
+`;
+
+// Picture at grid size (one pixel per cell): the settled photo; coverage
+// (fade-in × Lifetime fade-out) blends it over the bare ground.
+export const GROWTH_NCA_VIEW = /* glsl */ `
+  precision highp float;
+  uniform sampler2D uPhoto, uMask;
+  uniform vec3 uGround;
+  uniform float uLife, uFade, uRest;
+  in vec2 vUv;
+  layout(location = 0) out vec4 o;
+  void main() {
+    ivec2 p = ivec2(gl_FragCoord.xy);
+    vec4 m = texelFetch(uMask, p, 0);
+    // Fade-in after joining; with a Lifetime, fade-out over its last uFade s —
+    // by the cell's own age (Ring) or its colony's (Hold: fades as one).
+    float age = uRest < 0.0 ? m.a : m.r;
+    float cov = m.b > 0.5 ? m.g * (uLife > 0.0 ? 1.0 - smoothstep(uLife, uLife + uFade, age) : 1.0) : 0.0;
+    o = vec4(mix(uGround, texelFetch(uPhoto, p, 0).rgb, cov), 1.0);
+  }
+`;
+
 // ── Growth: multi-scale Turing patterns (J. McCabe, 2010) ─────────────────────
 // Several activator/inhibitor pairs at doubling radii run at once; at each
 // pixel the scale whose activator and inhibitor differ LEAST wins and moves

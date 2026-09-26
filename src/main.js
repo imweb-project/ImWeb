@@ -560,6 +560,12 @@ async function main() {
     if (ps.get("growth.mode").value === 3 || ps.get("growth.mode").value === 4) {
       return { res: grid(s < 0.34 ? 1024 : s < 0.67 ? 512 : 256), diff: 0.3 };
     }
+    // Neural: one cell is one texel of the trained texture, so Size is the
+    // grid — 512 (finest) … 128 (coarsest), smoothly; 256 at Size 50. Every
+    // cell runs the network each step, so this engine stops at 512.
+    if (ps.get("growth.mode").value === 5) {
+      return { res: Math.min(512, grid(Math.round(512 / Math.pow(4, s)))), diff: 0.3 };
+    }
     const wf = Math.pow(Math.sqrt(20), s);          // width factor 1 … 4.47
     return wf <= Math.sqrt(5) ? { res: grid(512), diff: 0.2 * wf * wf }
                               : { res: grid(256), diff: 0.05 * wf * wf };
@@ -577,7 +583,8 @@ async function main() {
     if (style === 1) return { ...off, penRate: Math.log(255) / Math.max(1, lt) };
     const hold = { ...off, growTime: lt, fadeTime: Math.max(0.5, lt * 0.25) };
     if (style === 2) return hold;
-    if (style === 3) return ps.get("growth.mode").value === 0 ? { ...off, life: lt } : hold;
+    // Ring dies back and regrows in Single and Neural; the others hold.
+    if (style === 3) return [0, 5].includes(ps.get("growth.mode").value) ? { ...off, life: lt } : hold;
     return off;
   }
   // Ring depth and working resolution, both reallocating (history is discarded
@@ -1435,6 +1442,7 @@ async function main() {
       2: ["crFold", "crAniso", "crAngle", "crHeat", "crNoise", "crRingGap"],
       3: ["hyBranch"],
       4: ["hyBranch", "hyDensity"],
+      5: ["rest"],
     };
     // A row shows if its id is listed for the CURRENT engine — so one id can
     // belong to several engines (Branching: Hyphae and Curves). The old loop
@@ -6318,7 +6326,9 @@ async function main() {
   // colony's hue is keyed on the second it was planted (Colonies), so
   // spores sown in one frame would all share one colour.
   const LOOK_PLANT_GAP = 1200;   // ms
+  let _lookSyncing = false;      // true only while a recall re-labels the menu (below)
   const applyGrowthLook = (i) => {
+    if (_lookSyncing) return;
     const look = GROWTH_LOOKS[Math.round(i)];
     if (!look) return;
     for (const [id, v] of Object.entries(look.values)) ps.set(id, v);
@@ -6335,6 +6345,27 @@ async function main() {
   // "Mitosis" shown, so choosing Mitosis was no change and did nothing: a
   // black frame, measured in the app while the same values grew in isolation.
   ps.get("growth.look").onReselect(applyGrowthLook);
+  // A Display State stores a Look's VALUES, not the menu (growth.look is a
+  // loader, group 'global'), so after a recall the menu kept showing whatever
+  // it showed before — Neural lichen on the canvas under "Mitosis" (owner,
+  // 2026-09-26). Every recall — snap, the end of a morph, a project load —
+  // ends in ps.restoreState → "stateRestored". Show the Look those values
+  // come from: same engine, most values equal. Set without APPLYING it
+  // (that would clear and replant over the recalled growth). No Look on
+  // that engine: the menu is left as it was.
+  ps.addEventListener("stateRestored", (e) => {
+    const st = e.detail ?? {};
+    const val = (id) => st[id] ?? ps.get(id)?.value;
+    let best = -1, bestScore = -1;
+    GROWTH_LOOKS.forEach((look, i) => {
+      if (look.values["growth.mode"] !== val("growth.mode")) return;
+      const score = Object.entries(look.values).filter(([id, v]) => val(id) === v).length;
+      if (score > bestScore) { best = i; bestScore = score; }
+    });
+    if (best < 0 || best === ps.get("growth.look").value) return;
+    _lookSyncing = true;
+    try { ps.set("growth.look", best); } finally { _lookSyncing = false; }
+  });
   ps.get("growth.plant").onTrigger(() => growthRD.plant(
     ps.get("growth.plantX").value / 100,
     ps.get("growth.plantY").value / 100,

@@ -24,7 +24,7 @@ export const GROWTH_RES = [256, 512, 1024];
 // Single = Gray-Scott (one pattern scale); Nested = multi-scale Turing.
 // ≤ 6 characters and no hyphen: a short SELECT renders as a button group
 // that abbreviates longer labels ("Gray-Scott" showed as "Scott").
-export const GROWTH_MODES = ['Single', 'Nested', 'Frost', 'Hyphae', 'Curves'];   // Frost = crystals, Hyphae = 1-px threads, Curves = free-moving smooth threads
+export const GROWTH_MODES = ['Single', 'Nested', 'Frost', 'Hyphae', 'Curves', 'Neural'];   // Frost = crystals, Hyphae = 1-px threads, Curves = free-moving smooth threads, Neural = trained texture NCA
 
 // ── Looks ─────────────────────────────────────────────────────────────────────
 // A Look writes EVERY value that shapes the result, not just the obvious
@@ -83,4 +83,13 @@ export const GROWTH_LOOKS = [
     'growth.mode': 4, 'growth.scale': 15, 'growth.variation': 45, 'growth.hyBranch': 70,
     'growth.relief': 0, 'growth.ground': 4, 'growth.gloss': 0,
     'growth.hue': 40, 'growth.sat': 25, 'growth.spread': 45, 'growth.plantSize': 1 } },
+  // Neural lichen: the Neural engine running a texture NCA trained on a photo
+  // of rock lichen (tools/nca). Its colour comes from the photo, so Colour,
+  // Relief and the other view settings do not apply. Size 50 = 256 grid.
+  // Plant and the pen sow colonies on bare rock; the pen on lichen wounds it
+  // and it regrows. Ring 20 s: lichen dies back and the rock is recolonised,
+  // so the piece keeps living instead of freezing once covered.
+  { name: 'Neural lichen', values: { ...LOOK_BASE,
+    'growth.mode': 5, 'growth.scale': 50, 'growth.plantSize': 8,
+    'growth.fadeStyle': 3, 'growth.lifetime': 20, 'growth.rest': 3 } },
 ];

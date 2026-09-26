@@ -19,6 +19,13 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   Hyphae stays one GrowMode away in Advanced.
 
 ### Fixed
+- **Growth: the Look menu follows a recalled state** (owner: canvas showed
+  Neural lichen, the menu another Look). A Display State stores a Look's
+  values, not the menu (growth.look is a loader, group 'global'), so the menu
+  kept its old label. After every restore — snap, end of a morph, project
+  load — the menu now shows the Look on the same engine with the most equal
+  values, set without applying it (applying would clear and replant).
+  Verified headless on the dev build: recall → right label, 0 re-applies.
 - **3D Material textures: every source, Growth included** (owner: "Texture
   Source is missing Growth among other sources"). Material ▸ Texture Source,
   each model's Texture and T-Disp Source shared a hand-written eight-entry
@@ -34,6 +41,28 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   removing the 3D Depth row fails it).
 
 ### Added
+- **Growth: Neural — a trained Neural Cellular Automaton** (GrowMode 5,
+  `GrowthNCA.js`; Look "Neural lichen"). A texture NCA (after Niklasson et
+  al., "Self-Organising Textures", Distill 2021) trained offline on a photo of
+  rock lichen (`tools/nca/train_texture.py`, Colab L4, 6000 steps, 12
+  channels, 128 hidden) runs in a GLSL3 shader: 3 RGBA float attachments,
+  weights in a 16×128 float texture. Matches the numpy reference
+  (`tools/nca/render.py`) to 2e-7. Behaviour, each measured on the GPU:
+  - Pen and Plant SOW colonies on bare rock; a colony creeps outward (Eden
+    front, 2% → 24% of the frame in 10 s at Speed 16).
+  - The pen on lichen WOUNDS it and the colony regrows into the wound from
+    its edges (half healed in 1 s, closed in 3). Strokes act once, on arrival.
+  - Fade/Lifetime: Ring = the oldest parts die and the rock is recolonised
+    after Regrow delay (waves; the Look's default, 20 s); Hold/Pen = each
+    colony spreads for Lifetime, fades as one and is gone.
+  - The picture settles: a photo of each cell follows it while young and
+    holds once mature, so only the rim moves. The rule itself always runs
+    at its trained rate — slowing cells made healing wounds blow up
+    (|x| 38 vs 0.71).
+  Model choice: of three Colab runs, lichenB (128 hidden) had the most
+  detail and was the only one whose held wipes did not leak a spreading flat
+  zone (`tools/nca/scar.py`). Colour, Relief and the other view settings do
+  not apply to Neural yet.
 - **Growth: Curves — mycelium as free-moving smooth threads** (GrowMode 4;
   `GrowthCurves.js`). Hyphae steps one cell in one of 8 directions; here each
   tip is an agent with a float position and a drifting turning rate, and

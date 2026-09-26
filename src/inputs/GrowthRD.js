@@ -46,6 +46,7 @@ import {
 } from '../shaders/index.js';
 import { GROWTH_PATTERNS } from './GrowthPatterns.js';
 import { GrowthCurves } from './GrowthCurves.js';
+import { GrowthNCA } from './GrowthNCA.js';
 
 const MAX_STEPS_PER_FRAME = 64;   // a long dt must not stall the render loop
 const MS_LEVELS = 6;              // pyramid depth: blur radii ~2 … 64 texels
@@ -56,6 +57,9 @@ export const MODE_MULTISCALE = 1;
 export const MODE_CRYSTAL    = 2;
 export const MODE_HYPHAE     = 3;
 export const MODE_CURVES     = 4;
+export const MODE_NEURAL     = 5;
+// The Neural engine's trained rule (tools/nca). One model for now.
+const NCA_MODEL_URL = 'nca/lichen.json';
 
 export class GrowthRD {
   constructor(renderer) {
@@ -257,7 +261,7 @@ export class GrowthRD {
   plant(x, y, r) { this._plant = { x, y, r }; }
 
   /** Wipe back to pure food (A = 1, B = 0) on the next render. */
-  clear() { this._needsInit = true; this._curves?.clear(); }
+  clear() { this._needsInit = true; this._curves?.clear(); this._nca?.clear(); }
 
   /**
    * @param {number} dt  seconds since the last frame
@@ -272,10 +276,34 @@ export class GrowthRD {
 
     // The two modes read the state channels differently, so a switch starts
     // from that mode's own empty state rather than reinterpreting the other's.
-    const mode = [MODE_MULTISCALE, MODE_CRYSTAL, MODE_HYPHAE, MODE_CURVES].includes(o.mode) ? o.mode : MODE_GRAY_SCOTT;
+    const mode = [MODE_MULTISCALE, MODE_CRYSTAL, MODE_HYPHAE, MODE_CURVES, MODE_NEURAL].includes(o.mode) ? o.mode : MODE_GRAY_SCOTT;
     if (mode !== this._mode) { this._mode = mode; this._needsInit = true; }
     if (mode === MODE_MULTISCALE && !this._pyr) this._sizePyramid();
     if (mode === MODE_CRYSTAL && !this._aux) this._aux = this._makeTarget(true);
+
+    // Neural keeps its own 12-channel state and draws its own colour: none of
+    // the reaction-diffusion step or view applies (see GrowthNCA).
+    if (mode === MODE_NEURAL) {
+      this._nca ??= new GrowthNCA(this.renderer, (m, t) => this._blit(m, t));
+      this._nca.load(NCA_MODEL_URL);
+      this._clock = (this._clock ?? 0) + Math.max(Math.min(Math.max(dt, 0), 0.1), 1e-2);
+      // Fade + Lifetime (main.js _growthFade): Ring (life) = die, then the
+      // rock is recolonised after Regrow delay; Hold (growTime) and Pen
+      // (penRate: gone at Lifetime = ln 255 / rate) = fade and stay gone.
+      const life = o.life > 0 ? o.life : o.growTime > 0 ? o.growTime : o.penRate > 0 ? Math.log(255) / o.penRate : 0;
+      const drawn = this._nca.render({
+        w: this._w, h: this._h, dt, speed: o.speed,
+        seedTex: o.seedTex, seedAmt: o.seedTex ? o.seedAmt : 0, plant: this._plant,
+        life, fade: o.life > 0 ? Math.max(0.5, life * 0.25) : o.growTime > 0 ? o.fadeTime : life * 0.25,
+        rest: o.life > 0 ? (o.rest ?? 0) : -1,
+      });
+      this._plant = null;
+      this._view.setSize(this._w, this._h);
+      if (drawn) this._nca.view(this._view);
+      else { this.renderer.setRenderTarget(this._view); this.renderer.clear(); }   // model still loading
+      this.renderer.setRenderTarget(prevTarget);
+      return;
+    }
 
     if (this._needsInit) {
       // x: A = 1 (Gray-Scott food) · v = −1 (multi-scale) · p = 0 (crystal: all
@@ -590,6 +618,7 @@ export class GrowthRD {
     this._smooth?.dispose();
     this._up?.dispose();
     this._curves?.dispose();
+    this._nca?.dispose();
     this._upMat.dispose();
     this._copyMat.dispose();
     this._crAuxMat.dispose();
