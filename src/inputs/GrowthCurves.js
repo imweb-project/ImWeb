@@ -217,7 +217,26 @@ export class GrowthCurves {
 
   // Sprouting along strokes: a tiny read-back of the seed every few frames;
   // where a stroke has just ARRIVED a few tips start, heading anywhere.
+  // ASYNC: a synchronous readPixels waits for the GPU to finish the frame —
+  // measured ~10 ms each, 2.6–2.9 ms/frame averaged, when the whole tip
+  // simulation cost 0.05 ms. So: readPixels into a pixel-pack buffer, fence,
+  // and collect on a later frame once the fence has signalled.
+  // Not three's readRenderTargetPixelsAsync: in r168 it leaves the pack
+  // buffer BOUND while it waits, and every synchronous readPixels elsewhere
+  // in the app then fails with INVALID_OPERATION (measured: GL error 1282).
+  // Here the buffer is unbound straight after each use.
   _sprout(seedTex, seedAmt, o) {
+    const gl = this.renderer.getContext();
+    if (this._pend) {
+      if (gl.getSyncParameter(this._pend.sync, gl.SYNC_STATUS) !== gl.SIGNALED) return;
+      const p = this._pend;
+      this._pend = null;
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, p.pbo);
+      gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, p.buf);
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+      gl.deleteSync(p.sync);
+      if (p.gw === this._gw && p.gh === this._gh && p.buf === this._seedBuf) this._sproutFrom(p);
+    }
     if (!seedTex || seedAmt <= 0 || this._frame % 4) return;
     const sw = SEED_W, sh = Math.max(1, Math.round(SEED_W * this._gh / this._gw));
     if (!this._seedRT || this._seedRT.width !== sw || this._seedRT.height !== sh) {
@@ -225,16 +244,28 @@ export class GrowthCurves {
       this._seedRT = new THREE.WebGLRenderTarget(sw, sh, { depthBuffer: false, stencilBuffer: false });
       this._seedBuf = new Uint8Array(sw * sh * 4);
       this._seedPrev = new Float32Array(sw * sh);
+      if (this._pbo) gl.deleteBuffer(this._pbo);
+      this._pbo = gl.createBuffer();
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this._pbo);
+      gl.bufferData(gl.PIXEL_PACK_BUFFER, this._seedBuf.byteLength, gl.STREAM_READ);
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
     }
     o.copyMat.uniforms.uTexture.value = seedTex;
-    this._blit(o.copyMat, this._seedRT);
-    this.renderer.readRenderTargetPixels(this._seedRT, 0, 0, sw, sh, this._seedBuf);
-    const b = this._seedBuf;
+    this._blit(o.copyMat, this._seedRT);          // leaves _seedRT bound
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this._pbo);
+    gl.readPixels(0, 0, sw, sh, gl.RGBA, gl.UNSIGNED_BYTE, 0);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    this._pend = { sync: gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0), pbo: this._pbo,
+                   buf: this._seedBuf, sw, sh, gw: this._gw, gh: this._gh, seedAmt };
+    gl.flush();
+  }
+
+  _sproutFrom({ buf, sw, sh, gw, gh, seedAmt }) {
     for (let i = 0; i < sw * sh; i++) {
-      const l = (0.299 * b[i * 4] + 0.587 * b[i * 4 + 1] + 0.114 * b[i * 4 + 2]) / 255 * seedAmt;
+      const l = (0.299 * buf[i * 4] + 0.587 * buf[i * 4 + 1] + 0.114 * buf[i * 4 + 2]) / 255 * seedAmt;
       if (l > 0.3 && l - this._seedPrev[i] > 0.1 && Math.random() < 0.08) {
-        const x = ((i % sw) + Math.random()) / sw * this._gw, y = (Math.floor(i / sw) + Math.random()) / sh * this._gh;
-        this._spawn(x, y, Math.random() * Math.PI * 2, o.now);
+        const x = ((i % sw) + Math.random()) / sw * gw, y = (Math.floor(i / sw) + Math.random()) / sh * gh;
+        this._spawn(x, y, Math.random() * Math.PI * 2, this._now);
       }
       this._seedPrev[i] = l;
     }
@@ -262,6 +293,7 @@ export class GrowthCurves {
       wander: 0.4 + 2.6 * ((o.variation ?? 0) / 100),
       branch: o.branch ?? 0.3, edge: o.edge ?? 0,
     };
+    this._now = o.now;   // stamp for tips an async stroke read-back spawns
     if (o.plant) this.plant(o.plant.x, o.plant.y, o.plant.r, o.now);
     this._sprout(o.seedTex, o.seedAmt ?? 0, { ...oo, copyMat: o.copyMat });
     this._frame++;
@@ -303,6 +335,9 @@ export class GrowthCurves {
   dispose() {
     for (const t of this._t) t?.dispose();
     this._seedRT?.dispose();
+    const gl = this.renderer.getContext();
+    if (this._pend) gl.deleteSync(this._pend.sync);
+    if (this._pbo) gl.deleteBuffer(this._pbo);
     this._geom.dispose();
     this._segMat.dispose();
     this._cleanMat.dispose();
