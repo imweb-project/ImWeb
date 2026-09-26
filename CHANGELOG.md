@@ -23,6 +23,20 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   Edge is NOT written by the Looks (owner): it holds across Look changes.
 
 ### Changed
+- **Noise that degraded over a session: three sin hashes swapped for
+  Hoskins' hashes.** `fract(sin(dot(p,…))·43758)` on pixel coordinates plus an
+  unbounded time term, measured on GPU over a 1920×1080 frame (ideal: 0.80%
+  passing a 0.8% test, ~65k distinct values):
+  CRT impulse specks passed 19% at the START (≈24× the intended density) and
+  froze to 7 distinct values after 1 h; Signal Snow was 31× uneven at start
+  and down to 77 values at 1 h; Noise grain was fine at start but collapsed
+  to 14–52 values after 1 h (8× uneven after one minute at Speed 1). After
+  the swap all three measure 0.81–0.84% and ~65k values at 0.5 s, 1 min, 1 h
+  and 4 h. The grain's frame count is wrapped at 4096 inside the hash, so
+  consecutive frames still agree across the wrap (measured: identical).
+  **Looks change:** CRT impulse at a given setting is now ~24× sparser — the
+  density its control was always meant to give. The "Old TV" preset was
+  measured clean (its input stays under 2) and is unchanged.
 - **Growth: Nested is drawn smooth, at output resolution** (owner: "still
   looks pixelated"). Its field is ±1 plateaus with one-texel cliffs, and the
   view was grid-sized (512 or 256), stretched 3–6× to the canvas: square

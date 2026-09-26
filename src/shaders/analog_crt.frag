@@ -53,8 +53,14 @@ export const ANALOG_CRT = /* glsl */ `
 
   float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
 
+  // Hoskins' hash12, not fract(sin(dot)·43758): on pixel coordinates plus an
+  // unbounded time term the sin hash measured 19–21% passing a 0.8% test at
+  // the start of a session and collapsed to 7–77 distinct values after an
+  // hour (LEARNED 2026-09-25/26). hash12 stays flat at 4 h.
   float hash(vec2 p) {
-    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
   }
 
   void main() {

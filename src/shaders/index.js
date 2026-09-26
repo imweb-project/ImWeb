@@ -1580,9 +1580,15 @@ export const NOISE_BFG = /* glsl */ `
   }
   vec2 h2(vec2 v, float s) { return h3(vec3(v, s)).xy; }
   // Continuous-position hash for per-pixel grain (h1 goes ~1D on non-lattice
-  // input along the diagonal).
+  // input along the diagonal). Hoskins' hash13, not the sin hash: seed
+  // carries the frame count, which grows all session, and the sin version
+  // collapsed to 14–52 distinct values after an hour (measured). The seed is
+  // wrapped at 4096 frames INSIDE the hash, so frame n's a1 and frame
+  // n+1's a0 still agree across the wrap.
   float hashPos(vec2 p, float seed) {
-    return fract(sin(dot(p, vec2(12.9898, 78.233)) + seed * 37.719) * 43758.5453123);
+    vec3 p3 = fract(vec3(p, mod(seed, 4096.0)) * 0.1031);
+    p3 += dot(p3, p3.zyx + 31.32);
+    return fract((p3.x + p3.y) * p3.z);
   }
 
   // ── Value noise — two time-phases crossfaded so z-animation doesn't breathe
