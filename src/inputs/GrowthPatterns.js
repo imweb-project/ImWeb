@@ -31,6 +31,7 @@ export const GROWTH_MODES = ['Single', 'Nested', 'Frost', 'Hyphae'];   // Frost 
 // ones: a leftover Feed offset or Lifetime silently turned "Mitosis" into
 // static dots with a dead centre (owner, 2026-09-25). Values are param values
 // as the panel shows them. APPEND-ONLY — growth.look persists the index.
+// Optional `plants`: extra colonies main.js sows after the centre spore.
 // Each one is verified on the GPU to look like its name (CHANGELOG).
 const LOOK_BASE = {
   'growth.speed': 16, 'growth.feed': 0, 'growth.kill': 0, 'growth.fieldAmt': 0,
@@ -55,7 +56,10 @@ export const GROWTH_LOOKS = [
     'growth.mode': 0, 'growth.patternA': 0, 'growth.patternB': 5, 'growth.scale': 14,
     'growth.zones': 80, 'growth.variation': 60, 'growth.details': 20,
     'growth.relief': 50, 'growth.bevel': 3, 'growth.gloss': 15, 'growth.ground': 30,
-    'growth.hue': 45, 'growth.sat': 55, 'growth.spread': 25, 'growth.colonies': 35, 'growth.plantSize': 4 } },
+    'growth.hue': 45, 'growth.sat': 55, 'growth.spread': 25, 'growth.colonies': 35, 'growth.plantSize': 4 },
+    // Colonies sown after the centre one, [PlantX, PlantY] — each its own
+    // colour, meeting the others at borders, like lichens on a rock.
+    plants: [[24, 28], [76, 70], [22, 74], [78, 26]] },
   { name: 'Coral', values: { ...LOOK_BASE,
     'growth.mode': 0, 'growth.patternA': 0, 'growth.patternB': 0, 'growth.scale': 23,
     'growth.variation': 40, 'growth.relief': 55, 'growth.bevel': 3, 'growth.ground': 18,

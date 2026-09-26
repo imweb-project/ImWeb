@@ -6296,10 +6296,18 @@ async function main() {
 
   // Draw layer triggers
   ps.get("draw.clear").onTrigger(() => drawLayer.clear());
-  ps.get("growth.clear").onTrigger(() => growthRD.clear());
+  // A Look's extra colonies land one at a time (below); Clear or another
+  // Look cancels the ones still pending, or they would sprout into it.
+  let _lookPlants = [];
+  const cancelLookPlants = () => { _lookPlants.forEach(clearTimeout); _lookPlants = []; };
+  ps.get("growth.clear").onTrigger(() => { cancelLookPlants(); growthRD.clear(); });
   // Look: write every value of the chosen look, then clear and plant one
   // spore at the centre so the look is on screen at once. A loader — see
   // growth.look in ParameterSystem for why it is group 'global'.
+  // A look with `plants` also sows those colonies, LOOK_PLANT_GAP apart: a
+  // colony's hue is keyed on the second it was planted (Colonies), so
+  // spores sown in one frame would all share one colour.
+  const LOOK_PLANT_GAP = 1200;   // ms
   const applyGrowthLook = (i) => {
     const look = GROWTH_LOOKS[Math.round(i)];
     if (!look) return;
@@ -6308,6 +6316,9 @@ async function main() {
     ps.set("growth.plantY", 50);
     ps.trigger("growth.clear");
     ps.trigger("growth.plant");
+    _lookPlants = (look.plants ?? []).map(([x, y], n) => setTimeout(() =>
+      growthRD.plant(x / 100, y / 100, ps.get("growth.plantSize").value / 100),
+      (n + 1) * LOOK_PLANT_GAP));
   };
   ps.get("growth.look").onChange(applyGrowthLook);
   // Picking the Look already shown must apply it too — the app starts with

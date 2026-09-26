@@ -914,9 +914,10 @@ plants, so a Look's name always gives its look.
 - **Mitosis:** a spore splits into cells that keep dividing until the frame is
   a living field; with Fade = Ring they keep dying and dividing.
 - **Lichen:** a patchwork of zones, labyrinth in some places and cells in
-  others, drifting slowly. Each colony takes its own colour (Colonies, in
-  Advanced): press **Plant** again at another PlantX/Y, or draw, and the new
-  colony grows in a different hue where it meets the others.
+  others, drifting slowly. It sows five colonies over about five seconds,
+  each in its own colour (Colonies, in Advanced), meeting at their borders —
+  a new set of colours every time you choose it. **Plant** at another
+  PlantX/Y, or drawing, adds more; **Clear** also stops any still to come.
 - **Coral:** a branching coral colony with relief.
 - **Snowflake:** a six-armed ice crystal with growth rings; it grows for about
   20 s and fades before it can fill the frame.

@@ -22,6 +22,13 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   V 0.98 fresh → 0.80 at 10–20 s → 0.67 past 30 s; S 0.25 → 0.19.
 
 ### Added
+- **Growth: Lichen sows five colonies** (owner). Choosing Lichen plants the
+  centre spore and then four more (`plants` on the Look), 1.2 s apart — a
+  colony's hue is keyed on the second it was planted, so spores sown in one
+  frame would share one colour. Clear or another Look cancels any still
+  pending. Measured on GPU: five stamps in five distinct seconds, 18–31k
+  living cells each at 14 s, hues 8° / 103° / 82° / 57° / 105°; the clock is
+  monotonic, so every choice of Lichen gives a new set.
 - **Growth: Colonies — a colour per planting.** Owner's lichen photo: separate
   coloured patches meeting at borders. Every engine but Nested already stamps
   each cell with its colony's planting time (alpha, inherited by whatever the
