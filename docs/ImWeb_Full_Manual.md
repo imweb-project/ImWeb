@@ -937,7 +937,9 @@ Light angle, Gloss, Ground, Var size/drift, seeding, Plant position and size,
 chooses, up to 1024 — High draws the pattern finer and denser, at more GPU
 cost), saturation, hue spread, contrast, and **Colonies** — how far
 each planting's hue swings from Colour (0 = one colour; every engine but
-Nested, which has no colonies). Changing Advanced values
+Nested, which has no colonies), and **Edge** — growth thins out over this
+margin (% of the frame height) and stops short of the frame instead of
+being cut off by it; the margin has rounded corners and wanders slowly. Changing Advanced values
 moves away from the Look; choose the Look again to return to it.
 
 A few behaviours worth knowing:

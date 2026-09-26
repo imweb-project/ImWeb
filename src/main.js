@@ -10887,6 +10887,7 @@ void main() {
         msCoarse: ps.get("growth.msCoarse").value,
         msBias:   ps.get("growth.msBias").value,
         variation:  ps.get("growth.variation").value,
+        edge:       ps.get("growth.edge").value,
         varSize:    ps.get("growth.varSize").value,
         varDrift:   ps.get("growth.varDrift").value,
         relief:     ps.get("growth.relief").value,

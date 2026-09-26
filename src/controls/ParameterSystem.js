@@ -7107,6 +7107,12 @@ export function registerCoreParameters(ps) {
   // Colonies: each planting gets its own hue, ± this share of the wheel (100 =
   // anywhere), keyed on its lineage stamp — so colonies meet at borders in
   // different colours, like lichens on a rock. Nested has no lineage.
+  // Edge: growth thins out over this margin (% of the frame height) before
+  // the frame, instead of being cut off by it. 0 = off.
+  ps.register({
+    id: "growth.edge", label: "Edge", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 30, value: 0, step: 1,
+  });
   ps.register({
     id: "growth.colonies", label: "Colonies", group: "growth",
     type: PARAM_TYPE.CONTINUOUS, min: 0, max: 100, value: 0, step: 1,

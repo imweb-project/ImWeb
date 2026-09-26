@@ -103,6 +103,24 @@ const GROWTH_VAR_GLSL = /* glsl */ `
     return clamp((n - 0.5) * 3.0, -1.0, 1.0);
   }
   float growthVar(vec2 uv) { return uVar > 0.0 ? gvField(uv) : 0.0; }
+
+  // Edge: room to grow, 1 inside and easing to 0 at the frame's edge over a
+  // margin of uEdge × the frame height (aspect corrected, so the margin is
+  // the same on all four sides). Each engine turns it into its own brake, so
+  // growth thins out before the frame instead of being cut off by it.
+  // A straight margin made every engine stop along a ruled rectangle — a
+  // picture frame, not a colony's edge (seen on GPU renders) — so the corners
+  // are rounded (smooth min of the side distances) and the line wanders
+  // with the slow noise field Variation uses.
+  uniform float uEdge;
+  float edgeRoom(vec2 uv) {
+    if (uEdge <= 0.0) return 1.0;
+    vec2 d = min(uv, 1.0 - uv) * vec2(uVarP.z, 1.0);
+    float k = 0.5 * uEdge;
+    float dd = -k * log(exp(-d.x / k) + exp(-d.y / k));
+    dd += 0.6 * uEdge * gvField(uv + vec2(3.7, 9.1));
+    return smoothstep(0.0, uEdge, dd);
+  }
 `;
 
 // ── Growth: Gray-Scott reaction-diffusion ─────────────────────────────────────
@@ -212,6 +230,9 @@ ${GROWTH_VAR_GLSL}
     // tips the pattern past its death line near the end, so the dissolving
     // spans the whole Fade time (linear 0.05 killed it in half of it).
     k += 0.012 * fadeP * fadeP;
+    // Edge: kill rises toward the frame, so the pattern thins — stripes to
+    // spots to nothing — rather than meeting the border at full strength.
+    k += 0.03 * (1.0 - edgeRoom(vUv));
 
     float a = c.r, b = c.g;
     float r = a * b * b;
@@ -611,6 +632,10 @@ ${GROWTH_VAR_GLSL}
     float Tl = T;
     if (uFieldAmt > 0.0) Tl -= uFieldAmt * 0.5 * dot(texture2D(uField, vUv).rgb, vec3(0.299, 0.587, 0.114));
     float m  = ALPHA / PI * atan(GAMMA * (TEQ - Tl));
+    // Edge: less undercooling toward the frame, and a little melt at it, so
+    // tips slow and stop short instead of freezing against the border.
+    float er = edgeRoom(vUv);
+    m = m * er - 0.05 * (1.0 - er);
     float pp = p * (1.0 - p);
     float dp = DT / TAU * (term1 + term2 + term3 + pp * (p - 0.5 + m) + uNoise * pp * (hash(vUv) - 0.5));
 
@@ -768,8 +793,11 @@ ${GROWTH_VAR_GLSL}
         bool ahead = diff <= 0.3927 + 1e-3;                            // nearest of 8
         // A fork. Per step AND per candidate cell, so it must be tiny: at
         // 0.014 each tip forked ~10×/s. Now ~every 250 px at 35, ~90 at 100.
-        bool side  = diff <= 1.1781 && hsh(px, 2.0) < uBranch * 0.004;
-        if ((ahead && hsh(px, 3.0) < uGrowP) || side) {
+        // Edge: tips advance and fork less toward the frame, so threads thin
+        // out and stop short of it.
+        float er   = edgeRoom(vUv);
+        bool side  = diff <= 1.1781 && hsh(px, 2.0) < uBranch * 0.004 * er;
+        if ((ahead && hsh(px, 3.0) < uGrowP * er) || side) {
           float phi = gvField(vUv) * PI;                   // the flow the threads follow
           // A light pull toward the flow and a strong random wander: at 0.12 /
           // 0.3 every thread lined up into parallel 45° bundles — circuit
@@ -904,6 +932,8 @@ ${GROWTH_VAR_GLSL}
       }
     }
     v = clamp(v + dir * amt * uStep, -1.0, 1.0);
+    // Edge: a steady push toward empty (−1) near the frame.
+    v = max(-1.0, v - 0.03 * uStep * (1.0 - edgeRoom(vUv)));
 
     // Which scale has been winning here, smoothed — the colour channel.
     float g = mix(st.g, win, 0.05);

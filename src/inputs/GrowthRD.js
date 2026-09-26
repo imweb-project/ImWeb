@@ -82,6 +82,7 @@ export class GrowthRD {
       uVar:      { value: 0 },
       uZones:    { value: 0 },
       uVarP:     { value: new THREE.Vector3(3, 0, 1) },
+      uEdge:     { value: 0 },
       uAgeDt:    { value: 0 },
       uLife:     { value: 0 },
       uRest:     { value: 0 },
@@ -124,7 +125,7 @@ export class GrowthRD {
       uField: { value: null }, uFieldAmt: { value: 0 },
       uSeed: { value: null }, uSeedAmt: { value: 0 },
       uPoint: { value: new THREE.Vector3(0.5, 0.5, 0) },
-      uVar: { value: 0 }, uVarP: { value: new THREE.Vector3(3, 0, 1) },
+      uVar: { value: 0 }, uVarP: { value: new THREE.Vector3(3, 0, 1) }, uEdge: { value: 0 },
     };
     for (let l = 1; l <= MS_LEVELS; l++) {
       msU[`uL${l}`] = { value: null };
@@ -146,7 +147,7 @@ export class GrowthRD {
       uNow: { value: 0 }, uAgeDt: { value: 0 },
       uField: { value: null }, uFieldAmt: { value: 0 },
       uGrowTime: { value: 0 }, uFadeTime: { value: 3 }, uPenRate: { value: 0 },
-      uVar: { value: 0 }, uVarP: { value: new THREE.Vector3(3, 0, 1) },
+      uVar: { value: 0 }, uVarP: { value: new THREE.Vector3(3, 0, 1) }, uEdge: { value: 0 },
     });
     this._aux = null;
 
@@ -158,7 +159,7 @@ export class GrowthRD {
       uSeed: { value: null }, uSeedPrev: { value: null }, uSeedAmt: { value: 0 },
       uPoint: { value: new THREE.Vector3(0.5, 0.5, 0) },
       uGrowTime: { value: 0 }, uFadeTime: { value: 3 }, uPenRate: { value: 0 },
-      uVar: { value: 0 }, uVarP: { value: new THREE.Vector3(3, 0, 1) },
+      uVar: { value: 0 }, uVarP: { value: new THREE.Vector3(3, 0, 1) }, uEdge: { value: 0 },
     });
 
     // Last frame's seed, so a step can tell a stroke ARRIVING at a pixel (a
@@ -338,6 +339,7 @@ export class GrowthRD {
     for (const m of [this._stepMat, this._msMat, this._crMat, this._hyMat]) {
       m.uniforms.uVar.value = varAmt;
       m.uniforms.uVarP.value.set(o.varSize ?? 3, varT, this._w / this._h);
+      m.uniforms.uEdge.value = (o.edge ?? 0) / 100;
     }
 
     if (mode === MODE_MULTISCALE) {

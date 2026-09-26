@@ -8,6 +8,19 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Added
+- **Growth: Edge — growth thins out before the frame** (Advanced,
+  `growth.edge`, % of frame height, 0 = off). One helper, `edgeRoom()`, in the
+  shared Variation GLSL; each engine brakes its own way: Single raises kill,
+  Frost lowers undercooling (and melts slightly at the edge), Hyphae
+  advances and forks less, Nested is pushed toward empty. A straight margin
+  made every engine stop along a ruled rectangle (a picture frame), so the
+  corners are a smooth min and the line wanders with the Variation noise.
+  Measured on GPU at Edge 15, lit share of the outer 3% border: Coral
+  20.7% → 0.0%, Snowflake 31.0% → 8.2%, Nested 35.8% → 0.3%, interiors
+  unchanged. Nested still reads boxy (its dynamics draw a rim along any
+  boundary); Mycelium did not reach the frame in the 25 s test.
+
 ### Changed
 - **Growth: Nested is drawn smooth, at output resolution** (owner: "still
   looks pixelated"). Its field is ±1 plateaus with one-texel cliffs, and the
