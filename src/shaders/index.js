@@ -534,7 +534,9 @@ export const GROWTH_RD_VIEW = /* glsl */ `
     if (uGrowTime > 0.0 && uMode != 1.0 && st.a > 0.0) {
       col *= 1.0 - clamp((uNow - st.a - uGrowTime) / max(uFadeTime, 1e-3), 0.0, 1.0);
     }
-    if (uPenRate > 0.0 && uMode != 1.0 && st.a > 0.0) col *= exp(-uPenRate * (uNow - st.a));
+    // Pen: Curves fades each piece from when it was DRAWN (b = birth), so
+    // the growing front stays bright; the others from the stamp.
+    if (uPenRate > 0.0 && uMode != 1.0 && st.a > 0.0) col *= exp(-uPenRate * (uNow - (IS_CURVES ? st.b : st.a)));
     gl_FragColor = vec4(col, 1.0);
   }
 `;
@@ -878,8 +880,9 @@ export const GROWTH_CURVE_CLEAN = /* glsl */ `
   void main() {
     vec4 c = texture2D(uSrc, vUv);
     float st = c.a;
+    // Pen by each piece's birth (b), as the view fades it; Hold by lineage.
     bool gone = st > 0.0 && ((uGrowTime > 0.0 && uNow - st > uGrowTime + uFadeTime)
-                          || (uPenRate > 0.0 && exp(-uPenRate * (uNow - st)) < 1.0 / 255.0));
+                          || (uPenRate > 0.0 && exp(-uPenRate * (uNow - c.b)) < 1.0 / 255.0));
     gl_FragColor = gone ? vec4(0.0) : c;
   }
 `;

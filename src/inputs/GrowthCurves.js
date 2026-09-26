@@ -202,7 +202,7 @@ export class GrowthCurves {
     if (px < 0 || py < 0 || px >= this._gw || py >= this._gh) return true;
     const c = py * this._gw + px;
     if (this._occId[c] === t.id && this._simStep - this._occT[c] < t.selfSteps) return true;
-    return this._free(this._occ[c], o);
+    return this._free(c, o);
   }
 
   /** Line width of a generation, in sim cells. */
@@ -222,6 +222,7 @@ export class GrowthCurves {
       this._occ = new Float32Array(gw * gh);
       this._occId = new Int32Array(gw * gh);
       this._occT = new Int32Array(gw * gh);
+      this._occB = new Float32Array(gw * gh);   // birth time of each cell's piece
     }
     if (tw !== this._tw || th !== this._th) {
       this._tw = tw; this._th = th;
@@ -232,16 +233,21 @@ export class GrowthCurves {
     }
   }
 
-  // Occupancy: the stamp of the lineage whose thread is in a cell. Free if
-  // empty or that lineage has faded out (the same rule as the view's fade).
-  _free(stamp, o) {
+  // Occupancy: is cell c free? Empty, or its thread has faded out — the
+  // same rules as the view. Hold fades a whole lineage from its planting
+  // (the stamp); Pen fades each piece from when it was DRAWN (occB), so a
+  // colony keeps a bright growing front with a fading wake (owner: under
+  // the lineage clock the whole colony faded out at once).
+  _free(c, o) {
+    const stamp = this._occ[c];
     if (stamp <= 0) return true;
     if (o.growTime > 0 && o.now - stamp > o.growTime + o.fadeTime) return true;
-    return o.penRate > 0 && Math.exp(-o.penRate * (o.now - stamp)) < 1 / 255;
+    return o.penRate > 0 && Math.exp(-o.penRate * (o.now - this._occB[c])) < 1 / 255;
   }
+  // Hold stops a lineage's tips after Grow time. Pen never stops them: the
+  // front keeps growing while its trail fades.
   _stopped(stamp, o) {
-    if (o.growTime > 0 && o.now - stamp > o.growTime) return true;
-    return o.penRate > 0 && Math.exp(-o.penRate * (o.now - stamp)) < 0.3;
+    return o.growTime > 0 && o.now - stamp > o.growTime;
   }
 
   /** Room to grow, 1 inside → 0 at the frame (see edgeRoom in GROWTH_VAR_GLSL). */
@@ -270,7 +276,7 @@ export class GrowthCurves {
         const cx = Math.floor(px + nx * o), cy = Math.floor(py + ny * o);
         if (cx >= 0 && cy >= 0 && cx < this._gw && cy < this._gh) {
           const c = cy * this._gw + cx;
-          this._occ[c] = stamp; this._occId[c] = id; this._occT[c] = this._simStep;
+          this._occ[c] = stamp; this._occId[c] = id; this._occT[c] = this._simStep; this._occB[c] = this._now;
         }
       }
     }
