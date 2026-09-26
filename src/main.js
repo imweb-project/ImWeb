@@ -544,20 +544,25 @@ async function main() {
   // alone spans only √5 ≈ 2.2×. Past that the grid drops 512 → 256 — the same
   // D then draws features twice as wide — for ~4.5× in all, continuous across
   // the switch (512 at D 1 = 256 at D 0.25). GrowthRD resamples, not wipes.
-  // Frost keeps its own grid (Advanced) and reads Size as crystal size.
+  // Frost reads Size as crystal size on a 512 grid.
+  // GrowRes (Advanced, every engine) scales whatever grid Size chose: Low ½,
+  // Normal 1, High 2, capped at 1024 as the old absolute option was. Same
+  // diffusion, so High draws the pattern finer and denser, as 1024 always
+  // did. f17c38e had taken it from every engine but Frost (owner: "missing
+  // the higher res option").
   function _growthSize() {
     const s = ps.get("growth.scale").value / 100;
-    if (ps.get("growth.mode").value === 2) {
-      return { res: GROWTH_RES[ps.get("growth.res").value] ?? 512, diff: s };
-    }
+    const k = (GROWTH_RES[ps.get("growth.res").value] ?? 512) / 512;
+    const grid = (r) => Math.min(1024, Math.round(r * k));
+    if (ps.get("growth.mode").value === 2) return { res: grid(512), diff: s };
     // Hyphae: lines are one grid pixel, so Size is simply the grid — 1024
     // (finest), 512, 256. Cheap engine: 1024 is affordable here.
     if (ps.get("growth.mode").value === 3) {
-      return { res: s < 0.34 ? 1024 : s < 0.67 ? 512 : 256, diff: 0.3 };
+      return { res: grid(s < 0.34 ? 1024 : s < 0.67 ? 512 : 256), diff: 0.3 };
     }
     const wf = Math.pow(Math.sqrt(20), s);          // width factor 1 … 4.47
-    return wf <= Math.sqrt(5) ? { res: 512, diff: 0.2 * wf * wf }
-                              : { res: 256, diff: 0.05 * wf * wf };
+    return wf <= Math.sqrt(5) ? { res: grid(512), diff: 0.2 * wf * wf }
+                              : { res: grid(256), diff: 0.05 * wf * wf };
   }
 
   function _growthFade() {
@@ -1425,7 +1430,7 @@ async function main() {
     const ENGINE_ONLY = {
       0: ["patternA", "patternB", "zones", "feed", "kill", "rest"],
       1: ["msStep", "msFine", "msCoarse", "msBias"],
-      2: ["crFold", "crAniso", "crAngle", "crHeat", "crNoise", "crRingGap", "res"],
+      2: ["crFold", "crAniso", "crAngle", "crHeat", "crNoise", "crRingGap"],
       3: ["hyBranch"],
     };
     const showFor = () => {

@@ -922,7 +922,8 @@ plants, so a Look's name always gives its look.
   20 s and fades before it can fill the frame.
 - **Mycelium:** branching threads exactly one pixel wide that wander and
   keep clear of each other, spreading from a spore or sprouting along your
-  strokes. Colour shifts with age, so old threads and fresh tips differ.
+  strokes. Colour shifts with age and fades a little as threads get older,
+  so fresh tips stand out from old threads.
   Variation sets how much they wander, Size the fineness of the lines
   (finest at the low end), Branching (Advanced) how often they fork.
 
@@ -931,7 +932,9 @@ to the current Look's engine: Pattern A/B and Zones, Feed/Kill offsets,
 Regrow delay (Single); the Nested controls; Fold, Aniso, Angle, Heat,
 Branching and Ring gap (Frost); and for all of them Field, Relief, Bevel,
 Light angle, Gloss, Ground, Var size/drift, seeding, Plant position and size,
-resolution, saturation, hue spread, contrast, and **Colonies** — how far
+**GrowRes** (Low · Normal · High: half, the same, or double the grid Size
+chooses, up to 1024 — High draws the pattern finer and denser, at more GPU
+cost), saturation, hue spread, contrast, and **Colonies** — how far
 each planting's hue swings from Colour (0 = one colour; every engine but
 Nested, which has no colonies). Changing Advanced values
 moves away from the Look; choose the Look again to return to it.
@@ -944,7 +947,7 @@ A few behaviours worth knowing:
   moving while it fades.
 - **A new stroke or Plant in a dead centre grows**; only the colony that died
   there is kept out for the Regrow delay.
-- **Details** stays one pixel of the Growth grid wide; GrowRes 1024 (Advanced)
+- **Details** stays one pixel of the Growth grid wide; GrowRes High (Advanced)
   gives the finest lines on screen.
 - Snowflake is the heaviest Look (about twice the others).
 

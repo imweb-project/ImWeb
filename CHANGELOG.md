@@ -8,6 +8,19 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Changed
+- **Growth: GrowRes is back for every engine** (owner: "missing the higher
+  res option"). The Looks commit had made Size choose the grid in Single and
+  Nested and hidden GrowRes outside Frost. It is now RELATIVE — Low · Normal
+  · High = ½ · 1 · 2 × the grid Size picks, capped at 1024 as the old
+  absolute option was — so Size keeps its range and Looks (Normal) are
+  unchanged. Same index as before, so Frost's saved 256/512/1024 keep their
+  meaning. Measured on GPU: Lichen/Coral/Snowflake 256 · 512 · 1024 wide;
+  Mycelium at its Look's Size is already 1024, so High changes nothing there.
+- **Growth: Mycelium threads fade a little with age** (owner). Brightness
+  eases toward 60% and saturation toward 70% over ~20 s. Measured on GPU:
+  V 0.98 fresh → 0.80 at 10–20 s → 0.67 past 30 s; S 0.25 → 0.19.
+
 ### Added
 - **Growth: Colonies — a colour per planting.** Owner's lichen photo: separate
   coloured patches meeting at borders. Every engine but Nested already stamps

@@ -358,12 +358,18 @@ export const GROWTH_RD_VIEW = /* glsl */ `
     float v = heightOf(st);
     float hue;
     float val = v;
+    float sat = uSat;
     if (uMode < 0.5) {
       hue = uHue + uSpread * (1.0 - v);
     } else if (IS_HYPHAE) {
       // Colour by age: fresh tips and young threads at Colour, older ones
       // walk along HueSpread — the history of the growth, readable.
       hue = uHue + uSpread * clamp(st.b / 10.0, 0.0, 1.0);
+      // …and fade a little as they age (owner): brightness toward 60% and
+      // saturation toward 70%, easing over ~20 s, so fresh tips stand out.
+      float fade = exp(-st.b / 20.0);
+      val *= 0.6 + 0.4 * fade;
+      sat *= 0.7 + 0.3 * fade;
     } else if (IS_CRYSTAL) {
       // Crystal: the latent-heat halo a faint glow round the solid; hue walks
       // with temperature, so growing tips read warm.
@@ -389,7 +395,7 @@ export const GROWTH_RD_VIEW = /* glsl */ `
     }
     // Ground: the low areas as a surface rather than a hole.
     val = uGround + (1.0 - uGround) * val;
-    vec3 col = hsv2rgb(vec3(fract(hue), uSat, val));
+    vec3 col = hsv2rgb(vec3(fract(hue), sat, val));
 
     float ringLine = 0.0;   // Frost ring coverage, reused by the Lines view
 

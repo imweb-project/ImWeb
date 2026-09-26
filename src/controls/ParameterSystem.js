@@ -24,7 +24,7 @@ import { isPagedBinding } from './controlInput.js';
 // Same rule, same reason: a SELECT stores an INDEX, so the axis menus must be
 // built from the one list the index itself reads, never retyped beside it.
 import { DESCRIPTOR_LABELS } from '../audio/corpus-index.js';
-import { GROWTH_PATTERNS, GROWTH_RES, GROWTH_MODES, GROWTH_LOOKS } from '../inputs/GrowthPatterns.js';
+import { GROWTH_PATTERNS, GROWTH_MODES, GROWTH_LOOKS } from '../inputs/GrowthPatterns.js';
 
 /**
  * How the performer is listening (§8.6). ONE list, read twice: the labels are
@@ -7083,12 +7083,14 @@ export function registerCoreParameters(ps) {
   ps.register({
     id: "growth.clear", label: "ClearGrowth", group: "growth", type: PARAM_TYPE.TRIGGER,
   });
-  // Grid size along the longer axis; the other follows the canvas aspect.
-  // Finer grid = finer pattern (the cell size is fixed in texels). Changing it
-  // restarts the colony — a resized grid holds no meaningful state.
+  // Grid resolution, RELATIVE to the grid Size picks: Low ½ · Normal 1 ·
+  // High 2 (capped at 1024) — see _growthSize in main.js. Index = GROWTH_RES
+  // position (256/512/1024 against 512), so saved values keep their meaning
+  // in Frost. Finer grid = finer pattern (the cell size is fixed in texels);
+  // the colony is resampled across a change, not wiped.
   ps.register({
     id: "growth.res", label: "GrowRes", group: "growth",
-    type: PARAM_TYPE.SELECT, options: GROWTH_RES.map(String), value: 1,
+    type: PARAM_TYPE.SELECT, options: ["Low", "Normal", "High"], value: 1,
   });
   ps.register({
     id: "growth.hue", label: "Colour", group: "growth",
