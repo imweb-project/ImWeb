@@ -951,6 +951,9 @@ A few behaviours worth knowing:
 - **Details** stays one pixel of the Growth grid wide; GrowRes High (Advanced)
   gives the finest lines on screen.
 - Snowflake is the heaviest Look (about twice the others).
+- **Nested** is drawn at the canvas's own resolution through a smooth curve,
+  so its edges stay round at any Size instead of showing the grid's squares.
+  That costs about 3 ms a frame at 1640 wide.
 
 ---
 

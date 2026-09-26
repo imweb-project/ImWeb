@@ -42,7 +42,7 @@
 import * as THREE from 'three';
 import {
   VERT, GROWTH_RD_STEP, GROWTH_RD_VIEW, GROWTH_RD_INIT, GROWTH_MS_DOWN, GROWTH_MS_STEP,
-  GROWTH_CR_AUX, GROWTH_CR_STEP, GROWTH_HY_STEP, PASSTHROUGH,
+  GROWTH_CR_AUX, GROWTH_CR_STEP, GROWTH_HY_STEP, PASSTHROUGH, GROWTH_UPSAMPLE,
 } from '../shaders/index.js';
 import { GROWTH_PATTERNS } from './GrowthPatterns.js';
 
@@ -164,6 +164,7 @@ export class GrowthRD {
     // Last frame's seed, so a step can tell a stroke ARRIVING at a pixel (a
     // rise) from one merely held there. 8-bit is plenty for a luma knee.
     this._copyMat  = mat(PASSTHROUGH, { uTexture: { value: null } });
+    this._upMat    = mat(GROWTH_UPSAMPLE, { uSrc: { value: null }, uGrid: { value: new THREE.Vector2(1, 1) } });
     this._seedPrev = null;
     this._mode  = MODE_GRAY_SCOTT;
 
@@ -396,6 +397,33 @@ export class GrowthRD {
     v.uLight.value.set(Math.cos(az) * Math.cos(el), Math.sin(az) * Math.cos(el), Math.sin(el));
     v.uGloss.value  = (o.gloss ?? 0) / 100;
     v.uGround.value = (o.ground ?? 0) / 100;
+    // Nested draws at output resolution: the state goes through a smoothed
+    // copy (HalfFloat + Linear, as the B-spline needs filtered taps and the
+    // float state is Nearest) up to view size (GROWTH_UPSAMPLE), and the view
+    // reads THAT as its state. The other engines draw at grid size.
+    // uTexel stays one GRID texel, so Relief and Details keep their widths.
+    let vw = this._w, vh = this._h;
+    if (mode === MODE_MULTISCALE) {
+      const k = Math.max(1, Math.min(2048, o.viewRes ?? 0) / Math.max(this._w, this._h));
+      vw = Math.round(this._w * k);
+      vh = Math.round(this._h * k);
+      const half = (w, h) => new THREE.WebGLRenderTarget(w, h, {
+        minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+        format: THREE.RGBAFormat, type: THREE.HalfFloatType,
+        depthBuffer: false, stencilBuffer: false,
+      });
+      this._smooth ??= half(this._w, this._h);
+      this._up     ??= half(vw, vh);
+      this._smooth.setSize(this._w, this._h);
+      this._up.setSize(vw, vh);
+      this._copyMat.uniforms.uTexture.value = this._state[this._cur].texture;
+      this._blit(this._copyMat, this._smooth);
+      this._upMat.uniforms.uSrc.value = this._smooth.texture;
+      this._upMat.uniforms.uGrid.value.set(this._w, this._h);
+      this._blit(this._upMat, this._up);
+      v.uState.value = this._up.texture;
+    }
+    this._view.setSize(vw, vh);
     this._blit(this._viewMat, this._view);
 
     this.renderer.setRenderTarget(prevTarget);
@@ -533,6 +561,9 @@ export class GrowthRD {
     this._msMat.dispose();
     this._aux?.dispose();
     this._seedPrev?.dispose();
+    this._smooth?.dispose();
+    this._up?.dispose();
+    this._upMat.dispose();
     this._copyMat.dispose();
     this._crAuxMat.dispose();
     this._hyMat.dispose();

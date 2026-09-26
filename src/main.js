@@ -10871,6 +10871,7 @@ void main() {
       growthRD.render(dt, {
         ..._growthSize(),
         aspect:   canvas.width / Math.max(1, canvas.height),
+        viewRes:  Math.max(canvas.width, canvas.height),   // Nested draws at this
         speed:    ps.get("growth.speed").value,
         seedTex:  _cGrowSeed  >= 0 ? _resolveCaptureTex(ps.get("growth.seedSrc").value)  : null,
         seedAmt:  ps.get("growth.seedAmt").value / 100,

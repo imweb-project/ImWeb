@@ -9,6 +9,19 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Changed
+- **Growth: Nested is drawn smooth, at output resolution** (owner: "still
+  looks pixelated"). Its field is ±1 plateaus with one-texel cliffs, and the
+  view was grid-sized (512 or 256), stretched 3–6× to the canvas: square
+  blocks and dotted trails. Now the state is copied to a HalfFloat linear
+  target and drawn up to canvas size through a cubic B-spline
+  (GROWTH_UPSAMPLE), and the unchanged view reads that as its state, so
+  colour, Relief and Details all see a smooth field. Two rejected versions,
+  both measured: the B-spline inside the view cost ~7 ms/frame at 1640 wide
+  (Relief samples the surface 9×), and one bilinear tap for Relief showed
+  the grid as facets at Size 70. Cost now ~3 ms/frame at 1640 (view alone
+  0.4 → 3.3 ms, Intel GPU), ~5 ms at 2048 (the cap). Other engines unchanged.
+  Remaining: one-texel specks from the finest scale are softened, not gone —
+  they are the simulation, not the drawing.
 - **Growth: GrowRes is back for every engine** (owner: "missing the higher
   res option"). The Looks commit had made Size choose the grid in Single and
   Nested and hidden GrowRes outside Frost. It is now RELATIVE — Low · Normal

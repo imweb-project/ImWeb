@@ -290,6 +290,35 @@ ${GROWTH_VAR_GLSL}
 // B sits between ~0.1 and ~0.45 wherever something is growing, so the view
 // stretches that band by Contrast. Spread walks the hue along the concentration,
 // so the dense core and the thin growing edge read as different colours.
+// Nested's state drawn up to OUTPUT resolution through a cubic B-spline (four
+// bilinear taps, as the multi-scale step samples its pyramid). Its field is
+// ±1 plateaus with one-texel cliffs and one-texel specks, so a grid-sized
+// view stretched 3–6× to the canvas showed square blocks and dotted trails
+// (measured). GrowthRD hands the result to GROWTH_RD_VIEW as its state, so
+// the view — colour, Relief, Details — reads a smooth field at one tap per
+// sample. B-spline inside the view instead cost ~7 ms/frame at 1640 wide, and
+// one bilinear tap for Relief showed the grid as facets at Size 70 (measured).
+export const GROWTH_UPSAMPLE = /* glsl */ `
+  uniform sampler2D uSrc;    // linear-filterable copy of the state
+  uniform vec2      uGrid;   // its size, texels
+  varying vec2 vUv;
+  void main() {
+    vec2 st = vUv * uGrid - 0.5;
+    vec2 i  = floor(st);
+    vec2 f  = st - i;
+    vec2 f2 = f * f, f3 = f2 * f;
+    vec2 w0 = (1.0 - 3.0 * f + 3.0 * f2 - f3) / 6.0;
+    vec2 w1 = (4.0 - 6.0 * f2 + 3.0 * f3) / 6.0;
+    vec2 w2 = (1.0 + 3.0 * f + 3.0 * f2 - 3.0 * f3) / 6.0;
+    vec2 w3 = f3 / 6.0;
+    vec2 s0 = w0 + w1, s1 = w2 + w3;
+    vec2 c0 = (i - 0.5 + w1 / s0) / uGrid;
+    vec2 c1 = (i + 1.5 + w3 / s1) / uGrid;
+    gl_FragColor = s0.y * (s0.x * texture2D(uSrc, vec2(c0.x, c0.y)) + s1.x * texture2D(uSrc, vec2(c1.x, c0.y)))
+                 + s1.y * (s0.x * texture2D(uSrc, vec2(c0.x, c1.y)) + s1.x * texture2D(uSrc, vec2(c1.x, c1.y)));
+  }
+`;
+
 export const GROWTH_RD_VIEW = /* glsl */ `
   uniform sampler2D uState;
   uniform vec2  uTexel;
