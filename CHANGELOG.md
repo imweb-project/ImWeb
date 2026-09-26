@@ -8,6 +8,11 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Changed
+- **Growth: the Mycelium Look now uses Curves** (owner) — smooth, tapering
+  threads instead of Hyphae's one-pixel steps. Same Look values otherwise;
+  Hyphae stays one GrowMode away in Advanced.
+
 ### Fixed
 - **3D Material textures: every source, Growth included** (owner: "Texture
   Source is missing Growth among other sources"). Material ▸ Texture Source,

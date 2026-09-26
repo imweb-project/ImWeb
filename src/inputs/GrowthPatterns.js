@@ -75,11 +75,12 @@ export const GROWTH_LOOKS = [
     'growth.fadeStyle': 2, 'growth.lifetime': 20,
     'growth.details': 45, 'growth.relief': 35, 'growth.ground': 10, 'growth.gloss': 30,
     'growth.hue': 205, 'growth.sat': 30, 'growth.spread': 20, 'growth.plantSize': 2 } },
-  // Mycelium: branching threads exactly one pixel wide (the Hyphae engine),
-  // colour walking with age so old threads and fresh tips differ. Size 15 is
-  // the 1024 grid — the finest lines; this engine is cheap enough for it.
+  // Mycelium: smooth, tapering branching threads (the Curves engine; it was
+  // Hyphae's one-pixel steps until 2026-09-26 — owner's choice), colour
+  // walking with age so old threads and fresh tips differ. Size 15 is the
+  // 1024 sim grid — the finest threads. Density comes from LOOK_BASE (31).
   { name: 'Mycelium', values: { ...LOOK_BASE,
-    'growth.mode': 3, 'growth.scale': 15, 'growth.variation': 45, 'growth.hyBranch': 70,
+    'growth.mode': 4, 'growth.scale': 15, 'growth.variation': 45, 'growth.hyBranch': 70,
     'growth.relief': 0, 'growth.ground': 4, 'growth.gloss': 0,
     'growth.hue': 40, 'growth.sat': 25, 'growth.spread': 45, 'growth.plantSize': 1 } },
 ];

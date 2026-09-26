@@ -923,19 +923,17 @@ plants, so a Look's name always gives its look.
 - **Coral:** a branching coral colony with relief.
 - **Snowflake:** a six-armed ice crystal with growth rings; it grows for about
   20 s and fades before it can fill the frame.
-- **Mycelium:** branching threads exactly one pixel wide that wander and
-  keep clear of each other, spreading from a spore or sprouting along your
-  strokes. Colour shifts with age and fades a little as threads get older,
-  so fresh tips stand out from old threads.
-  Variation sets how much they wander, Size the fineness of the lines
-  (finest at the low end), Branching (Advanced) how often they fork.
-  **GrowMode → Curves** (Advanced) grows the same mycelium as smooth,
-  anti-aliased curves instead of pixel steps: trunks thick near the spore,
-  finer with every fork. Its extras: **Density** (higher = bushier, fuller
-  colonies), and **Field src/amt** as light — threads grow toward the
-  bright parts of the field (try the Camera). Under **Pen** fade each piece
-  of thread fades from when it was drawn, so the tips stay bright and leave
-  a fading trail.
+- **Mycelium:** smooth branching threads that wander and turn away from
+  each other, spreading from a spore or sprouting along your strokes —
+  trunks thick near the spore, finer with every fork. Colour shifts with age
+  and fades a little as threads get older, so fresh tips stand out.
+  Variation sets how much they wander, Size the fineness of the threads
+  (finest at the low end); in Advanced, Branching how often they fork and
+  **Density** how bushy the colony gets. **Field src/amt** is light the
+  threads grow toward (try the Camera). Under **Pen** fade each piece of
+  thread fades from when it was drawn, so the tips stay bright and leave a
+  fading trail. (Engine: Curves. **GrowMode → Hyphae** in Advanced gives the
+  older one-pixel stepped threads.)
 
 **Advanced** (collapsed) holds everything else, and shows only what applies
 to the current Look's engine: Pattern A/B and Zones, Feed/Kill offsets,
