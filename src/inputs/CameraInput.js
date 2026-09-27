@@ -46,10 +46,16 @@ export class CameraInput {
       return false;
     }
 
-    // Progressive constraint fallback — iOS fails hard on { exact } deviceId
+    // Progressive constraint fallback. A chosen device is asked for EXACTLY
+    // first: Chromium (Brave included) ranks the camera picked in the
+    // browser's own permission prompt / site settings above an `ideal`
+    // deviceId, so `ideal` alone kept the FaceTime camera while the C922 was
+    // selected. iOS fails hard on { exact } — that throws, and the ideal sets
+    // below are the fallback.
     const facing = this.facing;
     const constraintSets = deviceId
       ? [
+          { video: { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } } },
           { video: { deviceId: { ideal: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } } },
           { video: { deviceId: { ideal: deviceId } } },
           { video: { facingMode: { ideal: facing }, width: { ideal: 1280 }, height: { ideal: 720 } } },
@@ -99,7 +105,15 @@ export class CameraInput {
       this.texture.format    = THREE.RGBAFormat;
       this.active = true;
 
-      console.info('[Camera] Started:', this._stream.getVideoTracks()[0].label);
+      const track = this._stream.getVideoTracks()[0];
+      console.info('[Camera] Started:', track.label);
+      // Say so when the camera running is not the one asked for (every exact
+      // attempt failed and a fallback won) — otherwise it looks like success.
+      const got = track.getSettings?.().deviceId;
+      if (deviceId && got && got !== deviceId) {
+        const want = this.devices.find(d => d.deviceId === deviceId)?.label ?? deviceId;
+        console.warn(`[Camera] Asked for "${want}" but the browser opened "${track.label}"`);
+      }
       return true;
     } catch (err) {
       console.warn('[Camera] Video play failed:', err.message);
