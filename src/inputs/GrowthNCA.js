@@ -32,12 +32,20 @@
  * No Python at runtime: the exported JSON (public/nca/*.json) is packed into a
  * 16 × HID float texture on load. State: one render target with three RGBA
  * float attachments (channels 0–3, 4–7, 8–11), ping-ponged; one draw per step.
- * Channels 0–2 + 0.5 are the colour (GROWTH_NCA_VIEW).
+ * Channels 0–2 + 0.5 are the colour. The picture is drawn at SCREEN size
+ * (view(): per-cell fields → B-spline up → coverage cut per pixel), so its
+ * edges, plates and relief do not step in grid cells.
  */
 import * as THREE from 'three';
-import { GROWTH_NCA_STEP, GROWTH_NCA_ZERO, GROWTH_NCA_VIEW, GROWTH_NCA_MASK, GROWTH_NCA_CAPTURE } from '../shaders/index.js';
+import { GROWTH_NCA_STEP, GROWTH_NCA_ZERO, GROWTH_NCA_DOME, GROWTH_NCA_FIELDS, GROWTH_NCA_UP, GROWTH_NCA_VIEW, GROWTH_NCA_MASK, GROWTH_NCA_CAPTURE } from '../shaders/index.js';
 
-const MAX_STEPS_PER_FRAME = 8;   // each step is a full MLP per cell
+// At most 2 updates a frame, the rest dropped: catching up after a slow
+// frame made the next one slower still — at 9 fps it ran 8 full rule steps a
+// frame (owner, 2026-09-27). Under load the timelapse slows, not the frame.
+const MAX_STEPS_PER_FRAME = 2;
+// Full rule steps after a Clear before a still model splits them (the
+// texture forms in ~50).
+const WARM_STEPS = 64;
 // Colony spread: chance per step per living neighbour that a bare cell joins.
 // A straight front has ~3 living neighbours, so it advances ~3 × SPREAD cells
 // a step — ~2 cells/s at 60 steps/s (Speed 16).
@@ -79,17 +87,39 @@ export class GrowthNCA {
       glslVersion: THREE.GLSL3, vertexShader: VERT3, fragmentShader: GROWTH_NCA_ZERO,
       depthTest: false, depthWrite: false,
     });
-    this._viewMat = new THREE.ShaderMaterial({
-      glslVersion: THREE.GLSL3,
+    const VUV = /* glsl */ `out vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position, 1.0); }`;
+    // The picture, three passes: per-cell fields (grid) → B-spline up to
+    // screen size → coverage cut and relief per screen pixel.
+    this._fieldsMat = new THREE.ShaderMaterial({
+      glslVersion: THREE.GLSL3, vertexShader: VERT3, fragmentShader: GROWTH_NCA_FIELDS,
       uniforms: {
         uPhoto: { value: null }, uMask: { value: null }, uTint: { value: null }, uGenes: { value: null },
-        uGround: { value: new THREE.Vector3(...GROUND) },
-        uLife: { value: 0 }, uFade: { value: 1 }, uRest: { value: 0 },
+        uLife: { value: 0 }, uFade: { value: 1 }, uRest: { value: 0 }, uDome: { value: null },
         uRelief: { value: 0 }, uGloss: { value: 0 }, uLight: { value: new THREE.Vector3(0, 0, 1) },
       },
-      vertexShader: /* glsl */ `out vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position, 1.0); }`,
-      fragmentShader: GROWTH_NCA_VIEW, depthTest: false, depthWrite: false,
+      depthTest: false, depthWrite: false,
     });
+    this._domeMat = new THREE.ShaderMaterial({
+      glslVersion: THREE.GLSL3, vertexShader: VERT3, fragmentShader: GROWTH_NCA_DOME,
+      uniforms: { uSrc: { value: null }, uDir: { value: new THREE.Vector2(1, 0) }, uFromPhoto: { value: true } },
+      depthTest: false, depthWrite: false,
+    });
+    this._dome = null;           // [across, down] grid-size plate-dome blur targets
+    this._upMat = new THREE.ShaderMaterial({
+      glslVersion: THREE.GLSL3, vertexShader: VUV, fragmentShader: GROWTH_NCA_UP,
+      uniforms: { uF: { value: null }, uGrid: { value: new THREE.Vector2() } },
+      depthTest: false, depthWrite: false,
+    });
+    this._viewMat = new THREE.ShaderMaterial({
+      glslVersion: THREE.GLSL3, vertexShader: VUV, fragmentShader: GROWTH_NCA_VIEW,
+      uniforms: {
+        uC: { value: null }, uF: { value: null }, uGridSize: { value: new THREE.Vector2() },
+        uGround: { value: new THREE.Vector3(...GROUND) },
+      },
+      depthTest: false, depthWrite: false,
+    });
+    this._fields = null;         // grid-size fields, 2 × HalfFloat Linear (the B-spline filters them)
+    this._up = null;             // the coverage field at screen size
     this._maskMat = new THREE.ShaderMaterial({
       glslVersion: THREE.GLSL3, vertexShader: VERT3, fragmentShader: GROWTH_NCA_MASK,
       uniforms: {
@@ -99,7 +129,7 @@ export class GrowthNCA {
         uSeedAmt: { value: 0 }, uPoint: { value: new THREE.Vector3() },
         uAgeDt: { value: 0 }, uLife: { value: 0 }, uFade: { value: 1 }, uRest: { value: 0 },
         uGenes: { value: null }, uSwarm: { value: new THREE.Vector4() }, uSwarmSeed: { value: 0 },
-        uVar: { value: 0 }, uColours: { value: 0 },
+        uVar: { value: 0 }, uColours: { value: 0 }, uS0: { value: null }, uWoundDone: { value: true },
       },
       depthTest: false, depthWrite: false,
     });
@@ -199,6 +229,8 @@ export class GrowthNCA {
         uW: { value: tex }, uMask: { value: null },
         uSize: { value: new THREE.Vector2() },
         uStep: { value: 0 }, uFire: { value: this._model.fire }, uRot: { value: new THREE.Vector2(1, 0) },
+        uD0: { value: null }, uD1: { value: null }, uD2: { value: null },
+        uJ0: { value: 0 }, uJ1: { value: H }, uAcc: { value: false }, uApply: { value: true },
       },
       depthTest: false, depthWrite: false,
     });
@@ -278,6 +310,8 @@ export class GrowthNCA {
       this._keepMask = false;
       this._needsInit = false;
       this._acc = 0;
+      this._ruleSteps = 0;
+      this._part = 0;
     }
     // Speed 16 (the Growth default) = 60 steps a second: one per frame at 60 Hz.
     this._acc += Math.max(0, o.speed) * 3.75 * Math.min(Math.max(o.dt, 0), 0.1);
@@ -286,6 +320,13 @@ export class GrowthNCA {
     if (o.plant && n === 0) n = 1;             // a Plant lands even while paused
 
     const u = this._stepMat.uniforms, mu = this._maskMat.uniforms;
+    // A still model's step is SPLIT over `split` frames — a share of the
+    // hidden units each, applied on the last — once the texture has formed:
+    // the rule is ~85% of the frame (11.5 ms per step at 256 on the Intel UHD
+    // 630) and a still texture barely changes in a step. Same step, as
+    // trained, landing 15 times a second instead of 60; the colonies still
+    // grow every update. A restless model (split 1) steps with every update.
+    const split = (o.split ?? 1) > 1 && this._ruleSteps >= WARM_STEPS ? o.split : 1;
     u.uSize.value.set(this._w, this._h);
     u.uRot.value.set(Math.cos(o.rot ?? 0), Math.sin(o.rot ?? 0));
     mu.uSize.value.set(this._w, this._h);
@@ -304,6 +345,7 @@ export class GrowthNCA {
       mu.uMask.value = this._mask[this._mcur].textures[0];
       mu.uTint.value = this._mask[this._mcur].textures[1];
       mu.uGenes.value = this._mask[this._mcur].textures[2];
+      mu.uS0.value = this._state[this._cur].textures[0];
       mu.uStep.value = this._step;
       mu.uSwarm.value.w = 0;
       if (spores > 0 && --this._swarmIn <= 0) {
@@ -322,20 +364,19 @@ export class GrowthNCA {
       mu.uSeedAmt.value = i === 0 && o.seedTex ? o.seedAmt : 0;
       this._blit(this._maskMat, this._mask[this._mcur ^ 1]);
       this._mcur ^= 1;
+      mu.uWoundDone.value = false;                 // until the next full step
       if (i === 0 && o.seedTex) {
         this._seedPrev ??= new THREE.WebGLRenderTarget(this._w, this._h, { depthBuffer: false, stencilBuffer: false });
         this._passMat.uniforms.uT.value = o.seedTex;
         this._blit(this._passMat, this._seedPrev);
       }
-      // Then the rule, held empty outside the colony, settling with age.
-      const src = this._state[this._cur];
-      u.uS0.value = src.textures[0];
-      u.uS1.value = src.textures[1];
-      u.uS2.value = src.textures[2];
-      u.uMask.value = this._mask[this._mcur].texture;
-      u.uStep.value = this._step;
-      this._blit(this._stepMat, this._state[this._cur ^ 1]);
-      this._cur ^= 1;
+      // Then the rule — whole grid, as trained; wounds empty their cells.
+      if (split === 1) { this._part = 0; this._rulePass(0, this._model.hidden, true); }
+    }
+    if (split > 1 && n > 0) {
+      const H = this._model.hidden, k = this._part;
+      this._rulePass(Math.round((k * H) / split), Math.round(((k + 1) * H) / split), k === split - 1, k > 0);
+      this._part = (k + 1) % split;
     }
     // The picture: follow the live colour where young, hold where settled.
     if (n > 0) {
@@ -350,22 +391,85 @@ export class GrowthNCA {
   }
 
   /**
-   * Draw the picture into `target` (any size; Linear upscale).
+   * Draw the picture into `target` — screen size, not grid size: coverage is
+   * cut per target pixel, so edges and relief are smooth at any Size.
    * @param look { relief (normal depth, 0 = flat), gloss (0–1), light (Vector3, unit) }
    */
   view(target, look = {}) {
+    const half = (w, h, count) => new THREE.WebGLRenderTarget(w, h, {
+      count, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+      format: THREE.RGBAFormat, type: THREE.HalfFloatType, depthBuffer: false, stencilBuffer: false,
+    });
+    this._fields ??= half(this._w, this._h, 2);
+    this._up ??= half(target.width, target.height, 1);
+    this._fields.setSize(this._w, this._h);
+    this._up.setSize(target.width, target.height);
+    this._dome ??= [0, 1].map(() => new THREE.WebGLRenderTarget(this._w, this._h, {
+      minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter,
+      format: THREE.RGBAFormat, type: THREE.HalfFloatType, depthBuffer: false, stencilBuffer: false,
+    }));
+    const d = this._domeMat.uniforms;
+    this._dome.forEach((t) => t.setSize(this._w, this._h));
+    d.uSrc.value = this._photo[this._pcur].texture; d.uDir.value.set(1, 0); d.uFromPhoto.value = true;
+    this._blit(this._domeMat, this._dome[0]);
+    d.uSrc.value = this._dome[0].texture; d.uDir.value.set(0, 1); d.uFromPhoto.value = false;
+    this._blit(this._domeMat, this._dome[1]);
+    const f = this._fieldsMat.uniforms;
+    f.uPhoto.value = this._photo[this._pcur].texture;
+    f.uMask.value = this._mask[this._mcur].textures[0];
+    f.uTint.value = this._mask[this._mcur].textures[1];
+    f.uGenes.value = this._mask[this._mcur].textures[2];
+    f.uLife.value = this._maskMat.uniforms.uLife.value;
+    f.uFade.value = this._maskMat.uniforms.uFade.value;
+    f.uRest.value = this._maskMat.uniforms.uRest.value;
+    f.uDome.value = this._dome[1].texture;
+    f.uRelief.value = look.relief ?? 0;
+    f.uGloss.value = look.gloss ?? 0;
+    if (look.light) f.uLight.value.copy(look.light);
+    this._blit(this._fieldsMat, this._fields);
+    const u = this._upMat.uniforms;
+    u.uF.value = this._fields.textures[1];
+    u.uGrid.value.set(this._w, this._h);
+    this._blit(this._upMat, this._up);
     const v = this._viewMat.uniforms;
-    v.uRelief.value = look.relief ?? 0;
-    v.uGloss.value = look.gloss ?? 0;
-    if (look.light) v.uLight.value.copy(look.light);
-    v.uPhoto.value = this._photo[this._pcur].texture;
-    v.uMask.value = this._mask[this._mcur].textures[0];
-    v.uTint.value = this._mask[this._mcur].textures[1];
-    v.uGenes.value = this._mask[this._mcur].textures[2];
-    v.uLife.value = this._maskMat.uniforms.uLife.value;
-    v.uFade.value = this._maskMat.uniforms.uFade.value;
-    v.uRest.value = this._maskMat.uniforms.uRest.value;
+    v.uC.value = this._fields.textures[0];     // colour: bilinear from the grid (sharper)
+    v.uF.value = this._up.texture;
+    v.uGridSize.value.set(this._w, this._h);
     this._blit(this._viewMat, target);
+  }
+
+  /**
+   * One pass of the rule over hidden units j0..j1. `apply`: add the change so
+   * far (`acc`) and step the state; otherwise write the partial change.
+   */
+  _rulePass(j0, j1, apply, acc = false) {
+    const u = this._stepMat.uniforms;
+    const src = this._state[this._cur];
+    u.uS0.value = src.textures[0];
+    u.uS1.value = src.textures[1];
+    u.uS2.value = src.textures[2];
+    u.uMask.value = this._mask[this._mcur].texture;
+    u.uStep.value = this._step;
+    u.uJ0.value = j0; u.uJ1.value = j1;
+    u.uAcc.value = acc; u.uApply.value = apply;
+    if (acc) {
+      const d = this._dacc[this._dcur].textures;
+      u.uD0.value = d[0]; u.uD1.value = d[1]; u.uD2.value = d[2];
+    }
+    if (apply) {
+      this._blit(this._stepMat, this._state[this._cur ^ 1]);
+      this._cur ^= 1;
+      this._ruleSteps++;
+      this._maskMat.uniforms.uWoundDone.value = true;   // every flagged wound is now emptied
+    } else {
+      if (!this._dacc || this._dacc[0].width !== this._w || this._dacc[0].height !== this._h) {
+        this._dacc?.forEach((t) => t.dispose());
+        this._dacc = [this._makeTarget(), this._makeTarget()];
+        this._dcur = 0;
+      }
+      this._blit(this._stepMat, this._dacc[this._dcur ^ 1]);
+      this._dcur ^= 1;
+    }
   }
 
   /** The three state attachments, for tests: [tex0, tex1, tex2]. */
@@ -382,7 +486,14 @@ export class GrowthNCA {
     this._maskMat.dispose();
     this._model?.tex.dispose();
     this._stepMat?.dispose();
+    this._dacc?.forEach((t) => t.dispose());
     this._zeroMat.dispose();
     this._viewMat.dispose();
+    this._fieldsMat.dispose();
+    this._upMat.dispose();
+    this._domeMat.dispose();
+    this._dome?.forEach((t) => t.dispose());
+    this._fields?.dispose();
+    this._up?.dispose();
   }
 }

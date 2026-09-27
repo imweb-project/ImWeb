@@ -304,9 +304,13 @@ export class GrowthRD {
         // Spore colonies: how many land, how different they are (Variation),
         // how many wear a palette colour rather than the photo's (Colonies).
         spores: o.spores ?? 0, variation: (o.variation ?? 0) / 100, colours: o.colonies ?? 0,
+        split: (NCA_MODELS[o.ncaModel] ?? NCA_MODELS[0]).split ?? 1,
       });
       this._plant = null;
-      this._view.setSize(this._w, this._h);
+      // Drawn at output resolution (GrowthNCA.view), as Nested is: a grid-
+      // sized picture stretched ~6× showed every cell (owner: "ruff").
+      const k = Math.max(1, Math.min(2048, o.viewRes ?? 0) / Math.max(this._w, this._h));
+      this._view.setSize(Math.round(this._w * k), Math.round(this._h * k));
       // Relief lifts the lichen off the rock, lit from Light angle — the same
       // depth scale and 40° elevation as the other engines' view (below).
       const az = ((o.lightAngle ?? 135) * Math.PI) / 180, el = (40 * Math.PI) / 180;

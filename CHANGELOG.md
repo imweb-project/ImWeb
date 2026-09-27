@@ -9,6 +9,83 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Changed
+- **Growth, Neural: roughly half the frame cost** (owner: "will this be able
+  to run at 60fps?", at 9 fps). Measured whole frames on the Intel UHD 630:
+  the rule is ~85% of the cost (11.5 ms a step at Size 50, ~28 ms at Size
+  16), the picture 3.8 / 7.2 ms. Two fixes. (1) No catch-up spiral: at most
+  2 colony updates a frame, the backlog dropped (a slow frame used to queue
+  up to 8 full rule steps into the next). (2) A still model's rule step is
+  SPLIT over 4 frames: a quarter of the network's hidden units each frame,
+  applied on the fourth. It is the same step (split vs whole: difference
+  0.0), landing 15×/s instead of 60. Colonies still grow every update, and
+  a Clear gets 64 full steps first so the texture forms at once. Crust
+  splits; Lichen, which is restless, does not. Wound flags stay up until a
+  full step has emptied them. Frame at Size 50 / Speed 16: 15.3 → 9.0 ms;
+  Size 16 / Speed 31: 49 → 16 ms. Storm test with the split: peak 2.41.
+- **Growth, Neural: margins follow the picture's detail** (owner: "edges
+  natural?"). The smooth field alone gave round, melted-wax margins; the
+  colour's brightness at screen resolution now nudges the cut out over
+  bright plate and in along dark cracks and grain.
+- **Growth, Neural: drawn at screen resolution** (owner: "the image is
+  ruff"). The picture was one pixel per grid cell stretched ~6×, so every
+  plate edge, crack and relief bevel stepped in whole cells. Now three
+  passes: per-cell fields at grid size, then the coverage field up to screen
+  size through a cubic B-spline, then coverage is cut where it crosses 0,
+  antialiased per screen pixel. Colour is read bilinear from the grid, which
+  is sharper than the B-spline. Relief now uses the plate field as height:
+  plate domes high, cracks as valleys, colony edges as slopes, not a
+  one-cell cliff (that read as a glossy tube round every colony). Shading is
+  floored at 0.55, not 0.35. Lichen timelapse sets Gloss 5 (lichen is
+  matte). Spore colonies' fronts are smoothed (joining goes as n²/3, so
+  one-cell spikes slow and notches fill). Palette colour sets the plates'
+  hue and keeps their brightness and some of their saturation, so detail
+  shows through. Plates are domed (owner: "the tops of the shapes are
+  flat"): the plate value saturates over a cream plate, so height now comes
+  from its Gaussian blur (σ 5 cells, two small grid passes), and plates rise
+  to their middles and dip into their cracks. Relief is computed per cell
+  and carried up with the coverage field. Rim highlight moved into the
+  field too; the per-cell colony border line is OFF (owner: "thick gray
+  borders between colonies": it was two cells wide and stair-stepped).
+  Colour is half bilinear, half B-spline, so one-cell cracks do not
+  stair-step and plates do not blur. Cost: the picture passes take
+  ~2.5–3.5 ms at 1280×720 on the Intel UHD 630 (noisy; ~0.6 ms at grid
+  size). The rule, mask and colonies are unchanged.
+- **Growth, Neural: plates grow and shrink** (owner: "can we have the
+  shapes in picture also grow instead of being a static picture? the hole
+  appear not from shapes"). With the rule running under bare rock, a
+  spreading colony only uncovered plates that were already whole. Now each
+  cell shows once its plate value (the picture's brightness, 3×3) clears a
+  threshold that falls over ~5 s as the cell matures. Each plate buds at
+  its brightest point and swells to its outline, with cracks and dark grain
+  last. Dying runs it backwards: cracks open first, then each plate shrinks
+  back to its centre. Spore colonies' dying order leans harder on the
+  texture (±0.3 Lifetime, was ±0.15) with a ~6 s last fade, so holes open
+  between plates, not as circles. Picture only; the rule is untouched.
+- **Growth, Lichen timelapse: colonies follow their texture** (owner: "the
+  rosettes are looking too much like geometric shapes and are not following
+  their inner shapes and color"). The outline was pure geometry laid over a
+  texture it knew nothing about. The rule now runs under bare rock too, so
+  the colony reads the texture it grows into: the front races across bright
+  plates and crawls through cracks and dark grain, so colonies advance
+  plate by plate with their rims on cracks. At full size a plate is
+  finished and a crack stops short. Dying goes plate by plate (dark ground
+  first) with a ~3 s last fade, not a blurred round donut. Lobes are now
+  only a hint (notches to about half the radius). Palette colour takes the
+  plates only, so cracks, grains and discs keep their own colours. Border
+  lines are lighter (0.55 → 0.4). Coverage settles lower (30–45%): rock
+  shows between the plates.
+- **Growth, Lichen timelapse: colonies die as rings, no crescents** (owner:
+  "fix the crescent leftovers"). Under Ring, a spore colony died in the order
+  its cells joined, so wherever it grew unevenly (blocked by a neighbour,
+  slow into its notches) the last-grown part lingered as a crescent or a
+  hairline ring. Now it dies by distance from where its spore landed: a
+  hole opens at the centre in the colony's own lobed outline and widens over
+  one Lifetime, and the rim band (≥ 3 cells or 12% of the radius) fades as
+  one piece. A colony still growing when its centre dies is a ring lichen.
+  Visible slivers stay at the growing-edge level (0.6–1.8% of living cells
+  over 180 s, against up to 3.4% before). Fading thin cells one by one was
+  tried first and dissolved colonies into speckle. Pen/Plant colonies are
+  unchanged.
 - **Growth, Lichen timelapse: deeper lobes** (owner). Colonies grow as
   rosettes: each lobe is a rounded tip with its own length, and neighbouring
   lobes meet at a narrow notch. Notches reach in to a quarter of the radius

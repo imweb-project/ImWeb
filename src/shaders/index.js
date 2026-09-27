@@ -922,6 +922,9 @@ export const GROWTH_NCA_STEP = /* glsl */ `
   precision highp int;
   precision highp sampler2D;
   uniform sampler2D uS0, uS1, uS2, uW, uMask;
+  uniform sampler2D uD0, uD1, uD2;   // change accumulated by earlier parts of this step
+  uniform int uJ0, uJ1;              // hidden units this pass computes
+  uniform bool uAcc, uApply;         // add uD*; apply the step (else output the partial change)
   uniform ivec2 uSize;
   uniform float uStep, uFire;
   uniform vec2 uRot;
@@ -956,7 +959,7 @@ export const GROWTH_NCA_STEP = /* glsl */ `
     // empties the state once (mask .g flag on a bare cell, set for one
     // update), so the texture visibly heals from the wound's edges.
     vec4 mk = texelFetch(uMask, p, 0);
-    if (mk.b < 0.5 && mk.g > 0.5) { o0 = vec4(0.0); o1 = vec4(0.0); o2 = vec4(0.0); return; }
+    if (uApply && mk.b < 0.5 && mk.g > 0.5) { o0 = vec4(0.0); o1 = vec4(0.0); o2 = vec4(0.0); return; }
     vec4 id0, sx0, sy0, lp0, id1, sx1, sy1, lp1, id2, sx2, sy2, lp2;
     perceive(uS0, p, id0, sx0, sy0, lp0);
     perceive(uS1, p, id1, sx1, sy1, lp1);
@@ -965,8 +968,12 @@ export const GROWTH_NCA_STEP = /* glsl */ `
     t = uRot.x * sx0 + uRot.y * sy0; sy0 = -uRot.y * sx0 + uRot.x * sy0; sx0 = t;
     t = uRot.x * sx1 + uRot.y * sy1; sy1 = -uRot.y * sx1 + uRot.x * sy1; sx1 = t;
     t = uRot.x * sx2 + uRot.y * sy2; sy2 = -uRot.y * sx2 + uRot.x * sy2; sx2 = t;
+    // A step may be SPLIT across frames (GrowthNCA, still models): each pass
+    // sums hidden units uJ0..uJ1 onto the change so far; the last applies it.
+    // Same sum, same step — only when it lands.
     vec4 d0 = vec4(0.0), d1 = vec4(0.0), d2 = vec4(0.0);
-    for (int j = 0; j < HID; j++) {
+    if (uAcc) { d0 = texelFetch(uD0, p, 0); d1 = texelFetch(uD1, p, 0); d2 = texelFetch(uD2, p, 0); }
+    for (int j = uJ0; j < uJ1; j++) {
       float h = texelFetch(uW, ivec2(12, j), 0).x
         + dot(texelFetch(uW, ivec2(0, j), 0), id0) + dot(texelFetch(uW, ivec2(1, j), 0), sx0)
         + dot(texelFetch(uW, ivec2(2, j), 0), sy0) + dot(texelFetch(uW, ivec2(3, j), 0), lp0)
@@ -979,6 +986,7 @@ export const GROWTH_NCA_STEP = /* glsl */ `
       d1 += h * texelFetch(uW, ivec2(14, j), 0);
       d2 += h * texelFetch(uW, ivec2(15, j), 0);
     }
+    if (!uApply) { o0 = d0; o1 = d1; o2 = d2; return; }
     // Stochastic update: each cell fires with probability uFire per step.
     uint r = pcg(uint(p.x) ^ pcg(uint(p.y) ^ pcg(uint(uStep))));
     float fire = float(r) / 4294967296.0 < uFire ? 1.0 : 0.0;
@@ -1060,11 +1068,13 @@ export const GROWTH_NCA_MASK = /* glsl */ `
   precision highp float;
   precision highp int;
   uniform sampler2D uMask, uTint, uSeed, uSeedPrev, uGenes;
+  uniform highp sampler2D uS0;   // the texture's state (channels 0–3): colonies follow its plates
   uniform ivec2 uSize;
   uniform float uStep, uSpread, uFadeIn, uSeedAmt, uAgeDt, uLife, uFade, uRest;
   uniform vec3 uPoint;          // plant: x, y (0–1), radius in texels (0 = none)
   uniform vec4 uSwarm;          // spores: centre x, y and radius (cells), peak chance per cell (0 = none)
   uniform float uSwarmSeed, uVar, uColours;
+  uniform bool uWoundDone;       // the rule has applied every wound flagged so far (a full step ran)
   layout(location = 0) out vec4 o;
   layout(location = 1) out vec4 ot;
   layout(location = 2) out vec4 og;
@@ -1098,6 +1108,31 @@ export const GROWTH_NCA_MASK = /* glsl */ `
     float k2 = floor(k * 2.3), t2 = a * k2;
     return tip * (0.83 + 0.17 * pow(sin(3.14159265 * (t2 - floor(t2))), 0.6));
   }
+  // A colony's final radius (cells) toward d, the offset from where its spore
+  // landed. Lobes are only a hint of rosette (notches to about half the
+  // radius at amp 1, a third of the speed there): cut deeper they read as
+  // cookie-cutter shapes laid over the texture (owner, 2026-09-27). The
+  // outline's detail comes from the texture itself (plate(), below).
+  float gCap(float s, vec2 d, out float rate, out float notch) {
+    float reach, k, amp, ph;
+    gTraits(s, rate, reach, k, amp, ph);
+    notch = amp * (1.0 - gLobe(s, k, ph, atan(d.y, d.x)));
+    return reach * mix(1.0, 0.55, notch);
+  }
+  float gCap(float s, vec2 d) { float r, n; return gCap(s, d, r, n); }
+  // How much the texture at q is PLATE (0…1): bright crust — the cream
+  // areoles of Crust, the pale crust of Lichen — against cracks, grains and
+  // dark ground. A 3×3 mean, so single grains do not decide. The rule runs
+  // on the whole grid, so this is defined under bare rock too: a colony can
+  // read what it is about to grow into.
+  float plate(ivec2 q) {
+    float l = 0.0;
+    for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) {
+      ivec2 r = (q + ivec2(dx, dy) + uSize) % uSize;
+      l += dot(clamp(texelFetch(uS0, r, 0).rgb + 0.5, 0.0, 1.0), vec3(0.299, 0.587, 0.114));
+    }
+    return smoothstep(0.6, 0.85, l / 9.0);
+  }
   // Colony age of a living neighbour, −1 if bare or off the frame.
   float colony(ivec2 q) {
     if (q.x < 0 || q.y < 0 || q.x >= uSize.x || q.y >= uSize.y) return -1.0;
@@ -1124,6 +1159,27 @@ export const GROWTH_NCA_MASK = /* glsl */ `
       // was (og.z), so that colony cannot grow back into it — its rim moves
       // on outward (rings) and the rock is left to other colonies and spores.
       if (gDoomed(g.z) && col > gDoomAge(g.z)) { o = vec4(0.0); og = vec4(0.0, 0.0, g.z, 0.0); return; }
+      // Ring, spore colonies: die by DISTANCE from where the spore landed,
+      // not in the order cells joined. Join order left slivers (owner,
+      // 2026-09-27): a colony grown unevenly — blocked on one side, slow into
+      // its notches — kept its last-grown part as a crescent or a hairline
+      // ring. Here a hole opens at the centre and widens over one Lifetime;
+      // the rim band (≥ 3 cells or 12% of the radius) goes last. The TEXTURE
+      // shifts it ±0.3 Lifetime — dark ground and cracks well before the
+      // plates around them — so holes open between plates, not as circles
+      // (owner, 2026-09-27; ±0.15 still read round). The cell's "age" (.r,
+      // what the death test below and the view read) is its colony's age
+      // less that delay, and its last fade runs ~6 s whatever Fade is — long
+      // enough to watch a plate shrink away (GROWTH_NCA_VIEW), short enough
+      // that Ring's 10 s does not smear the ordering into a blurred donut. A
+      // colony still growing when its centre dies is a ring.
+      if (uLife > 0.0 && !hold && g.z > 1.5) {
+        vec2 d = vec2(p) + 0.5 - g.xy * vec2(uSize);
+        float cap = max(1.0, gCap(g.z, d));
+        float rho = min(length(d) / cap, 1.0 - max(3.0, 0.12 * cap) / cap) + 0.6 * (plate(p) - 0.5);
+        age = col - clamp(rho, 0.0, 1.0) * uLife;
+        if (age > uLife) age = uLife + (age - uLife) * uFade / 6.0;
+      }
       if (uLife > 0.0 && (hold ? col : age) > uLife + uFade) {     // died of age
         o = vec4(hold ? -60000.0 : -uRest, 0.0, 0.0, 0.0); og = vec4(0.0, 0.0, g.z, 0.0); return;
       }
@@ -1150,18 +1206,23 @@ export const GROWTH_NCA_MASK = /* glsl */ `
     float spread = uSpread;
     if (grows && gn.z > 1.5) {
       // A spore colony: its own speed, lobes, and a final size it stops at.
-      float rate, reach, k, amp, ph;
-      gTraits(gn.z, rate, reach, k, amp, ph);
+      float rate, notch;
       vec2 d = vec2(p) + 0.5 - gn.xy * vec2(uSize);
-      // Deep lobes (owner, 2026-09-27): the longest tips reach the full
-      // radius; the notches stop at a quarter of it (amp 1), and the front
-      // creeps there at a tenth of the speed, so even a young colony is lobed.
-      float notch = amp * (1.0 - gLobe(gn.z, k, ph, atan(d.y, d.x)));
-      if (length(d) > reach * mix(1.0, 0.25, notch)) grows = false;
-      spread = min(1.0, uSpread * rate * mix(1.0, 0.1, notch));
+      // The front follows the texture: fast across plates, crawling through
+      // cracks and dark grain, so a colony advances plate by plate and its
+      // rim sits on cracks; at its final size a plate is finished, a crack
+      // stops short — the outline is the texture's, not a drawn curve.
+      float pl = plate(p);
+      if (length(d) > gCap(gn.z, d, rate, notch) * (0.8 + 0.4 * pl)) grows = false;
+      spread = min(1.0, uSpread * rate * mix(1.0, 0.35, notch) * mix(0.12, 1.8, pl));
     }
     uint h = pcg(uint(p.x) ^ pcg(uint(p.y) ^ pcg(uint(uStep) ^ 0x5bd1e995u)));
-    bool on = rest >= 0.0 && grows && float(h) / 4294967296.0 < 1.0 - pow(1.0 - spread, n);
+    // Spore colonies smooth their front: joining goes as n²/3 (a straight
+    // front, n ≈ 3, keeps its speed), so one-cell spikes (n = 1) grow 3×
+    // slower and notches (n ≥ 5) fill faster. Plain Eden's one-cell jaggies
+    // were noise once the plates shaped the rim (owner, 2026-09-27).
+    float ne = gn.z > 1.5 ? n * n / 3.0 : n;
+    bool on = rest >= 0.0 && grows && float(h) / 4294967296.0 < 1.0 - pow(1.0 - spread, ne);
     float col = on ? oldest : 0.0;
     vec4 gOut = gn;
     // A swarm lands: a cloud of spores on free rock, each its own colony.
@@ -1176,7 +1237,9 @@ export const GROWTH_NCA_MASK = /* glsl */ `
     }
     if (plant) { on = true; col = 0.0; tint = vec4(0.0); gOut = vec4(0.0); }   // sown by Plant: natural colour
     if (arrive) { on = true; col = 0.0; tint = vec4(texture(uSeed, uv).rgb, 1.0); gOut = vec4(0.0); }   // by the pen: its colour
-    o = on ? vec4(0.0, 0.0, 1.0, col) : vec4(rest, 0.0, 0.0, 0.0);
+    // A wound's flag (.g on bare ground) stays up until a full rule step
+    // has emptied the state there — with a split step that is frames later.
+    o = on ? vec4(0.0, 0.0, 1.0, col) : vec4(rest, uWoundDone ? 0.0 : m.g, 0.0, 0.0);
     ot = on ? tint : vec4(0.0);
     og = on ? gOut : g;                                             // bare keeps its mark
   }
@@ -1201,9 +1264,9 @@ export const GROWTH_NCA_CAPTURE = /* glsl */ `
   }
 `;
 
-// Picture at grid size (one pixel per cell): the settled photo, tinted by
-// its colony's pen colour; coverage (fade-in × Lifetime fade-out) blends it
-// over the bare ground. Tint recolours only what is ORANGE — weight from the
+// Per-cell FIELDS for the picture (grid size): the settled photo, tinted by
+// its colony's pen colour (oC), and the signed coverage field (oF) that
+// GROWTH_NCA_VIEW cuts at screen resolution. Pen tint recolours only what is ORANGE — weight from the
 // pixel's saturation and its hue's closeness to the lichen's (LICHEN_HUE) —
 // to the pen's hue, keeping the pixel's own brightness, saturation scaled by
 // the pen's. The pale crust and dark discs are left as they are, so a green
@@ -1211,31 +1274,113 @@ export const GROWTH_NCA_CAPTURE = /* glsl */ `
 // pixel's hue first was tried: the crust's faint random hues were boosted to
 // rainbow speckle and the discs turned olive.) A grey or white pen
 // (saturation < 0.15) keeps the photo's natural colours.
-// Relief (uRelief > 0) lifts the lichen off the rock: a height map — the
-// colony's coverage, plus a little of the picture's brightness for the crust
-// and discs — is lit from uLight (Light angle, 40° up), so colonies read as
-// thick with a lit and a shaded rim, the crust as embossed, and the rock
-// takes a shadow on the side away from the light. uRelief 0 = the flat
-// picture, unchanged. Picture only: the rule never sees any of it.
-export const GROWTH_NCA_VIEW = /* glsl */ `
+// Relief is drawn by GROWTH_NCA_VIEW. Picture only: the rule never sees
+// any of it.
+// Plate DOME for GROWTH_NCA_FIELDS: a separable Gaussian (σ 5 cells, ±12)
+// of the plate value, grid size. Pass 1 (uFromPhoto) reads the settled
+// picture's plate value and blurs across; pass 2 blurs its result down.
+export const GROWTH_NCA_DOME = /* glsl */ `
+  precision highp float;
+  uniform sampler2D uSrc;
+  uniform ivec2 uDir;
+  uniform bool uFromPhoto;
+  layout(location = 0) out vec4 o;
+  float val(ivec2 q) {
+    ivec2 sz = textureSize(uSrc, 0);
+    vec3 c = texelFetch(uSrc, clamp(q, ivec2(0), sz - 1), 0).rgb;
+    return uFromPhoto ? smoothstep(0.35, 0.85, dot(c, vec3(0.299, 0.587, 0.114))) : c.r;
+  }
+  void main() {
+    ivec2 p = ivec2(gl_FragCoord.xy);
+    float s = 0.0, w = 0.0;
+    for (int k = -12; k <= 12; k++) {
+      float g = exp(-float(k * k) / 50.0);
+      s += g * val(p + uDir * k); w += g;
+    }
+    o = vec4(s / w, 0.0, 0.0, 1.0);
+  }
+`;
+
+export const GROWTH_NCA_FIELDS = /* glsl */ `
   precision highp float;
   uniform sampler2D uPhoto, uMask, uTint, uGenes;
-  uniform vec3 uGround;
   uniform float uLife, uFade, uRest, uRelief, uGloss;
   uniform vec3 uLight;
-  in vec2 vUv;
-  layout(location = 0) out vec4 o;
+  layout(location = 0) out vec4 oC;   // colour × alive, alive
+  layout(location = 1) out vec4 oF;   // r: signed coverage field, g: relief shade, b: border, a: rim
   const float LICHEN_HUE = 0.065;   // the photo's orange, ~23°
   ${GROWTH_NCA_GENES}
-  float coverAt(ivec2 q) {
+  float plateAt(ivec2 q) {
+    ivec2 sz = textureSize(uPhoto, 0);
+    float l = 0.0;
+    for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++)
+      l += dot(texelFetch(uPhoto, clamp(q + ivec2(dx, dy), ivec2(0), sz - 1), 0).rgb, vec3(0.299, 0.587, 0.114));
+    return smoothstep(0.35, 0.85, l / 9.0);
+  }
+  // Coverage GROWS through the texture's own shapes (owner, 2026-09-27: "can
+  // we have the shapes in picture also grow instead of being a static
+  // picture"). The rule runs under bare rock too, so a spreading colony
+  // would only uncover plates already whole. Instead a cell shows once its
+  // plate value clears a threshold that falls as the cell matures (.b,
+  // updates since joining, over PLATE_GROW): each plate buds at its
+  // brightest point and swells to its outline, cracks and dark grain last.
+  // Dying runs it backwards — the threshold rises over the last fade, so
+  // cracks open first and each plate shrinks back to its centre and goes.
+  const float PLATE_GROW = 300.0;   // updates: ~5 s at Speed 16
+  // How deep inside a plate q is, 0…1 — the plates' height: the plate value
+  // Gaussian-blurred (σ 5 cells, GROWTH_NCA_DOME), so the middle of a plate
+  // rises highest and slopes toward its cracks. The plate value itself
+  // saturates over a whole cream plate — flat tops with a bevel (owner,
+  // 2026-09-27); sampling it on sparse rings instead printed diagonal ripples.
+  uniform sampler2D uDome;
+  float domeAt(ivec2 q) { return smoothstep(0.2, 0.95, texelFetch(uDome, q, 0).r); }
+  float fieldAt(ivec2 q);
+  // Relief, per CELL — it varies over a cell or more, so the screen pass
+  // gets it B-spline smooth for free instead of sampling heights 8× per
+  // screen pixel (3.3 ms at 1280 on the Intel UHD 630). Height: the colony
+  // edge as a slope (the field, not a one-cell cliff — that read as a glossy
+  // tube round every colony) times the plate DOME, so plates rise to their
+  // middles and cracks are valleys. Out: one multiplier, light × cast shadow
+  // (+ gloss); flat bare rock = 1 unless shadowed. 1 everywhere at Relief 0.
+  float heightAt(ivec2 q) {
+    ivec2 sz = textureSize(uMask, 0);
+    q = clamp(q, ivec2(0), sz - 1);
+    // Domes carry most of the height (0.1 → 1): at 0.25 → 1 the colony
+    // edge dominated and plate tops still read flat (owner, 2026-09-27).
+    float d = domeAt(q);
+    return smoothstep(-0.5, 0.25, fieldAt(q)) * mix(0.1, 1.0, d * d * (3.0 - 2.0 * d));
+  }
+  float shadeAt(ivec2 p) {
+    if (uRelief <= 0.0) return 1.0;
+    float hx = (heightAt(p + ivec2(1, 0)) - heightAt(p - ivec2(1, 0))) * 0.5;
+    float hy = (heightAt(p + ivec2(0, 1)) - heightAt(p - ivec2(0, 1))) * 0.5;
+    vec3 n = normalize(vec3(-hx * uRelief, -hy * uRelief, 1.0));
+    // Capped at ×1.25: facets turned to the light brightened past full and
+    // washed the orange out to plaster at Relief 45. Floor 0.55: at 0.35
+    // shaded slopes went near black.
+    float lit = clamp(max(dot(n, uLight), 0.0) / max(uLight.z, 0.2), 0.55, 1.25);
+    float spec = uGloss * pow(max(dot(reflect(-uLight, n), vec3(0.0, 0.0, 1.0)), 0.0), 24.0);
+    // Cast shadow: lichen standing between this spot and the light.
+    vec2 toL = normalize(uLight.xy + 1e-6);
+    float h0 = heightAt(p), sh = 0.0;
+    for (int k = 1; k <= 3; k++) sh = max(sh, heightAt(p + ivec2(round(toL * float(k) * 1.6))) - h0 - float(k) * 0.19);
+    return (lit + 1.5 * spec) * (1.0 - clamp(sh * uRelief * 0.08, 0.0, 0.6));
+  }
+  // SIGNED coverage field: plate value less the growth/dying threshold. The
+  // screen pass (GROWTH_NCA_VIEW) cuts coverage where it crosses 0, per
+  // screen pixel after a smooth upsample, not per grid cell. Bare rock is
+  // −0.5; a doomed spore sinks below 0 over its last second.
+  float fieldAt(ivec2 q) {
     vec4 m = texelFetch(uMask, q, 0);
-    if (m.b < 0.5) return 0.0;
+    if (m.b < 0.5) return -0.5;
     float age = uRest < 0.0 ? m.a : m.r;
-    float cv = m.g * (uLife > 0.0 ? 1.0 - smoothstep(uLife, uLife + uFade, age) : 1.0);
-    // A doomed spore fades out over its last second before it withers.
+    float grown = clamp(m.b / PLATE_GROW, 0.0, 1.0);
+    float dying = uLife > 0.0 ? smoothstep(uLife, uLife + uFade, age) : 0.0;
+    float thr = max(1.0 - 1.2 * grown * (2.0 - grown), 1.2 * dying - 0.1);
+    float f = plateAt(q) - thr;
     float s = texelFetch(uGenes, q, 0).z;
-    if (gDoomed(s)) cv *= 1.0 - smoothstep(gDoomAge(s) - 1.0, gDoomAge(s), m.a);
-    return cv;
+    if (gDoomed(s)) f -= 1.5 * smoothstep(gDoomAge(s) - 1.0, gDoomAge(s), m.a);
+    return f;
   }
   // Seed of a living cell's colony (−1 bare, 0 no genes); off-frame = bare.
   float seedAt(ivec2 q) {
@@ -1244,12 +1389,6 @@ export const GROWTH_NCA_VIEW = /* glsl */ `
     if (texelFetch(uMask, q, 0).b < 0.5) return -1.0;
     float s = texelFetch(uGenes, q, 0).z;
     return s > 1.5 ? s : 0.0;
-  }
-  float heightAt(ivec2 q) {
-    ivec2 sz = textureSize(uMask, 0);
-    q = clamp(q, ivec2(0), sz - 1);
-    float cv = coverAt(q);
-    return cv * (0.6 + 0.4 * dot(texelFetch(uPhoto, q, 0).rgb, vec3(0.299, 0.587, 0.114)));
   }
   vec3 rgb2hsv(vec3 c) {
     vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
@@ -1264,18 +1403,18 @@ export const GROWTH_NCA_VIEW = /* glsl */ `
   }
   void main() {
     ivec2 p = ivec2(gl_FragCoord.xy);
-    // Fade-in after joining; with a Lifetime, fade-out over its last uFade s —
-    // by the cell's own age (Ring) or its colony's (Hold: fades as one).
-    float cov = coverAt(p);
     vec3 c = texelFetch(uPhoto, p, 0).rgb;
     vec4 t = texelFetch(uTint, p, 0);
     if (t.a > 0.5 && seedAt(p) > 1.5) {
-      // A spore colony's palette colour takes the WHOLE thallus, at each
-      // pixel's own lightness (discs stay dark, crust stays pale) — the
-      // orange-only recolour below left the palette barely visible.
+      // A spore colony's palette sets the HUE of its thallus (the bright
+      // plates) and leans their saturation toward its own; each pixel keeps
+      // its brightness and some of its saturation, so the plates' detail
+      // shows through (owner, 2026-09-27). Replacing the colour at the
+      // pixel's lightness gave flat patches; colouring every pixel ignored
+      // the structure; the orange-only recolour below left it barely visible.
       float l = dot(c, vec3(0.299, 0.587, 0.114));
-      vec3 cz = t.rgb * (l / max(0.25, dot(t.rgb, vec3(0.299, 0.587, 0.114))));
-      c = mix(c, clamp(cz, 0.0, 1.0), 0.7);
+      vec3 pal = rgb2hsv(t.rgb), h = rgb2hsv(c);
+      c = mix(c, hsv2rgb(vec3(pal.x, mix(h.y, pal.y, 0.6), h.z)), 0.85 * smoothstep(0.4, 0.75, l));
     } else if (t.a > 0.5) {
       vec3 pen = rgb2hsv(t.rgb);
       if (pen.y > 0.15) {
@@ -1289,44 +1428,98 @@ export const GROWTH_NCA_VIEW = /* glsl */ `
       }
     }
     // Spore colonies (genes): a paler, brighter RIM where the colony meets
-    // bare rock — the growing margin of the owner's reference photos — and a
-    // dark line where two colonies meet. Pen/Plant colonies are drawn as before.
-    float me = seedAt(p);
+    // bare rock — the growing margin of the owner's reference photos. Out as
+    // a FIELD (oF.a), drawn at screen resolution by GROWTH_NCA_VIEW: baked
+    // into the colour per cell it showed the grid as stair-steps. oF.b marks
+    // where two colonies meet; the dark line it drew is OFF — two cells wide
+    // on the grid, it read as a thick grey stair-stepped band (owner,
+    // 2026-09-27). Colonies part by colour and relief instead.
+    float me = seedAt(p), bare = 0.0, other = 0.0;
     if (me >= 0.0) {
-      float bare = 0.0, other = 0.0;
       for (int k = 0; k < 8; k++) {
         ivec2 o8 = ivec2(k < 3 ? k - 1 : k == 3 ? -1 : k == 4 ? 1 : k - 6, k < 3 ? -1 : k < 5 ? 0 : 1);
         float sa = seedAt(p + 2 * o8), sb = seedAt(p + o8);
         if (me > 1.5) bare += sa < 0.0 ? 1.0 : 0.0;
         if (sb >= 0.0 && abs(sb - me) > 0.5 && max(sb, me) > 1.5) other = 1.0;
       }
-      c = mix(c, min(vec3(1.0), c * 1.3 + 0.06), 0.7 * bare / 8.0);
-      c *= 1.0 - 0.55 * other;
     }
+    float alive = texelFetch(uMask, p, 0).b > 0.5 ? 1.0 : 0.0;
+    oC = vec4(c * alive, alive);
+    oF = vec4(fieldAt(p), shadeAt(p), other, bare / 8.0);
+  }
+`;
+
+// Neural coverage field up to SCREEN size: cubic B-spline from four bilinear
+// taps (as GROWTH_UPSAMPLE does for Nested). Colour is not upsampled: the
+// view reads it bilinear from the grid (sharper, and one screen-size target
+// less — 5.6 ms/frame at 1280 on the Intel UHD 630 with it).
+export const GROWTH_NCA_UP = /* glsl */ `
+  precision highp float;
+  uniform sampler2D uF;
+  uniform vec2 uGrid;
+  in vec2 vUv;
+  layout(location = 0) out vec4 oF;
+  void main() {
+    vec2 st = vUv * uGrid - 0.5;
+    vec2 i  = floor(st);
+    vec2 f  = st - i;
+    vec2 f2 = f * f, f3 = f2 * f;
+    vec2 w0 = (1.0 - 3.0 * f + 3.0 * f2 - f3) / 6.0;
+    vec2 w1 = (4.0 - 6.0 * f2 + 3.0 * f3) / 6.0;
+    vec2 w2 = (1.0 + 3.0 * f + 3.0 * f2 - 3.0 * f3) / 6.0;
+    vec2 w3 = f3 / 6.0;
+    vec2 s0 = w0 + w1, s1 = w2 + w3;
+    vec2 c0 = (i - 0.5 + w1 / s0) / uGrid;
+    vec2 c1 = (i + 1.5 + w3 / s1) / uGrid;
+    oF = s0.y * (s0.x * texture(uF, c0) + s1.x * texture(uF, vec2(c1.x, c0.y)))
+       + s1.y * (s0.x * texture(uF, vec2(c0.x, c1.y)) + s1.x * texture(uF, c1));
+  }
+`;
+
+// Neural picture at SCREEN resolution (owner, 2026-09-27: "the image is
+// ruff"). It used to be drawn one pixel per grid cell and stretched ~6× to
+// the canvas, so every plate edge, crack and relief bevel stepped in whole
+// cells. Now coverage is cut where the smoothly upsampled signed field
+// crosses 0, antialiased over one screen pixel (fwidth); Relief comes up
+// as a smooth multiplier computed per cell (GROWTH_NCA_FIELDS). The rule,
+// mask and colonies are unchanged; only how they are drawn.
+export const GROWTH_NCA_VIEW = /* glsl */ `
+  precision highp float;
+  uniform sampler2D uC, uF;     // uC: grid-size colour; uF: the B-spline-upsampled fields
+  uniform vec3 uGround;
+  in vec2 vUv;
+  layout(location = 0) out vec4 o;
+  uniform vec2 uGridSize;       // grid, cells
+  // Colour: half bilinear (keeps the plates' detail), half cubic B-spline
+  // (four bilinear taps) — bilinear alone printed the one-cell cracks as
+  // stair-steps, the B-spline alone blurred the plates.
+  vec3 colAt(vec2 uv) {
+    vec2 st = uv * uGridSize - 0.5, i = floor(st), f = st - i, f2 = f * f, f3 = f2 * f;
+    vec2 w0 = (1.0 - 3.0 * f + 3.0 * f2 - f3) / 6.0, w1 = (4.0 - 6.0 * f2 + 3.0 * f3) / 6.0;
+    vec2 w2 = (1.0 + 3.0 * f + 3.0 * f2 - 3.0 * f3) / 6.0, w3 = f3 / 6.0;
+    vec2 s0 = w0 + w1, s1 = w2 + w3;
+    vec2 c0 = (i - 0.5 + w1 / s0) / uGridSize, c1 = (i + 1.5 + w3 / s1) / uGridSize;
+    vec4 b = s0.y * (s0.x * texture(uC, c0) + s1.x * texture(uC, vec2(c1.x, c0.y)))
+           + s1.y * (s0.x * texture(uC, vec2(c0.x, c1.y)) + s1.x * texture(uC, c1));
+    vec4 a = mix(texture(uC, uv), b, 0.5);
+    return a.rgb / max(a.a, 1e-3);
+  }
+  void main() {
+    vec4 F = texture(uF, vUv);
+    vec4 ca = texture(uC, vUv);
+    vec3 c = clamp(colAt(vUv), 0.0, 1.0);
+    // The edge follows the picture's own detail: the smooth field alone gave
+    // round, melted-wax margins (owner, 2026-09-27: "edges natural?"). The
+    // colour's brightness, at screen resolution, pushes the cut out over
+    // bright plate and in along dark cracks and grain — so a margin breaks
+    // up along its cracks, as real crust does. Only where there is colony
+    // colour to read (ca.a); bare rock stays bare.
+    float e = F.r + 0.4 * ca.a * (dot(c, vec3(0.299, 0.587, 0.114)) - 0.6);
+    float fw = max(fwidth(e), 1e-4);
+    float cov = smoothstep(-fw, fw, e);
+    c = mix(c, min(vec3(1.0), c * 1.3 + 0.06), 0.7 * F.a);      // pale growing rim
     vec3 col = mix(uGround, c, cov);
-    if (uRelief > 0.0) {
-      // Sobel of the height field → surface normal, lit from uLight. Divided
-      // by the flat response (uLight.z) so level ground keeps its colour.
-      float hx = (heightAt(p + ivec2(1, 1)) + 2.0 * heightAt(p + ivec2(1, 0)) + heightAt(p + ivec2(1, -1))
-                - heightAt(p + ivec2(-1, 1)) - 2.0 * heightAt(p + ivec2(-1, 0)) - heightAt(p + ivec2(-1, -1))) / 8.0;
-      float hy = (heightAt(p + ivec2(-1, 1)) + 2.0 * heightAt(p + ivec2(0, 1)) + heightAt(p + ivec2(1, 1))
-                - heightAt(p + ivec2(-1, -1)) - 2.0 * heightAt(p + ivec2(0, -1)) - heightAt(p + ivec2(1, -1))) / 8.0;
-      vec3 n = normalize(vec3(-hx * uRelief, -hy * uRelief, 1.0));
-      // Capped at ×1.25: facets turned to the light brightened past full and
-      // washed the orange out to plaster at Relief 45.
-      float lit = clamp(max(dot(n, uLight), 0.0) / max(uLight.z, 0.2), 0.35, 1.25);
-      float spec = uGloss * pow(max(dot(reflect(-uLight, n), vec3(0.0, 0.0, 1.0)), 0.0), 24.0);
-      col = col * mix(1.0, lit, cov) + spec * cov;
-      // Cast shadow on the rock: lichen standing between this spot and the
-      // light, a few cells toward it, falling off with distance.
-      vec2 toL = normalize(uLight.xy + 1e-6);
-      float h0 = heightAt(p), sh = 0.0;
-      for (int k = 1; k <= 5; k++) {
-        float hk = heightAt(p + ivec2(round(toL * float(k))));
-        sh = max(sh, hk - h0 - float(k) * 0.12);
-      }
-      col *= 1.0 - clamp(sh * uRelief * 0.08, 0.0, 0.6);
-    }
+    col *= F.g;                                                  // relief: light × cast shadow (GROWTH_NCA_FIELDS)
     o = vec4(col, 1.0);
   }
 `;

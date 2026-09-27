@@ -33,7 +33,9 @@ export const GROWTH_MODES = ['Single', 'Nested', 'Frost', 'Hyphae', 'Curves', 'N
 // --still 20: it changes 0.4% of its picture over 8 updates, against 39%.
 export const NCA_MODELS = [
   { label: 'Lichen', url: 'nca/lichen.json' },
-  { label: 'Crust',  url: 'nca/crust.json' },
+  // split: a still model's rule step is spread over this many frames
+  // (GrowthNCA) — the same step, landing 15×/s instead of 60.
+  { label: 'Crust',  url: 'nca/crust.json', split: 4 },
 ];
 
 // ── Looks ─────────────────────────────────────────────────────────────────────
@@ -115,5 +117,7 @@ export const GROWTH_LOOKS = [
     'growth.mode': 5, 'growth.scale': 50, 'growth.plantSize': 3,
     'growth.fadeStyle': 3, 'growth.lifetime': 40, 'growth.rest': 6,
     'growth.variation': 70, 'growth.colonies': 40, 'growth.spores': 50, 'growth.ncaModel': 1,
+    // Lichen is matte: LOOK_BASE's gloss 25 lit every plate like wet plastic.
+    'growth.gloss': 5,
     'growth.relief': 30 } },
 ];
