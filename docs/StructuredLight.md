@@ -19,7 +19,8 @@ one shared simulated rig, `tests/lib/procam-sim.mjs`.
 | Camera not looking | White/black reference accepted without a visible change → the session stops, and `result()` says why | Otherwise a blind camera "completes" a scan of nothing |
 | Frame statistic cost | `cellMAD` runs twice per camera frame; optimised 15.1 → 7.8 ms at 1280×720, bit-equal to the plain form | 30 ms of a 33 ms frame budget would have made the worker fall behind the camera |
 | Pattern set | White, black, then pattern/inverse pairs adjacent, finest bits first. 1920×1080 = 2 + 2·(11+11) = **46** | 1080 rows need 11 bits. Adjacent pairs cancel gain drift; finest-first lets the decoder stream |
-| Pattern generation | Fragment shader (GLSL ES 1.00, **highp**, `uP = 2^bit` from JS) | Pre-rendered bitmaps ≈ 365 MB and switch no faster (vsync-bound). mediump breaks columns > ~1024 |
+| Pattern generation | Fragment shader (GLSL ES 1.00, **highp**, `uP = 2^bit` from JS) | Pre-rendered bitmaps ≈ 365 MB and switch no faster (vsync-bound). mediump breaks columns > ~1024 on mobile GPUs |
+| Shader verified on a GPU | `tools/procam/pattern-check.html`: every pattern, every pixel, against `patternValue()` | 2026-09-27, Intel UHD 630: 0 mismatches of ~510M px at 1080p and 4K. mediump there is 23-bit, so the mobile hazard still needs checking on the iPad |
 | Decode | CPU, typed arrays, in a Worker (`GrayDecoder`), fed the Y plane of `VideoFrame`s | One-off bake; one testable definition; no GPU readback traps |
 | Bit classification | Xu–Aliaga direct/global rule with Ld/Lg as **means** over separation pairs + noise and model margins | Max/min estimates are biased toward flipping bits (218 wrong codes in the audit corner) |
 | Stripe edges | An uncertain bit whose two candidates are **adjacent** codes puts the pixel on the edge | Otherwise every coarse boundary cuts an invalid band (5.7% of a clean surface) |
