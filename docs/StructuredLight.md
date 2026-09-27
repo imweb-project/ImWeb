@@ -24,6 +24,11 @@ one shared simulated rig, `tests/lib/procam-sim.mjs`.
 | Relief | Disparity against an **empty-wall reference scan**, projected on the displacement field's principal axis, auto sign = objects stand out | No lens calibration needed. The σ=5 wall-vs-wall null puts p99.9 at 0.41 camera px, ~5× below the step threshold |
 | Normals | Step-aware smoothing (never averages across a relief jump > `step`), then central differences that also stop at steps | A blur across a step made 443 stray crease pixels; a gradient across it tilts the pixel beside every edge to 0.995 |
 | SDF | Exact Felzenszwalb EDT (checked against brute force), not jump flooding | One-off bake, so exact is affordable |
+| Auto map | Mesh node (i,j) = the decoded projector position of the camera point where content (i/(C−1), j/(R−1)) should appear. Uses the camera→projector map **directly**, with no inversion or lens model | "Looks right from the audience" is exactly this, once the camera sits at the audience position |
+| Auto map: nodes | 2×2 → corners of the least-squares homography (normalised DLT + one trimming pass). Larger grids → Gaussian-weighted **quadratic** fit around each node | 2×2 IS one projective quad. Affine nodes were 0.075 px off a true homography; quadratic ones are 3e-4 |
+| Auto map: holes | Support must surround the node in every quadrant that lies in the frame (≥30% valid); the radius doubles up to half the frame | One-sided quadratic fits were 1.3 px off in a hole; the global-homography fallback was 2–3 px off on a bump |
+| Auto map: no data | Only nodes beyond the camera frame fall back to the homography, and they are listed in `extrapolated` | So the UI can mark guessed handles |
+| Auto map: grid size | `fitAuto(tol)`: the smallest of 2, 3, 5, 9, 17 whose p95 residual (scored through `ProjMapMesh.sample()`) is ≤ tol | The residual is measured on the renderer's own surface, not on a copy of it |
 
 ## Camera lock (Phase 2, needs hardware)
 
@@ -46,9 +51,14 @@ keystone.
 3. ✅ (maths) `invertToProjector`. Still to do at upload: store the camera-uv map
    as RG32F with **Nearest** filtering (half-float is ~1 px coarse at 1920), and
    **flip rows** — bake arrays are row 0 = TOP, DataTexture row 0 = bottom.
-4. **Auto projection map** (the biggest win): with the camera at the audience's
-   position, pre-warp content and/or fit `ProjMapMesh`, plus an automatic
-   object mask.
+4. ✅ (maths) **Auto projection map**: `src/core/StructuredLightFit.js`.
+   `fitProjectionMesh(res, {cols, rows, rect})` and `fitAuto(res, {tol})` return
+   ProjMapMesh points (window fractions, y down). Audit rig: 2×2 p95 8.98 px,
+   3×3 6.42, 5×5 3.64, 9×9 1.11, **17×17 0.54**. Every 17×17 node is within
+   0.85 px of the true surface, including six inside a projector shadow. Input
+   must go through `rejectOutliers` first. Still to do: a UI to pick the
+   content rectangle in the camera view, and applying the fit (`setGrid` +
+   points, or `deserialize`) plus the scan's valid mask as the object mask.
 5. ✅ (maths) `bake(obj, ref)` → relief, normals (y-up), edges RGBA8 [valid,
    silhouette, step, crease], signed distance to the outline, distance to any
    edge. Still to do: pack/upload as textures (relief R16F, normals RGBA16F,
