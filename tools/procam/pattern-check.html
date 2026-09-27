@@ -1,0 +1,80 @@
+<!doctype html>
+<!--
+  Structured-light pattern shader check, on a REAL GPU.
+
+  Compiles src/core/StructuredLight.js's PATTERN_FRAG in a WebGL1 context (as
+  the output window is), draws every pattern at 1920x1080 and 3840x2160, and
+  compares every pixel with patternValue() — the JS reference the node audits
+  use. Then repeats 1080p with the shader forced to mediump, which is the
+  precision the shader's highp comment warns about: desktop GPUs implement
+  mediump at 23 bits and pass anyway; a mobile GPU (iPad) is where mediump is
+  ~10 bits and columns above ~1024 should go wrong. Run it there too.
+
+  Run (from the repo root; any free port, NOT the app's 4173/5173):
+    python3 -m http.server 4317 --bind 127.0.0.1
+    node tools/nca/cdp-run.mjs http://127.0.0.1:4317/tools/procam/pattern-check.html 180000
+  or open that URL in a browser and read window.__result in the console.
+
+  2026-09-27, Intel UHD 630 (ANGLE Metal): 46/46 and 50/50 patterns, 0
+  mismatched pixels of ~510M, all values 0/255; mediump reported 23 bits.
+-->
+<meta charset="utf-8"><body><canvas id="c"></canvas>
+<script type="module">
+import { PATTERN_FRAG, patternSet, patternUniforms, patternValue } from '../../src/core/StructuredLight.js';
+const out = { sizes: [] };
+try {
+  const c = document.getElementById('c');
+  const gl = c.getContext('webgl', { antialias: false, preserveDrawingBuffer: true, alpha: false });
+  const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+  out.renderer = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+  const hp = gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT);
+  const mp = gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.MEDIUM_FLOAT);
+  out.fragHighpBits = hp.precision; out.fragMediumpBits = mp.precision;
+  const sh = (t, src) => { const s = gl.createShader(t); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error('compile: ' + gl.getShaderInfoLog(s)); return s; };
+  const build = (frag) => { const p = gl.createProgram();
+    gl.attachShader(p, sh(gl.VERTEX_SHADER, 'attribute vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }'));
+    gl.attachShader(p, sh(gl.FRAGMENT_SHADER, frag)); gl.bindAttribLocation(p, 0, 'p'); gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error('link: ' + gl.getProgramInfoLog(p)); return p; };
+  const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+  function run(prog, W, H) {
+    c.width = W; c.height = H;
+    const r = { W, H, bufW: gl.drawingBufferWidth, bufH: gl.drawingBufferHeight, patterns: 0, mismatches: 0, nonBinary: 0, first: null };
+    if (r.bufW !== W || r.bufH !== H) { r.skipped = 'drawing buffer clamped'; return r; }
+    gl.viewport(0, 0, W, H);
+    const px = new Uint8Array(W * H * 4);
+    // Positive control: the readback path itself.
+    gl.clearColor(1, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    r.controlRed = px[0] === 255 && px[1] === 0 && px[(W * H - 1) * 4] === 255;
+    gl.useProgram(prog);
+    const loc = (n) => gl.getUniformLocation(prog, n);
+    for (const pat of patternSet(W, H)) {
+      const u = patternUniforms(pat);
+      gl.uniform1f(loc('uMode'), u.uMode); gl.uniform1f(loc('uAxis'), u.uAxis);
+      gl.uniform1f(loc('uP'), u.uP); gl.uniform1f(loc('uInv'), u.uInv); gl.uniform2f(loc('uRes'), W, H);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      for (let row = 0; row < H; row++) {
+        const y = H - 1 - row;                 // readPixels row 0 is the BOTTOM
+        for (let x = 0; x < W; x++) {
+          const g = px[(row * W + x) * 4];
+          if (g !== 0 && g !== 255) r.nonBinary++;
+          if ((g === 255 ? 1 : 0) !== patternValue(pat, x, y)) { r.mismatches++; if (!r.first) r.first = { pat, x, y, g }; }
+        }
+      }
+      r.patterns++;
+    }
+    return r;
+  }
+  const hi = build(PATTERN_FRAG);
+  out.sizes.push(run(hi, 1920, 1080), run(hi, 3840, 2160));
+  // Informational: the same shader at mediump, the precision the comment warns about.
+  out.mediump = run(build(PATTERN_FRAG.replace('precision highp float', 'precision mediump float')), 1920, 1080);
+  out.err = gl.getError();
+} catch (e) { out.error = String(e); }
+window.__result = out;
+</script>
