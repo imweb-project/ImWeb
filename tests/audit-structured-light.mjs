@@ -16,8 +16,8 @@
  */
 
 import {
-  bitsFor, grayBit, grayToBinary, patternSet, patternValue, patternUniforms,
-  PATTERN_FRAG, GrayDecoder, rejectOutliers, SettleGate,
+  bitsFor, grayBit, grayToBinary, patternSet, patternUniforms,
+  PATTERN_FRAG, GrayDecoder, rejectOutliers, SettleGate, cellMAD,
 } from '../src/core/StructuredLight.js';
 import { makeRig, rng, PW, PH, CW, CH, SIGMA, SHADOW } from './lib/procam-sim.mjs';
 
@@ -137,6 +137,34 @@ check('decoder refuses gray frames before the references', (() => {
 
 // ── 3. Settle gate ──────────────────────────────────────────────────────────
 console.log('\nSettle gate');
+
+// The plain per-pixel form cellMAD was optimised from, kept HERE as the
+// reference: the fast one must match it bit for bit, including on sizes the
+// cell grid does not divide evenly.
+function cellMADRef(a, b, w, h, tw = 32, th = 18) {
+  const out = new Float32Array(tw * th);
+  const cnt = new Uint32Array(tw * th);
+  for (let v = 0; v < h; v++) for (let u = 0; u < w; u++) {
+    const t = Math.floor(v * th / h) * tw + Math.floor(u * tw / w);
+    const i = v * w + u;
+    out[t] += Math.abs(a[i] - b[i]);
+    cnt[t]++;
+  }
+  for (let t = 0; t < out.length; t++) out[t] /= cnt[t] || 1;
+  return out;
+}
+{
+  let mismatches = 0, cases = 0;
+  const R = rng(3);
+  for (const [w, h, tw, th] of [[1280, 720, 32, 18], [321, 199, 32, 18], [160, 90, 32, 18], [97, 61, 7, 5]]) {
+    const a = Uint8Array.from({ length: w * h }, () => Math.max(0, Math.min(255, 128 + 60 * R())));
+    const b = Uint8Array.from({ length: w * h }, () => Math.max(0, Math.min(255, 128 + 60 * R())));
+    const f = cellMAD(a, b, w, h, tw, th), r = cellMADRef(a, b, w, h, tw, th);
+    for (let t = 0; t < f.length; t++) if (f[t] !== r[t]) mismatches++;
+    cases++;
+  }
+  check(`cellMAD is bit-equal to the plain form on ${cases} sizes, even and uneven`, mismatches === 0, `${mismatches} cells differ`);
+}
 const GW = 160, GH = 90;
 const stripes = (period, phase) => {
   const f = new Uint8Array(GW * GH);

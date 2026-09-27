@@ -13,7 +13,11 @@ one shared simulated rig, `tests/lib/procam-sim.mjs`.
 | Window coordination | Same-origin `window.open` reference, direct function calls into the output window; scan clock = the **output window's** rAF | Same agent/thread, so there is no message hop. BroadcastChannel reaches every same-origin tab; a SharedWorker cannot touch the popup's WebGL |
 | Pattern transport | Patterns are **drawn in the output window** by `PATTERN_FRAG`, never sent as bitmaps | The frame path posts every 2nd frame through `createImageBitmap(…, resizeQuality:"medium")`, which blurs 1–2 px stripes and adds variable delay |
 | "Is it on screen yet?" | `SettleGate` — decide by **camera content** (two agreeing frames that differ from the last pattern) | No web API reports photons; projector lag + camera buffering are invisible to the page. Rolling-shutter torn frames never agree with their successor |
-| Latency | Measured once per rig (black→white flash), passed to `SettleGate` — **required**, no default | At 0, a slow projector's OLD pattern gets quietly accepted (9/21 audit cases) |
+| Latency | Measured once per rig by `LatencyProbe` (black/white flashes), passed to `SettleGate` — **required**, no default | At 0, a slow projector's OLD pattern gets quietly accepted (9/21 audit cases) |
+| Latency definition | Frames from command until the picture has changed AND held still: the first WHOLE frame | "First change + 1" assumes one transitional frame; an exposure straddling the switch gives a torn one AND a blended one |
+| Orchestration | `ScanSession`: I/O shows what it says and pushes every camera frame; all timing decisions are pure and simulated | A fixed 2-frame flush at latency 4 decodes nothing; the session matches a clean scan on 99.7% of pixels with no latency number to go stale |
+| Camera not looking | White/black reference accepted without a visible change → the session stops, and `result()` says why | Otherwise a blind camera "completes" a scan of nothing |
+| Frame statistic cost | `cellMAD` runs twice per camera frame; optimised 15.1 → 7.8 ms at 1280×720, bit-equal to the plain form | 30 ms of a 33 ms frame budget would have made the worker fall behind the camera |
 | Pattern set | White, black, then pattern/inverse pairs adjacent, finest bits first. 1920×1080 = 2 + 2·(11+11) = **46** | 1080 rows need 11 bits. Adjacent pairs cancel gain drift; finest-first lets the decoder stream |
 | Pattern generation | Fragment shader (GLSL ES 1.00, **highp**, `uP = 2^bit` from JS) | Pre-rendered bitmaps ≈ 365 MB and switch no faster (vsync-bound). mediump breaks columns > ~1024 |
 | Decode | CPU, typed arrays, in a Worker (`GrayDecoder`), fed the Y plane of `VideoFrame`s | One-off bake; one testable definition; no GPU readback traps |
@@ -44,10 +48,12 @@ keystone.
 
 1. ✅ `src/core/StructuredLight.js` + `tests/audit-structured-light.mjs`: codes,
    pattern set, shader, decoder, outlier rejection, settle gate.
-2. Rig I/O: pattern mode in the output window (projection mesh and edge fade
-   off, device-pixel canvas); camera track with locking; latency measurement;
-   Worker loop using `MediaStreamTrackProcessor`. **Touches main.js**, so wait
-   until no other session is editing it.
+2. Rig I/O. The timing logic is ✅ (`src/core/StructuredLightSession.js`:
+   `LatencyProbe`, `ScanSession`). Still to do: pattern mode in the output
+   window (projection mesh and edge fade off, device-pixel canvas); camera
+   track with locking; a Worker loop using `MediaStreamTrackProcessor` that
+   pushes Y planes into the session. **Touches main.js**, so wait until no
+   other session is editing it.
 3. ✅ (maths) `invertToProjector`. Still to do at upload: store the camera-uv map
    as RG32F with **Nearest** filtering (half-float is ~1 px coarse at 1920), and
    **flip rows** — bake arrays are row 0 = TOP, DataTexture row 0 = bottom.

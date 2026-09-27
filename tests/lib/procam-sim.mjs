@@ -131,3 +131,83 @@ export function makeRig({ bump = 14, step = false, gi = true, sigma = SIGMA } = 
 
   return { camToProj, truth, inShadow, inCorner, inMild, albedo, capture, scan, exact };
 }
+
+/**
+ * A simulated camera watching the simulated projector, frame by frame — the
+ * timing half of the rig. `command(pattern)` changes what the projector
+ * shows; `frame()` returns the next camera frame. A command takes effect
+ * `latency` frames later (projector processing + camera buffering), and the
+ * frame it lands in is TORN like a rolling shutter: rows above a random line
+ * show the new pattern, rows below the old. `frozen` models a camera that is
+ * not looking at the projection at all.
+ */
+// Noise-free renders per rig, shared by every camera on that rig: they depend
+// only on the scene and the pattern, and re-rendering them per camera was
+// most of the session audit's runtime.
+const _renders = new WeakMap();
+
+// Sensor noise for the camera: a table of Gaussians read from a fresh random
+// offset each frame. Drawing a Box-Muller sample per pixel per frame was 15 of
+// the session audit's 20 seconds.
+const NOISE_N = 1 << 20;
+let _noiseTable = null;
+function noiseTable() {
+  if (!_noiseTable) {
+    const g = rng(424242);
+    _noiseTable = new Float32Array(NOISE_N);
+    for (let i = 0; i < NOISE_N; i++) _noiseTable[i] = SIGMA * g();
+  }
+  return _noiseTable;
+}
+
+export function makeSimCamera(rig, { latency = 3, tear = true, blend = false, seed = 99, frozen = false } = {}) {
+  const table = noiseTable();
+  let state = (seed * 2654435761) >>> 0;
+  const nextOffset = () => ((state = (state * 1664525 + 1013904223) >>> 0) & (NOISE_N - 1));
+  if (!_renders.has(rig)) _renders.set(rig, new Map());
+  const cache = _renders.get(rig);
+  const base = (pat) => {
+    const key = pat.kind === 'gray' ? `${pat.axis}:${pat.bit}:${pat.inv ? 1 : 0}` : pat.kind;
+    if (!cache.has(key)) cache.set(key, rig.capture(pat, () => 0));
+    return cache.get(key);
+  };
+  let t = 0;
+  let shown = base({ kind: 'black' });
+  let prev = null;          // the pattern being left, for a blended frame
+  let blendAt = -1;
+  let next = null;
+  let switchAt = Infinity;
+  let tearRow = 0;
+  const commands = [];
+  return {
+    get t() { return t; },
+    commands,
+    command(pat) {
+      if (next) { shown = next; next = null; }   // a command overtaking an unfinished one
+      blendAt = -1;
+      commands.push({ t, pat });
+      if (frozen) return;
+      next = base(pat);
+      switchAt = t + latency;
+      tearRow = tear ? 1 + Math.floor(((seed * 7919 + t * 104729) % 997) / 997 * (CH - 2)) : 0;
+    },
+    frame() {
+      let img = shown;
+      if (next && t === switchAt && tearRow > 0) {
+        img = Uint8Array.from(shown, (x, i) => ((i / CW) | 0) < tearRow ? next[i] : x);
+      } else if (next && t >= switchAt) {
+        prev = shown; shown = next; next = null; img = shown;
+        // An exposure straddling the switch: one frame half old, half new.
+        if (blend && tearRow > 0) { blendAt = t; img = Uint8Array.from(shown, (x, i) => (x + prev[i]) >> 1); }
+      }
+      t++;
+      const out = new Uint8Array(img.length);
+      const off = nextOffset();
+      for (let i = 0; i < img.length; i++) {
+        const v = Math.round(img[i] + table[(off + i) & (NOISE_N - 1)]);
+        out[i] = v < 0 ? 0 : v > 255 ? 255 : v;
+      }
+      return out;
+    },
+  };
+}
