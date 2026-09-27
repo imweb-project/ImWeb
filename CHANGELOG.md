@@ -8,7 +8,43 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Added
+- **Growth: Look "Lichen timelapse"** (Neural engine; owner: "see it grow,
+  like a timelapse … from tiny babies to big colonies of various shapes,
+  forms and colours"). Starts from bare rock. Swarms of spores keep landing
+  (Spores, Advanced, Neural only). Most wither within seconds, and about one
+  in twelve takes hold as a colony with its own seed. Size, speed and lobes
+  come from that seed (Variation: 0 = all alike). Whether it wears a lichen
+  palette colour (chartreuse, sage, pale grey-green, gold, brick, rust) or
+  the photo's own comes from Colonies. Pale growing rims; dark lines where
+  colonies meet. Ring: a colony dies from its centre and cannot regrow into
+  its own dead ground, so it moves on as a ring and the rock goes to the
+  next swarm. Verified on the GPU: a 120 s run holds 25–45 colonies at
+  50–90% cover with no state past |x| 2.62.
+- **Growth, Neural: a second model, "Crust"** (Model, Advanced, Neural only;
+  Lichen timelapse uses it, Neural lichen keeps "Lichen"). The owner's photo
+  of cream plates with orange cracks and black discs, trained on Colab with
+  `--still 20`. It forms in < 50 updates and then holds: 0.4% of its picture
+  variance changes over 8 updates, against 39% for Lichen (no more
+  "raindrops"). Peak |x| 2.48 over 5000 updates; GPU parity 1.8e-7; storm
+  and 120 s timelapse runs never pass 2.5. Switching models keeps the
+  colonies and regrows the texture under them.
+- **tools/nca/train_texture.py `--still W`**: penalises how much the picture
+  changes over `--still-steps` more updates, relative to the photo's
+  variance, to train a texture that grows and then holds still. The shipped
+  lichen model changes 0.43 of its variance in 8 updates (its "raindrops").
+  Off by default.
+
 ### Changed
+- **Growth, Neural: the rule runs on the whole grid**; the colony mask only
+  says where it is shown. Bare cells used to be held empty, and with spores
+  a bare cell could stay bare for good beside living ones: a colony stopped
+  at its size, a one-cell channel between two colonies, the frame edge. The
+  rule never saw that in training and ran away to 1e6 within a minute. A
+  pen wound still empties the state once, so healing stays visible. The
+  60-stroke storm test stays under |x| 2.63 with and without spores. Cost:
+  a sparse frame now costs what a covered one did (~7 ms at 256 on the
+  Intel UHD 630).
 - **Growth: Lifetime sets the Pen fade** (owner: "fades too quick on 120").
   Pen took its speed from the Draw layer's Fade, so Lifetime did nothing under
   Pen. Now each part fades on the same curve from when it was drawn and
@@ -19,6 +55,9 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   Hyphae stays one GrowMode away in Advanced.
 
 ### Fixed
+- **Growth, Neural: Lifetime past ~27 s never died.** The colony mask was
+  HalfFloat, and at 32 s its step is 1/32 s, so adding a 1/60 s frame
+  rounded back to 32: every age stopped there. The mask is now Float.
 - **Growth: the Look menu follows a recalled state** (owner: canvas showed
   Neural lichen, the menu another Look). A Display State stores a Look's
   values, not the menu (growth.look is a loader, group 'global'), so the menu

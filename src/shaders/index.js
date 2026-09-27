@@ -947,9 +947,16 @@ export const GROWTH_NCA_STEP = /* glsl */ `
   }
   void main() {
     ivec2 p = ivec2(gl_FragCoord.xy);
-    // Outside the colony the state is held empty — what the texture grows
-    // from (bare cells skip the network).
-    if (texelFetch(uMask, p, 0).b < 0.5) { o0 = vec4(0.0); o1 = vec4(0.0); o2 = vec4(0.0); return; }
+    // The rule runs on the WHOLE grid, as trained; the colony mask only says
+    // where it is SHOWN. Bare cells used to be held empty, and a bare cell
+    // that stays bare beside living ones (a colony stopped at its size, a
+    // one-cell channel between two colonies, the frame edge) is a boundary
+    // the rule never saw: under spore swarms it ran away to 1e6 within a
+    // minute (runs/gltest/timelapse.html, 2026-09-26). A pen WOUND still
+    // empties the state once (mask .g flag on a bare cell, set for one
+    // update), so the texture visibly heals from the wound's edges.
+    vec4 mk = texelFetch(uMask, p, 0);
+    if (mk.b < 0.5 && mk.g > 0.5) { o0 = vec4(0.0); o1 = vec4(0.0); o2 = vec4(0.0); return; }
     vec4 id0, sx0, sy0, lp0, id1, sx1, sy1, lp1, id2, sx2, sy2, lp2;
     perceive(uS0, p, id0, sx0, sy0, lp0);
     perceive(uS1, p, id1, sx1, sy1, lp1);
@@ -989,11 +996,42 @@ export const GROWTH_NCA_ZERO = /* glsl */ `
   void main() { o0 = vec4(0.0); o1 = vec4(0.0); o2 = vec4(0.0); }
 `;
 
-// Colony mask (HalfFloat), one texel per cell:
+// Colony GENES (Lichen timelapse). A spore colony carries ONE number, its
+// seed (an integer 2–2047, exact in float; below 1.5 = no genes — Pen and
+// Plant colonies, which behave as they always did), and every trait is hashed
+// from it, so any pass can read a colony's traits from the seed alone. Most
+// spores are DOOMED: they spread a cell or two and wither within seconds; one
+// in GENE_SURVIVE takes hold. The survivors' size, speed and lobes depend on
+// Variation and are read in the mask pass only (gTraits).
+const GROWTH_NCA_GENES = /* glsl */ `
+  const float GENE_SURVIVE = 0.08;
+  uint gHash(uint v) {
+    uint s = v * 747796405u + 2891336453u;
+    uint w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
+    return (w >> 22u) ^ w;
+  }
+  float gene(float seed, uint salt) { return float(gHash(uint(seed) * 2654435761u + salt * 40503u)) / 4294967296.0; }
+  bool gLives(float seed) { return gene(seed, 1u) < GENE_SURVIVE; }
+  float gDoomAge(float seed) { return mix(1.5, 5.0, gene(seed, 2u)); }
+  bool gDoomed(float seed) { return seed > 1.5 && !gLives(seed); }
+  // Lichen palette (the owner's reference photos): chartreuse, sage, pale
+  // grey-green, gold, brick red, rust. Each saturated enough (> 0.15) for
+  // GROWTH_NCA_VIEW to recolour with it — a greyer pen keeps the photo's.
+  vec3 gPalette(float seed) {
+    int i = int(gene(seed, 9u) * 6.0);
+    return i == 0 ? vec3(0.70, 0.80, 0.28) : i == 1 ? vec3(0.58, 0.70, 0.50)
+         : i == 2 ? vec3(0.78, 0.82, 0.64) : i == 3 ? vec3(0.95, 0.74, 0.16)
+         : i == 4 ? vec3(0.78, 0.22, 0.12) : vec3(0.62, 0.30, 0.14);
+  }
+`;
+
+// Colony mask (Float), one texel per cell:
 //   r  alive: seconds since the cell joined (Lifetime). bare: −(seconds of
 //      Regrow delay left); it may be recolonised once this reaches 0.
 //   g  fade-in, 0 → 1 over 1/uFadeIn updates after joining, so the growing
 //      edge shows lichen arriving rather than the grey empty state.
+//      On a BARE cell, g = 1 for one update marks a fresh wound: the rule
+//      empties the state there (GROWTH_NCA_STEP).
 //   b  updates since joining, capped at 2048 (settling); 0 = bare.
 //   a  COLONY age: seconds since its colony was sown. A planted cell starts
 //      at 0; a cell that joins inherits its oldest living neighbour's, so a
@@ -1005,6 +1043,10 @@ export const GROWTH_NCA_ZERO = /* glsl */ `
 // a = 1 if it has one (Plant sows untinted). A joining cell takes the tint of
 // the neighbour it takes its colony age from, so a colour spreads with its
 // colony and comes back when a wound heals. GROWTH_NCA_VIEW applies it.
+// Attachment 2 is the colony's GENES (GROWTH_NCA_GENES): xy = where its
+// spore landed (0–1), z = its seed. Joining cells inherit it with the tint.
+// On bare ground z keeps the seed of the colony that died there, which may
+// not grow back in. Swarms (uSwarm) land spores on free rock.
 // The pen acts where a stroke ARRIVES (bright now, not last update — uSeed vs
 // uSeedPrev, first update of a frame only): on bare rock it plants; on lichen
 // it wounds — the cell becomes bare with no delay, so the colony regrows into
@@ -1017,16 +1059,47 @@ export const GROWTH_NCA_ZERO = /* glsl */ `
 export const GROWTH_NCA_MASK = /* glsl */ `
   precision highp float;
   precision highp int;
-  uniform sampler2D uMask, uTint, uSeed, uSeedPrev;
+  uniform sampler2D uMask, uTint, uSeed, uSeedPrev, uGenes;
   uniform ivec2 uSize;
   uniform float uStep, uSpread, uFadeIn, uSeedAmt, uAgeDt, uLife, uFade, uRest;
   uniform vec3 uPoint;          // plant: x, y (0–1), radius in texels (0 = none)
+  uniform vec4 uSwarm;          // spores: centre x, y and radius (cells), peak chance per cell (0 = none)
+  uniform float uSwarmSeed, uVar, uColours;
   layout(location = 0) out vec4 o;
   layout(location = 1) out vec4 ot;
+  layout(location = 2) out vec4 og;
+  ${GROWTH_NCA_GENES}
   uint pcg(uint v) {
     uint s = v * 747796405u + 2891336453u;
     uint w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
     return (w >> 22u) ^ w;
+  }
+  // A survivor's shape, by Variation (uVar 0 = every colony alike, round,
+  // 0.16 of the frame's short side). reach: final radius in cells — mostly
+  // small, a few large (h²); rate: spread speed; k lobes of depth amp.
+  void gTraits(float s, out float rate, out float reach, out float k, out float amp, out float ph) {
+    if (!gLives(s)) { rate = 1.0; reach = mix(0.6, 2.2, gene(s, 3u)); k = 1.0; amp = 0.0; ph = 0.0; return; }
+    float h = gene(s, 3u);
+    rate  = mix(1.0, mix(0.35, 1.7, gene(s, 4u)), uVar);
+    reach = float(min(uSize.x, uSize.y)) * mix(0.16, mix(0.04, 0.42, h * h), uVar);
+    k     = floor(mix(5.0, 13.0, gene(s, 5u)));
+    amp   = uVar * mix(0.25, 1.0, gene(s, 6u));
+    ph    = 6.2831853 * gene(s, 7u);
+  }
+  // Lobe profile at angle th, −1…1: k random lobe lengths around the rim,
+  // smoothly joined (periodic), plus a finer set at half depth — irregular
+  // lobes, not a cog.
+  float gLobe(float s, float k, float ph, float th) {
+    float v = 0.0, w = 1.0, tot = 0.0;
+    for (int o = 0; o < 2; o++) {
+      float n = k * (o == 0 ? 1.0 : 2.3);
+      float t = fract((th + ph) / 6.2831853) * floor(n);
+      float i0 = floor(t), f = t - i0, i1 = mod(i0 + 1.0, floor(n));
+      float a = gene(s, 20u + uint(o) * 64u + uint(i0)), b = gene(s, 20u + uint(o) * 64u + uint(i1));
+      v += w * mix(a, b, f * f * (3.0 - 2.0 * f));
+      tot += w; w *= 0.5;
+    }
+    return 2.0 * v / tot - 1.0;
   }
   // Colony age of a living neighbour, −1 if bare or off the frame.
   float colony(ivec2 q) {
@@ -1040,38 +1113,72 @@ export const GROWTH_NCA_MASK = /* glsl */ `
   void main() {
     ivec2 p = ivec2(gl_FragCoord.xy);
     vec4 m = texelFetch(uMask, p, 0);
+    vec4 g = texelFetch(uGenes, p, 0);
     vec2 uv = (vec2(p) + 0.5) / vec2(uSize);
     bool arrive = uSeedAmt > 0.0 && ink(uSeed, uv) * uSeedAmt > 0.5 && ink(uSeedPrev, uv) * uSeedAmt <= 0.5;
     bool plant = uPoint.z > 0.0 && distance(vec2(p) + 0.5, uPoint.xy * vec2(uSize)) < uPoint.z;
     bool hold = uRest < 0.0;
     ot = vec4(0.0);
+    og = vec4(0.0);
     if (m.b > 0.5) {
-      if (arrive) { o = vec4(0.0); return; }                       // wound: bare, heals at once
+      if (arrive) { o = vec4(0.0, 1.0, 0.0, 0.0); return; }       // wound: bare (g = empty the state), heals at once
       float age = m.r + uAgeDt, col = m.a + uAgeDt;
+      // A doomed spore withers; ground a colony died on remembers whose it
+      // was (og.z), so that colony cannot grow back into it — its rim moves
+      // on outward (rings) and the rock is left to other colonies and spores.
+      if (gDoomed(g.z) && col > gDoomAge(g.z)) { o = vec4(0.0); og = vec4(0.0, 0.0, g.z, 0.0); return; }
       if (uLife > 0.0 && (hold ? col : age) > uLife + uFade) {     // died of age
-        o = vec4(hold ? -60000.0 : -uRest, 0.0, 0.0, 0.0); return;
+        o = vec4(hold ? -60000.0 : -uRest, 0.0, 0.0, 0.0); og = vec4(0.0, 0.0, g.z, 0.0); return;
       }
       o = vec4(age, min(1.0, m.g + uFadeIn), min(2048.0, m.b + 1.0), col);
       ot = texelFetch(uTint, p, 0);
+      og = g;
       return;
     }
     float rest = min(0.0, m.r + uAgeDt);
+    float dead = g.z > 1.5 ? g.z : -1.0;
     float n = 0.0, oldest = -1.0;
-    vec4 tint = vec4(0.0);
+    vec4 tint = vec4(0.0), gn = vec4(0.0);
     for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) {
       ivec2 q = p + ivec2(dx, dy);
       float c = colony(q);
-      if (c >= 0.0) { n += 1.0; if (c > oldest) { oldest = c; tint = texelFetch(uTint, q, 0); } }
+      if (c < 0.0) continue;
+      vec4 gq = texelFetch(uGenes, q, 0);
+      if (abs(gq.z - dead) < 0.5) continue;                          // it died here once
+      n += 1.0;
+      if (c > oldest) { oldest = c; tint = texelFetch(uTint, q, 0); gn = gq; }
     }
     // Hold: a colony past its Lifetime no longer spreads.
     bool grows = n > 0.0 && !(hold && uLife > 0.0 && oldest > uLife);
+    float spread = uSpread;
+    if (grows && gn.z > 1.5) {
+      // A spore colony: its own speed, lobes, and a final size it stops at.
+      float rate, reach, k, amp, ph;
+      gTraits(gn.z, rate, reach, k, amp, ph);
+      vec2 d = vec2(p) + 0.5 - gn.xy * vec2(uSize);
+      float lobe = gLobe(gn.z, k, ph, atan(d.y, d.x));
+      if (length(d) > reach * (1.0 + 0.5 * amp * lobe)) grows = false;
+      spread = min(1.0, uSpread * rate * max(0.08, 1.0 + amp * lobe));
+    }
     uint h = pcg(uint(p.x) ^ pcg(uint(p.y) ^ pcg(uint(uStep) ^ 0x5bd1e995u)));
-    bool on = rest >= 0.0 && grows && float(h) / 4294967296.0 < 1.0 - pow(1.0 - uSpread, n);
+    bool on = rest >= 0.0 && grows && float(h) / 4294967296.0 < 1.0 - pow(1.0 - spread, n);
     float col = on ? oldest : 0.0;
-    if (plant) { on = true; col = 0.0; tint = vec4(0.0); }        // sown by Plant: natural colour
-    if (arrive) { on = true; col = 0.0; tint = vec4(texture(uSeed, uv).rgb, 1.0); }   // by the pen: its colour
+    vec4 gOut = gn;
+    // A swarm lands: a cloud of spores on free rock, each its own colony.
+    if (!on && rest >= 0.0 && uSwarm.w > 0.0) {
+      float r = distance(vec2(p) + 0.5, uSwarm.xy);
+      uint hs = pcg(h ^ 0x9e3779b9u);
+      if (float(hs) / 4294967296.0 < uSwarm.w * exp(-r * r / (uSwarm.z * uSwarm.z))) {
+        float seed = 2.0 + float(pcg(hs ^ uint(uSwarmSeed)) % 2046u);
+        on = true; col = 0.0; gOut = vec4(uv, seed, 0.0);
+        tint = gene(seed, 8u) < uColours ? vec4(gPalette(seed), 1.0) : vec4(0.0);
+      }
+    }
+    if (plant) { on = true; col = 0.0; tint = vec4(0.0); gOut = vec4(0.0); }   // sown by Plant: natural colour
+    if (arrive) { on = true; col = 0.0; tint = vec4(texture(uSeed, uv).rgb, 1.0); gOut = vec4(0.0); }   // by the pen: its colour
     o = on ? vec4(0.0, 0.0, 1.0, col) : vec4(rest, 0.0, 0.0, 0.0);
     ot = on ? tint : vec4(0.0);
+    og = on ? gOut : g;                                             // bare keeps its mark
   }
 `;
 
@@ -1112,17 +1219,31 @@ export const GROWTH_NCA_CAPTURE = /* glsl */ `
 // picture, unchanged. Picture only: the rule never sees any of it.
 export const GROWTH_NCA_VIEW = /* glsl */ `
   precision highp float;
-  uniform sampler2D uPhoto, uMask, uTint;
+  uniform sampler2D uPhoto, uMask, uTint, uGenes;
   uniform vec3 uGround;
   uniform float uLife, uFade, uRest, uRelief, uGloss;
   uniform vec3 uLight;
   in vec2 vUv;
   layout(location = 0) out vec4 o;
   const float LICHEN_HUE = 0.065;   // the photo's orange, ~23°
+  ${GROWTH_NCA_GENES}
   float coverAt(ivec2 q) {
     vec4 m = texelFetch(uMask, q, 0);
+    if (m.b < 0.5) return 0.0;
     float age = uRest < 0.0 ? m.a : m.r;
-    return m.b > 0.5 ? m.g * (uLife > 0.0 ? 1.0 - smoothstep(uLife, uLife + uFade, age) : 1.0) : 0.0;
+    float cv = m.g * (uLife > 0.0 ? 1.0 - smoothstep(uLife, uLife + uFade, age) : 1.0);
+    // A doomed spore fades out over its last second before it withers.
+    float s = texelFetch(uGenes, q, 0).z;
+    if (gDoomed(s)) cv *= 1.0 - smoothstep(gDoomAge(s) - 1.0, gDoomAge(s), m.a);
+    return cv;
+  }
+  // Seed of a living cell's colony (−1 bare, 0 no genes); off-frame = bare.
+  float seedAt(ivec2 q) {
+    ivec2 sz = textureSize(uMask, 0);
+    if (q.x < 0 || q.y < 0 || q.x >= sz.x || q.y >= sz.y) return -1.0;
+    if (texelFetch(uMask, q, 0).b < 0.5) return -1.0;
+    float s = texelFetch(uGenes, q, 0).z;
+    return s > 1.5 ? s : 0.0;
   }
   float heightAt(ivec2 q) {
     ivec2 sz = textureSize(uMask, 0);
@@ -1148,7 +1269,14 @@ export const GROWTH_NCA_VIEW = /* glsl */ `
     float cov = coverAt(p);
     vec3 c = texelFetch(uPhoto, p, 0).rgb;
     vec4 t = texelFetch(uTint, p, 0);
-    if (t.a > 0.5) {
+    if (t.a > 0.5 && seedAt(p) > 1.5) {
+      // A spore colony's palette colour takes the WHOLE thallus, at each
+      // pixel's own lightness (discs stay dark, crust stays pale) — the
+      // orange-only recolour below left the palette barely visible.
+      float l = dot(c, vec3(0.299, 0.587, 0.114));
+      vec3 cz = t.rgb * (l / max(0.25, dot(t.rgb, vec3(0.299, 0.587, 0.114))));
+      c = mix(c, clamp(cz, 0.0, 1.0), 0.7);
+    } else if (t.a > 0.5) {
       vec3 pen = rgb2hsv(t.rgb);
       if (pen.y > 0.15) {
         vec3 h = rgb2hsv(c);
@@ -1159,6 +1287,21 @@ export const GROWTH_NCA_VIEW = /* glsl */ `
         vec3 re = hsv2rgb(vec3(pen.x, h.y * pen.y, h.z));
         c = mix(c, re, w);
       }
+    }
+    // Spore colonies (genes): a paler, brighter RIM where the colony meets
+    // bare rock — the growing margin of the owner's reference photos — and a
+    // dark line where two colonies meet. Pen/Plant colonies are drawn as before.
+    float me = seedAt(p);
+    if (me >= 0.0) {
+      float bare = 0.0, other = 0.0;
+      for (int k = 0; k < 8; k++) {
+        ivec2 o8 = ivec2(k < 3 ? k - 1 : k == 3 ? -1 : k == 4 ? 1 : k - 6, k < 3 ? -1 : k < 5 ? 0 : 1);
+        float sa = seedAt(p + 2 * o8), sb = seedAt(p + o8);
+        if (me > 1.5) bare += sa < 0.0 ? 1.0 : 0.0;
+        if (sb >= 0.0 && abs(sb - me) > 0.5 && max(sb, me) > 1.5) other = 1.0;
+      }
+      c = mix(c, min(vec3(1.0), c * 1.3 + 0.06), 0.7 * bare / 8.0);
+      c *= 1.0 - 0.55 * other;
     }
     vec3 col = mix(uGround, c, cov);
     if (uRelief > 0.0) {

@@ -6,6 +6,8 @@
 #
 #   python train_texture.py --image lichen.jpg --out lichen.json
 #   python train_texture.py --smoke          # pipeline check, no downloads
+#   python train_texture.py --image lichen.jpg --still 20 --out lichen_still.json
+#                                            # a texture that grows, then holds still
 #
 # Update rule, per cell — the GLSL port must match this exactly:
 #   state x: CH floats, RGB = x[0:3] + 0.5
@@ -29,6 +31,13 @@ ap.add_argument('--fire', type=float, default=0.5)
 ap.add_argument('--device', default='cuda' if torch.cuda.is_available() else 'cpu')
 ap.add_argument('--save-every', type=int, default=250)
 ap.add_argument('--smoke', action='store_true', help='random VGG + tiny run, checks the pipeline only')
+# Stillness: after each rollout, run --still-steps more updates and penalise
+# how much the PICTURE changed, relative to the photo's own variance (so one
+# weight means the same for any photo). lichenB, trained without it, changes
+# 0.43 of its variance in 8 updates: its discs drift and "drip" (owner:
+# "raindrops"). 0 = off, the original trainer. Try 20, then 60 if it still moves.
+ap.add_argument('--still', type=float, default=0.0, help='weight of the stillness loss (0 = off)')
+ap.add_argument('--still-steps', type=int, default=8, help='updates the picture must hold still over')
 a = ap.parse_args()
 dev = torch.device(a.device)
 if a.smoke:
@@ -67,6 +76,7 @@ def grams(x):
 
 with torch.no_grad():
     tg = grams(target)
+    tvar = target.var().item()                # picture change is measured against this
 
 def style_loss(img):
     return sum(((g - t) ** 2).mean() for g, t in zip(grams(img), tg))
@@ -130,6 +140,20 @@ for it in range(a.steps):
     rgb = x[:, :3] + 0.5
     overflow = (x - x.clamp(-1, 1)).abs().mean()
     loss = style_loss(rgb) + overflow
+    still = torch.zeros(())
+    if a.still > 0:
+        y = x
+        for _ in range(a.still_steps):
+            y = nca(y)
+        d = ((y[:, :3] - x[:, :3]) ** 2).mean(dim=(1, 2, 3)) / tvar
+        # Not the sample just reseeded from empty: it is still GROWING, and
+        # stillness there would teach the texture not to form.
+        keep = torch.ones_like(d)
+        if it % 8 == 0:
+            keep[0] = 0
+        still = (d * keep).sum() / keep.sum()
+        loss = loss + a.still * still + (y - y.clamp(-1, 1)).abs().mean()
+        x = y                                 # the pool carries on from the later state
     opt.zero_grad()
     loss.backward()
     for p in nca.parameters():                               # per-tensor grad normalisation
@@ -139,7 +163,7 @@ for it in range(a.steps):
         pool[idx] = x.detach()
     if it % 50 == 0 or it == a.steps - 1:
         el = time.time() - t0
-        print(f'{it:5d}  loss {loss.item():.4f}  {el / (it + 1):.2f} s/it  eta {el / (it + 1) * (a.steps - it - 1) / 60:.1f} min', flush=True)
+        print(f'{it:5d}  loss {loss.item():.4f}  still {still.item():.3f}  {el / (it + 1):.2f} s/it  eta {el / (it + 1) * (a.steps - it - 1) / 60:.1f} min', flush=True)
         if a.image:
             Image.fromarray((rgb[0].detach().clamp(0, 1).permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)).save(a.out.replace('.json', '_preview.png'))
     if a.save_every and it and it % a.save_every == 0:

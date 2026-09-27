@@ -13,7 +13,11 @@
  * Pen plants lichen (owner, 2026-09-26): the frame starts as bare ground and
  * a colony MASK (screen coordinates, GROWTH_NCA_MASK) says where it lives.
  * Pen strokes and Plant sow the mask; it creeps outward on its own (an Eden
- * front); outside it the state is held empty. The PICTURE settles: a photo
+ * front). The rule runs on the whole grid, as trained, and the mask only
+ * says where it is SHOWN (holding bare cells empty ran away beside colonies
+ * that stop growing — GROWTH_NCA_STEP). Spores (Lichen timelapse) land in
+ * swarms and give each surviving colony its own genes (GROWTH_NCA_GENES).
+ * The PICTURE settles: a photo
  * of each cell follows it while young and holds once mature
  * (GROWTH_NCA_CAPTURE), so only the rim lives — while the rule itself always
  * runs at its trained rate (slowing it made wounds blow up).
@@ -46,6 +50,11 @@ const GROUND  = [0.08, 0.08, 0.09];   // bare rock
 // Shorter than it could be on purpose: lichenB's dark discs sink while
 // young (owner: "leaking like raindrops"), so the young phase is kept brief.
 const SETTLE  = [90, 220];
+// Spores: a swarm lands every ~SWARM_EVERY updates (3 s at Speed 16, jittered
+// ±40%) as a cloud of SWARM_MAX × Spores spores around a random point; most
+// wither (GROWTH_NCA_GENES). The first lands at once, from bare rock.
+const SWARM_EVERY = 180;
+const SWARM_MAX   = 60;
 
 const VERT3 = /* glsl */ `
   void main() { gl_Position = vec4(position, 1.0); }
@@ -73,7 +82,7 @@ export class GrowthNCA {
     this._viewMat = new THREE.ShaderMaterial({
       glslVersion: THREE.GLSL3,
       uniforms: {
-        uPhoto: { value: null }, uMask: { value: null }, uTint: { value: null },
+        uPhoto: { value: null }, uMask: { value: null }, uTint: { value: null }, uGenes: { value: null },
         uGround: { value: new THREE.Vector3(...GROUND) },
         uLife: { value: 0 }, uFade: { value: 1 }, uRest: { value: 0 },
         uRelief: { value: 0 }, uGloss: { value: 0 }, uLight: { value: new THREE.Vector3(0, 0, 1) },
@@ -89,9 +98,12 @@ export class GrowthNCA {
         uStep: { value: 0 }, uSpread: { value: SPREAD }, uFadeIn: { value: FADE_IN },
         uSeedAmt: { value: 0 }, uPoint: { value: new THREE.Vector3() },
         uAgeDt: { value: 0 }, uLife: { value: 0 }, uFade: { value: 1 }, uRest: { value: 0 },
+        uGenes: { value: null }, uSwarm: { value: new THREE.Vector4() }, uSwarmSeed: { value: 0 },
+        uVar: { value: 0 }, uColours: { value: 0 },
       },
       depthTest: false, depthWrite: false,
     });
+    this._swarmIn = 0;           // updates until the next swarm (0 = now)
     this._captureMat = new THREE.ShaderMaterial({
       glslVersion: THREE.GLSL3, vertexShader: VERT3, fragmentShader: GROWTH_NCA_CAPTURE,
       uniforms: {
@@ -102,7 +114,7 @@ export class GrowthNCA {
     });
     this._photo = null;          // [RT, RT], 8-bit: the settled picture
     this._pcur = 0;
-    this._mask = null;           // [RT, RT], 2 × HalfFloat: mask, tint (GROWTH_NCA_MASK)
+    this._mask = null;           // [RT, RT], 3 × Float: mask, tint, genes (GROWTH_NCA_MASK)
     this._mcur = 0;
     this._seedPrev = null;       // the pen as of the last update (arrival test)
     // Resample copy for a Size change (mask and tint). Copied colony cells
@@ -110,15 +122,19 @@ export class GrowthNCA {
     // picture must follow it again while it regrows.
     this._copyMat = new THREE.ShaderMaterial({
       glslVersion: THREE.GLSL3,
-      uniforms: { uT: { value: null }, uT2: { value: null } },
+      uniforms: { uT: { value: null }, uT2: { value: null }, uT3: { value: null } },
       vertexShader: /* glsl */ `out vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position, 1.0); }`,
-      fragmentShader: /* glsl */ `precision highp float; uniform sampler2D uT, uT2; in vec2 vUv;
-        layout(location = 0) out vec4 o; layout(location = 1) out vec4 ot;
+      // Nearest (the targets are): a seed blended with its neighbour's is
+      // another colony's seed.
+      fragmentShader: /* glsl */ `precision highp float; uniform sampler2D uT, uT2, uT3; in vec2 vUv;
+        layout(location = 0) out vec4 o; layout(location = 1) out vec4 ot; layout(location = 2) out vec4 og;
         void main() {
           vec4 m = texture(uT, vUv);
           bool on = m.b > 0.5;
           o = on ? vec4(m.r, 0.0, 1.0, m.a) : vec4(min(m.r, 0.0), 0.0, 0.0, 0.0);
           ot = on ? texture(uT2, vUv) : vec4(0.0);
+          ivec2 sz = textureSize(uT3, 0);
+          og = texelFetch(uT3, clamp(ivec2(vUv * vec2(sz)), ivec2(0), sz - 1), 0);
         }`,
       depthTest: false, depthWrite: false,
     });
@@ -186,7 +202,10 @@ export class GrowthNCA {
       },
       depthTest: false, depthWrite: false,
     });
-    this._needsInit = true;                    // a new rule starts from empty
+    // A new rule starts from empty STATE — another model's state is foreign
+    // to it — but keeps the colonies: the texture regrows under them in < 1 s.
+    this._keepMask = !!this._state;
+    this._needsInit = true;
   }
 
   _makeTarget() {
@@ -208,12 +227,15 @@ export class GrowthNCA {
       minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false, stencilBuffer: false,
     }));
     // The mask is RESAMPLED, not wiped: a Size change keeps the colony's
-    // shape (Linear copy, re-thresholded at 0.5 by the next mask pass).
-    // HalfFloat: .b counts updates to 2048; still filterable for that copy.
+    // shape (nearest copy). FLOAT, not HalfFloat: ages are seconds, and a
+    // half float at 32 has a step of 1/32 s, so adding a 1/60 s frame rounded
+    // back to 32 — every age stopped there and a Lifetime past ~27 s never
+    // died (measured, runs/gltest/timelapse.html, 2026-09-26). The state
+    // targets already need float rendering, so this asks nothing new.
     const old = this._mask;
     this._mask = [0, 1].map(() => new THREE.WebGLRenderTarget(w, h, {
-      count: 2, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
-      format: THREE.RGBAFormat, type: THREE.HalfFloatType, depthBuffer: false, stencilBuffer: false,
+      count: 3, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter,
+      format: THREE.RGBAFormat, type: THREE.FloatType, depthBuffer: false, stencilBuffer: false,
     }));
     const oldCur = this._mcur;
     this._mcur = 0;
@@ -221,6 +243,7 @@ export class GrowthNCA {
     if (old) {
       this._copyMat.uniforms.uT.value = old[oldCur].textures[0];
       this._copyMat.uniforms.uT2.value = old[oldCur].textures[1];
+      this._copyMat.uniforms.uT3.value = old[oldCur].textures[2];
       this._blit(this._copyMat, this._mask[0]);
       old.forEach((t) => t.dispose());
       this._keepMask = true;
@@ -237,12 +260,13 @@ export class GrowthNCA {
   }
 
   /** Bare ground everywhere: state and colony both emptied. */
-  clear() { this._needsInit = true; this._keepMask = false; }
+  clear() { this._needsInit = true; this._keepMask = false; this._swarmIn = 0; }
 
   /**
    * @param o { w, h, dt, speed (0–40), seedTex, seedAmt (0–1), plant {x,y,r} | null,
    *            life (s, 0 = forever), fade (s), rest (s; < 0 = never regrow),
-   *            rot (radians: the whole texture's turn, 0 = as trained) }
+   *            rot (radians: the whole texture's turn, 0 = as trained),
+   *            spores (0–1, 0 = none), variation (0–1), colours (0–1) }
    * Returns false until the model has loaded (nothing drawn yet).
    */
   render(o) {
@@ -271,12 +295,25 @@ export class GrowthNCA {
     mu.uLife.value = o.life ?? 0;
     mu.uFade.value = Math.max(0.1, o.fade ?? 1);
     mu.uRest.value = o.rest ?? 0;
+    mu.uVar.value = o.variation ?? 0;
+    mu.uColours.value = o.colours ?? 0;
+    const spores = o.spores ?? 0;
     for (let i = 0; i < n; i++) {
       this._step = (this._step + 1) % 16777216;
       // Colony first (screen coordinates): spread, pen, plant.
       mu.uMask.value = this._mask[this._mcur].textures[0];
       mu.uTint.value = this._mask[this._mcur].textures[1];
+      mu.uGenes.value = this._mask[this._mcur].textures[2];
       mu.uStep.value = this._step;
+      mu.uSwarm.value.w = 0;
+      if (spores > 0 && --this._swarmIn <= 0) {
+        this._swarmIn = Math.round(SWARM_EVERY * (0.6 + 0.8 * Math.random()));
+        const short = Math.min(this._w, this._h);
+        const R = short * (0.15 + 0.3 * Math.random());
+        mu.uSwarm.value.set(Math.random() * this._w, Math.random() * this._h, R,
+          Math.min(0.25, (SWARM_MAX * spores) / (Math.PI * R * R)));
+        mu.uSwarmSeed.value = Math.floor(Math.random() * 0xffffff);
+      }
       if (i === 0 && o.plant) mu.uPoint.value.set(o.plant.x, o.plant.y, Math.max(1, o.plant.r * this._h));
       else mu.uPoint.value.z = 0;
       // The pen acts on the frame's FIRST update only: it compares against
@@ -324,6 +361,7 @@ export class GrowthNCA {
     v.uPhoto.value = this._photo[this._pcur].texture;
     v.uMask.value = this._mask[this._mcur].textures[0];
     v.uTint.value = this._mask[this._mcur].textures[1];
+    v.uGenes.value = this._mask[this._mcur].textures[2];
     v.uLife.value = this._maskMat.uniforms.uLife.value;
     v.uFade.value = this._maskMat.uniforms.uFade.value;
     v.uRest.value = this._maskMat.uniforms.uRest.value;

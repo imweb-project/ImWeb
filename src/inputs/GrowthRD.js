@@ -44,7 +44,7 @@ import {
   VERT, GROWTH_RD_STEP, GROWTH_RD_VIEW, GROWTH_RD_INIT, GROWTH_MS_DOWN, GROWTH_MS_STEP,
   GROWTH_CR_AUX, GROWTH_CR_STEP, GROWTH_HY_STEP, PASSTHROUGH, GROWTH_UPSAMPLE,
 } from '../shaders/index.js';
-import { GROWTH_PATTERNS } from './GrowthPatterns.js';
+import { GROWTH_PATTERNS, NCA_MODELS } from './GrowthPatterns.js';
 import { GrowthCurves } from './GrowthCurves.js';
 import { GrowthNCA } from './GrowthNCA.js';
 
@@ -58,8 +58,6 @@ export const MODE_CRYSTAL    = 2;
 export const MODE_HYPHAE     = 3;
 export const MODE_CURVES     = 4;
 export const MODE_NEURAL     = 5;
-// The Neural engine's trained rule (tools/nca). One model for now.
-const NCA_MODEL_URL = 'nca/lichen.json';
 // Sign so that a larger Light angle turns the texture counter-clockwise on
 // screen, as the other engines' light moves (0° = from the right, 90° = from
 // above). Measured on the GPU (runs/gltest/rot.html): +1 turned it clockwise.
@@ -289,7 +287,7 @@ export class GrowthRD {
     // the reaction-diffusion step or view applies (see GrowthNCA).
     if (mode === MODE_NEURAL) {
       this._nca ??= new GrowthNCA(this.renderer, (m, t) => this._blit(m, t));
-      this._nca.load(NCA_MODEL_URL);
+      this._nca.load((NCA_MODELS[o.ncaModel] ?? NCA_MODELS[0]).url);
       this._clock = (this._clock ?? 0) + Math.max(Math.min(Math.max(dt, 0), 0.1), 1e-2);
       // Fade + Lifetime (main.js _growthFade): Ring (life) = die, then the
       // rock is recolonised after Regrow delay; Hold (growTime) and Pen
@@ -303,6 +301,9 @@ export class GrowthRD {
         // Light angle turns the whole texture — and the sunlight baked into
         // the photo with it. 135 (the Looks' default) = as trained.
         rot: (((o.lightAngle ?? 135) - 135) * Math.PI) / 180 * NCA_ROT_SIGN,
+        // Spore colonies: how many land, how different they are (Variation),
+        // how many wear a palette colour rather than the photo's (Colonies).
+        spores: o.spores ?? 0, variation: (o.variation ?? 0) / 100, colours: o.colonies ?? 0,
       });
       this._plant = null;
       this._view.setSize(this._w, this._h);

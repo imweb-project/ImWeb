@@ -24,7 +24,7 @@ import { isPagedBinding } from './controlInput.js';
 // Same rule, same reason: a SELECT stores an INDEX, so the axis menus must be
 // built from the one list the index itself reads, never retyped beside it.
 import { DESCRIPTOR_LABELS } from '../audio/corpus-index.js';
-import { GROWTH_PATTERNS, GROWTH_MODES, GROWTH_LOOKS } from '../inputs/GrowthPatterns.js';
+import { GROWTH_PATTERNS, GROWTH_MODES, GROWTH_LOOKS, NCA_MODELS } from '../inputs/GrowthPatterns.js';
 
 /**
  * How the performer is listening (§8.6). ONE list, read twice: the labels are
@@ -7143,6 +7143,20 @@ export function registerCoreParameters(ps) {
   ps.register({
     id: "growth.colonies", label: "Colonies", group: "growth",
     type: PARAM_TYPE.CONTINUOUS, min: 0, max: 100, value: 0, step: 1,
+  });
+  // Spores (Neural only): swarms of spores keep landing on bare rock, most
+  // wither within seconds and a few take hold as colonies of their own
+  // (size, speed, lobes, colour). 0 = off: colonies come only from Pen/Plant.
+  ps.register({
+    id: "growth.spores", label: "Spores", group: "growth",
+    type: PARAM_TYPE.CONTINUOUS, min: 0, max: 100, value: 0, step: 1,
+  });
+  // Model (Neural only): which trained texture the rule grows. An index into
+  // NCA_MODELS, which lives in code and is append-only — so it means the same
+  // everywhere and IS captured by Display States (group 'growth').
+  ps.register({
+    id: "growth.ncaModel", label: "Model", group: "growth",
+    type: PARAM_TYPE.SELECT, options: NCA_MODELS.map((m) => m.label), value: 0,
   });
   ps.register({
     id: "growth.contrast", label: "GrowContrast", group: "growth",

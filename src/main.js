@@ -1442,7 +1442,7 @@ async function main() {
       2: ["crFold", "crAniso", "crAngle", "crHeat", "crNoise", "crRingGap"],
       3: ["hyBranch"],
       4: ["hyBranch", "hyDensity"],
-      5: ["rest"],
+      5: ["rest", "spores", "ncaModel"],
     };
     // A row shows if its id is listed for the CURRENT engine — so one id can
     // belong to several engines (Branching: Hyphae and Curves). The old loop
@@ -6335,7 +6335,9 @@ async function main() {
     ps.set("growth.plantX", 50);
     ps.set("growth.plantY", 50);
     ps.trigger("growth.clear");
-    ps.trigger("growth.plant");
+    // sow: false — the Look starts from bare rock (its colonies arrive on
+    // their own, e.g. Lichen timelapse's spores).
+    if (look.sow !== false) ps.trigger("growth.plant");
     _lookPlants = (look.plants ?? []).map(([x, y], n) => setTimeout(() =>
       growthRD.plant(x / 100, y / 100, ps.get("growth.plantSize").value / 100),
       (n + 1) * LOOK_PLANT_GAP));
@@ -10971,6 +10973,8 @@ void main() {
         sat:      ps.get("growth.sat").value / 100,
         spread:   ps.get("growth.spread").value / 100,
         colonies: ps.get("growth.colonies").value / 100,
+        spores:   ps.get("growth.spores").value / 100,
+        ncaModel: ps.get("growth.ncaModel").value,
         contrast: ps.get("growth.contrast").value,
       });
     }

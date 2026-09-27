@@ -26,6 +26,16 @@ export const GROWTH_RES = [256, 512, 1024];
 // that abbreviates longer labels ("Gray-Scott" showed as "Scott").
 export const GROWTH_MODES = ['Single', 'Nested', 'Frost', 'Hyphae', 'Curves', 'Neural'];   // Frost = crystals, Hyphae = 1-px threads, Curves = free-moving smooth threads, Neural = trained texture NCA
 
+// Neural engine models (tools/nca), public/nca/*.json. APPEND-ONLY —
+// growth.ncaModel persists the index. Lichen: the first photo (orange crust,
+// white crust, black discs) — a restless texture. Crust: cream plates with
+// orange cracks and black discs (owner's photo, 2026-09-26), trained with
+// --still 20: it changes 0.4% of its picture over 8 updates, against 39%.
+export const NCA_MODELS = [
+  { label: 'Lichen', url: 'nca/lichen.json' },
+  { label: 'Crust',  url: 'nca/crust.json' },
+];
+
 // ── Looks ─────────────────────────────────────────────────────────────────────
 // A Look writes EVERY value that shapes the result, not just the obvious
 // ones: a leftover Feed offset or Lifetime silently turned "Mitosis" into
@@ -40,7 +50,7 @@ const LOOK_BASE = {
   'growth.speed': 16, 'growth.feed': 0, 'growth.kill': 0, 'growth.fieldAmt': 0,
   'growth.zones': 0, 'growth.variation': 0, 'growth.varSize': 3, 'growth.varDrift': 0.05,
   'growth.fadeStyle': 0, 'growth.lifetime': 12, 'growth.rest': 4, 'growth.details': 0,
-  'growth.sat': 45, 'growth.spread': 15, 'growth.colonies': 0, 'growth.contrast': 4,
+  'growth.sat': 45, 'growth.spread': 15, 'growth.colonies': 0, 'growth.spores': 0, 'growth.ncaModel': 0, 'growth.contrast': 4,
   'growth.relief': 45, 'growth.bevel': 2, 'growth.lightAngle': 135, 'growth.gloss': 25, 'growth.ground': 12,
   'growth.res': 1, 'growth.seedAmt': 100, 'growth.plantSize': 3,
   'growth.hyDensity': 31, 'growth.crFold': 6, 'growth.crAniso': 0.04, 'growth.crAngle': 0, 'growth.crHeat': 1.6, 'growth.crNoise': 0.02, 'growth.crRingGap': 0.4,
@@ -94,5 +104,16 @@ export const GROWTH_LOOKS = [
     'growth.fadeStyle': 3, 'growth.lifetime': 20, 'growth.rest': 3,
     // Relief lifts the lichen off the rock; 30, not LOOK_BASE's 45, which
     // paled the photo's orange noticeably.
+    'growth.relief': 30 } },
+  // Lichen timelapse: the Neural engine from bare rock. Swarms of spores keep
+  // landing; most wither, a few take hold as colonies of their own size,
+  // speed, lobes and colour (Variation, Colonies), with pale growing rims
+  // and dark lines where they meet. Ring: a colony dies from its centre and
+  // cannot grow back into its own dead ground, so it spreads on as a ring
+  // and the bare rock goes to the next swarm. `sow: false` — no centre spore.
+  { name: 'Lichen timelapse', sow: false, values: { ...LOOK_BASE,
+    'growth.mode': 5, 'growth.scale': 50, 'growth.plantSize': 3,
+    'growth.fadeStyle': 3, 'growth.lifetime': 40, 'growth.rest': 6,
+    'growth.variation': 70, 'growth.colonies': 40, 'growth.spores': 50, 'growth.ncaModel': 1,
     'growth.relief': 30 } },
 ];
