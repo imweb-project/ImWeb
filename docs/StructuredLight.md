@@ -1,8 +1,10 @@
 # Structured Light (Gray-code ProCam scan) — design and phase plan
 
-Status 2026-09-27: **Phase 1 done** (pure core + synthetic-rig audit). Nothing is
+Status 2026-09-27: **pure maths done** — decode (Phase 1) and the bake
+(Phases 3 and 5 as functions: `src/core/StructuredLightBake.js`). Nothing is
 wired into the app yet. Built with no camera or projector available; every
-hardware-facing number below is still to be measured on the rig.
+hardware-facing number is still to be measured on the rig. Both audits run on
+one shared simulated rig, `tests/lib/procam-sim.mjs`.
 
 ## Decisions (and why)
 
@@ -17,6 +19,11 @@ hardware-facing number below is still to be measured on the rig.
 | Decode | CPU, typed arrays, in a Worker (`GrayDecoder`), fed the Y plane of `VideoFrame`s | One-off bake; one testable definition; no GPU readback traps |
 | Bit classification | Xu–Aliaga direct/global rule with Ld/Lg as **means** over separation pairs + noise and model margins | Max/min estimates are biased toward flipping bits (218 wrong codes in the audit corner) |
 | Stripe edges | An uncertain bit whose two candidates are **adjacent** codes puts the pixel on the edge | Otherwise every coarse boundary cuts an invalid band (5.7% of a clean surface) |
+| Inversion | **Rasterise** the camera grid as triangles at their projector positions; drop any triangle with an invalid vertex or an edge > 3× the median | Interpolation closes small gaps; a splat-and-fill would bridge depth steps (1,932 false fills on the audit's step) |
+| Inversion rim | A mesh through camera pixel CENTRES leaves ~½ camera px unfilled at outlines and along step seams | Accepted: sub-pixel at 1080p, and a seam reads as a silhouette, which it is |
+| Relief | Disparity against an **empty-wall reference scan**, projected on the displacement field's principal axis, auto sign = objects stand out | No lens calibration needed. The σ=5 wall-vs-wall null puts p99.9 at 0.41 camera px, ~5× below the step threshold |
+| Normals | Step-aware smoothing (never averages across a relief jump > `step`), then central differences that also stop at steps | A blur across a step made 443 stray crease pixels; a gradient across it tilts the pixel beside every edge to 0.995 |
+| SDF | Exact Felzenszwalb EDT (checked against brute force), not jump flooding | One-off bake, so exact is affordable |
 
 ## Camera lock (Phase 2, needs hardware)
 
@@ -36,18 +43,18 @@ keystone.
    off, device-pixel canvas); camera track with locking; latency measurement;
    Worker loop using `MediaStreamTrackProcessor`. **Touches main.js**, so wait
    until no other session is editing it.
-3. Inversion to projector space: rasterise the correspondence triangle grid,
-   dropping triangles across discontinuities; nearest surface wins. Store the
-   camera-uv map as RG32F with **Nearest** filtering (half-float is ~1 px coarse
-   at 1920).
+3. ✅ (maths) `invertToProjector`. Still to do at upload: store the camera-uv map
+   as RG32F with **Nearest** filtering (half-float is ~1 px coarse at 1920), and
+   **flip rows** — bake arrays are row 0 = TOP, DataTexture row 0 = bottom.
 4. **Auto projection map** (the biggest win): with the camera at the audience's
    position, pre-warp content and/or fit `ProjMapMesh`, plus an automatic
    object mask.
-5. Derived bakes from a reference-wall scan: relief (disparity, R16F), normals
-   (plane fit on smoothed relief), edges (RGBA8: valid / silhouette / step /
-   crease), SDF (exact EDT, RG16F). Expose them as new SOURCE_DEFS entries and
-   to the Live GLSL preamble. The scan slot is a `global` param (contents are
-   per-origin, in IndexedDB).
+5. ✅ (maths) `bake(obj, ref)` → relief, normals (y-up), edges RGBA8 [valid,
+   silhouette, step, crease], signed distance to the outline, distance to any
+   edge. Still to do: pack/upload as textures (relief R16F, normals RGBA16F,
+   SDF RG16F), expose as new SOURCE_DEFS entries and in the Live GLSL preamble,
+   and store scans in IndexedDB. The scan slot is a `global` param, because the
+   stored scans are per-origin.
 6. Optional: Gray + phase-shift hybrid for sub-pixel precision; monocular ML
    depth registered through the scan.
 
