@@ -8,6 +8,14 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Changed
+- **Growth, Lichen timelapse: deeper lobes** (owner). Colonies grow as
+  rosettes: each lobe is a rounded tip with its own length, and neighbouring
+  lobes meet at a narrow notch. Notches reach in to a quarter of the radius
+  at full depth; growth there is 10× slower, so young colonies are lobed
+  too. Variation sets the depth. (Random lengths joined smoothly merged into
+  broad bumps and read round.)
+
 ### Added
 - **Growth: Look "Lichen timelapse"** (Neural engine; owner: "see it grow,
   like a timelapse … from tiny babies to big colonies of various shapes,

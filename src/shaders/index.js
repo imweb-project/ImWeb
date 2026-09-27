@@ -1086,20 +1086,17 @@ export const GROWTH_NCA_MASK = /* glsl */ `
     amp   = uVar * mix(0.25, 1.0, gene(s, 6u));
     ph    = 6.2831853 * gene(s, 7u);
   }
-  // Lobe profile at angle th, −1…1: k random lobe lengths around the rim,
-  // smoothly joined (periodic), plus a finer set at half depth — irregular
-  // lobes, not a cog.
+  // Lobe profile at angle th, 0…1: k lobes round the rim, each a rounded
+  // tip with its own length, meeting its neighbours at a narrow notch (0) —
+  // a rosette, like the owner's reference photos. A finer set of k·2.3 at a
+  // sixth of the depth roughens the tips. (Smoothly joined random lengths
+  // were tried: neighbours merged into broad bumps and colonies read round.)
   float gLobe(float s, float k, float ph, float th) {
-    float v = 0.0, w = 1.0, tot = 0.0;
-    for (int o = 0; o < 2; o++) {
-      float n = k * (o == 0 ? 1.0 : 2.3);
-      float t = fract((th + ph) / 6.2831853) * floor(n);
-      float i0 = floor(t), f = t - i0, i1 = mod(i0 + 1.0, floor(n));
-      float a = gene(s, 20u + uint(o) * 64u + uint(i0)), b = gene(s, 20u + uint(o) * 64u + uint(i1));
-      v += w * mix(a, b, f * f * (3.0 - 2.0 * f));
-      tot += w; w *= 0.5;
-    }
-    return 2.0 * v / tot - 1.0;
+    float a = fract((th + ph) / 6.2831853);
+    float t = a * k, i = floor(t);
+    float tip = mix(0.5, 1.0, gene(s, 20u + uint(i))) * pow(sin(3.14159265 * (t - i)), 0.6);
+    float k2 = floor(k * 2.3), t2 = a * k2;
+    return tip * (0.83 + 0.17 * pow(sin(3.14159265 * (t2 - floor(t2))), 0.6));
   }
   // Colony age of a living neighbour, −1 if bare or off the frame.
   float colony(ivec2 q) {
@@ -1156,9 +1153,12 @@ export const GROWTH_NCA_MASK = /* glsl */ `
       float rate, reach, k, amp, ph;
       gTraits(gn.z, rate, reach, k, amp, ph);
       vec2 d = vec2(p) + 0.5 - gn.xy * vec2(uSize);
-      float lobe = gLobe(gn.z, k, ph, atan(d.y, d.x));
-      if (length(d) > reach * (1.0 + 0.5 * amp * lobe)) grows = false;
-      spread = min(1.0, uSpread * rate * max(0.08, 1.0 + amp * lobe));
+      // Deep lobes (owner, 2026-09-27): the longest tips reach the full
+      // radius; the notches stop at a quarter of it (amp 1), and the front
+      // creeps there at a tenth of the speed, so even a young colony is lobed.
+      float notch = amp * (1.0 - gLobe(gn.z, k, ph, atan(d.y, d.x)));
+      if (length(d) > reach * mix(1.0, 0.25, notch)) grows = false;
+      spread = min(1.0, uSpread * rate * mix(1.0, 0.1, notch));
     }
     uint h = pcg(uint(p.x) ^ pcg(uint(p.y) ^ pcg(uint(uStep) ^ 0x5bd1e995u)));
     bool on = rest >= 0.0 && grows && float(h) / 4294967296.0 < 1.0 - pow(1.0 - spread, n);
