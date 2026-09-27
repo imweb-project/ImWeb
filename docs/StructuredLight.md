@@ -54,9 +54,17 @@ keystone.
    track with locking; a Worker loop using `MediaStreamTrackProcessor` that
    pushes Y planes into the session. **Touches main.js**, so wait until no
    other session is editing it.
-3. ✅ (maths) `invertToProjector`. Still to do at upload: store the camera-uv map
-   as RG32F with **Nearest** filtering (half-float is ~1 px coarse at 1920), and
-   **flip rows** — bake arrays are row 0 = TOP, DataTexture row 0 = bottom.
+3. ✅ `invertToProjector`, and ✅ packing (`src/core/StructuredLightPack.js`):
+   `packBake(bake)` → typed arrays with rows flipped to bottom-up;
+   `toDataTextures()` → three DataTextures. The formats:
+   - relief: R16F, normalised to its peak;
+   - normals: RGBA16F, y-up, valid in w;
+   - edges: RGBA8;
+   - distances: RG16F, capped at `meta.distCap`, which means "no edge";
+   - camera-uv: **RG32F Nearest**, y-up, −1 where unseen.
+
+   Note that three's `toHalfFloat` truncates toward zero, so the stored error
+   is up to one step.
 4. ✅ (maths) **Auto projection map**: `src/core/StructuredLightFit.js`.
    `fitProjectionMesh(res, {cols, rows, rect})` and `fitAuto(res, {tol})` return
    ProjMapMesh points (window fractions, y down). Audit rig: 2×2 p95 8.98 px,
@@ -67,10 +75,9 @@ keystone.
    points, or `deserialize`) plus the scan's valid mask as the object mask.
 5. ✅ (maths) `bake(obj, ref)` → relief, normals (y-up), edges RGBA8 [valid,
    silhouette, step, crease], signed distance to the outline, distance to any
-   edge. Still to do: pack/upload as textures (relief R16F, normals RGBA16F,
-   SDF RG16F), expose as new SOURCE_DEFS entries and in the Live GLSL preamble,
-   and store scans in IndexedDB. The scan slot is a `global` param, because the
-   stored scans are per-origin.
+   edge. Packed as above. Still to do: expose them as new SOURCE_DEFS entries
+   and in the Live GLSL preamble, and store scans in IndexedDB. The scan slot
+   is a `global` param, because the stored scans are per-origin.
 6. Optional: Gray + phase-shift hybrid for sub-pixel precision; monocular ML
    depth registered through the scan.
 
