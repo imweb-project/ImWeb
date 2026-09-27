@@ -95,6 +95,26 @@ check('positive control: ≥ 97% of the plain lit region decodes', mp.total > 40
 check('median error under 0.75 projector px', mp.med < 0.75, `${mp.med}`);
 check('no gross errors in the plain region', mp.gross === 0, `${mp.gross}`);
 
+{
+  // Overexposed: gain 600 puts every lit pixel at 288-588 before the sensor
+  // clips it to 255 (albedo 0.45-0.95, ambient 18). A saturation rule once
+  // rejected every clipped white and would score ~0 here; the
+  // pattern/inverse comparison does not need the lost headroom.
+  const hot = makeRig({ gain: 600, gi: false });
+  const r = hot.scan();
+  let clipped = 0, lit = 0;
+  const white = hot.capture({ kind: 'white' }, () => 0);
+  for (let v = 0; v < CH; v++) for (let u = 0; u < CW; u++) {
+    if (hot.inShadow(u + 0.5, v + 0.5)) continue;
+    lit++;
+    if (white[v * CW + u] === 255) clipped++;
+  }
+  const valid = r.nValid / lit;
+  console.log(`       overexposed: ${(100 * clipped / lit).toFixed(1)}% of lit pixels clip; ${(100 * valid).toFixed(2)}% decode`);
+  check('control: the overexposed rig really clips (≥ 99% of lit pixels at 255)', clipped >= 0.99 * lit);
+  check('an overexposed (clipped) scan still decodes ≥ 97% of the lit surface', valid >= 0.97, `${valid}`);
+}
+
 const ms = measure(robust, (u, v) => inShadow(u + 0.5, v + 0.5));
 check('the null: nothing decodes inside the projector shadow', ms.total > 500 && ms.valid === 0,
   `${ms.valid}/${ms.total} valid`);
@@ -176,7 +196,9 @@ const noisy = (f, noise) => Uint8Array.from(f, x => Math.max(0, Math.min(255, Ma
 const torn = (oldF, newF, row) => Uint8Array.from(oldF, (x, i) => (Math.floor(i / GW) < row ? newF[i] : x));
 
 let wrongAccepts = 0, waited = true, cases = 0;
-for (let L = 0; L <= 6; L++) for (const row of [10, 45, 80]) {
+// 88 of 90: a tear confined to the LAST row of cells — the smallest tear
+// there is, and the one the gate's moving-cell allowance must not swallow.
+for (let L = 0; L <= 6; L++) for (const row of [10, 45, 80, 88]) {
   const noise = rng(99 + L * 7 + row);
   const oldF = stripes(4, 0), newF = stripes(4, 2);          // a fine pattern and its inverse
   const g = new SettleGate({ w: GW, h: GH, latency: L + 1 });   // measured: L old + the tear
@@ -193,6 +215,39 @@ for (let L = 0; L <= 6; L++) for (const row of [10, 45, 80]) {
 }
 check(`never accepts an old or torn frame (${cases} latency × tear cases)`, wrongAccepts === 0, `${wrongAccepts} wrong`);
 check('positive control: the gate waited past the latency and the tear', waited);
+
+{
+  // Local flicker: a patch of cells that changes EVERY frame (a person in a
+  // corner, a TV, a flickering sensor pixel). Under the allowance it must not
+  // stall the scan, and must never let an old or torn frame through; over it
+  // the gate must hold out to its timeout rather than accept anything early.
+  const flicker = (f, cellsWide, k) => {
+    const out = Uint8Array.from(f);
+    const pw = Math.round(cellsWide * GW / 32), ph = Math.round(GH / 18);
+    for (let v = 0; v < ph; v++) for (let u = 0; u < pw; u++) out[v * GW + u] = (k + u + v) & 1 ? 255 : 0;
+    return out;
+  };
+  const runFlicker = (cellsWide) => {
+    const noise = rng(123 + cellsWide);
+    const oldF = stripes(4, 0), newF = stripes(4, 2);
+    const g = new SettleGate({ w: GW, h: GH, latency: 4, maxFrames: 30 });
+    let k = 0;
+    g.begin(flicker(noisy(oldF, noise), cellsWide, k++));
+    const stream = [];
+    for (let i = 0; i < 3; i++) stream.push(['old', flicker(noisy(oldF, noise), cellsWide, k++)]);
+    stream.push(['torn', flicker(noisy(torn(oldF, newF, 60), noise), cellsWide, k++)]);
+    for (let i = 0; i < 40; i++) stream.push(['new', flicker(noisy(newF, noise), cellsWide, k++)]);
+    for (const [kind, f] of stream) { const r = g.push(f); if (r.accept) return { kind, ...r }; }
+    return null;
+  };
+  const small = runFlicker(10);   // 10 cells of 576: 1.7%, under 0.4/18 = 2.2%
+  const big = runFlicker(32);     // a full row of cells: 5.6%
+  console.log(`       flicker 10 cells: accepted a ${small?.kind} frame at ${small?.frames}; flicker 32 cells: ${big?.timedOut ? 'held to the timeout' : `accepted a ${big?.kind} frame`}`);
+  check('a flickering patch under the allowance does not stall the gate, and it accepts a NEW frame', small?.kind === 'new' && small.changed && !small.timedOut,
+    JSON.stringify(small));
+  check('a flickering patch over the allowance holds the gate to its timeout (never an early accept)', big?.timedOut === true,
+    JSON.stringify(big));
+}
 
 check('the gate refuses to run without a measured latency', (() => {
   try { new SettleGate({ w: GW, h: GH }); return false; } catch { return true; }

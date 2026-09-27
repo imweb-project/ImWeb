@@ -139,8 +139,8 @@ void main() {
  */
 export class GrayDecoder {
   constructor({ camW, camH, projW, projH, sepBits = [2, 3], minContrast = 12,
-                clip = 250, noise = 2, minBits = null, robust = true }) {
-    Object.assign(this, { camW, camH, projW, projH, minContrast, clip, robust });
+                noise = 2, minBits = null, robust = true }) {
+    Object.assign(this, { camW, camH, projW, projH, minContrast, robust });
     this.eps = 3 * Math.SQRT2 * noise;
     this.nb = [bitsFor(projW), bitsFor(projH)];
     // A pixel keeps a coarse code when only its finest bits are uncertain.
@@ -239,7 +239,7 @@ export class GrayDecoder {
     if (this._pos.size || this._sepWant.size || this._held.length) {
       throw new Error(`scan incomplete: ${this._pos.size} unpaired, ${this._sepWant.size} separation pairs missing`);
     }
-    const { camW, camH, projW, projH, W, B, clip, minContrast } = this;
+    const { camW, camH, projW, projH, W, B, minContrast } = this;
     const N = camW * camH;
     const x = new Float32Array(N).fill(NaN);
     const y = new Float32Array(N).fill(NaN);
@@ -249,7 +249,15 @@ export class GrayDecoder {
     const pos = [0, 0];
     let nValid = 0;
     for (let i = 0; i < N; i++) {
-      if (W[i] - B[i] < minContrast || W[i] >= clip) continue;
+      // No saturation rule. A clipped white was once rejected outright, which
+      // erased every pixel of a real noise-free capture (white = 255) and
+      // would erase any bright surface under a mid-grey exposure lock — the
+      // simulator never clipped, so nothing noticed. A Gray bit is a
+      // COMPARISON of pattern and inverse, and 255 against 18 is a clear one;
+      // where clipping really costs (black clipped too, or bounced light
+      // lifting the dark half) the contrast test and the direct/global rule
+      // already refuse the pixel.
+      if (W[i] - B[i] < minContrast) continue;
       let ok = true;
       for (let a = 0; a < 2; a++) {
         const nb = this.nb[a];
@@ -400,13 +408,44 @@ export function cellMAD(a, b, w, h, tw = 32, th = 18) {
  *
  * Frames must be distinct buffers: the gate keeps a reference to the last one.
  */
+/**
+ * Is `frame` still (against the frame before it), and what fraction of the
+ * picture has changed against `ref`? The one definition of both, shared by
+ * SettleGate and LatencyProbe.
+ *
+ * Robust to LOCAL flicker — a flickering sensor pixel, a person crossing a
+ * corner, a TV in shot. Demanding that EVERY cell be still let 300 flickering
+ * pixels stall a scan until its white reference timed out; and counting a
+ * flickering cell as "changed" would let it accept an old frame as a new
+ * pattern. So:
+ *   stable   at most `maxUnstable` of the cells moved. Default 0.4 / rows:
+ *            under ONE row of cells, because a rolling-shutter tear always
+ *            spans at least a full row of cells (they are full-width), so
+ *            no tear can hide inside the allowance;
+ *   changed  counted only over cells that are themselves still — a cell
+ *            that is moving cannot vote on what the pattern is.
+ */
+export function frameStats(frame, last, ref, w, h, { stableTol = 4, changeTol = 12, cells = [32, 18], maxUnstable = null } = {}) {
+  const [tw, th] = cells;
+  const still = cellMAD(frame, last, w, h, tw, th);
+  let unstable = 0;
+  for (let t = 0; t < still.length; t++) if (still[t] > stableTol) unstable++;
+  const stable = unstable <= (maxUnstable ?? 0.4 / th) * still.length;
+  let changed = 0;
+  if (ref) {
+    const d = cellMAD(frame, ref, w, h, tw, th);
+    for (let t = 0; t < d.length; t++) if (d[t] > changeTol && still[t] <= stableTol) changed++;
+  }
+  return { stable, changed: changed / still.length, unstable: unstable / still.length };
+}
+
 export class SettleGate {
   constructor({ w, h, stableTol = 4, changeTol = 12, minChanged = 0.005,
-                latency, quietRun = 3, maxFrames = 60, cells = [32, 18] }) {
+                latency, quietRun = 3, maxFrames = 60, cells = [32, 18], maxUnstable = null }) {
     if (!Number.isFinite(latency) || latency < 0) {
       throw new Error('SettleGate needs the measured latency in frames');
     }
-    Object.assign(this, { w, h, stableTol, changeTol, minChanged, latency, quietRun, maxFrames, cells });
+    Object.assign(this, { w, h, stableTol, changeTol, minChanged, latency, quietRun, maxFrames, cells, maxUnstable });
     this.begin(null);
   }
 
@@ -424,19 +463,11 @@ export class SettleGate {
     this.last = frame;
     if (n >= this.maxFrames) return { accept: true, frames: n, changed: false, timedOut: true };
     if (!last) return { accept: false, frames: n };
-    const [tw, th] = this.cells;
-    const still = cellMAD(frame, last, this.w, this.h, tw, th);
-    let stable = true;
-    for (let t = 0; t < still.length; t++) if (still[t] > this.stableTol) { stable = false; break; }
-    this.run = stable ? this.run + 1 : 0;
-    if (!stable) return { accept: false, frames: n };
-    let changed = true;
-    if (this.prev) {
-      const d = cellMAD(frame, this.prev, this.w, this.h, tw, th);
-      let c = 0;
-      for (let t = 0; t < d.length; t++) if (d[t] > this.changeTol) c++;
-      changed = c >= Math.max(1, this.minChanged * d.length);
-    }
+    const st = frameStats(frame, last, this.prev, this.w, this.h, this);
+    this.run = st.stable ? this.run + 1 : 0;
+    if (!st.stable) return { accept: false, frames: n };
+    const nCells = this.cells[0] * this.cells[1];
+    const changed = !this.prev || st.changed * nCells >= Math.max(1, this.minChanged * nCells);
     if (changed) return { accept: true, frames: n, changed: true, timedOut: false };
     if (n > this.latency && this.run >= this.quietRun) return { accept: true, frames: n, changed: false, timedOut: false };
     return { accept: false, frames: n };

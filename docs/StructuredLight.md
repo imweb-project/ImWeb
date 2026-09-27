@@ -17,7 +17,12 @@ one shared simulated rig, `tests/lib/procam-sim.mjs`.
 | Latency definition | Frames from command until the picture has changed AND held still: the first WHOLE frame | "First change + 1" assumes one transitional frame; an exposure straddling the switch gives a torn one AND a blended one |
 | Orchestration | `ScanSession`: I/O shows what it says and pushes every camera frame; all timing decisions are pure and simulated | A fixed 2-frame flush at latency 4 decodes nothing; the session matches a clean scan on 99.7% of pixels with no latency number to go stale |
 | Camera not looking | White/black reference accepted without a visible change → the session stops, and `result()` says why | Otherwise a blind camera "completes" a scan of nothing |
-| Frame statistic cost | `cellMAD` runs twice per camera frame; optimised 15.1 → 7.8 ms at 1280×720, bit-equal to the plain form | 30 ms of a 33 ms frame budget would have made the worker fall behind the camera |
+| Local flicker | Still = at most 0.4/rows of cells moving (under one cell row, so no tear can hide); "changed" counts only still cells | Requiring every cell still let flicker stall a scan; letting moving cells vote on change accepted an OLD frame (mutant) |
+| No saturation rule | A clipped white is NOT invalid | The real-browser run decoded nothing: a W ≥ 250 rule rejected every pixel of a 255 white. Overexposed rig now 100% vs 0% under the old rule |
+| Worker | `StructuredLightHost.js` (pure protocol, node-tested) + a 10-line `StructuredLightWorker.js`. Scans live in the worker and are stored from there | The correspondence arrays never cross to the main thread; only baked textures (transferred) and the fitted mesh do |
+| Frames into the worker | A `MediaStreamTrackProcessor` readable, transferred (`{type:'stream'}`); `VideoFrame`s and raw luma also accepted | Chrome hands BGRA from a canvas; Y planes are read with their stride. Posting frames from the main thread queues them: measured latency 6 vs 1 over the stream |
+| Storage | `ScanStore.js`: IndexedDB, raw decoded scans as exact Uint16 (2·x), index and data in separate stores, one transaction, versioned `v` | 4 bytes per camera pixel vs ~52 MB of textures; re-bake and re-fit without re-scanning. Per-origin: the slot param must be group 'global' |
+| Outliers from glints | The host runs `rejectOutliers` on every scan | A specular glint decodes CONFIDENTLY to the wrong place (105/110 in the audit); the decoder's signal tests cannot see it | `cellMAD` runs twice per camera frame; optimised 15.1 → 7.8 ms at 1280×720, bit-equal to the plain form | 30 ms of a 33 ms frame budget would have made the worker fall behind the camera |
 | Pattern set | White, black, then pattern/inverse pairs adjacent, finest bits first. 1920×1080 = 2 + 2·(11+11) = **46** | 1080 rows need 11 bits. Adjacent pairs cancel gain drift; finest-first lets the decoder stream |
 | Pattern generation | Fragment shader (GLSL ES 1.00, **highp**, `uP = 2^bit` from JS) | Pre-rendered bitmaps ≈ 365 MB and switch no faster (vsync-bound). mediump breaks columns > ~1024 on mobile GPUs |
 | Shader verified on a GPU | `tools/procam/pattern-check.html`: every pattern, every pixel, against `patternValue()` | 2026-09-27, Intel UHD 630: 0 mismatches of ~510M px at 1080p and 4K. mediump there is 23-bit, so the mobile hazard still needs checking on the iPad |
@@ -49,7 +54,10 @@ keystone.
 
 1. ✅ `src/core/StructuredLight.js` + `tests/audit-structured-light.mjs`: codes,
    pattern set, shader, decoder, outlier rejection, settle gate.
-2. Rig I/O. The timing logic is ✅ (`src/core/StructuredLightSession.js`:
+2. Rig I/O. The worker and storage are ✅ (`StructuredLightHost/Worker.js`,
+   `ScanStore.js`; browser-verified by `node tools/procam/worker-check.mjs`).
+   Open item: the worker bundle is ~383 kB because `packBake` pulls three for
+   its half conversion. The timing logic is ✅ (`src/core/StructuredLightSession.js`:
    `LatencyProbe`, `ScanSession`). Still to do: pattern mode in the output
    window (projection mesh and edge fade off, device-pixel canvas); camera
    track with locking; a Worker loop using `MediaStreamTrackProcessor` that

@@ -39,7 +39,7 @@ export function rng(seed) {
 
 const inRect = (R) => (u, v) => u >= R.u0 && u < R.u1 && v >= R.v0 && v < R.v1;
 
-export function makeRig({ bump = 14, step = false, gi = true, sigma = SIGMA } = {}) {
+export function makeRig({ bump = 14, step = false, gi = true, sigma = SIGMA, gain = GAIN } = {}) {
   function camToProj(u, v) {
     const s = u / CW, t = v / CH, k = 0.12 * (1 - t);
     let x = PW * (0.06 + 0.88 * (k + s * (1 - 2 * k)));
@@ -100,9 +100,9 @@ export function makeRig({ bump = 14, step = false, gi = true, sigma = SIGMA } = 
       let global = 0;
       if (inCorner(u, v) || inMild(u, v)) {
         const c = (pat.kind === 'gray' && pat.axis ? truth[2 * i + 1] : truth[2 * i] + PARTNER);
-        global = (inCorner(u, v) ? KAPPA : KAPPA_MILD) * GAIN * al * patch(c);
+        global = (inCorner(u, v) ? KAPPA : KAPPA_MILD) * gain * al * patch(c);
       }
-      const val = AMBIENT + GAIN * al * direct + global + sigma * noise();
+      const val = AMBIENT + gain * al * direct + global + sigma * noise();
       out[i] = Math.max(0, Math.min(255, Math.round(val)));
     }
     return out;
@@ -160,7 +160,7 @@ function noiseTable() {
   return _noiseTable;
 }
 
-export function makeSimCamera(rig, { latency = 3, tear = true, blend = false, seed = 99, frozen = false } = {}) {
+export function makeSimCamera(rig, { latency = 3, tear = true, blend = false, seed = 99, frozen = false, glints = [] } = {}) {
   const table = noiseTable();
   let state = (seed * 2654435761) >>> 0;
   const nextOffset = () => ((state = (state * 1664525 + 1013904223) >>> 0) & (NOISE_N - 1));
@@ -207,6 +207,12 @@ export function makeSimCamera(rig, { latency = 3, tear = true, blend = false, se
         const v = Math.round(img[i] + table[(off + i) & (NOISE_N - 1)]);
         out[i] = v < 0 ? 0 : v > 255 ? 255 : v;
       }
+      // Specular glints: pixel i shows what pixel j sees — a reflection of
+      // another part of the projection. Clean signal, wrong place: it decodes
+      // CONFIDENTLY to j's projector position, which the decoder's own
+      // signal tests cannot catch (a scene-blind defect, tried first, they
+      // reject by themselves). Only neighbourhood consistency can.
+      for (const [i, j] of glints) out[i] = out[j];
       return out;
     },
   };

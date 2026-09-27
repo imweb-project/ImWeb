@@ -1,0 +1,113 @@
+<!doctype html>
+<!--
+  The scan Worker, for real: a rolldown bundle of src/core/StructuredLightWorker.js
+  (as Vite would ship it) driven through its whole protocol in a browser. The
+  "camera" is this canvas, painted with whatever pattern the worker asks to
+  show and sent as real VideoFrames — so camera = projector and the answer is
+  the identity. Probe, scan object + reference, bake, fit, save to REAL
+  IndexedDB, refit from a brand-new worker (must be bit-identical), delete,
+  then a probe over a transferred MediaStreamTrackProcessor stream.
+
+  Run:  node tools/procam/worker-check.mjs   (bundles, serves, runs headless)
+
+  2026-09-27, headless Chrome for Testing: VideoFrame format BGRA; both scans
+  3072/3072 valid; fit identity error 0; saved, listed, reloaded in a new
+  worker and refitted bit-identically; stream probe latency 1. The first run
+  decoded NOTHING — a clipped-white rule in the decoder rejected every pixel
+  of the noise-free 255 white; see GrayDecoder.finish().
+-->
+<meta charset="utf-8"><body><canvas id="c" width="64" height="48"></canvas>
+<script type="module">
+import { patternValue } from './src/core/StructuredLight.js';
+const W = 64, H = 48;
+const c = document.getElementById('c');
+const ctx = c.getContext('2d', { willReadFrequently: true });
+const out = { steps: [] };
+const log = (k, v) => out.steps.push([k, v]);
+function paint(pat) {           // the "projector": draw the pattern the host asked for
+  const img = ctx.createImageData(W, H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const v = patternValue(pat, x, y) * 255, i = (y * W + x) * 4;
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+function spawn() {
+  const w = new Worker('./worker.js', { type: 'module' });
+  const q = [];
+  let wake = null;
+  w.onmessage = (e) => { q.push(e.data); wake?.(); };
+  w.onerror = (e) => { q.push({ type: 'error', stage: 'worker', message: e.message }); wake?.(); };
+  const next = () => new Promise(r => { if (q.length) return r(q.shift()); wake = () => { wake = null; r(q.shift()); }; });
+  return { w, q, next };
+}
+// Feed VideoFrames of the canvas until a message of `type` arrives.
+async function driveFrames(wk, type, max = 3000) {
+  for (let k = 0; k < max; k++) {
+    while (wk.q.length) {
+      const m = wk.q.shift();
+      if (m.type === 'show') paint(m.pattern);
+      if (m.type === type || m.type === 'error') return m;
+    }
+    const vf = new VideoFrame(c, { timestamp: k * 33333 });
+    if (k === 0) out.videoFrameFormat = vf.format;
+    wk.w.postMessage({ type: 'videoframe', frame: vf }, [vf]);
+    await new Promise(r => setTimeout(r, 0));
+  }
+  return { type: 'timeout' };
+}
+const ask = async (wk, msg, type) => { wk.w.postMessage(msg); for (;;) { const m = await wk.next(); if (m.type === type || m.type === 'error') return m; } };
+try {
+  paint({ kind: 'black' });
+  const a = spawn();
+  log('list0', (await ask(a, { type: 'list' }, 'list')).entries?.length);
+  a.w.postMessage({ type: 'probe', w: W, h: H });
+  const lat = await driveFrames(a, 'latency'); log('latency', lat.latency ?? lat);
+  for (const name of ['object', 'reference']) {
+    paint({ kind: 'black' });
+    a.w.postMessage({ type: 'scan', name, camW: W, camH: H, projW: W, projH: H, latency: lat.latency });
+    const s = await driveFrames(a, 'scanned'); log(name, s.type === 'scanned' ? { nValid: s.nValid, frames: s.frames, quiet: s.quiet, timeouts: s.timeouts } : s);
+  }
+  const bk = await ask(a, { type: 'bake', object: 'object', reference: 'reference' }, 'baked');
+  log('baked', bk.type === 'baked' ? { w: bk.packed.relief.width, h: bk.packed.relief.height, reliefBytes: bk.packed.relief.data.byteLength, camUV: bk.packed.camUV.data.constructor.name } : bk);
+  const f1 = await ask(a, { type: 'fit', scan: 'object', cols: 5, rows: 5 }, 'fitted');
+  // Camera = projector here, so the true map is the identity: node (i,j) sits at (i/4, j/4).
+  let idErr = 0;
+  f1.mesh.pts.forEach(([x, y], k) => { idErr = Math.max(idErr, Math.abs(x - (k % 5) / 4), Math.abs(y - Math.floor(k / 5) / 4)); });
+  log('fit identity max err (window fraction)', idErr);
+  const sv = await ask(a, { type: 'save', name: 'browser check', fit: f1.mesh }, 'saved'); log('saved', sv.id ?? sv);
+  a.w.terminate();
+  const b = spawn();                                    // a brand-new worker: only IndexedDB connects them
+  const ls = await ask(b, { type: 'list' }, 'list'); log('list1', ls.entries?.map(e => [e.name, e.sizes?.object?.nValid]));
+  const ld = await ask(b, { type: 'load', id: sv.id }, 'loaded'); log('loaded', ld.type);
+  const f2 = await ask(b, { type: 'fit', scan: 'object', cols: 5, rows: 5 }, 'fitted');
+  log('refit bit-identical after reload in a new worker', JSON.stringify(f2.mesh) === JSON.stringify(f1.mesh));
+  await ask(b, { type: 'delete', id: sv.id }, 'deleted');
+  log('list2', (await ask(b, { type: 'list' }, 'list')).entries?.length);
+  // The stream path: a real MediaStreamTrackProcessor readable, transferred.
+  if ('MediaStreamTrackProcessor' in window) {
+    const track = c.captureStream(30).getVideoTracks()[0];
+    const proc = new MediaStreamTrackProcessor({ track });
+    paint({ kind: 'black' });
+    b.w.postMessage({ type: 'probe', w: W, h: H });
+    b.w.postMessage({ type: 'stream', readable: proc.readable }, [proc.readable]);
+    let m, frames = 0;
+    const t0 = performance.now();
+    for (;;) {
+      // keep the canvas "live" so captureStream emits frames
+      const tick = new Promise(r => requestAnimationFrame(r));
+      await Promise.race([tick, new Promise(r => setTimeout(r, 30))]);
+      ctx.fillStyle = 'rgba(0,0,0,0)'; ctx.fillRect(0, 0, 1, 1);
+      while (b.q.length) { m = b.q.shift(); if (m.type === 'show') paint(m.pattern); if (m.type === 'latency' || m.type === 'error') break; }
+      if (m && (m.type === 'latency' || m.type === 'error')) break;
+      if (performance.now() - t0 > 20000) { m = { type: 'timeout' }; break; }
+      frames++;
+    }
+    log('stream probe', m);
+    b.w.postMessage({ type: 'stop' });
+    track.stop();
+  } else log('stream probe', 'MediaStreamTrackProcessor not available');
+  b.w.terminate();
+} catch (e) { out.error = String(e?.stack ?? e); }
+window.__result = out;
+</script>

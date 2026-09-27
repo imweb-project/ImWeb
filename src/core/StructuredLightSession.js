@@ -17,19 +17,7 @@
  * Both are pure: frames in (8-bit luma, row 0 = top), instructions out.
  */
 
-import { patternSet, GrayDecoder, SettleGate, cellMAD } from './StructuredLight.js';
-
-const changedFraction = (a, b, w, h, tol) => {
-  const d = cellMAD(a, b, w, h);
-  let c = 0;
-  for (let t = 0; t < d.length; t++) if (d[t] > tol) c++;
-  return c / d.length;
-};
-const isStill = (a, b, w, h, tol) => {
-  const d = cellMAD(a, b, w, h);
-  for (let t = 0; t < d.length; t++) if (d[t] > tol) return false;
-  return true;
-};
+import { patternSet, GrayDecoder, SettleGate, frameStats } from './StructuredLight.js';
 
 /**
  * Measures, in camera frames, how long a projected change takes to reach the
@@ -63,10 +51,19 @@ export class LatencyProbe {
     this.frames++;
     const last = this.last;
     this.last = frame;
+    const st = last ? frameStats(frame, last, this.phase === 'wait' ? this.ref : null, w, h, this) : null;
+    // Only cells that are still can count as changed (see frameStats), so a
+    // change is first detected on the frame that CONFIRMS the first whole
+    // one — record there when the frame is stable. Waiting for a further
+    // still pair reported every latency one frame late.
+    let settled = false;
     if (this.phase === 'wait') {
-      // Nothing counts as settled until the picture has left the old level.
-      if (changedFraction(frame, this.ref, w, h, this.changeTol) >= this.minChanged) this.phase = 'settle';
-    } else if (last && isStill(frame, last, w, h, this.stableTol)) {
+      if (st && st.changed >= this.minChanged) {
+        if (st.stable) settled = true;
+        else this.phase = 'settle';
+      }
+    } else if (st?.stable) settled = true;
+    if (settled) {
       // `last` is the first whole frame; this one confirms it.
       if (this.ref) this.counts.push(this.frames - 1);
       if (this.counts.length >= 2 * this.trials) {
