@@ -769,3 +769,165 @@ is Principle 3 with the room as the second pair of hands.
   flattens it.
 - Leave the camera out entirely. Set Rutt-Etra's **Source** to `Noise` and let
   the sound play an abstract surface.
+
+## Feedback 1 — the tunnel
+<!-- guide
+track: tutorials
+tab: effects
+start: clean
+point: blend.active, feedback.mode, feedback.zoom, feedback.decay
+keys: b, Shift+S
+-->
+
+**What you will make:** the picture inside itself, inside itself again,
+falling away into a tunnel.
+
+**Starting point:** press **Load starting point**. Camera on, everything at
+default.
+
+1. Press **`b`** to switch **Blend** on. Nothing changes yet. **Feedback** is
+   already on, but it has no way to meet the picture.
+2. Set **Feedback Mode** to `Screen`. Move your hand: it now leaves a trail.
+   The last frame is being laid over this one, and that frame held the one
+   before it.
+3. Drag **FBZoom** up to about 3. Each old frame is now a little larger than
+   the one after it, so the trail streams outwards. That is the tunnel.
+4. Keep one hand on **FBDecay**. At 100 nothing ever fades and the picture
+   fills up with light. Pull it down to around 85 and the tunnel gets a
+   bottom you can see.
+5. Press **`Shift`+`S`**.
+
+**Why it works.** Feedback is not an effect with a memory. The output is
+routed back in as a source (Principle 4), and Zoom, Decay and the mode
+decide what happens to it on each trip around the loop.
+
+**Now try:**
+
+- Make **FBZoom** negative. The tunnel reverses and falls *inwards*.
+- Try **Feedback Mode** `Difference`, then `Add`. Every mode is a different
+  rule for how a frame meets its own past.
+- If it runs away into white: **FBDecay** down. That is always the way out.
+
+## Feedback 2 — spiral and colour
+<!-- guide
+track: tutorials
+tab: effects
+start: blend.active=1, feedback.mode=Screen, feedback.zoom=3, feedback.decay=85
+point: feedback.rotate, feedback.hue, feedback.centerx, feedback.centery
+keys: Shift+S
+-->
+
+**What you will make:** a spiral whose colours rotate through the spectrum
+as they fall away.
+
+**Starting point:** press **Load starting point**. You get the tunnel from
+Feedback 1, ready to go.
+
+1. Drag **FBRotate** to about 2. Each trip around the loop now turns the old
+   frame a little, and the tunnel twists into a spiral.
+2. Drag **FBHue** to about 20. Each generation is shifted 20° round the colour
+   wheel, so the spiral's rings run through the spectrum.
+3. Move **FBCenterX** and **FBCenterY**. That is the vanishing point. Off
+   centre, the spiral swings to one side.
+4. Right-click **FBRotate** and choose **LFO Triangle**. In the rate box type
+   **0.05**. The spiral now winds one way, slows, and unwinds the other.
+5. Press **`Shift`+`S`**.
+
+**Why it works.** Small changes compound. Two units of rotation is barely
+visible once, but the loop applies it again every frame, so the deep
+generations have turned a long way. That is the whole craft of feedback:
+small values, many trips.
+
+**Now try:**
+
+- **FBMirror** `Both`. The spiral folds into a symmetrical pattern.
+- **FBBlur** up a little. The old rings soften into smoke while the live
+  picture stays sharp.
+- Put **Sound Bass** on **FBHue**. The colours turn with the music.
+
+## Feedback 3 — the picture melts into itself
+<!-- guide
+track: tutorials
+tab: mix
+start: clean
+point: layer.ds, displace.amount, displace.angle
+keys: z, Shift+S
+-->
+
+**What you will make:** a picture that pushes itself around, flowing like
+liquid.
+
+**Starting point:** press **Load starting point**.
+
+1. Press **`z`** until **DisplaceSrc** reads `Output`, or pick it from that
+   row's dropdown. The output is now the *map* that displaces the picture.
+2. Drag **Displace** up slowly from 0. Stop as soon as the picture starts to
+   flow. A little goes a long way here.
+3. Right-click **DisplAngle** and choose **LFO Saw ↑**, with a rate of
+   **0.1**. The direction of the flow now goes round in a circle.
+4. Move in front of the camera. Your movement changes the output, which
+   changes the map, which moves the picture again.
+5. Press **`Shift`+`S`**.
+
+**Why it works.** In Feedback 1 and 2 the output came back as a *picture*.
+Here it comes back as a *control*: its brightness becomes distance (Principle
+2). The loop is the same, but now it decides where things go instead of
+what you see.
+
+**Now try:**
+
+- Add the tunnel on top: **`b`**, **Feedback Mode** `Screen`, a little
+  **FBZoom**. Two loops at once, one through the picture and one through the
+  map.
+- Swap DisplaceSrc to `Noise` and back. Noise flows evenly; the output flows
+  where the picture is bright.
+
+## Lineage — the camera and its monitor
+<!-- guide
+track: tutorials
+tab: output
+start: clean
+point: output.colorshift, effect.kaleidoscope
+show: #btn-second-screen
+keys: f, c
+-->
+
+**What you will make:** the original feedback: a camera filming the screen
+it is shown on.
+
+**Where it comes from.** Early in the 1970s, one of the first things artists
+did with portable video was point the camera at its own monitor. The loop
+makes tunnels, flames and spirals that no one draws. Steina and Woody Vasulka,
+who founded The Kitchen in New York in 1971, made feedback a central material
+of their early work. Everything in Feedback 1–3 is that loop moved inside the
+computer. This recipe puts it back in the room.
+
+**You need:** a projector or a second screen, and a camera you can move, such
+as a USB webcam. A built-in laptop camera cannot see its own screen.
+
+**Starting point:** press **Load starting point**. The camera comes on, and
+ImWeb's own feedback is off: this loop goes through the air.
+
+1. Open the output on the projector or second screen (the **second screen**
+   button in the top bar), or press **`f`** for fullscreen if the screen is
+   mirrored.
+2. Point the camera at the screen until the screen fills the camera's view.
+   Move closer and the tunnel grows; move away and it shrinks.
+3. Tilt the camera a little. The tunnel twists into a spiral, the same
+   spiral FBRotate made in Feedback 2, only now your hand is the rotation.
+4. On **Output**, raise **ColorShift** a little. The shift happens once per
+   trip around the loop, so the colours cycle on their own.
+5. Press **`c`** to keep a still of anything that surprises you.
+
+**Why it works.** It's the same loop as Feedback 1, but the delay, the
+blur and the distortion now come from the lens, the screen and the air. That
+is why optical feedback never looks quite like the digital kind, and why
+artists still do it.
+
+**Now try:**
+
+- Turn the room lights down and up. Light leaking into the loop feeds it.
+- **Kaleidoscope** at 3 inside the optical loop. Every trip folds the
+  picture again.
+- Put your hand between the camera and the screen. Whatever you put in the
+  loop gets repeated.

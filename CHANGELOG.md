@@ -20,6 +20,10 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   place the tour sets anything, and only on that button. Resolved by one
   function shared with `audit-guide-targets`, so a renamed id or option label
   fails the audit instead of failing in a workshop.
+- **Tutorials: the Feedback theme** — *the tunnel* (Blend, Feedback Mode,
+  Zoom, Decay), *spiral and colour* (Rotate, Hue, centre, an LFO), *the picture
+  melts into itself* (Output as DisplaceSrc), and *Lineage — the camera and its
+  monitor* (optical feedback through a projector or second screen).
 
 ### Changed
 - **Growth, Neural: roughly half the frame cost** (owner: "will this be able
