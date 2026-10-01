@@ -1294,3 +1294,190 @@ axis. The Plane Bank lets you choose which planes turn and how fast.
   starts to move once **Dimension** is high enough to have that axis.
 - **Draw** `points` instead of `wireframe`. The cube becomes a cloud of
   stars.
+
+## Time 1 — three moments at once
+<!-- guide
+track: tutorials
+theme: Time
+start: layer.fg=RGB Delay, delay.source=Camera
+point: rgbdelay.r, rgbdelay.g, rgbdelay.b, delay.size
+keys: Shift+S
+-->
+
+**What you will make:** a picture in which red, green and blue each show a
+different moment, so anything that moves splits into coloured ghosts.
+
+**Starting point:** press **Load starting point**. The Foreground is the
+**RGB Delay** source, reading the camera.
+
+1. Wave a hand. It leaves a red, a green and a blue copy of itself, a few
+   frames apart. Anything that stays still looks normal.
+2. Pull the three delays apart: **Red delay** 1, **Green delay** 12, **Blue
+   delay** 24. The ghosts separate.
+3. Set all three to the same number. The colours come back together into
+   one picture, just a little late. That is an ordinary video delay.
+4. Spread them again, wider. Above 30 frames, first raise **Ring depth**:
+   the delay can only reach back as far as the ring holds.
+5. Press **`Shift`+`S`**.
+
+**Why it works.** Time is an axis you can point at (Principle 5). Here
+each colour channel points at a different moment of the same history.
+
+**Now try:**
+
+- Put an **LFO Triangle** on **Green delay**. The green ghost swims back and
+  forth in time.
+- Stand still and move only one hand. The colours show exactly what moved.
+
+## Time 2 — now minus a moment ago
+<!-- guide
+track: tutorials
+theme: Time
+start: layer.bg=Delay, delay.source=Camera, delay.frames=15, layer.fg.blend=Difference
+point: layer.fg.blend, delay.frames, layer.fg.blendAmount
+keys: Shift+S
+-->
+
+**What you will make:** a picture that is black wherever nothing changes,
+and glows wherever something moves.
+
+**Starting point:** press **Load starting point**. The Foreground is the
+camera now; the Background is the same camera 15 frames ago; **Blend** is
+`Difference`.
+
+1. Stand still. The picture goes almost black: now and a moment ago are the
+   same, so their difference is nothing.
+2. Move. Only the moving edges light up.
+3. Drag **Delay** (the frame count) down to 2: thin, sharp outlines. Then
+   up to 30: thick, smeared ones.
+4. Set **Blend** to `Screen` instead. Now the past is added rather than
+   subtracted, and you get an echo instead of an outline.
+5. Set it back to `Difference` and press **`Shift`+`S`**.
+
+**Why it works.** Two layers (Principle 1), but both are the camera, at two
+moments. Comparing the picture with its own past is how motion is found.
+The **Motion** source does the same thing, built for the keyer.
+
+**Now try:**
+
+- Turn on **Feedback** (`b`, Feedback Mode `Screen`). The outlines leave
+  trails.
+- Raise **Ring depth** and set Delay to 120. The comparison spans two
+  seconds, and slow movements show too.
+
+## Time 3 — time bends across the picture
+<!-- guide
+track: tutorials
+theme: Time
+start: layer.fg=TimeDisp, td.enabled=1
+point: td.mode, td.direction, td.angle, td.mapSource, td.mapAmount
+keys: Shift+S
+-->
+
+**What you will make:** a picture in which one side is now and the other
+side is two seconds ago, so you can be stretched across time.
+
+**Starting point:** press **Load starting point**. The Foreground is
+**TimeDisp**, recording the camera.
+
+1. **Mode** is `Shear X`: each column of the picture shows a different
+   moment. Walk slowly across the frame and your body bends.
+2. Set **Mode** to `Radial`. Now the centre is one moment and the edges
+   another, in rings.
+3. Set **Direction** to `Backward`. The two ends swap: what was now becomes
+   the past.
+4. Back in `Shear X`, drag **Angle**. The direction time runs through the
+   picture turns with it, so time can run diagonally.
+5. Set **Map src** to `Motion` and **Map amt** to 1. Time now bends only
+   where something moved. Press **`Shift`+`S`**.
+
+**Why it works.** The instrument keeps the last couple of seconds as a stack
+of frames. Every Time tool reads that stack; Time Displace reads a
+*different depth for every pixel*, and the mode, angle and map choose which.
+
+**Now try:**
+
+- Put an **LFO Saw ↑** on **Angle**. The direction of time turns round and
+  round.
+- **Map src** `Noise`: time ripples through the picture like water.
+
+## Time 4 — the slit
+<!-- guide
+track: tutorials
+theme: Time
+start: layer.fg=SlitScan, slitscan.active=1, slitscan.source=Camera
+point: slitscan.axis, slitscan.speed, slitscan.width, slitscan.clear
+keys: Shift+S
+-->
+
+**What you will make:** a picture painted one thin line at a time, so that
+a moving body is smeared, folded or stretched across the screen.
+
+**Starting point:** press **Load starting point**. The Foreground is
+**SlitScan**: one narrow slit of the camera, painted across the screen
+over time.
+
+1. Stand still and watch. The picture fills with stripes, all copies of the
+   same slit.
+2. Move through the slit. Your body is drawn as it passes, stretched or
+   squeezed by how fast you move.
+3. Set **SlitAxis** to `Horizontal`. The slit lies down and the painting
+   runs from top to bottom.
+4. Lower **SlitSpeed**. Each pass across the screen now takes longer, so it
+   holds more time. Press **SlitClear** to start the painting again.
+5. Press **`Shift`+`S`**.
+
+**Why it works.** A normal picture is many places at one moment. A slit
+scan is one place at many moments, laid out side by side. Photo-finish
+cameras at racetracks work this way.
+
+**Now try:**
+
+- **SlitAxis** `Center-V`. The painting runs outwards from the middle in
+  both directions.
+- Turn the camera slowly while it paints. The room unrolls into a panorama.
+
+## Lineage — Image/ine's warp
+<!-- guide
+track: tutorials
+theme: Time
+start: layer.fg=Warp Tape, vwarp.active=1
+point: vwarp.speed, vwarp.bufsize, vwarp.axis, vwarp.flip, vwarp.mix
+keys: Shift+S
+-->
+
+**What you will make:** the time warp from Image/ine, the instrument ImWeb
+descends from: a picture whose left-to-right axis is time.
+
+**Where it comes from.** Image/ine (Tom Demeyer and Steina Vasulka, STEIM,
+1997) had a warp built like a tape. Each frame, one column of video is
+written at a moving head, and the whole tape is read as the picture. Steina
+performed with it in front of a camera. **Warp Tape** is that mechanism,
+rebuilt faithfully. Woody and Steina had already described video as a
+"Time/Energy Object" in the 1970s: a block of time you can cut through at
+any angle. Everything in this theme is a cut through that block.
+
+**Starting point:** press **Load starting point**. The Foreground is the
+**Warp Tape**, recording the camera.
+
+1. Stand still. The picture looks almost normal: every column holds the same
+   still moment.
+2. Move. You shear sideways, because each column is a different moment.
+   Slow movement leans; fast movement tears.
+3. Raise **Speed**. The write head moves faster, so the picture holds less
+   time from edge to edge and movement leans less. **Buf Size** sets how much time fits in
+   total: 8, 16 or 32 seconds.
+4. Set **Warp axis** to `Picture (Y)` and try **Flip**. The same tape, read
+   the other way through.
+5. Lower **Mix** to blend the live camera back in over the warp. Press
+   **`Shift`+`S`**.
+
+**Why it works.** It is the same block of time as Time 1–4, cut along
+another plane. Here the tape is cheap enough to hold half a minute at full
+resolution, because it stores one column per moment, not a whole frame.
+
+**Now try:**
+
+- Move like a dancer, slowly, in one direction. Steina's warp rewards
+  deliberate movement.
+- Put **Sound Level** on **Speed**. Loud passages tighten the tape.

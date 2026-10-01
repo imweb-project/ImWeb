@@ -44,6 +44,11 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   picture pushes the surface* (T-Displace), *a field of copies* (Cloner),
   *depth as a picture* (3D Depth as a displacement map), and *Lineage — the
   hypercube* (after A. Michael Noll's 1960s Bell Labs films).
+- **Tutorials: the Time theme** — *three moments at once* (RGB Delay), *now
+  minus a moment ago* (camera over its own delay, Difference), *time bends
+  across the picture* (Time Displace: modes, Direction, Angle, Motion as the
+  map), *the slit* (SlitScan), and *Lineage — Image/ine's warp* (Warp Tape, the
+  original ImOs9 tape mechanism).
 
 ### Changed
 - Renaming the current bank updates the status bar at once (it kept the old
