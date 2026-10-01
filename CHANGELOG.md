@@ -33,8 +33,17 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   RGB Shift / Kale.Rot / Kaleidoscope), *a word that listens* (Text audio,
   one letter per spectrum slice), *seeing the sound* (Scope as a picture, then
   as a displacement map). *Lineage — Violin Power* moves to close the theme.
+- **Tutorials: theme chips** — a step's `theme:` groups the Tutorials track
+  under chips (Start · Feedback · Audio · 3D); Back/Next stay inside a theme.
+- **Tutorials: the 3D world theme** — *a solid made of your picture*, *the
+  picture pushes the surface* (T-Displace), *a field of copies* (Cloner),
+  *depth as a picture* (3D Depth as a displacement map), and *Lineage — the
+  hypercube* (after A. Michael Noll's 1960s Bell Labs films).
 
 ### Changed
+- Hypercube parameters are registered from `src/scene3d/HypercubeParams.js`
+  instead of inline in main.js, so Node audits see the same parameter set as
+  the app. Ids, options and defaults are unchanged.
 - **Growth, Neural: roughly half the frame cost** (owner: "will this be able
   to run at 60fps?", at 9 fps). Measured whole frames on the Intel UHD 630:
   the rule is ~85% of the cost (11.5 ms a step at Size 50, ~28 ms at Size

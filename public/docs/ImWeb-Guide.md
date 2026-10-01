@@ -1104,3 +1104,192 @@ is Principle 3 with the room as the second pair of hands.
   flattens it.
 - Leave the camera out entirely. Set Rutt-Etra's **Source** to `Noise` and let
   the sound play an abstract surface.
+
+## 3D 1 — a solid made of your picture
+<!-- guide
+track: tutorials
+theme: 3D
+start: layer.fg=3D Scene
+point: scene3d.geo, scene3d.mat.texsrc, scene3d.spin.y, scene3d.cam.orbit
+keys: Shift+S
+-->
+
+**What you will make:** your camera picture wrapped around a turning 3D
+knot.
+
+**Starting point:** press **Load starting point**. The Foreground is the
+**3D Scene**, a plain sphere for now. The 3D controls open in their own
+workspace; the chips below take you straight to them.
+
+1. Set **Geometry** to `Complex: TorusKnot`.
+2. Set **Texture Source** to `Camera`. The picture is now painted onto the
+   surface, and it bends wherever the knot bends.
+3. Drag **Spin Y** to about 20. The knot turns by itself, and the picture
+   goes round with it.
+4. Drag **Orbit** to move the viewpoint around the knot instead of turning
+   the knot. Same scene, a different place to stand.
+5. Press **`Shift`+`S`**.
+
+**Why it works.** A 3D object here is one more place to put a source. The
+texture slot takes the same list as the layers, so anything the
+instrument makes can be worn by a solid.
+
+**Now try:**
+
+- **Material Shader** `Toon`. The picture flattens into bands of colour.
+- **Texture Source** `Noise`, or `Screen` (the output itself, so the knot
+  wears its own picture).
+- **Wireframe** on. Only the surface's skeleton is left.
+
+## 3D 2 — the picture pushes the surface
+<!-- guide
+track: tutorials
+theme: 3D
+start: layer.fg=3D Scene, scene3d.mat.texsrc=Camera
+point: scene3d.mat.tDisplace, scene3d.spin.y, scene3d.geo, scene3d.mat.dispsrc
+keys: Shift+S
+-->
+
+**What you will make:** a sphere whose surface rises where the picture is
+bright, so your face becomes a relief.
+
+**Starting point:** press **Load starting point**. The camera is already
+painted onto a sphere.
+
+1. Drag **T-Displace** up to about 0.15. Bright parts of the picture push the
+   surface outwards and dark parts stay put.
+2. Drag **Spin Y** to about 15. Seen from the side, the relief stands out
+   against the background.
+3. Set **Geometry** to `Basic: Plane`, then turn **Spin Y** back to 0 and
+   **Orbit** a little. Your face is now a landscape.
+4. Set **T-Disp Source** to `Noise`. The surface now moves to the noise
+   while it still shows the camera. Shape and skin come from two different
+   sources.
+5. Press **`Shift`+`S`**.
+
+**Why it works.** This is displacement (Principle 2) in three dimensions:
+brightness becomes height instead of sideways distance. It is also the idea
+behind the Rutt-Etra (see *Violin Power*), done on a surface instead of on
+scan lines.
+
+**Now try:**
+
+- Raise **T-Displace** towards 0.5. The relief turns into spikes.
+- Put **Sound Bass** on **T-Displace**. The face swells with the music.
+
+## 3D 3 — a field of copies
+<!-- guide
+track: tutorials
+theme: 3D
+start: layer.fg=3D Scene, scene3d.geo=Platonic: Icosahedron, scene3d.mat.texsrc=Camera
+point: scene3d.clone.mode, scene3d.clone.count, scene3d.clone.twist, scene3d.clone.wave, scene3d.clone.waveamp
+keys: Shift+S
+-->
+
+**What you will make:** one object multiplied into a grid, then a ring, then
+a wave of copies.
+
+**Starting point:** press **Load starting point**. A single icosahedron
+wearing the camera picture.
+
+1. Set **Cloner** to `Grid`. The object becomes nine copies. Raise
+   **CloneN** for more.
+2. Set **Cloner** to `Ring`, and drag **Twist**. Each copy turns a little
+   more than the one before it.
+3. Drag **WaveAmp** up and set **Wave** to about 1. A wave now runs through
+   the copies, moving them in turn.
+4. Right-click (Control-click on a Mac) **WaveAmp** and choose **Sound
+   Bass**. The wave now rises with the music (see the Audio theme).
+5. Press **`Shift`+`S`**.
+
+**Why it works.** The copies share one set of controls, so every change
+reaches all of them at once. Twist and Wave are what make them differ:
+each copy gets the same move, offset a little further along.
+
+**Now try:**
+
+- **Cloner** `Line`, with a high **CloneN**. A procession.
+- **Scatter** up. The tidy grid breaks into a swarm.
+
+## 3D 4 — depth as a picture
+<!-- guide
+track: tutorials
+theme: 3D
+start: layer.ds=3D Depth, scene3d.geo=Complex: TorusKnot, scene3d.spin.y=20
+point: layer.fg, layer.ds, displace.amount, scene3d.depth.mode
+keys: q, Shift+S
+-->
+
+**What you will make:** the camera picture bent around a 3D object you
+never actually see.
+
+**Starting point:** press **Load starting point**. A turning knot is set up
+in the 3D scene, but only its *depth* is used, as the displacement map. The
+picture still shows the camera.
+
+1. Press **`q`** until **Foreground** reads `3D Depth`. This is what the
+   map looks like: near is bright, far is dark. Press **`q`** until it reads
+   `Camera` again.
+2. Drag **Displace** up. The camera picture now bulges around the turning
+   knot, which you can see only through what it does to the picture.
+3. Set **DepthMode** to `Normals`. The map now records which way each part
+   of the surface faces, rather than how far away it is. The bending becomes
+   sharper and more sculpted.
+4. Change **Geometry** while you watch. Each shape bends the picture in its
+   own way.
+5. Press **`Shift`+`S`**.
+
+**Why it works.** The 3D scene is not only something to look at. It is
+also a source of *maps*: depth and surface direction, which can drive
+displacement, keying or anything else that takes a source.
+
+**Now try:**
+
+- Use **3D Depth** as the key in the keyer: the camera shows only where the
+  knot is.
+- Put the 3D Depth map through **Feedback**. The invisible knot leaves
+  trails.
+
+## Lineage — the hypercube
+<!-- guide
+track: tutorials
+theme: 3D
+start: layer.fg=3D Scene, hypercube.renderMode=wireframe, scene3d.mat.opacity=0
+point: hypercube.rot.xw, hypercube.dim, hypercube.depthCue, hypercube.faces.active, hypercube.faces.texsrc
+keys: Shift+S
+-->
+
+**What you will make:** a four-dimensional cube turning in front of you,
+and then cubes of five, six or more dimensions.
+
+**Where it comes from.** In the 1960s, A. Michael Noll at Bell Labs made
+some of the first computer-animated films, among them projections of a
+four-dimensional hypercube turning. Nobody can see four dimensions, but a
+computer can rotate the object in four and draw its shadow in two. This
+recipe does the same, in real time.
+
+**Starting point:** press **Load starting point**. The hypercube is drawn as
+a wireframe and the 3D scene's own sphere is hidden. It already turns.
+
+1. Watch for a while. Some of the turning looks like an ordinary 3D spin.
+   The rest, where the cube seems to turn itself inside out, is rotation
+   through the fourth dimension.
+2. Find **Slot 4 speed** (the XW plane). Set it to 0 and the inside-out
+   motion stops; raise it to 1.5 and it takes over.
+3. Raise **Dimension** to 5, then 6. The cube grows into a higher-dimensional
+   one, morphing over **Morph Time**.
+4. Raise **Depth Cue**. Parts further away in the extra dimensions get
+   dimmer and thinner, which makes the tangle easier to read.
+5. Switch **Faces** on and set **Face tex** to `Camera`. The camera is now
+   painted onto the cube's faces. Press **`Shift`+`S`**.
+
+**Why it works.** A rotation always happens *in a plane*. In 3D there are
+three planes; in 4D there are six, and three of them involve the fourth
+axis. The Plane Bank lets you choose which planes turn and how fast.
+
+**Now try:**
+
+- In an empty slot, pick a plane with **V** or **U** in its name. It only
+  starts to move once **Dimension** is high enough to have that axis.
+- **Draw** `points` instead of `wireframe`. The cube becomes a cloud of
+  stars.
