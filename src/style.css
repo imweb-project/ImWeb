@@ -2999,6 +2999,18 @@ body.sp-floating #signal-path-docked-space {
 #guide-body strong {
     color: var(--text-0);
 }
+/* Controller badges named in the tour text. Same classes as the parameter
+   row's badge, so the colour comes from the one rule that colours the row and
+   cannot drift from it; only the shape is added here, and the LFO pulse is
+   stopped — in running text it reads as a glitch. */
+#guide-body .param-ctrl {
+    display: inline-block;
+    font-size: 11px;
+    padding: 0 4px;
+    border: 1px solid currentColor;
+    border-radius: 3px;
+    animation: none;
+}
 #guide-body code {
     font-family: var(--mono);
     background: var(--bg-3);

@@ -192,8 +192,9 @@ ones worth knowing:
   captured and recalled without anything able to nudge it.
 - **None** removes the controller and leaves the value where it was.
 
-One parameter, one controller. The **badge** in the row then shows which — RND,
-LFO, MIDI, KEY — and the row highlights as driven.
+One parameter, one controller. The **badge** in the row then shows which, in
+that controller's colour — <span class="param-ctrl assigned">RND</span> <span class="param-ctrl lfo">LFO~</span> <span class="param-ctrl sound">BAS</span>
+<span class="param-ctrl midi">CC7</span> — and the row highlights as driven.
 
 Under **Options** on the same menu: **Toggle Lock** freezes a parameter against
 everything, **Toggle Invert** flips the controller's direction, and **Assign
@@ -361,7 +362,7 @@ point: displace.amount
 
 **Three moves.** On the **Displace** row: set **min** to 0 and **max** to about
 0.3 by dragging the two small numbers. Right-click the row → **LFO Sine**.
-Right-click the badge and set **Freq** to 0.1 Hz.
+Right-click the <span class="param-ctrl lfo">LFO~</span> badge that appears and set **Freq** to 0.1 Hz.
 
 The displacement now breathes on its own, between the bounds you set, and your
 hands are free for something else.
@@ -695,7 +696,8 @@ first time; say yes. You should see yourself.
    segments: the picture folds into a mandala.
 2. Right-click (Control-click on a Mac) **Kale.Rot** and choose **LFO Saw ↑**. A saw climbs and then
    jumps back to the start, so the rotation keeps going round in one
-   direction. (A sine would rock back and forth instead.)
+   direction. (A sine would rock back and forth instead.) The row gets a
+   green <span class="param-ctrl lfo">LFO⊿</span> badge: that is the controller now driving it.
 3. A box asks for the LFO rate. The default is 0.5, which means two seconds
    per turn. Type **0.05** for a slow twenty-second turn and press `Enter`.
 4. Press **`Shift`+`S`**. The look now sits in a slot on the state bar along
@@ -711,7 +713,7 @@ more of both.
 **Now try:**
 
 - Drag Kaleidoscope through 2, 3 and 12. Odd and even numbers fold differently.
-- Right-click the **LFO** badge on Kale.Rot and drag **Freq** right down,
+- Right-click the <span class="param-ctrl lfo">LFO⊿</span> badge on Kale.Rot and drag **Freq** right down,
   until you only notice the turning when you look away and back.
 - Swap the saw for **LFO Sine**. The mandala now rocks back and forth instead
   of turning.
@@ -749,7 +751,7 @@ Rutt-Etra**): you are looking at yourself drawn in scan lines.
 3. Right-click (Control-click on a Mac) **Z Gain** and choose **Sound Bass**. The browser asks for the
    microphone; say yes. Now make a sound. The lines lift off the plane on low,
    loud sounds and lie flat when it's quiet.
-4. The lines twitch with every sound. Right-click the **BAS** badge on
+4. The lines twitch with every sound. Right-click the <span class="param-ctrl sound">BAS</span> badge on
    Z Gain and set **Slew** to about 0.3. Now the lines breathe with the sound
    instead of jumping. (Rise and Fall further down do something else: they
    smooth the *camera picture*, not the sound.)
@@ -870,7 +872,8 @@ liquid.
 2. Drag **Displace** up slowly from 0. Stop as soon as the picture starts to
    flow. A little goes a long way here.
 3. Right-click (Control-click on a Mac) **DisplAngle** and choose **LFO Saw ↑**, with a rate of
-   **0.1**. The direction of the flow now goes round in a circle.
+   **0.1**. The <span class="param-ctrl lfo">LFO⊿</span> badge appears on the row, and the direction
+   of the flow now goes round in a circle.
 4. Move in front of the camera. Your movement changes the output, which
    changes the map, which moves the picture again.
 5. Press **`Shift`+`S`**.
