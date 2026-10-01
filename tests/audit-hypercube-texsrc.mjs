@@ -48,6 +48,8 @@ import {
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(resolve(root, p), 'utf8');
 const main    = read('src/main.js');
+// Hypercube params moved out of main.js so Node audits can register them.
+const hcParams = read('src/scene3d/HypercubeParams.js');
 const psrc    = read('src/controls/ParameterSystem.js');
 const scene   = read('src/scene3d/SceneManager.js');
 const preset  = read('src/state/Preset.js');
@@ -73,10 +75,10 @@ check('OPT_SOURCES is built from SOURCES in source, not written out',
 
 for (const id of HC_TEXSRC_IDS) {
   const decl = new RegExp(`id\\s*:\\s*'${id.replace(/\./g, '\\.')}'[^}]*`);
-  const m = main.match(decl);
+  const m = hcParams.match(decl);
   check(`${id} registers options: OPT_SOURCES`,
     !!m && /options\s*:\s*OPT_SOURCES/.test(m[0]),
-    m ? 'found the param but not the canonical options' : 'param not found in main.js');
+    m ? 'found the param but not the canonical options' : 'param not found in src/scene3d/HypercubeParams.js');
 }
 
 // ── No private copy of the list survives on the read side ────────────────────

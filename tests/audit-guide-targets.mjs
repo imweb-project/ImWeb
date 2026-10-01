@@ -24,6 +24,9 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { ParameterSystem, registerCoreParameters } from '../src/controls/ParameterSystem.js';
 import { parseGuide, resolveStart, TRACKS } from '../src/ui/Guide.js';
+import { registerAnalogParams } from '../src/inputs/AnalogParams.js';
+import { registerTeletextParams } from '../src/inputs/TeletextParams.js';
+import { registerHypercubeParams } from '../src/scene3d/HypercubeParams.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const md = readFileSync(resolve(root, 'docs/ImWeb-Guide.md'), 'utf8');
@@ -38,8 +41,13 @@ if (steps.length < 5) {
   process.exit(1);
 }
 
+// The same registrations main.js makes, in the same order — a tour step may
+// point at any parameter the app has, not only the core set.
 const ps = new ParameterSystem();
 registerCoreParameters(ps);
+registerAnalogParams(ps);
+registerTeletextParams(ps);
+registerHypercubeParams(ps);
 
 // The served copy is what the app actually fetches; docs/ is what people edit.
 // They drift the moment someone edits one and forgets `npm run sync-docs`.

@@ -193,7 +193,7 @@ console.log('\n3. Face blend modes');
         `alpha ${a} ≠ ${dA} — blendSrcAlpha Zero, blendDstAlpha One`);
     }
   }
-  const opts = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
+  const opts = readFileSync(new URL('../src/scene3d/HypercubeParams.js', import.meta.url), 'utf8')
     .match(/id:'hypercube\.faces\.blend'[^\n]*options:\[([^\]]*)\]/);
   check('hypercube.faces.blend options are the append-only list the code indexes',
     opts && opts[1].replace(/['\s]/g, '') === names.join(','),
@@ -263,7 +263,9 @@ console.log('\n7. Hypercube params have standard rows (badges → LFO/MIDI/OSC)'
   // way onto the modulation grid. They are built by GROUP; a param outside the
   // group, or one without a label (the row would read "hypercube.rot.xy"),
   // is what would slip through.
-  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
+    // Hypercube registrations live in their own module (importable by audits).
+    + '\n' + readFileSync(new URL('../src/scene3d/HypercubeParams.js', import.meta.url), 'utf8');
   check('main.js builds the panel with STANDARD rows (buildParamRow → badge)',
     /buildHypercubePanel\(hcContainer, hc, ps,\s*id => buildParamRow\(ps\.get\(id\), contextMenu\)\)/.test(main),
     'the hand-built rows had no badges — no hypercube param could take a controller');
@@ -416,7 +418,9 @@ console.log('\n10. Dimension: morph when played, jump when recalled');
   check('ps.restoring is true inside onChange during restoreState, false for a set()',
     seen.join() === 'true,false' && ps.restoring === false, `saw ${seen}`);
 
-  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
+    // Hypercube registrations live in their own module (importable by audits).
+    + '\n' + readFileSync(new URL('../src/scene3d/HypercubeParams.js', import.meta.url), 'utf8');
   const h = cut(main, "ps.get('hypercube.dim')?.onChange(", '});');
   check('the dim handler jumps on recall/state-morph and morphs over Morph Time otherwise',
     /ps\.restoring \|\| presetMgr\.morphing/.test(h) && /morphToLatest\(/.test(h) &&
@@ -530,7 +534,7 @@ console.log('\n12. Inst geo Model — the imported model on every vertex');
   light.setInstancerBudget(64); light.update(16);
   check('a lower budget caps built-in shapes too, and raising it restores them',
     capped && light._hInstancer.getMesh().count === 4096);
-  const opt = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8').match(/id:'hypercube\.inst\.budget'[^\n]*value:([\d.]+)/);
+  const opt = readFileSync(new URL('../src/scene3d/HypercubeParams.js', import.meta.url), 'utf8').match(/id:'hypercube\.inst\.budget'[^\n]*value:([\d.]+)/);
   check('the registered default matches DEFAULT_VERT_BUDGET_M', opt && Number(opt[1]) === DEFAULT_VERT_BUDGET_M);
   // instance shapes are instance-sized (a 16,641-vertex sphere per instance stuttered at 10D)
   const hi = new HypercubeInstancer(new THREE.Scene()); const worst = [];
@@ -542,7 +546,7 @@ console.log('\n12. Inst geo Model — the imported model on every vertex');
   // Back to Geometry → the Model shape falls back
   sm._importedModelName = null; sm._geoKey = null; sm.setGeometry('Torus'); frame();
   check('Back to Geometry → Model shape falls back to a sphere', geoOf().type === 'SphereGeometry');
-  const opts = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8').match(/id:'hypercube\.inst\.geo'[^\n]*options:\[([^\]]*)\]/);
+  const opts = readFileSync(new URL('../src/scene3d/HypercubeParams.js', import.meta.url), 'utf8').match(/id:'hypercube\.inst\.geo'[^\n]*options:\[([^\]]*)\]/);
   check("'Model' is the LAST Inst geo option (append-only: stored as an index)",
     opts && opts[1].replace(/['\s]/g, '').split(',').at(-1) === 'Model' && opts[1].split(',').length === 14);
 }
@@ -727,7 +731,9 @@ console.log('\n17. Plane Bank — 8 slots, each a plane and a speed');
     PLANE_NAMES[0] === 'XY' && PLANE_NAMES[PI(1, 2, MAX_DIM)] === 'YZ' && PLANE_NAMES[PI(0, 3, MAX_DIM)] === 'XW',
     'menus store an index into this list — it must stay append-only');
 
-  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
+    // Hypercube registrations live in their own module (importable by audits).
+    + '\n' + readFileSync(new URL('../src/scene3d/HypercubeParams.js', import.meta.url), 'utf8');
   const reg = id => main.match(new RegExp(`id:'${id.replace(/\./g, '\\.')}'[^\\n]*value:([\\d.]+)`));
   check('slots 1–4 speeds keep the old rot.* ids (saved states, banks, MIDI bindings)',
     /HC_SLOT_SPEED = \['hypercube\.rot\.xy', 'hypercube\.rot\.xz', 'hypercube\.rot\.yz', 'hypercube\.rot\.xw'/.test(main),
