@@ -715,8 +715,9 @@ more of both.
   until you only notice the turning when you look away and back.
 - Swap the saw for **LFO Sine**. The mandala now rocks back and forth instead
   of turning.
-- Press `a` a few more times. The kaleidoscope works on any source, not just
-  the camera.
+- Press `q` a few times to change the **Foreground** source. The kaleidoscope
+  works on any source, not just the camera. (`q` and not `a`: the Foreground
+  sits on top and covers the Background completely.)
 
 ## Lineage — Violin Power
 <!-- guide
@@ -785,6 +786,10 @@ falling away into a tunnel.
 
 **Starting point:** press **Load starting point**. Camera on, everything at
 default.
+
+**Works best with black in the picture.** Feedback needs somewhere dark for
+the trails to show. A bright, busy room fills the loop with light, so stand in
+front of a dark wall or black cloth, or turn the room lights down.
 
 1. Press **`b`** to switch **Blend** on. Nothing changes yet. **Feedback** is
    already on, but it has no way to meet the picture.
