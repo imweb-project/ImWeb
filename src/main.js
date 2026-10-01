@@ -2235,11 +2235,24 @@ async function main() {
       // declared further down this function; by the time anyone can click,
       // it is initialised.
       await bootProject;
-      const ok = await _resetAllParams(
+      if (!confirm(
         "Load this tutorial's starting point?\n\nEvery parameter goes back to " +
-        "its default. Press Cancel, then Shift+S, if you want to keep the " +
-        "current picture first.");
-      if (!ok) return false;
+        "its default, in a bank called Tutorials. Press Cancel, then Shift+S, " +
+        "if you want to keep the current picture in your own bank first.")) return false;
+      // Tutorials work in their own bank (owner, 2026-10-01): Shift+S then lands
+      // in its low slots, where the number keys reach, and the reader's own
+      // banks are never filled with practice states. Switch BEFORE the reset —
+      // activatePreset recalls the bank's active state and controllers, so
+      // after it, it would undo the starting point.
+      const TUTORIAL_BANK = "Tutorials";
+      let bankIdx = presetMgr.getAll().findIndex((b) => b?.name === TUTORIAL_BANK);
+      if (bankIdx === -1) {
+        bankIdx = await presetMgr.createBank(); // creates and activates
+        await presetMgr.renameBank(bankIdx, TUTORIAL_BANK);
+      } else if (presetMgr.currentIdx !== bankIdx) {
+        await presetMgr.activatePreset(bankIdx, { fade: false });
+      }
+      await _resetAllParams(false);
       for (const [id, v] of values) ps.set(id, v);
       return true;
     },
@@ -2276,9 +2289,10 @@ async function main() {
   }
 
   // Reset all params to defaults → clean camera state
-  // Returns false if the user cancelled — the tutorial loader needs to know.
+  // Returns false if the user cancelled. Pass `false` to skip the confirm when
+  // the caller has already asked (the tutorial loader does).
   async function _resetAllParams(message = "Reset all parameters to defaults?") {
-    if (!confirm(message)) return false;
+    if (message !== false && !confirm(message)) return false;
     const _morphParam = ps.get('global.morphspeed');
     const _savedMorph = _morphParam?._value ?? 0;
     if (_morphParam) _morphParam._value = 0; // TODO: migrate to ps.suspendMorph() if added — suppress morph during reset cascade without firing onChange

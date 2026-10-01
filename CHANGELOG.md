@@ -33,6 +33,11 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   RGB Shift / Kale.Rot / Kaleidoscope), *a word that listens* (Text audio,
   one letter per spectrum slice), *seeing the sound* (Scope as a picture, then
   as a displacement map). *Lineage — Violin Power* moves to close the theme.
+- **Tutorials work in their own bank.** Load starting point switches to a bank
+  named *Tutorials* (created the first time, reused after), so Shift+S lands in
+  its first slots and the reader's own banks are never filled with practice
+  states. A start pressed during first launch now waits for the MasterProject
+  import instead of being overwritten by it.
 - **Tutorials: theme chips** — a step's `theme:` groups the Tutorials track
   under chips (Start · Feedback · Audio · 3D); Back/Next stay inside a theme.
 - **Tutorials: the 3D world theme** — *a solid made of your picture*, *the
@@ -41,6 +46,8 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   hypercube* (after A. Michael Noll's 1960s Bell Labs films).
 
 ### Changed
+- Renaming the current bank updates the status bar at once (it kept the old
+  name until the next bank switch).
 - **Scrolling over the panel no longer moves parameters by accident.** A row
   used to adjust on any horizontal scroll, with no modifier; a trackpad or
   Magic Mouse swipe is never perfectly vertical, so whichever row was under the

@@ -604,6 +604,12 @@ export class PresetManager extends EventTarget {
     if (!p) return;
     p.name = name;
     await p.save();
+    // activatePreset is the only other writer of this label, so renaming the
+    // CURRENT bank left the status bar on the old name until the next switch.
+    if (index === this.currentIdx) {
+      const _statusBank = document.getElementById('status-bank');
+      if (_statusBank) _statusBank.textContent = name;
+    }
     this.dispatchEvent(new CustomEvent('bankRenamed', { detail: { index, name } }));
   }
 

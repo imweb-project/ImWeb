@@ -22,9 +22,10 @@ Three tracks, chosen with the chips at the top of the panel:
   moves. Written for video artists and workshop rooms.
 
 Tutorials are the one place the panel can set values, and only when you press
-**Load starting point**. That runs the same full reset as `Shift`+`Esc`, behind
-the same confirm, and then sets up the step's `start:` line. The moves after it
-are still yours.
+**Load starting point**. That switches to a bank called **Tutorials** (made the
+first time), runs the same full reset as `Shift`+`Esc`, behind a confirm, and
+then sets up the step's `start:` line. Your own banks are left as they were;
+pick one from the bank menu to go back. The moves after it are still yours.
 
 Step grammar, for anyone editing: one `## ` heading per step, optionally
 followed by a `<!-- guide … -->` block naming `track:`, `tab:`, `point:`
@@ -689,8 +690,9 @@ keys: Shift+S
 **What you will make:** your own camera picture folded into a slowly turning
 kaleidoscope, saved so that one key brings it back.
 
-**Starting point:** press **Load starting point** above. Everything goes back
-to its default and the camera comes on. The browser asks to use the camera the
+**Starting point:** press **Load starting point** above. You move to a bank
+called **Tutorials**, so what you save here stays out of your own banks.
+Everything goes back to its default and the camera comes on. The browser asks to use the camera the
 first time; say yes. You should see yourself.
 
 1. On the **Effects** tab, find **Kaleidoscope** and drag it to 6. Six
@@ -704,8 +706,7 @@ first time; say yes. You should see yourself.
 4. Press **`Shift`+`S`**. The look now sits in a slot on the state bar along
    the bottom.
 5. Drag Kaleidoscope back to 0, then click the tile you just saved on the
-   state bar. The mandala comes back, still turning. (The number keys `0`–`9`
-   also recall states, but only the first ten slots.)
+   state bar. The mandala comes back, still turning.
 
 **Why it works.** You changed one value by hand and gave a second one a
 controller. Every patch in this instrument is built the same way, with
