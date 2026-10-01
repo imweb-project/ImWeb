@@ -41,6 +41,12 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   hypercube* (after A. Michael Noll's 1960s Bell Labs films).
 
 ### Changed
+- **Scrolling over the panel no longer moves parameters by accident.** A row
+  used to adjust on any horizontal scroll, with no modifier; a trackpad or
+  Magic Mouse swipe is never perfectly vertical, so whichever row was under the
+  cursor could jump. Only ⌥+scroll adjusts now (⌥⇧ for ×5, still working on
+  macOS where Shift turns the wheel horizontal). The unmodified sideways swipe
+  is gone.
 - Hypercube parameters are registered from `src/scene3d/HypercubeParams.js`
   instead of inline in main.js, so Node audits see the same parameter set as
   the app. Ids, options and defaults are unchanged.
