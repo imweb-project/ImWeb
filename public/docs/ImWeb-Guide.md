@@ -693,10 +693,11 @@ first time; say yes. You should see yourself.
 
 1. On the **Effects** tab, find **Kaleidoscope** and drag it to 6. Six
    segments: the picture folds into a mandala.
-2. Right-click **Kale.Rot** and choose **LFO Sine**. The mandala starts turning
-   by itself.
-3. Right-click the **LFO** badge that just appeared on the row and drag
-   **Freq** down until the turning is slow enough to watch.
+2. Right-click **Kale.Rot** and choose **LFO Saw ↑**. A saw climbs and then
+   jumps back to the start, so the rotation keeps going round in one
+   direction. (A sine would rock back and forth instead.)
+3. A box asks for the LFO rate. The default is 0.5, which means two seconds
+   per turn. Type **0.05** for a slow twenty-second turn and press `Enter`.
 4. Press **`Shift`+`S`**. The look now sits in a slot on the state bar along
    the bottom.
 5. Drag Kaleidoscope back to 0, then press that slot's number key. The mandala
@@ -709,8 +710,10 @@ more of both.
 **Now try:**
 
 - Drag Kaleidoscope through 2, 3 and 12. Odd and even numbers fold differently.
-- Slow the **Freq** right down, until you only notice the turning when you
-  look away and back.
+- Right-click the **LFO** badge on Kale.Rot and drag **Freq** right down,
+  until you only notice the turning when you look away and back.
+- Swap the saw for **LFO Sine**. The mandala now rocks back and forth instead
+  of turning.
 - Press `a` a few more times. The kaleidoscope works on any source, not just
   the camera.
 
@@ -718,7 +721,7 @@ more of both.
 <!-- guide
 track: tutorials
 tab: sources
-start: layer.bg=Rutt-Etra, rutt.active=1
+start: layer.fg=Rutt-Etra, rutt.active=1
 point: rutt.lines, rutt.zgain, rutt.decay
 keys: Shift+S
 -->
@@ -741,9 +744,9 @@ Rutt-Etra**): you are looking at yourself drawn in scan lines.
    1970s look.
 2. Set **Z Gain**'s **min** to 0 and its **max** to about 1.5 by dragging the
    two small numbers.
-3. Right-click **Z Gain** and choose **Sound Level**. The browser asks for the
-   microphone; say yes. Now make a sound. The lines lift off the plane when
-   it's loud and lie flat when it's quiet.
+3. Right-click **Z Gain** and choose **Sound Bass**. The browser asks for the
+   microphone; say yes. Now make a sound. The lines lift off the plane on low,
+   loud sounds and lie flat when it's quiet.
 4. Turn **Persist** up a little so that each sound leaves a trace on the
    phosphor.
 5. Press **`Shift`+`S`**, then play, speak or clap for a minute. This is the
@@ -755,10 +758,11 @@ is Principle 3 with the room as the second pair of hands.
 
 **Now try:**
 
-- Swap **Sound Level** for **Sound Bass**. Now only the low notes move the
-  lines, and a violin's upper register leaves the picture still.
-- Set **Z Gain**'s min to −1.5 and max to 0, then right-click the row →
-  **Options ▸ Toggle Invert**. Loud sounds now push the picture *into* the
-  screen instead of out of it.
+- Swap **Sound Bass** for **Sound Level**. Now every sound moves the lines,
+  including a violin's upper register, which Bass ignores.
+- Turn the response upside down. In **Project ▸ Response Curves**, make a
+  curve from the **Invert** preset, then right-click **Z Gain** →
+  **Assign Table…** and pick it. Silence now lifts the picture and sound
+  flattens it.
 - Leave the camera out entirely. Set Rutt-Etra's **Source** to `Noise` and let
   the sound play an abstract surface.
