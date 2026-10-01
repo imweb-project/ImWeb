@@ -39,6 +39,10 @@
  * All fields are optional. `point:` takes parameter ids, `show:` takes CSS
  * selectors for things that are not parameters (a whole section, a button),
  * `tab:` activates a tab on step entry, `keys:` renders keycaps for reference.
+ * `theme:` groups a track's steps under chips (Tutorials: Feedback, Audio…).
+ * Chips appear only for a track whose steps carry it, in file order, and Back /
+ * Next stay inside the chosen theme. In a themed track EVERY step needs one —
+ * the audit enforces it, since an unthemed step would be unreachable.
  * `start:` is `clean` or a list of `id=value` assignments applied after a full
  * reset; a SELECT takes its option label (`layer.bg=Rutt-Etra`), never an
  * index, so the line reads as what it does.
@@ -68,7 +72,8 @@ export const TRACKS = [
 
 let _steps = null;      // ALL parsed steps, in file order
 let _track = TRACKS[0][0];
-let _idx = 0;           // index within the current track, not into _steps
+let _idx = 0;           // index within the current track (and theme), not into _steps
+let _theme = null;      // current theme within a themed track; null when unthemed
 let _panel = null;
 let _ps = null;
 let _openWorkspace = null; // injected: workspace panes are not plain tabs
@@ -173,13 +178,13 @@ export function parseGuide(md) {
     const title = (nl === -1 ? part : part.slice(0, nl)).trim();
     let body = nl === -1 ? '' : part.slice(nl + 1);
 
-    const meta = { track: TRACKS[0][0], tab: null, point: [], show: [], keys: [], start: null };
+    const meta = { track: TRACKS[0][0], theme: null, tab: null, point: [], show: [], keys: [], start: null };
     body = body.replace(/<!--\s*guide\b([\s\S]*?)-->/, (_, block) => {
       for (const line of block.split('\n')) {
-        const m = line.match(/^\s*(track|tab|point|show|keys|start)\s*:\s*(.+?)\s*$/);
+        const m = line.match(/^\s*(track|theme|tab|point|show|keys|start)\s*:\s*(.+?)\s*$/);
         if (!m) continue;
         const [, k, v] = m;
-        if (k === 'track' || k === 'tab') meta[k] = v.trim();
+        if (k === 'track' || k === 'theme' || k === 'tab') meta[k] = v.trim();
         else if (k === 'start') meta.start = parseStart(v);
         else meta[k] = v.split(',').map(s => s.trim()).filter(Boolean);
       }
@@ -255,6 +260,7 @@ function buildPanel() {
     </div>
     <div id="guide-tracks">${TRACKS.map(([k, label]) =>
       `<button class="guide-track" data-track="${k}">${label}</button>`).join('')}</div>
+    <div id="guide-themes" class="hidden"></div>
     <button id="guide-start" class="guide-point hidden"
       title="Reset the instrument and set up this tutorial's starting point">↺ Load starting point</button>
     <div id="guide-body"></div>
@@ -282,6 +288,10 @@ function buildPanel() {
   el.querySelector('#guide-tracks').addEventListener('click', e => {
     const btn = e.target.closest('.guide-track');
     if (btn) goTrack(btn.dataset.track);
+  });
+  el.querySelector('#guide-themes').addEventListener('click', e => {
+    const btn = e.target.closest('.guide-theme');
+    if (btn) goTheme(btn.dataset.theme);
   });
 
   // Arrow keys drive the tour while it is open. Deliberately NOT bound to the
@@ -313,9 +323,22 @@ function showLabel(sel) {
   return hdr?.childNodes[0]?.textContent?.trim() || sel;
 }
 
-/** The steps of the current track, in file order. */
+/** Themes used by a track, in file order of first appearance. [] if unthemed. */
+export function trackThemes(steps, track) {
+  return [...new Set(steps.filter(s => s.track === track && s.theme).map(s => s.theme))];
+}
+
+/**
+ * The steps of the current track — and, in a themed track, the current theme —
+ * in file order. Falls back to the track's first theme when the remembered one
+ * no longer exists (renamed in the markdown), so the panel never goes blank.
+ */
 function trackSteps() {
-  return _steps.filter(s => s.track === _track);
+  const inTrack = _steps.filter(s => s.track === _track);
+  const themes = trackThemes(_steps, _track);
+  if (!themes.length) { _theme = null; return inTrack; }
+  if (!themes.includes(_theme)) _theme = themes[0];
+  return inTrack.filter(s => s.theme === _theme);
 }
 
 function render() {
@@ -327,6 +350,17 @@ function render() {
   _panel.querySelector('#guide-count').textContent = `${_idx + 1} / ${steps.length}`;
   _panel.querySelectorAll('.guide-track').forEach(b =>
     b.classList.toggle('active', b.dataset.track === _track));
+  const themes = trackThemes(_steps, _track);
+  const themesEl = _panel.querySelector('#guide-themes');
+  themesEl.classList.toggle('hidden', !themes.length);
+  themesEl.innerHTML = '';
+  for (const t of themes) {
+    const b = document.createElement('button');
+    b.className = 'guide-theme' + (t === _theme ? ' active' : '');
+    b.dataset.theme = t;
+    b.textContent = t;
+    themesEl.appendChild(b);
+  }
   _panel.querySelector('#guide-body').innerHTML = marked.parse(step.body);
   _panel.querySelector('#guide-start').classList.toggle('hidden', !step.start || !_loadStart);
 
@@ -376,6 +410,15 @@ function go(i) {
   render();
 }
 
+/** Switch theme within the current track, landing on its first step. */
+function goTheme(theme) {
+  if (!trackThemes(_steps, _track).includes(theme)) return;
+  _theme = theme;
+  _idx = 0;
+  _save();
+  render();
+}
+
 /** Switch track, landing on its first step. */
 function goTrack(key) {
   if (!TRACKS.some(([k]) => k === key)) return;
@@ -387,7 +430,7 @@ function goTrack(key) {
 
 function _save() {
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify({ track: _track, idx: _idx }));
+    localStorage.setItem(STORE_KEY, JSON.stringify({ track: _track, theme: _theme, idx: _idx }));
   } catch { /* private mode */ }
 }
 
@@ -403,6 +446,7 @@ function _restore() {
   try { saved = JSON.parse(raw); } catch { return; } // legacy bare number parses fine
   if (typeof saved !== 'object' || saved === null) return;
   if (TRACKS.some(([k]) => k === saved.track)) _track = saved.track;
+  if (typeof saved.theme === 'string') _theme = saved.theme;
   const n = trackSteps().length;
   _idx = Number.isInteger(saved.idx) && saved.idx < n ? saved.idx : 0;
 }

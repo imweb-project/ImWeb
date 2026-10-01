@@ -679,6 +679,7 @@ method.
 ## Tutorial 0 — a picture in sixty seconds
 <!-- guide
 track: tutorials
+theme: Start
 tab: mix
 start: clean
 point: effect.kaleidoscope, effect.kalerot
@@ -724,6 +725,7 @@ more of both.
 ## Feedback 1 — the tunnel
 <!-- guide
 track: tutorials
+theme: Feedback
 tab: effects
 start: clean
 point: blend.active, feedback.mode, feedback.zoom, feedback.decay
@@ -766,6 +768,7 @@ decide what happens to it on each trip around the loop.
 ## Feedback 2 — spiral and colour
 <!-- guide
 track: tutorials
+theme: Feedback
 tab: effects
 start: blend.active=1, feedback.mode=Screen, feedback.zoom=3, feedback.decay=85
 point: feedback.rotate, feedback.hue, feedback.centerx, feedback.centery
@@ -803,6 +806,7 @@ small values, many trips.
 ## Feedback 3 — the picture melts into itself
 <!-- guide
 track: tutorials
+theme: Feedback
 tab: mix
 start: clean
 point: layer.ds, displace.amount, displace.angle
@@ -841,6 +845,7 @@ what you see.
 ## Lineage — the camera and its monitor
 <!-- guide
 track: tutorials
+theme: Feedback
 tab: output
 start: clean
 point: output.colorshift, effect.kaleidoscope
@@ -891,6 +896,7 @@ artists still do it.
 ## Audio 1 — one sound, one control
 <!-- guide
 track: tutorials
+theme: Audio
 tab: mix
 start: layer.ds=Noise
 point: displace.amount
@@ -931,6 +937,7 @@ how fast it gets there.
 ## Audio 2 — a colour organ
 <!-- guide
 track: tutorials
+theme: Audio
 tab: effects
 start: effect.kaleidoscope=6
 point: effect.kaleidoscope, effect.kalerot, effect.rgbshift
@@ -968,6 +975,7 @@ lights since long before video.
 ## Audio 3 — a word that listens
 <!-- guide
 track: tutorials
+theme: Audio
 tab: sources
 start: layer.fg=Text
 point: text.audioTarget, text.audioBand, text.audioFocus, text.audioAmt
@@ -1007,6 +1015,7 @@ you can read.
 ## Audio 4 — seeing the sound
 <!-- guide
 track: tutorials
+theme: Audio
 tab: sources
 start: layer.fg=Scope
 point: vectorscope.mode, vectorscope.decay, vectorscope.glow, layer.fg, layer.ds, displace.amount
@@ -1045,6 +1054,7 @@ looked at, or used as any other picture can (Principle 2).
 ## Lineage — Violin Power
 <!-- guide
 track: tutorials
+theme: Audio
 tab: sources
 start: layer.fg=Rutt-Etra, rutt.active=1
 point: rutt.lines, rutt.zgain, rutt.decay

@@ -113,6 +113,17 @@ for (const [k, n] of perTrack) {
   }
 }
 
+// A themed track filters its steps by theme, so an unthemed step in one is
+// unreachable from every chip.
+for (const [k] of TRACKS) {
+  const inTrack = steps.filter(s => s.track === k);
+  if (!inTrack.some(s => s.theme)) continue;
+  for (const s of inTrack.filter(s => !s.theme)) {
+    console.error(`FAIL — step "${s.title}" has no theme: in track "${k}", which is themed, it can never be reached.`);
+    failures++;
+  }
+}
+
 console.log(`${steps.length} steps parsed — ` +
   [...perTrack].map(([k, n]) => `${k}: ${n}`).join(', '));
 

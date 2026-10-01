@@ -2979,6 +2979,30 @@ body.sp-floating #signal-path-docked-space {
     border-color: var(--accent-dim);
     background: var(--bg-4);
 }
+/* Theme chips: a second, quieter row under the track chips. Wraps, because
+   the Tutorials track will carry more themes than fit one line. */
+#guide-themes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 6px 12px 0;
+}
+#guide-themes.hidden { display: none; }
+.guide-theme {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-2);
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 2px 9px;
+    cursor: pointer;
+}
+.guide-theme:hover { color: var(--text-0); }
+.guide-theme.active {
+    color: var(--accent);
+    border-color: var(--accent-dim);
+}
 #guide-body {
     overflow-y: auto;
     padding: 10px 14px;
