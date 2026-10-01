@@ -28,6 +28,11 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   Zoom, Decay), *spiral and colour* (Rotate, Hue, centre, an LFO), *the picture
   melts into itself* (Output as DisplaceSrc), and *Lineage — the camera and its
   monitor* (optical feedback through a projector or second screen).
+- **Tutorials: the Audio sculpting theme** — *one sound, one control* (Bass on
+  Displace, range first, then Slew), *a colour organ* (High / Mid / Bass on
+  RGB Shift / Kale.Rot / Kaleidoscope), *a word that listens* (Text audio,
+  one letter per spectrum slice), *seeing the sound* (Scope as a picture, then
+  as a displacement map). *Lineage — Violin Power* moves to close the theme.
 
 ### Changed
 - **Growth, Neural: roughly half the frame cost** (owner: "will this be able

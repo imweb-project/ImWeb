@@ -721,59 +721,6 @@ more of both.
   works on any source, not just the camera. (`q` and not `a`: the Foreground
   sits on top and covers the Background completely.)
 
-## Lineage — Violin Power
-<!-- guide
-track: tutorials
-tab: sources
-start: layer.fg=Rutt-Etra, rutt.active=1
-point: rutt.lines, rutt.zgain, rutt.decay
-keys: Shift+S
--->
-
-**What you will make:** a scan-line picture of the room whose lines jump with
-the sound, so that playing an instrument (or speaking, clapping, or putting a
-record on) deforms the picture.
-
-**Where it comes from.** In *Violin Power* (1970–78), Steina played the violin
-and let the sound drive the video image. Much of it went through a Rutt/Etra
-scan processor: the signal bent the raster lines, so you could see the sound
-in the picture. Steina later co-created *Image/ine*, the instrument ImWeb
-descends from. This recipe uses ImWeb's parts to get the same idea.
-
-**Starting point:** press **Load starting point** above. The camera comes on
-and runs through the Rutt-Etra scan processor (**Sources ▸ From the Signal ▸
-Rutt-Etra**): you are looking at yourself drawn in scan lines.
-
-1. Drag **Lines** down to about 60. Few lines with gaps between them is the
-   1970s look.
-2. Set **Z Gain**'s **min** to 0 and its **max** to about 1.5 by dragging the
-   two small numbers.
-3. Right-click (Control-click on a Mac) **Z Gain** and choose **Sound Bass**. The browser asks for the
-   microphone; say yes. Now make a sound. The lines lift off the plane on low,
-   loud sounds and lie flat when it's quiet.
-4. The lines twitch with every sound. Right-click the <span class="param-ctrl sound">BAS</span> badge on
-   Z Gain and set **Slew** to about 0.3. Now the lines breathe with the sound
-   instead of jumping. (Rise and Fall further down do something else: they
-   smooth the *camera picture*, not the sound.)
-5. Turn **Persist** up a little so that each sound leaves a trace on the
-   phosphor, and press **`Shift`+`S`**. Then play, speak or clap for a minute.
-   This is the piece.
-
-**Why it works.** Sound is a controller like any other. It does here exactly
-what the LFO did in Tutorial 0, only you play it instead of letting it run. It
-is Principle 3 with the room as the second pair of hands.
-
-**Now try:**
-
-- Swap **Sound Bass** for **Sound Level**. Now every sound moves the lines,
-  including a violin's upper register, which Bass ignores.
-- Turn the response upside down. In **Project ▸ Response Curves**, make a
-  curve from the **Invert** preset, then right-click **Z Gain** →
-  **Assign Table…** and pick it. Silence now lifts the picture and sound
-  flattens it.
-- Leave the camera out entirely. Set Rutt-Etra's **Source** to `Noise` and let
-  the sound play an abstract surface.
-
 ## Feedback 1 — the tunnel
 <!-- guide
 track: tutorials
@@ -940,3 +887,210 @@ artists still do it.
   picture again.
 - Put your hand between the camera and the screen. Whatever you put in the
   loop gets repeated.
+
+## Audio 1 — one sound, one control
+<!-- guide
+track: tutorials
+tab: mix
+start: layer.ds=Noise
+point: displace.amount
+keys: Shift+S
+-->
+
+**What you will make:** a picture that shudders on every beat.
+
+**Starting point:** press **Load starting point**. The camera is on, and
+Noise is already set up as the displacement map, so only the amount is
+missing.
+
+1. On the **Displace** row, drag the two small numbers to **min 0** and
+   **max 15**. That is how far the sound will be allowed to push. Set the
+   range first, always.
+2. Right-click (Control-click on a Mac) **Displace** and choose **Sound
+   Bass**. The browser asks for the microphone; say yes. The row gets a
+   cyan <span class="param-ctrl sound">BAS</span> badge.
+3. Play something with a beat. Each kick drum pushes the picture through the
+   noise, then lets it go.
+4. Right-click the <span class="param-ctrl sound">BAS</span> badge and set
+   **Slew** to 0.15. The shudder becomes a swell: the picture still moves on
+   the beat, but it rises and falls instead of jumping.
+5. Press **`Shift`+`S`**.
+
+**Why it works.** The sound is a controller like an LFO, but you can't set
+its speed: the music does. Range decides how far it may push, Slew decides
+how fast it gets there.
+
+**Now try:**
+
+- **Sound High** instead of Bass. Now hi-hats and hiss drive it, and the
+  kick does nothing.
+- In the badge's settings, set **Slew curve** to `Elastic`. Every beat now
+  overshoots and springs back.
+- Raise **max** to 40. Same music, a much more violent picture.
+
+## Audio 2 — a colour organ
+<!-- guide
+track: tutorials
+tab: effects
+start: effect.kaleidoscope=6
+point: effect.kaleidoscope, effect.kalerot, effect.rgbshift
+keys: Shift+S
+-->
+
+**What you will make:** one picture played by three parts of the music at
+once: bass, middle and treble.
+
+**Starting point:** press **Load starting point**. The camera is folded into
+a six-way kaleidoscope.
+
+1. **Treble.** Set **RGB Shift**'s max to 30, then right-click it → **Sound
+   High**. Cymbals and hiss split the colours apart.
+2. **Middle.** Right-click **Kale.Rot** → **Sound Mid**. Voices and melody
+   turn the mandala.
+3. **Bass.** Set **Kaleidoscope**'s min to 3 and max to 8, then right-click
+   it → **Sound Bass**. Each kick snaps the mandala to more segments.
+4. Play music with all three parts in it. If one band takes over, lower
+   that row's **max** until all three have a share of the picture.
+5. Press **`Shift`+`S`**.
+
+**Why it works.** A sound is not one number. Splitting it into bands and
+giving each band its own job is how one piece of music can play several
+parts of the picture at once. Colour organs have done this with coloured
+lights since long before video.
+
+**Now try:**
+
+- Swap which band drives which control. The same music gives a different
+  piece.
+- Put **Slew** on Kale.Rot only. The middle glides while bass and treble
+  still snap.
+
+## Audio 3 — a word that listens
+<!-- guide
+track: tutorials
+tab: sources
+start: layer.fg=Text
+point: text.audioTarget, text.audioBand, text.audioFocus, text.audioAmt
+show: #text-content
+keys: Shift+S
+-->
+
+**What you will make:** a word whose letters move with the sound, each
+letter listening to its own part of the spectrum.
+
+**Starting point:** press **Load starting point**. The Foreground is the
+Text source, showing the word "ImWeb".
+
+1. In the **Text** section, type your own word in the text box, such as
+   your name.
+2. Under **Audio**, set **AudioTarget** to `Rise`. The browser asks for the
+   microphone; say yes. Make a sound and the letters jump.
+3. **AudioBand** is `Spectrum`: each letter listens to its own slice, from
+   low to high. Hum a low note, then whistle a high one, and different
+   letters answer.
+4. Raise **AudioFocus**. Each letter now hears a narrower slice, and only
+   the strongest one moves. A single note becomes a single letter.
+5. Press **`Shift`+`S`**.
+
+**Why it works.** In Audio 1 and 2 a whole band drove one control. Here
+every letter is its own meter, so the word turns into a spectrum display
+you can read.
+
+**Now try:**
+
+- **AudioTarget** `Hue`, then `Scale`. The same listening, a different
+  response.
+- **AudioBand** `Bass`. Every letter now hears the same thing, and the word
+  moves as one.
+- Lower **AudioAmt** if the letters jump off the screen.
+
+## Audio 4 — seeing the sound
+<!-- guide
+track: tutorials
+tab: sources
+start: layer.fg=Scope
+point: vectorscope.mode, vectorscope.decay, vectorscope.glow, layer.fg, layer.ds, displace.amount
+show: #sound-params
+keys: q, z, Shift+S
+-->
+
+**What you will make:** the sound drawn as a picture, and then that picture
+used to bend the camera.
+
+**Starting point:** press **Load starting point**. The Foreground is the
+Scope source. It stays dark until it hears something.
+
+1. In **Sources ▸ Sound**, press **▶ Audio**. The browser asks for the
+   microphone; say yes. The Scope now draws the sound in real time.
+2. Try a few **VScope Mode**s: `Waveform`, `Radial FFT`, `Spectrogram`.
+   Each one draws the same sound a different way.
+3. Raise **VScope Trail** and **VScope Glow**. The drawing leaves a trace
+   and starts to look like light on a screen.
+4. Now make it a map. Press **`q`** until **Foreground** reads `Camera`, press
+   **`z`** until **DisplaceSrc** reads `Scope`, and drag **Displace** up a
+   little. The camera now bends along the shape of the sound.
+5. Press **`Shift`+`S`**.
+
+**Why it works.** In Audio 1–3 the sound was a *number* driving a control.
+Here it is a *picture*: the Scope is a source like the camera, so it can be
+looked at, or used as any other picture can (Principle 2).
+
+**Now try:**
+
+- **VScope Mode** `Lissajous` with stereo music. The shape shows how wide
+  the stereo is.
+- Put the Scope in the Background and the camera in the Foreground with
+  **Blend** `Screen`. You get the image and its sound on one screen.
+
+## Lineage — Violin Power
+<!-- guide
+track: tutorials
+tab: sources
+start: layer.fg=Rutt-Etra, rutt.active=1
+point: rutt.lines, rutt.zgain, rutt.decay
+keys: Shift+S
+-->
+
+**What you will make:** a scan-line picture of the room whose lines jump with
+the sound, so that playing an instrument (or speaking, clapping, or putting a
+record on) deforms the picture.
+
+**Where it comes from.** In *Violin Power* (1970–78), Steina played the violin
+and let the sound drive the video image. Much of it went through a Rutt/Etra
+scan processor: the signal bent the raster lines, so you could see the sound
+in the picture. Steina later co-created *Image/ine*, the instrument ImWeb
+descends from. This recipe uses ImWeb's parts to get the same idea.
+
+**Starting point:** press **Load starting point** above. The camera comes on
+and runs through the Rutt-Etra scan processor (**Sources ▸ From the Signal ▸
+Rutt-Etra**): you are looking at yourself drawn in scan lines.
+
+1. Drag **Lines** down to about 60. Few lines with gaps between them is the
+   1970s look.
+2. Set **Z Gain**'s **min** to 0 and its **max** to about 1.5 by dragging the
+   two small numbers.
+3. Right-click (Control-click on a Mac) **Z Gain** and choose **Sound Bass**. The browser asks for the
+   microphone; say yes. Now make a sound. The lines lift off the plane on low,
+   loud sounds and lie flat when it's quiet.
+4. The lines twitch with every sound. Right-click the <span class="param-ctrl sound">BAS</span> badge on
+   Z Gain and set **Slew** to about 0.3. Now the lines breathe with the sound
+   instead of jumping. (Rise and Fall further down do something else: they
+   smooth the *camera picture*, not the sound.)
+5. Turn **Persist** up a little so that each sound leaves a trace on the
+   phosphor, and press **`Shift`+`S`**. Then play, speak or clap for a minute.
+   This is the piece.
+
+**Why it works.** Sound is a controller like any other. It does here exactly
+what the LFO did in Tutorial 0, only you play it instead of letting it run. It
+is Principle 3 with the room as the second pair of hands.
+
+**Now try:**
+
+- Swap **Sound Bass** for **Sound Level**. Now every sound moves the lines,
+  including a violin's upper register, which Bass ignores.
+- Turn the response upside down. In **Project ▸ Response Curves**, make a
+  curve from the **Invert** preset, then right-click **Z Gain** →
+  **Assign Table…** and pick it. Silence now lifts the picture and sound
+  flattens it.
+- Leave the camera out entirely. Set Rutt-Etra's **Source** to `Noise` and let
+  the sound play an abstract surface.
