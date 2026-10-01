@@ -8,6 +8,19 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Added
+- **Guided tour: a Tutorials track** — for video artists and workshop rooms.
+  Each tutorial makes one thing in about five moves: result, starting point,
+  moves, why it works, "now try". First two: *Tutorial 0 — a picture in sixty
+  seconds* and *Lineage — Violin Power* (Steina's sound-driven raster, rebuilt
+  from camera → Rutt-Etra with Z Gain on Sound Level).
+- **Load starting point** — a tutorial step's `start:` line (`clean`, or
+  `id=value` pairs; selects take their option label) renders a button that runs
+  the Shift+Esc reset, behind a confirm, then applies the assignments. The only
+  place the tour sets anything, and only on that button. Resolved by one
+  function shared with `audit-guide-targets`, so a renamed id or option label
+  fails the audit instead of failing in a workshop.
+
 ### Changed
 - **Growth, Neural: roughly half the frame cost** (owner: "will this be able
   to run at 60fps?", at 9 fps). Measured whole frames on the Intel UHD 630:

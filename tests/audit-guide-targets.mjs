@@ -23,7 +23,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { ParameterSystem, registerCoreParameters } from '../src/controls/ParameterSystem.js';
-import { parseGuide, TRACKS } from '../src/ui/Guide.js';
+import { parseGuide, resolveStart, TRACKS } from '../src/ui/Guide.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const md = readFileSync(resolve(root, 'docs/ImWeb-Guide.md'), 'utf8');
@@ -135,6 +135,10 @@ for (const step of steps) {
       problems.push(`show: no element with id "${m[1]}" in index.html`);
     }
   }
+
+  // Same resolver the button uses, so a renamed id or option label fails here
+  // instead of refusing silently in a workshop.
+  if (step.start) problems.push(...resolveStart(ps, step.start).errors);
 
   if (step.tab && !tabs.has(step.tab)) {
     problems.push(`tab: "${step.tab}" is not a data-tab in index.html`);

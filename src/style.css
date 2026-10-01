@@ -3037,6 +3037,15 @@ body.sp-floating #signal-path-docked-space {
     border-color: var(--red-dim);
     text-decoration: line-through;
 }
+/* Tutorials only. Sits above the text so the starting point is the first
+   thing a workshop reader sees, and reads as an action rather than a chip. */
+#guide-start {
+    display: block;
+    margin: 8px 12px 0;
+    color: var(--accent);
+    border-color: var(--accent-dim);
+}
+#guide-start.hidden { display: none; }
 #guide-nav {
     display: flex;
     gap: 6px;

@@ -18,10 +18,19 @@ Three tracks, chosen with the chips at the top of the panel:
   instrument is built on. Three or four moves each.
 - **Instruments** — the machines: Rutt-Etra, SDF, Motion Extraction, RGB
   Channel Delay, Spacetime, mix buses, warp drawing, live GLSL.
+- **Tutorials** — make one thing, from a known starting point, in about five
+  moves. Written for video artists and workshop rooms.
+
+Tutorials are the one place the panel can set values, and only when you press
+**Load starting point**. That runs the same full reset as `Shift`+`Esc`, behind
+the same confirm, and then sets up the step's `start:` line. The moves after it
+are still yours.
 
 Step grammar, for anyone editing: one `## ` heading per step, optionally
 followed by a `<!-- guide … -->` block naming `track:`, `tab:`, `point:`
-(parameter ids), `show:` (CSS selectors), and `keys:` (keycaps to display).
+(parameter ids), `show:` (CSS selectors), `keys:` (keycaps to display), and,
+for tutorials, `start:` (`clean`, or `id=value` pairs; a select takes its option
+label, e.g. `layer.bg=Rutt-Etra`).
 Everything above the first `## ` — including this preamble — is not part of the
 tour.
 
@@ -665,3 +674,91 @@ look at an engine directly. `q` / `a` / `z` and a couple of minutes is the whole
 method.
 
 `KNOWN-ISSUES.md` is honest about the loose ends.
+
+## Tutorial 0 — a picture in sixty seconds
+<!-- guide
+track: tutorials
+tab: mix
+start: clean
+point: effect.kaleidoscope, effect.kalerot
+keys: Shift+S
+-->
+
+**What you will make:** your own camera picture folded into a slowly turning
+kaleidoscope, saved so that one key brings it back.
+
+**Starting point:** press **Load starting point** above. Everything goes back
+to its default and the camera comes on. The browser asks to use the camera the
+first time; say yes. You should see yourself.
+
+1. On the **Effects** tab, find **Kaleidoscope** and drag it to 6. Six
+   segments: the picture folds into a mandala.
+2. Right-click **Kale.Rot** and choose **LFO Sine**. The mandala starts turning
+   by itself.
+3. Right-click the **LFO** badge that just appeared on the row and drag
+   **Freq** down until the turning is slow enough to watch.
+4. Press **`Shift`+`S`**. The look now sits in a slot on the state bar along
+   the bottom.
+5. Drag Kaleidoscope back to 0, then press that slot's number key. The mandala
+   comes back, still turning.
+
+**Why it works.** You changed one value by hand and gave a second one a
+controller. Every patch in this instrument is built the same way, with
+more of both.
+
+**Now try:**
+
+- Drag Kaleidoscope through 2, 3 and 12. Odd and even numbers fold differently.
+- Slow the **Freq** right down, until you only notice the turning when you
+  look away and back.
+- Press `a` a few more times. The kaleidoscope works on any source, not just
+  the camera.
+
+## Lineage — Violin Power
+<!-- guide
+track: tutorials
+tab: sources
+start: layer.bg=Rutt-Etra, rutt.active=1
+point: rutt.lines, rutt.zgain, rutt.decay
+keys: Shift+S
+-->
+
+**What you will make:** a scan-line picture of the room whose lines jump with
+the sound, so that playing an instrument (or speaking, clapping, or putting a
+record on) deforms the picture.
+
+**Where it comes from.** In *Violin Power* (1970–78), Steina played the violin
+and let the sound drive the video image. Much of it went through a Rutt/Etra
+scan processor: the signal bent the raster lines, so you could see the sound
+in the picture. Steina later co-created *Image/ine*, the instrument ImWeb
+descends from. This recipe uses ImWeb's parts to get the same idea.
+
+**Starting point:** press **Load starting point** above. The camera comes on
+and runs through the Rutt-Etra scan processor (**Sources ▸ From the Signal ▸
+Rutt-Etra**): you are looking at yourself drawn in scan lines.
+
+1. Drag **Lines** down to about 60. Few lines with gaps between them is the
+   1970s look.
+2. Set **Z Gain**'s **min** to 0 and its **max** to about 1.5 by dragging the
+   two small numbers.
+3. Right-click **Z Gain** and choose **Sound Level**. The browser asks for the
+   microphone; say yes. Now make a sound. The lines lift off the plane when
+   it's loud and lie flat when it's quiet.
+4. Turn **Persist** up a little so that each sound leaves a trace on the
+   phosphor.
+5. Press **`Shift`+`S`**, then play, speak or clap for a minute. This is the
+   piece.
+
+**Why it works.** Sound is a controller like any other. It does here exactly
+what the LFO did in Tutorial 0, only you play it instead of letting it run. It
+is Principle 3 with the room as the second pair of hands.
+
+**Now try:**
+
+- Swap **Sound Level** for **Sound Bass**. Now only the low notes move the
+  lines, and a violin's upper register leaves the picture still.
+- Set **Z Gain**'s min to −1.5 and max to 0, then right-click the row →
+  **Options ▸ Toggle Invert**. Loud sounds now push the picture *into* the
+  screen instead of out of it.
+- Leave the camera out entirely. Set Rutt-Etra's **Source** to `Noise` and let
+  the sound play an abstract surface.

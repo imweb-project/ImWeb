@@ -2277,7 +2277,20 @@ async function main() {
   // The guided tour points at parameter rows, and four of them (Live GLSL, 3D,
   // Analog, Draw) live in workspace panes that no .tab button reaches. The
   // router is a closure in this scope, so it is injected rather than imported.
-  initGuide({ ps, openWorkspace });
+  // Tutorials load a starting point through the same reset as Shift+Esc, so
+  // there is one definition of "clean" and the confirm protects the patch.
+  initGuide({
+    ps, openWorkspace,
+    loadStart: async (values) => {
+      const ok = await _resetAllParams(
+        "Load this tutorial's starting point?\n\nEvery parameter goes back to " +
+        "its default. Press Cancel, then Shift+S, if you want to keep the " +
+        "current picture first.");
+      if (!ok) return false;
+      for (const [id, v] of values) ps.set(id, v);
+      return true;
+    },
+  });
 
   // Collapse / expand all sections
   const collapseAllBtn = document.getElementById("btn-collapse-all");
@@ -2310,8 +2323,9 @@ async function main() {
   }
 
   // Reset all params to defaults → clean camera state
-  async function _resetAllParams() {
-    if (!confirm("Reset all parameters to defaults?")) return;
+  // Returns false if the user cancelled — the tutorial loader needs to know.
+  async function _resetAllParams(message = "Reset all parameters to defaults?") {
+    if (!confirm(message)) return false;
     const _morphParam = ps.get('global.morphspeed');
     const _savedMorph = _morphParam?._value ?? 0;
     if (_morphParam) _morphParam._value = 0; // TODO: migrate to ps.suspendMorph() if added — suppress morph during reset cascade without firing onChange
@@ -2337,10 +2351,11 @@ async function main() {
         ps.set("camera.active", 1);
       }
     }
+    return true;
   }
   document
     .getElementById("btn-reset-all")
-    ?.addEventListener("click", _resetAllParams);
+    ?.addEventListener("click", () => _resetAllParams());
 
   // ── LUT loader ────────────────────────────────────────────────────────────
   const lutNameEl = document.getElementById("lut-name");
