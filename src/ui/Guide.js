@@ -279,9 +279,17 @@ function buildPanel() {
     // Content bug, same treatment as a missing chip: refuse visibly rather
     // than load a starting point the text does not describe.
     if (errors.length) { console.warn('[Guide]', errors); return; }
-    // The reset closes workspaces and lands on the default tab; render again
-    // so the step's own tab and first target come back.
-    if (await _loadStart(values)) render();
+    // Disabled while in flight: the loader may first wait for the first-launch
+    // project, and a second click in that gap would queue a second reset.
+    const btn = el.querySelector('#guide-start');
+    btn.disabled = true;
+    try {
+      // The reset closes workspaces and lands on the default tab; render again
+      // so the step's own tab and first target come back.
+      if (await _loadStart(values)) render();
+    } finally {
+      btn.disabled = false;
+    }
   });
   el.querySelector('#guide-prev').addEventListener('click', () => go(_idx - 1));
   el.querySelector('#guide-next').addEventListener('click', () => go(_idx + 1));

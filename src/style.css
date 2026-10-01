@@ -3082,6 +3082,7 @@ body.sp-floating #signal-path-docked-space {
     border-color: var(--accent-dim);
 }
 #guide-start.hidden { display: none; }
+#guide-start:disabled { opacity: 0.5; cursor: wait; }
 #guide-nav {
     display: flex;
     gap: 6px;

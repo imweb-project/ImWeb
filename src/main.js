@@ -2228,6 +2228,13 @@ async function main() {
   initGuide({
     ps, openWorkspace,
     loadStart: async (values) => {
+      // On a fresh profile the first-launch MasterProject import lands a few
+      // seconds after boot and REPLACES every value — a starting point loaded
+      // before it was silently overwritten (seen headless, 2026-10-01). A
+      // workshop room is all fresh browsers, so wait for it. bootProject is
+      // declared further down this function; by the time anyone can click,
+      // it is initialised.
+      await bootProject;
       const ok = await _resetAllParams(
         "Load this tutorial's starting point?\n\nEvery parameter goes back to " +
         "its default. Press Cancel, then Shift+S, if you want to keep the " +
