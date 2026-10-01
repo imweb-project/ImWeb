@@ -4034,6 +4034,15 @@ async function main() {
       openGuide("basics");
     });
 
+  // Solo marker. Driven from the param, not the `s` key, so a state recall or a
+  // MIDI mapping that turns Solo on shows it too. Sync once now: a saved
+  // project can boot with Solo already on.
+  const _soloEl = document.getElementById("status-solo");
+  const _syncSolo = (v) => { if (_soloEl) _soloEl.hidden = !v; };
+  ps.get("output.solo").onChange(_syncSolo);
+  _syncSolo(ps.get("output.solo").value);
+  _soloEl?.addEventListener("click", () => ps.set("output.solo", 0));
+
   // Keyboard lock toggle
   const _keylockBtn = document.getElementById("btn-keylock");
   ps.get("global.keylock").onChange((v) => {

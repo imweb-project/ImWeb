@@ -9,6 +9,10 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **SOLO marker in the status bar** — Solo (`s`) bypasses every effect, so a
+  stray keypress made the kaleidoscope vanish and its controls go dead with no
+  sign why (owner, testing Tutorial 0). A yellow SOLO pill now shows while it
+  is on, from any source — key, state recall, MIDI — and a click turns it off.
 - **Guided tour: a Tutorials track** — for video artists and workshop rooms.
   Each tutorial makes one thing in about five moves: result, starting point,
   moves, why it works, "now try". First two: *Tutorial 0 — a picture in sixty

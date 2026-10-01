@@ -5537,6 +5537,15 @@ body.midi-map-mode .param-row:hover {
 /* The indicator itself latches on, separately from the .learning flash it
    already wore for a one-shot learn — mode and arm are different states and
    both can be true at once. */
+/* Solo: a mode that silently removes every effect, so it shouts while on. */
+.indicator.solo {
+    cursor: pointer;
+    color: var(--bg-0);
+    background: var(--accent);
+    border-color: var(--accent);
+}
+.indicator.solo[hidden] { display: none; }
+
 .indicator.mapping {
     color: var(--bg-0);
     background: var(--accent);
