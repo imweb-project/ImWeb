@@ -747,10 +747,13 @@ Rutt-Etra**): you are looking at yourself drawn in scan lines.
 3. Right-click **Z Gain** and choose **Sound Bass**. The browser asks for the
    microphone; say yes. Now make a sound. The lines lift off the plane on low,
    loud sounds and lie flat when it's quiet.
-4. Turn **Persist** up a little so that each sound leaves a trace on the
-   phosphor.
-5. Press **`Shift`+`S`**, then play, speak or clap for a minute. This is the
-   piece.
+4. The lines twitch with every sound. Right-click the **BAS** badge on
+   Z Gain and set **Slew** to about 0.3. Now the lines breathe with the sound
+   instead of jumping. (Rise and Fall further down do something else: they
+   smooth the *camera picture*, not the sound.)
+5. Turn **Persist** up a little so that each sound leaves a trace on the
+   phosphor, and press **`Shift`+`S`**. Then play, speak or clap for a minute.
+   This is the piece.
 
 **Why it works.** Sound is a controller like any other. It does here exactly
 what the LFO did in Tutorial 0, only you play it instead of letting it run. It
