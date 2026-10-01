@@ -693,15 +693,16 @@ first time; say yes. You should see yourself.
 
 1. On the **Effects** tab, find **Kaleidoscope** and drag it to 6. Six
    segments: the picture folds into a mandala.
-2. Right-click **Kale.Rot** and choose **LFO Saw ↑**. A saw climbs and then
+2. Right-click (Control-click on a Mac) **Kale.Rot** and choose **LFO Saw ↑**. A saw climbs and then
    jumps back to the start, so the rotation keeps going round in one
    direction. (A sine would rock back and forth instead.)
 3. A box asks for the LFO rate. The default is 0.5, which means two seconds
    per turn. Type **0.05** for a slow twenty-second turn and press `Enter`.
 4. Press **`Shift`+`S`**. The look now sits in a slot on the state bar along
    the bottom.
-5. Drag Kaleidoscope back to 0, then press that slot's number key. The mandala
-   comes back, still turning.
+5. Drag Kaleidoscope back to 0, then click the tile you just saved on the
+   state bar. The mandala comes back, still turning. (The number keys `0`–`9`
+   also recall states, but only the first ten slots.)
 
 **Why it works.** You changed one value by hand and gave a second one a
 controller. Every patch in this instrument is built the same way, with
@@ -744,7 +745,7 @@ Rutt-Etra**): you are looking at yourself drawn in scan lines.
    1970s look.
 2. Set **Z Gain**'s **min** to 0 and its **max** to about 1.5 by dragging the
    two small numbers.
-3. Right-click **Z Gain** and choose **Sound Bass**. The browser asks for the
+3. Right-click (Control-click on a Mac) **Z Gain** and choose **Sound Bass**. The browser asks for the
    microphone; say yes. Now make a sound. The lines lift off the plane on low,
    loud sounds and lie flat when it's quiet.
 4. The lines twitch with every sound. Right-click the **BAS** badge on
@@ -829,7 +830,7 @@ Feedback 1, ready to go.
    wheel, so the spiral's rings run through the spectrum.
 3. Move **FBCenterX** and **FBCenterY**. That is the vanishing point. Off
    centre, the spiral swings to one side.
-4. Right-click **FBRotate** and choose **LFO Triangle**. In the rate box type
+4. Right-click (Control-click on a Mac) **FBRotate** and choose **LFO Triangle**. In the rate box type
    **0.05**. The spiral now winds one way, slows, and unwinds the other.
 5. Press **`Shift`+`S`**.
 
@@ -863,7 +864,7 @@ liquid.
    row's dropdown. The output is now the *map* that displaces the picture.
 2. Drag **Displace** up slowly from 0. Stop as soon as the picture starts to
    flow. A little goes a long way here.
-3. Right-click **DisplAngle** and choose **LFO Saw ↑**, with a rate of
+3. Right-click (Control-click on a Mac) **DisplAngle** and choose **LFO Saw ↑**, with a rate of
    **0.1**. The direction of the flow now goes round in a circle.
 4. Move in front of the camera. Your movement changes the output, which
    changes the map, which moves the picture again.
