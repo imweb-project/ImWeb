@@ -39,8 +39,8 @@
  */
 
 import * as THREE from 'three';
-import { RING_FETCH_ARRAY, VOL_SAMPLE_CHUNK, VOL_DEFAULTS, volFrame,
-         applyRingUniforms, ringUniforms } from './SpacetimeSlice.js';
+import { RING_FETCH_ARRAY, VOL_SAMPLE_CHUNK, VOL_KEY_CHUNK, VOL_DEFAULTS, volFrame,
+         applyRingUniforms, ringUniforms, keyUniforms, applyKeyUniforms } from './SpacetimeSlice.js';
 
 const VOL_VERT = /* glsl */ `
   out vec3 vW;
@@ -57,6 +57,7 @@ const VOL_FRAG = /* glsl */ `
   precision highp float;
   ${RING_FETCH_ARRAY}
   ${VOL_SAMPLE_CHUNK}
+  ${VOL_KEY_CHUNK}
   uniform mat3  uR;         // slice plane (cut): column 2 is its normal
   uniform vec3  uC;
   uniform vec3  uHalf;      // box half extents (A/2, 1/2, D/2)
@@ -68,6 +69,7 @@ const VOL_FRAG = /* glsl */ `
   uniform float uThresh;    // glow: luminance where opacity starts
   uniform float uSigma;     // glow: extinction per world unit
   uniform float uFrame;     // jitter seed
+  uniform int   uShade;     // keyed Solid: light the surface from its key gradient
   in  vec3 vW;
   out vec4 outColor;
 
@@ -104,34 +106,85 @@ const VOL_FRAG = /* glsl */ `
         if (sd > 0.0) tf = min(tf, tp); else tn = max(tn, tp);
       }
     }
-    if (tf <= tn) { outColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
+    // Outside the material is transparent once a key is on, so the output
+    // keyer's Alpha mode can stand the sculpture on a background. Key Off keeps
+    // the opaque black this view always had.
+    float bgA = uKeyMode == 0 ? 1.0 : 0.0;
+    if (tf <= tn) { outColor = vec4(0.0, 0.0, 0.0, bgA); return; }
 
-    if (uRender == 0) { outColor = vec4(at(ro + rd * tn).rgb, 1.0); return; }
+    // Unkeyed Solid: the block's faces are analytic — one sample, no march.
+    if (uRender == 0 && uKeyMode == 0) { outColor = vec4(at(ro + rd * tn).rgb, 1.0); return; }
+
+    if (uRender == 0) {
+      // KEYED SOLID — the sculpture. March to the first sample that is
+      // material (key >= 0.5), then bisect between it and the previous step so
+      // the surface sits on the 50% crossing rather than on the step grid. The
+      // frame crossfade interpolates the key too, which is what makes that
+      // surface smooth along time instead of stepped.
+      float tPrev = tn, tHit = -1.0;
+      for (int i = 0; i < ${MAX_STEPS}; i++) {
+        float t = min(tn + float(i) * uStep, tf);
+        if (volKey(at(ro + rd * t).rgb) >= 0.5) { tHit = t; break; }
+        tPrev = t;
+        if (t >= tf) break;
+      }
+      if (tHit < 0.0) { outColor = vec4(0.0, 0.0, 0.0, bgA); return; }
+      bool face = tHit <= tn;           // material reaches the box face / cut plane
+      if (!face) {
+        float a = tPrev, b = tHit;
+        for (int k = 0; k < 6; k++) {
+          float mid = 0.5 * (a + b);
+          if (volKey(at(ro + rd * mid).rgb) >= 0.5) b = mid; else a = mid;
+        }
+        tHit = b;
+      }
+      vec3 W = ro + rd * tHit;
+      vec3 col = at(W).rgb;
+      // A face is a flat cut through material — it keeps its picture unlit, as
+      // the cut face does unkeyed. Elsewhere the key's gradient is the normal.
+      if (uShade == 1 && !face) {
+        float h = 1.5 * uStep;
+        vec3 g = vec3(
+          volKey(at(W + vec3(h, 0, 0)).rgb) - volKey(at(W - vec3(h, 0, 0)).rgb),
+          volKey(at(W + vec3(0, h, 0)).rgb) - volKey(at(W - vec3(0, h, 0)).rgb),
+          volKey(at(W + vec3(0, 0, h)).rgb) - volKey(at(W - vec3(0, 0, h)).rgb));
+        if (dot(g, g) > 1e-8) {
+          vec3 n = -normalize(g);                          // key rises INTO material
+          vec3 L = normalize(-rd + vec3(0.0, 0.6, 0.0));   // headlight, from above
+          col *= 0.35 + 0.65 * max(dot(n, L), 0.0);
+        }
+      }
+      outColor = vec4(col, 1.0);
+      return;
+    }
 
     // March. Jittered start so the step layers do not show as rings.
     float t0 = tn + hash12(gl_FragCoord.xy + uFrame) * uStep;
     float a1 = 1.0 - exp(-uSigma * uStep);    // glow opacity of one step at full mask
     vec4  acc = vec4(0.0);
     vec3  mx  = vec3(0.0), sum = vec3(0.0);
-    float cnt = 0.0;
+    float cnt = 0.0, mMax = 0.0;
     for (int i = 0; i < ${MAX_STEPS}; i++) {
       float t = t0 + float(i) * uStep;
       if (t > tf) break;
-      vec3 c = at(ro + rd * t).rgb;
+      vec3  c = at(ro + rd * t).rgb;
+      float m = volKey(c);              // 1 everywhere with the key Off
       if (uRender == 1) {
+        // The key decides what glows once it is on; Off keeps the threshold.
         float l = dot(c, vec3(0.299, 0.587, 0.114));
-        float a = smoothstep(uThresh, uThresh + 0.1, l) * a1;
+        float a = (uKeyMode == 0 ? smoothstep(uThresh, uThresh + 0.1, l) : m) * a1;
         acc.rgb += (1.0 - acc.a) * a * c;
         acc.a   += (1.0 - acc.a) * a;
         if (acc.a > 0.98) break;
       } else if (uRender == 2) {
-        mx = max(mx, c);
+        mx = max(mx, c * m); mMax = max(mMax, m);
       } else {
-        sum += c; cnt += 1.0;
+        sum += c * m; cnt += m;           // keyed-out samples carry no weight
       }
     }
-    vec3 col = uRender == 1 ? acc.rgb : uRender == 2 ? mx : sum / max(cnt, 1.0);
-    outColor = vec4(col, 1.0);
+    vec3  col = uRender == 1 ? acc.rgb : uRender == 2 ? mx : sum / max(cnt, 1e-3);
+    float cov = uRender == 1 ? acc.a : uRender == 2 ? mMax : min(cnt, 1.0);
+    outColor = vec4(col, uKeyMode == 0 ? 1.0 : cov);
   }
 `;
 
@@ -140,7 +193,7 @@ export const VOLUME_DEFAULTS = {
   ...VOL_DEFAULTS,
   render: 0, cut: 0,
   camYaw: 35, camPitch: 20, camZoom: 1, fov: 35,
-  threshold: 0.2, density: 0.3, steps: 200, box: 1,
+  threshold: 0.2, density: 0.3, steps: 200, box: 1, shade: 1,
 };
 
 export class SpacetimeVolume {
@@ -156,6 +209,7 @@ export class SpacetimeVolume {
     this._seen  = { rev: -1 };
     this._frame = { R: new THREE.Matrix3(), C: new THREE.Vector3() };
     this._n = 0;
+    this._clearCol = new THREE.Color();
 
     this._persp = new THREE.PerspectiveCamera(35, 1, 0.01, 100);
     this._ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 200);
@@ -164,6 +218,8 @@ export class SpacetimeVolume {
       glslVersion: THREE.GLSL3,
       uniforms: {
         ...ringUniforms(),
+        ...keyUniforms(),
+        uShade:  { value: 1 },
         uR:      { value: new THREE.Matrix3() },
         uC:      { value: new THREE.Vector3() },
         uHalf:   { value: new THREE.Vector3(0.5, 0.5, 0.5) },
@@ -189,7 +245,6 @@ export class SpacetimeVolume {
     );
     this._edges.renderOrder = 1;
     this._scene = new THREE.Scene();
-    this._scene.background = new THREE.Color(0x000000);
     this._scene.add(this._box, this._edges);
 
     this._outRT = new THREE.WebGLRenderTarget(this._w, this._h, {
@@ -215,6 +270,8 @@ export class SpacetimeVolume {
     u.uC.value.copy(f.C);
     u.uRender.value = o.render | 0;
     u.uCut.value    = o.cut ? 1 : 0;
+    u.uShade.value  = o.shade ? 1 : 0;
+    applyKeyUniforms(u, o);
     // Step length from the box diagonal, so `steps` means "samples across the
     // whole object" whatever its proportions.
     const diag = Math.hypot(f.A, 1, f.D);
@@ -259,8 +316,19 @@ export class SpacetimeVolume {
 
     const rr = this.renderer;
     const prevRT = rr.getRenderTarget();
+    // Clear to transparent when keyed (the sculpture stands on nothing), opaque
+    // black otherwise. Done by hand rather than scene.background so the alpha
+    // can differ; the renderer's clear state is shared, so restore it.
+    const prevCol = rr.getClearColor(this._clearCol);
+    const prevA   = rr.getClearAlpha();
     rr.setRenderTarget(this._outRT);
+    rr.setClearColor(0x000000, o.key ? 0 : 1);
+    rr.clear(true, false, false);
+    const prevAuto = rr.autoClear;
+    rr.autoClear = false;
     rr.render(this._scene, cam);
+    rr.autoClear = prevAuto;
+    rr.setClearColor(prevCol, prevA);
     rr.setRenderTarget(prevRT);
   }
 

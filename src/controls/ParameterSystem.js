@@ -7579,6 +7579,44 @@ export function registerCoreParameters(ps) {
     type: PARAM_TYPE.SELECT, options: ["Quarter", "Half", "Full"], value: 1,
   });
   ps.register({ id: "vol.box", label: "Box lines", group: "vol", type: PARAM_TYPE.TOGGLE, value: 1 });
+  // ── Volume key: which parts of the history are MATERIAL ──
+  // Applied as the volume is read, not when frames are captured, so it
+  // reshapes all 120 frames at once and leaves TimeDisp's shared ring alone.
+  // Keyed Solid is a sculpture: the shape of what moved, swept through time.
+  // Same vocabulary as the output keyer (keyer.white/black/softness,
+  // keyer.chromahue/range/soft): luma keeps the band between Black and White,
+  // chroma REMOVES a hue (Invert keeps only it).
+  ps.register({
+    id: "vol.key", label: "Vol key", group: "vol",
+    type: PARAM_TYPE.SELECT, options: ["Off", "Luma", "Chroma", "Both"], value: 0,
+  });
+  ps.register({
+    id: "vol.keyBlack", label: "Vol key black", group: "vol",
+    min: 0, max: 100, value: 10, step: 1, unit: "%",
+  });
+  ps.register({
+    id: "vol.keyWhite", label: "Vol key white", group: "vol",
+    min: 0, max: 100, value: 100, step: 1, unit: "%",
+  });
+  ps.register({
+    id: "vol.keySoft", label: "Vol key soft", group: "vol",
+    min: 0, max: 100, value: 5, step: 1, unit: "%",
+  });
+  ps.register({
+    id: "vol.keyHue", label: "Vol key hue", group: "vol",
+    min: 0, max: 360, value: 120, step: 1, unit: "°",
+  }); // default: green, as keyer.chromahue
+  ps.register({
+    id: "vol.keyRange", label: "Vol key range", group: "vol",
+    min: 0, max: 100, value: 20, step: 1, unit: "%",
+  });
+  ps.register({
+    id: "vol.keyHueSoft", label: "Vol key hue soft", group: "vol",
+    min: 0, max: 100, value: 10, step: 1, unit: "%",
+  });
+  ps.register({ id: "vol.keyInvert", label: "Vol key invert", group: "vol", type: PARAM_TYPE.TOGGLE, value: 0 });
+  // Keyed Solid: light the surface from the key's gradient so it reads as form.
+  ps.register({ id: "vol.shade", label: "Vol shade", group: "vol", type: PARAM_TYPE.TOGGLE, value: 1 });
 
   // ── Warp Tape (`vwarp.*`) — source 22, panel "Warp ▸ Tape" ────────────────
   // A tape whose horizontal axis is time: one column written per frame at a

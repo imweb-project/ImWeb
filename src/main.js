@@ -10819,6 +10819,10 @@ void main() {
         camZoom: v("vol.camZoom") / 100, fov: v("vol.fov"),
         threshold: v("vol.threshold") / 100, density: v("vol.density") / 100,
         steps: v("vol.steps"), box: v("vol.box"),
+        key: v("vol.key"), keyInvert: v("vol.keyInvert"), shade: v("vol.shade"),
+        keyBlack: v("vol.keyBlack") / 100, keyWhite: v("vol.keyWhite") / 100,
+        keySoft: v("vol.keySoft") / 100, keyHue: v("vol.keyHue"),
+        keyRange: v("vol.keyRange") / 100, keyHueSoft: v("vol.keyHueSoft") / 100,
       };
       if (_volShowsVolume()) {
         const k = VOL_RES[v("vol.res")] ?? 0.5;

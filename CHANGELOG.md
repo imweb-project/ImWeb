@@ -32,6 +32,23 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
     set the angles, so there is no Custom state.
   - Test: `tests/spacetime-volume.html` checks 16 cases on both strategies.
     Mutation-checked: reading the newer neighbour turns the blend checks red.
+- **Volume key: sculpture instead of a box** (owner: "a build in keyer, luma
+  and color for the input to the volume, so we can create an sculptur that is
+  not cubed"). Luma / Chroma / Both, Invert, using the output keyer's maths.
+  It is applied as each sample is READ, never at capture. The shared ring stays
+  a plain record, and moving the key reshapes all 120 frames at once.
+  - Keyed Solid marches to the first material sample, then bisects to the 50%
+    crossing. The frame crossfade interpolates the key too, so the surface is
+    smooth along time. *Vol shade* lights it from the key's gradient; box faces
+    and the cut plane stay unlit, as flat cuts.
+  - Glow takes its opacity from the key. Max and Average weight samples by it.
+    Keyed-out is transparent (alpha = coverage), so the output keyer's Alpha mode
+    can stand the sculpture on a background. With the key Off, output is exactly
+    as before, opaque.
+  - Test: 9 more checks (25 total), covering keyed-out frames being black and
+    transparent, the back view landing on the kept boundary, Average counting only
+    kept frames, and shading matching the headlight term (0.907). Mutation-checked:
+    unweighted Average and a flipped normal each turn their check red.
 
 ### Changed
 - **Growth, Neural: roughly half the frame cost** (owner: "will this be able

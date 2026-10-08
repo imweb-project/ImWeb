@@ -101,7 +101,55 @@ export const VOL_SAMPLE_CHUNK = /* glsl */ `
   }
 `;
 
-/** Slice pass body — shared by both dialects; `SLICE_OUT` is the dialect's output. */
+/**
+ * The volume's own keyer: which parts of the history are MATERIAL. Applied at
+ * READ time to each sample, never at capture — the ring stays a plain record
+ * (TimeDisp shares it), and moving a key control reshapes all 120 frames at
+ * once instead of only those captured from now on.
+ *
+ * Same vocabulary and maths as the output keyer (src/shaders/index.js KEYER /
+ * CHROMA_KEY): luma keeps the band between Black and White, chroma removes a
+ * hue, desaturated pixels survive a chroma key. Invert flips the result.
+ * Returns 1 for every sample when the key is Off, so callers need no branch.
+ */
+export const VOL_KEY_CHUNK = /* glsl */ `
+  uniform int   uKeyMode;    // 0 off, 1 luma, 2 chroma, 3 both
+  uniform float uKeyBlack;   // 0..1
+  uniform float uKeyWhite;
+  uniform float uKeySoft;
+  uniform float uKeyHue;     // 0..1 turns
+  uniform float uKeyRange;
+  uniform float uKeyHueSoft;
+  uniform int   uKeyInvert;
+
+  vec3 volRgb2hsv(vec3 c) {
+    vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);
+    vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+    vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+    float d = q.x - min(q.w, q.y);
+    return vec3(abs(q.z + (q.w - q.y) / (6.0*d + 1e-10)), d / (q.x + 1e-10), q.x);
+  }
+
+  float volKey(vec3 c) {
+    if (uKeyMode == 0) return 1.0;
+    float m = 1.0;
+    if (uKeyMode != 2) {
+      float l    = dot(c, vec3(0.2126, 0.7152, 0.0722));
+      float soft = max(uKeySoft, 0.001);
+      m *= smoothstep(uKeyBlack - soft, uKeyBlack + soft, l)
+         * (1.0 - smoothstep(uKeyWhite - soft, uKeyWhite + soft, l));
+    }
+    if (uKeyMode != 1) {
+      vec3  hsv     = volRgb2hsv(c);
+      float hueDist = abs(fract(hsv.x - uKeyHue + 0.5) - 0.5) * 2.0;
+      float a = smoothstep(uKeyRange, uKeyRange + max(uKeyHueSoft, 0.001), hueDist);
+      m *= max(a, 1.0 - clamp(hsv.y * 4.0, 0.0, 1.0));
+    }
+    return uKeyInvert == 1 ? 1.0 - m : m;
+  }
+`;
+
+/** Slice pass body — shared by both dialects. */
 const SLICE_BODY = /* glsl */ `
   uniform mat3  uR;          // plane rotation (columns: U, V, normal)
   uniform vec3  uC;          // plane centre, world space
@@ -119,7 +167,11 @@ const SLICE_BODY = /* glsl */ `
     } else if (any(lessThan(P, vec3(0.0))) || any(greaterThan(P, vec3(1.0)))) {
       return vec4(0.0, 0.0, 0.0, 1.0);         // outside the history: nothing there
     }
-    return volSample(P);
+    vec4  c = volSample(P);
+    float m = volKey(c.rgb);
+    // Keyed-out is black AND transparent, so the output keyer's Alpha mode can
+    // lay the cut over a background. Key Off: m = 1, the pre-key output exactly.
+    return vec4(c.rgb * m, m);
   }
 `;
 
@@ -127,6 +179,7 @@ const ARRAY_FRAG = /* glsl */ `
   precision highp float;
   ${RING_FETCH_ARRAY}
   ${VOL_SAMPLE_CHUNK}
+  ${VOL_KEY_CHUNK}
   ${SLICE_BODY}
   in  vec2 vUv;
   out vec4 outColor;
@@ -142,6 +195,7 @@ const ATLAS_FRAG = /* glsl */ `
   precision highp float;
   ${RING_FETCH_ATLAS}
   ${VOL_SAMPLE_CHUNK}
+  ${VOL_KEY_CHUNK}
   ${SLICE_BODY}
   varying vec2 vUv;
   void main() { gl_FragColor = sliceAt(vUv); }
@@ -155,6 +209,9 @@ export const VOL_DEFAULTS = {
   yaw: 0, pitch: 0, roll: 0,
   cx: 0.5, cy: 0.5, time: 0,
   zoom: 1, depth: 1, blend: 1, edge: 0,
+  // key: off by default — every sample is material, the pre-key behaviour
+  key: 0, keyBlack: 0.1, keyWhite: 1.0, keySoft: 0.05,
+  keyHue: 120, keyRange: 0.2, keyHueSoft: 0.1, keyInvert: 0,
 };
 
 const _euler = new THREE.Euler();
@@ -204,6 +261,32 @@ export function applyRingUniforms(u, ring, frame, blend, seen) {
   u.uScale.value.set(frame.A, frame.D);
 }
 
+/** Uniforms for VOL_KEY_CHUNK. */
+export function keyUniforms() {
+  return {
+    uKeyMode:    { value: 0 },
+    uKeyBlack:   { value: 0.1 },
+    uKeyWhite:   { value: 1.0 },
+    uKeySoft:    { value: 0.05 },
+    uKeyHue:     { value: 1 / 3 },
+    uKeyRange:   { value: 0.2 },
+    uKeyHueSoft: { value: 0.1 },
+    uKeyInvert:  { value: 0 },
+  };
+}
+
+/** Write VOL_KEY_CHUNK's uniforms from read options (see VOL_DEFAULTS). */
+export function applyKeyUniforms(u, o) {
+  u.uKeyMode.value    = o.key | 0;
+  u.uKeyBlack.value   = o.keyBlack;
+  u.uKeyWhite.value   = o.keyWhite;
+  u.uKeySoft.value    = o.keySoft;
+  u.uKeyHue.value     = o.keyHue / 360;
+  u.uKeyRange.value   = o.keyRange;
+  u.uKeyHueSoft.value = o.keyHueSoft;
+  u.uKeyInvert.value  = o.keyInvert ? 1 : 0;
+}
+
 /** Uniform set for VOL_SAMPLE_CHUNK + a ring fetch (both dialects' superset). */
 export function ringUniforms() {
   return {
@@ -237,6 +320,7 @@ export class SpacetimeSlice {
 
     const sliceUniforms = () => ({
       ...ringUniforms(),
+      ...keyUniforms(),
       uR:         { value: new THREE.Matrix3() },
       uC:         { value: new THREE.Vector3() },
       uZoom:      { value: 1 },
@@ -285,6 +369,7 @@ export class SpacetimeSlice {
     u.uZoom.value      = Math.max(0.01, o.zoom);
     u.uAspectOut.value = this._w / this._h;
     u.uEdge.value      = o.edge | 0;
+    applyKeyUniforms(u, o);
 
     const r = this.renderer;
     const prevRT = r.getRenderTarget();

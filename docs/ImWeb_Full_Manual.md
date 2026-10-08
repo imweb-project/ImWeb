@@ -1357,6 +1357,20 @@ buffer recording even with TimeDisp switched off.
 | `vol.steps` | 16–1024 | Ray samples across the block (Glow / Max / Average). Cost scales with it |
 | `vol.res` | SELECT | Volume view resolution: Quarter / Half / Full |
 | `vol.box` | TOGGLE | Draw the block's outline |
+| `vol.key` | SELECT | Off / Luma / Chroma / Both: which parts of the history are material |
+| `vol.keyBlack` `vol.keyWhite` `vol.keySoft` | 0–100 % | Luma key: keep the brightness band between Black and White |
+| `vol.keyHue` `vol.keyRange` `vol.keyHueSoft` | °, % | Chroma key: remove this hue (grey survives, as in the output keyer) |
+| `vol.keyInvert` | TOGGLE | Swap kept and removed: carve the subject out, or keep only the keyed hue |
+| `vol.shade` | TOGGLE | Light the keyed Solid surface so it reads as a form |
+
+**Sculpting with the key.** With **Vol key** on, the block is no longer a box:
+only the keyed-in parts of each frame are solid. In **Solid** the camera sees the
+surface of what moved, swept through time. A figure becomes a tube in its own
+outline, and a hand wave becomes a fan. **Glow** lets only the keyed parts glow,
+and **Max / Average** count only them. Keyed-out areas are transparent, so with
+the output keyer's *Alpha* mode the sculpture stands on the background layer.
+The key works on the stored frames as they are read, so changing it reshapes
+the whole history at once, and TimeDisp (which shares the frames) is unaffected.
 
 > Solid costs about as much as Slice: one lookup per pixel. Glow, Max and Average
 > step through the whole block, so Ray steps × resolution is the cost. Lower

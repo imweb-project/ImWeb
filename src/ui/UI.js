@@ -168,6 +168,12 @@ const VOL_LIVE = [
   'vol.pitch', 'vol.yaw', 'vol.time', 'vol.depth',
   'vol.render', 'vol.cut', 'vol.camYaw', 'vol.camPitch',
 ];
+// Volume's key, its own subsection: the controls that turn the block into a
+// sculpture.
+const VOL_KEY = [
+  'vol.key', 'vol.keyBlack', 'vol.keyWhite', 'vol.keySoft',
+  'vol.keyHue', 'vol.keyRange', 'vol.keyHueSoft', 'vol.keyInvert', 'vol.shade',
+];
 
 export function buildMappingPanels(ps, contextMenu) {
   /**
@@ -413,7 +419,8 @@ export function buildMappingPanels(ps, contextMenu) {
     'growth-adv-params':   ps.getGroup('growth').filter(p => !GROWTH_LIVE.includes(p.id)),
     'tdisp-params':        ps.getGroup('td'),
     'vol-params':          VOL_LIVE.map(id => ps.get(id)).filter(Boolean),
-    'vol-adv-params':      ps.getGroup('vol').filter(p => !VOL_LIVE.includes(p.id)),
+    'vol-key-params':      VOL_KEY.map(id => ps.get(id)).filter(Boolean),
+    'vol-adv-params':      ps.getGroup('vol').filter(p => !VOL_LIVE.includes(p.id) && !VOL_KEY.includes(p.id)),
     'vectorscope-params':  ps.getGroup('vectorscope'),
     'slitscan-params':     ps.getGroup('slitscan'),
     // Warp Tape (Phase 24 Step 4) — source 22 is routable and its render path
