@@ -53,9 +53,11 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
     shortened to Cam … because the label column truncated "Camera turn". The
     frame outline is the **Frame** toggle, now in Camera.
   - `vol.view` defaults to Volume.
-  - Why 50 fps: measured, not guessed. Average zoomed in to 300% costs 43 ms a
-    frame on the UHD 630 against 0.7 ms for Solid, because every pixel walks all
-    120 frames. Numbers are in the manual.
+  - The owner's steady 50 fps turned out to be the laptop display set to 50 Hz:
+    rAF follows the refresh, so 50 was the ceiling, not a slowdown. (An earlier
+    note here blamed Average mode zoomed in; that mode is genuinely costly, at
+    43 ms a frame on the UHD 630 against 0.7 ms for Solid, but it was not the
+    cause.) The cost table is in the manual.
   - Tests: 6 shape checks (36 total); the Ring's seam direction is mutation-checked.
 - **Volume camera: smooth motion, clear names** (owner: "some confusion with
   naming where move is named orbit. can we add a smoother motion to mouse
