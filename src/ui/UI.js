@@ -167,7 +167,14 @@ const VOL_LIVE = [
   'vol.source', 'vol.freeze', 'vol.speed',
   'vol.view', 'vol.axial', 'vol.coronal', 'vol.sagittal',
   'vol.pitch', 'vol.yaw', 'vol.time', 'vol.depth',
-  'vol.render', 'vol.cut', 'vol.camYaw', 'vol.camPitch', 'vol.resetCam',
+  'vol.render', 'vol.cut',
+];
+// The Volume view's camera, its own subsection — the names say CAMERA so they
+// cannot be mistaken for the cut's angles above (the owner read "Orbit" as the
+// cut moving).
+const VOL_CAM = [
+  'vol.camYaw', 'vol.camPitch', 'vol.camZoom', 'vol.panX', 'vol.panY',
+  'vol.fov', 'vol.camSmooth', 'vol.resetCam',
 ];
 // Volume's key, its own subsection: the controls that turn the block into a
 // sculpture.
@@ -421,7 +428,8 @@ export function buildMappingPanels(ps, contextMenu) {
     'tdisp-params':        ps.getGroup('td'),
     'vol-params':          VOL_LIVE.map(id => ps.get(id)).filter(Boolean),
     'vol-key-params':      VOL_KEY.map(id => ps.get(id)).filter(Boolean),
-    'vol-adv-params':      ps.getGroup('vol').filter(p => !VOL_LIVE.includes(p.id) && !VOL_KEY.includes(p.id)),
+    'vol-cam-params':      VOL_CAM.map(id => ps.get(id)).filter(Boolean),
+    'vol-adv-params':      ps.getGroup('vol').filter(p => !VOL_LIVE.includes(p.id) && !VOL_KEY.includes(p.id) && !VOL_CAM.includes(p.id)),
     'vectorscope-params':  ps.getGroup('vectorscope'),
     'slitscan-params':     ps.getGroup('slitscan'),
     // Warp Tape (Phase 24 Step 4) — source 22 is routable and its render path

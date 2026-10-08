@@ -193,6 +193,7 @@ export const VOLUME_DEFAULTS = {
   ...VOL_DEFAULTS,
   render: 0, cut: 0,
   camYaw: 35, camPitch: 20, camZoom: 1, fov: 35, panX: 0, panY: 0,
+  camSmooth: 0.12, dt: 1 / 60,   // camera easing time constant (s); 0 = none
   threshold: 0.2, density: 0.3, steps: 200, box: 1, shade: 1,
 };
 
@@ -280,9 +281,28 @@ export class SpacetimeVolume {
     u.uSigma.value  = 200 * o.density * o.density;   // squared: the useful range is low
     u.uFrame.value  = (this._n = (this._n + 1) % 997);
 
+    // ── Camera smoothing ──
+    // The params are the truth (saved, recalled, mapped); what is RENDERED
+    // eases toward them with time constant camSmooth. Done here rather than in
+    // the gesture code so mouse, touch, MIDI, LFOs and state recalls all glide
+    // the same way. Frame-rate independent: k = 1 − e^(−dt/τ). Yaw takes the
+    // short way round, so 350° → 10° turns 20°, not 340°.
+    const cs = this._camS;
+    const k = o.camSmooth > 0 && cs ? 1 - Math.exp(-Math.min(o.dt, 0.25) / o.camSmooth) : 1;
+    if (!cs || k >= 1) {
+      this._camS = { yaw: o.camYaw, pitch: o.camPitch, zoom: o.camZoom, panX: o.panX, panY: o.panY };
+    } else {
+      cs.yaw   += ((((o.camYaw - cs.yaw) % 360) + 540) % 360 - 180) * k;
+      cs.pitch += (o.camPitch - cs.pitch) * k;
+      cs.zoom  *= Math.pow(o.camZoom / cs.zoom, k);   // zoom eases in ratio, not in steps
+      cs.panX  += (o.panX - cs.panX) * k;
+      cs.panY  += (o.panY - cs.panY) * k;
+    }
+    const c = this._camS;
+
     // ── Camera: orbit about the box centre, framing independent of fov ──
     const r = THREE.MathUtils.DEG2RAD;
-    const yaw = o.camYaw * r, pitch = THREE.MathUtils.clamp(o.camPitch, -89, 89) * r;
+    const yaw = c.yaw * r, pitch = THREE.MathUtils.clamp(c.pitch, -89, 89) * r;
     const dir = new THREE.Vector3(
       Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
     // Frame the box's bounding sphere at 100% zoom, whatever its proportions —
@@ -290,7 +310,7 @@ export class SpacetimeVolume {
     // output fits the width instead.
     const aspect = this._w / this._h;
     const radius = 0.5 * diag;
-    const halfH  = (1.05 * radius / Math.max(0.05, o.camZoom)) / Math.min(1, aspect);
+    const halfH  = (1.05 * radius / Math.max(0.05, c.zoom)) / Math.min(1, aspect);
     let cam;
     if (o.fov < 1) {
       cam = this._ortho;
@@ -312,13 +332,13 @@ export class SpacetimeVolume {
     cam.lookAt(0, 0, 0);
     // Pan: slide camera AND target along the view's own right/up axes, in
     // half-view-heights, so a drag moves the picture under the pointer.
-    if (o.panX || o.panY) {
+    if (c.panX || c.panY) {
       cam.updateMatrixWorld();
       const m = cam.matrixWorld.elements;          // columns 0/1 = right/up
       const off = new THREE.Vector3(
-        m[0] * o.panX + m[4] * o.panY,
-        m[1] * o.panX + m[5] * o.panY,
-        m[2] * o.panX + m[6] * o.panY).multiplyScalar(halfH);
+        m[0] * c.panX + m[4] * c.panY,
+        m[1] * c.panX + m[5] * c.panY,
+        m[2] * c.panX + m[6] * c.panY).multiplyScalar(halfH);
       cam.position.add(off);
       cam.lookAt(off);
     }

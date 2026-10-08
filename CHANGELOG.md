@@ -39,6 +39,16 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   TimeDisp's delay too. The new ring is allocated on first use, with
   `vol.bufRes` as its VRAM knob. Rec speed records that fraction of frames
   through an accumulator (25% = 8 s of history).
+- **Volume camera: smooth motion, clear names** (owner: "some confusion with
+  naming where move is named orbit. can we add a smoother motion to mouse
+  control?"). The rendered camera eases toward its params, `vol.camSmooth`
+  (time constant, default 0.12 s), frame-rate independent, with yaw taking the
+  short way round and zoom easing in ratio. It lives in the renderer, so mouse,
+  touch, MIDI, LFOs and state recalls all glide alike, and the params stay the
+  saved truth. Labels now say *Camera* (turn / tilt / zoom / pan / persp /
+  smooth / Reset camera), in their own Camera subsection, separate from the
+  cut's angles. Ids are unchanged, so saved states and mappings still hold.
+  3 more GPU checks (30); the short-way-round check is mutation-verified.
 - **Volume: camera by hand** (owner: "better 3d camera controls that also works
   with the mouse zoom"). The Camera-mode gesture grammar's target is now
   swappable (`GestureArbitrator` `camTarget`). While the Volume view is on

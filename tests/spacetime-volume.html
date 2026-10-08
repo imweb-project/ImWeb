@@ -149,7 +149,7 @@ function runVolume() {
   if (!ring.useArray) { check('volume: array path available', false); return; }
   const vol = new SpacetimeVolume(renderer, 64, 64);
   const maxBack = Math.max(1, Math.min(ring.slots - 1, ring.count - 1));
-  const centre = (opts) => { vol.render(ring, { fov: 0, camPitch: 0, blend: 0, box: 0, ...opts }); return read(vol.renderTarget)(32, 32); };
+  const centre = (opts) => { vol.render(ring, { fov: 0, camPitch: 0, camSmooth: 0, blend: 0, box: 0, ...opts }); return read(vol.renderTarget)(32, 32); };
 
   const front = centre({ camYaw: 0 }), back = centre({ camYaw: 180 });
   check('volume: front face is the newest frame', Math.abs(front - colourAt(ring, 0)) <= 2, `got ${front}`);
@@ -178,7 +178,7 @@ function runVolume() {
   // Pan: half-view-heights, so Pan X 50% in an orthographic 64px view moves
   // the picture exactly 16px LEFT (camera right = content left).
   const rightEdge = (opts) => {
-    vol.render(ring, { fov: 0, camPitch: 0, camYaw: 0, blend: 0, box: 0, ...opts });
+    vol.render(ring, { fov: 0, camPitch: 0, camSmooth: 0, camYaw: 0, blend: 0, box: 0, ...opts });
     const px = read(vol.renderTarget);
     let e = -1; for (let x = 0; x < 64; x++) if (px(x, 32) > 0) e = x;
     return e;
@@ -186,6 +186,23 @@ function runVolume() {
   const e0 = rightEdge({}), e1 = rightEdge({ panX: 0.5 }), e2 = rightEdge({ panY: 0.5 });
   check('volume: Pan X 50% moves the box 16px left', Math.abs((e0 - e1) - 16) <= 1, `edge ${e0} → ${e1}`);
   check('volume: Pan Y leaves the horizontal edge alone', e2 === e0, `edge ${e0} → ${e2}`);
+
+  // Camera smoothing: the rendered camera eases toward the params with
+  // k = 1 − e^(−dt/τ) per frame, and yaw takes the short way round.
+  {
+    const k = 1 - Math.exp(-(1 / 60) / 0.12);
+    vol.render(ring, { camYaw: 0, camSmooth: 0 });                       // snap
+    vol.render(ring, { camYaw: 90, camSmooth: 0.12, dt: 1 / 60 });
+    const one = vol._camS.yaw;
+    for (let i = 0; i < 120; i++) vol.render(ring, { camYaw: 90, camSmooth: 0.12, dt: 1 / 60 });
+    const settled = vol._camS.yaw;
+    vol.render(ring, { camYaw: 350, camSmooth: 0 });
+    vol.render(ring, { camYaw: 10, camSmooth: 0.12, dt: 1 / 60 });
+    const wrapStep = vol._camS.yaw - 350;
+    check('volume: camera eases one frame by k', Math.abs(one - 90 * k) < 1e-6, `${one.toFixed(3)} vs ${(90 * k).toFixed(3)}`);
+    check('volume: camera settles on the param', Math.abs(settled - 90) < 0.01, `${settled.toFixed(4)}`);
+    check('volume: yaw eases the short way round (350 → 10 = +20)', Math.abs(wrapStep - 20 * k) < 1e-6, `step ${wrapStep.toFixed(3)}`);
+  }
 
   // Perspective at constant framing still has the front face at the centre.
   const persp = centre({ camYaw: 0, fov: 60 });
@@ -217,7 +234,7 @@ function runKey() {
   sl.dispose();
 
   const vol = new SpacetimeVolume(renderer, 64, 64);
-  const at = (opts, ch = 0) => { vol.render(ring, { fov: 0, camPitch: 0, blend: 0, box: 0, ...opts }); return read(vol.renderTarget, ch)(32, 32); };
+  const at = (opts, ch = 0) => { vol.render(ring, { fov: 0, camPitch: 0, camSmooth: 0, blend: 0, box: 0, ...opts }); return read(vol.renderTarget, ch)(32, 32); };
   // Kept: ages 0..3 (red 210..150). Removed: ages 4..7 (130..70).
   const back = at({ ...KEY, camYaw: 180, shade: 0 });
   check('key: solid from the back lands on the kept boundary, not the oldest face',

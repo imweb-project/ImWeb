@@ -10879,6 +10879,7 @@ void main() {
         camYaw: v("vol.camYaw"), camPitch: v("vol.camPitch"),
         camZoom: v("vol.camZoom") / 100, fov: v("vol.fov"),
         panX: v("vol.panX") / 100, panY: v("vol.panY") / 100,
+        camSmooth: v("vol.camSmooth"), dt,
         threshold: v("vol.threshold") / 100, density: v("vol.density") / 100,
         steps: v("vol.steps"), box: v("vol.box"),
         key: v("vol.key"), keyInvert: v("vol.keyInvert"), shade: v("vol.shade"),

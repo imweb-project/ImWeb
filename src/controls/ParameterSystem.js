@@ -7535,11 +7535,11 @@ export function registerCoreParameters(ps) {
   // exposed face is exactly the Slice picture.
   ps.register({ id: "vol.cut", label: "Cut open", group: "vol", type: PARAM_TYPE.TOGGLE, value: 0 });
   ps.register({
-    id: "vol.camYaw", label: "Orbit", group: "vol",
+    id: "vol.camYaw", label: "Camera turn", group: "vol",
     min: 0, max: 360, value: 35, step: 1, unit: "°",
   });
   ps.register({
-    id: "vol.camPitch", label: "Orbit tilt", group: "vol",
+    id: "vol.camPitch", label: "Camera tilt", group: "vol",
     min: -89, max: 89, value: 20, step: 1, unit: "°",
   });
   // ── advanced ──
@@ -7567,19 +7567,25 @@ export function registerCoreParameters(ps) {
   // Crossfade neighbouring frames (KinoSlitscan) — off shows the time steps.
   ps.register({ id: "vol.blend", label: "Frame blend", group: "vol", type: PARAM_TYPE.TOGGLE, value: 1 });
   ps.register({
-    id: "vol.camZoom", label: "Orbit zoom", group: "vol",
+    id: "vol.camZoom", label: "Camera zoom", group: "vol",
     min: 25, max: 400, value: 100, step: 1, unit: "%",
   });
   // Camera pan across the screen, in half-heights of the view (right-drag).
   ps.register({
-    id: "vol.panX", label: "Orbit pan X", group: "vol",
+    id: "vol.panX", label: "Camera pan X", group: "vol",
     min: -300, max: 300, value: 0, step: 1, unit: "%",
   });
   ps.register({
-    id: "vol.panY", label: "Orbit pan Y", group: "vol",
+    id: "vol.panY", label: "Camera pan Y", group: "vol",
     min: -300, max: 300, value: 0, step: 1, unit: "%",
   });
-  ps.register({ id: "vol.resetCam", label: "Reset view", group: "vol", type: PARAM_TYPE.TRIGGER });
+  ps.register({ id: "vol.resetCam", label: "Reset camera", group: "vol", type: PARAM_TYPE.TRIGGER });
+  // How long the camera takes to glide to where the controls put it (time
+  // constant, s). Smooths mouse, touch, MIDI and LFOs alike; 0 = immediate.
+  ps.register({
+    id: "vol.camSmooth", label: "Camera smooth", group: "vol",
+    min: 0, max: 1, value: 0.12, step: 0.01, unit: "s",
+  });
   // Ring resolution — VRAM is w×h×4×120, so this is the cost knob. Same
   // options and Native clamp as td.bufferResolution.
   ps.register({
@@ -7589,7 +7595,7 @@ export function registerCoreParameters(ps) {
   });
   // Perspective strength at constant framing; below 1° it is orthographic.
   ps.register({
-    id: "vol.fov", label: "Perspective", group: "vol",
+    id: "vol.fov", label: "Camera persp", group: "vol",
     min: 0, max: 120, value: 35, step: 1, unit: "°",
   });
   ps.register({

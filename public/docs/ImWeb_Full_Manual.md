@@ -1343,7 +1343,9 @@ routed, so an unused Volume costs no memory.
 on screen, the canvas gestures drive the Volume's camera instead of the 3D scene:
 drag to orbit (a flick keeps it turning), wheel or trackpad pinch to zoom,
 right-drag to pan, and on touch one finger orbits and two pinch. **Reset view**
-puts the camera back.
+puts the camera back. The camera glides rather than jumps (*Camera smooth*), and
+all of its controls sit together in the **Camera** subsection, apart from the
+cut's own angles.
 
 | Parameter | Range | Description |
 |-----------|-------|-------------|
@@ -1364,11 +1366,12 @@ puts the camera back.
 | `vol.blend` | TOGGLE | Crossfade neighbouring frames; off shows the time steps |
 | `vol.render` | SELECT | Solid (opaque block) / Glow (bright motion becomes tubes, dark becomes clear) / Max (brightest along the view) / Average (time smear) |
 | `vol.cut` | TOGGLE | Cut the block open along the slice plane (Volume) |
-| `vol.camYaw` `vol.camPitch` | ° | Orbit around the block. An LFO on *Orbit* spins it |
-| `vol.camZoom` | 25–400 % | Orbit zoom (wheel / pinch) |
+| `vol.camYaw` `vol.camPitch` | ° | *Camera turn* / *Camera tilt*: the camera circling the block (drag the output). An LFO on *Camera turn* spins it |
+| `vol.camZoom` | 25–400 % | *Camera zoom* (wheel / pinch) |
 | `vol.panX` `vol.panY` | ±300 % | Camera pan in half-view-heights (right-drag) |
-| `vol.resetCam` | TRIGGER | Orbit 35°, tilt 20°, zoom 100 %, no pan |
-| `vol.fov` | 0–120° | Perspective strength at constant framing; 0 = orthographic (straight front / side / top views) |
+| `vol.resetCam` | TRIGGER | *Reset camera*: turn 35°, tilt 20°, zoom 100 %, no pan |
+| `vol.camSmooth` | 0–1 s | How long the camera takes to glide to where the controls put it. Smooths mouse, touch, MIDI and LFOs alike; 0 = immediate |
+| `vol.fov` | 0–120° | *Camera persp*: perspective strength at constant framing; 0 = orthographic (straight front / side / top views) |
 | `vol.threshold` `vol.density` | 0–100 % | Glow: brightness where opacity starts, and how fast it builds |
 | `vol.steps` | 16–1024 | Ray samples across the block (Glow / Max / Average). Cost scales with it |
 | `vol.res` | SELECT | Volume view resolution: Quarter / Half / Full |
