@@ -1315,6 +1315,54 @@ back into a captured frame buffer each pixel reads.
 > Buffer resolution is the dominant memory cost here — Native holds 120 full-size
 > frames. Drop to 640×360 first if you are tight on VRAM.
 
+#### Volume (source 34)
+
+Listed in source menus as **Volume**, panel **Sources ▸ Warp ▸ Volume**. The same
+120-frame buffer, treated as a block of video in (x, y, time), the "Time/Energy
+Object". It can be viewed two ways:
+
+- **Slice**: a flat cut through the block at any angle, like an MRI scan.
+  **Axial** is the frame at one moment (Time pos 0 = now). **Coronal** tilts the
+  cut so time runs down the screen: each row is one moment, the classic
+  slit-scan / photo-finish picture. **Sagittal** puts time across the screen.
+  Any angle in between is an oblique cut. Put an LFO on *Cut pitch* and the cut
+  tilts smoothly from "now" into the past.
+- **Volume**: the block itself, seen by a camera that orbits it. The front face
+  is the newest frame, the sides are slit-scans of the frame's edges, the top is
+  the history of its top row. **Cut open** removes the camera's side of the cut
+  plane, so the exposed face is exactly the Slice picture (the CT view).
+
+Volume records whatever **Capture src** above records. Routing it keeps the
+buffer recording even with TimeDisp switched off.
+
+| Parameter | Range | Description |
+|-----------|-------|-------------|
+| `vol.view` | SELECT | Slice / Volume |
+| `vol.axial` `vol.coronal` `vol.sagittal` | TRIGGER | Set the cut angles to that view (nothing else is stored) |
+| `vol.pitch` | 0–360° | Tilts the cut's vertical axis into time (90° = Coronal) |
+| `vol.yaw` | 0–360° | Turns the cut's horizontal axis into time (270° = Sagittal, newest on the right) |
+| `vol.roll` | 0–360° | Spins the cut in its own plane |
+| `vol.time` | 0–100 % | Where the cut sits in time: 0 = newest, 100 = oldest captured |
+| `vol.cx` `vol.cy` | 0–100 % | Cut centre across the frame |
+| `vol.zoom` | 25–400 % | Slice magnification |
+| `vol.depth` | 10–400 % | How deep the block is, relative to the frame height |
+| `vol.edge` | SELECT | Black / Clamp / Mirror outside the block (Slice) |
+| `vol.blend` | TOGGLE | Crossfade neighbouring frames; off shows the time steps |
+| `vol.render` | SELECT | Solid (opaque block) / Glow (bright motion becomes tubes, dark becomes clear) / Max (brightest along the view) / Average (time smear) |
+| `vol.cut` | TOGGLE | Cut the block open along the slice plane (Volume) |
+| `vol.camYaw` `vol.camPitch` | ° | Orbit around the block. An LFO on *Orbit* spins it |
+| `vol.camZoom` | 25–400 % | Orbit zoom |
+| `vol.fov` | 0–120° | Perspective strength at constant framing; 0 = orthographic (straight front / side / top views) |
+| `vol.threshold` `vol.density` | 0–100 % | Glow: brightness where opacity starts, and how fast it builds |
+| `vol.steps` | 16–1024 | Ray samples across the block (Glow / Max / Average). Cost scales with it |
+| `vol.res` | SELECT | Volume view resolution: Quarter / Half / Full |
+| `vol.box` | TOGGLE | Draw the block's outline |
+
+> Solid costs about as much as Slice: one lookup per pixel. Glow, Max and Average
+> step through the whole block, so Ray steps × resolution is the cost. Lower
+> *Vol res* first. The Volume view needs WebGL2 array textures; on the fallback
+> path the source shows the Slice and says so in the console.
+
 ---
 
 ### 4.19 Mix Buses (×3)

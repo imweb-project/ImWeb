@@ -964,3 +964,45 @@ sitting inside the instrument.
    exactly, which is what keeps the rotation a bit-exact identity by default.
 5. **Phase 27's viability is an empirical question about the owner's banks**, and
    the inspection in §7 answers it before any code is written.
+
+---
+
+## 13. Volume — the arbitrary plane, and the object (2026-10-08)
+
+*Built after Phase 25–27. Source 34, `src/inputs/SpacetimeSlice.js` +
+`SpacetimeVolume.js`, params `vol.*`.*
+
+**What §3 could not reach.** A tap reads the ring as t = m(u, v). Every output
+pixel keeps its own (x, y) and only picks a delay, so `td.angle` rotates the
+field *inside* the x–y plane. A plane that **contains the time axis** (an x–t cut,
+where the screen's vertical axis is time) is not of that form at all. The slice
+reader is the general affine form, (x, y, τ) = C + u·U + v·V, with U, V the
+columns of R = Ry(yaw)·Rx(pitch)·Rz(roll). The axial case reduces to a delay, so
+§3's plane is the special case of this one.
+
+**Two decisions, recorded so they are not re-derived:**
+
+1. **World space is physical, not normalised.** The plane is built in a box of
+   extents (A, 1, D): frame aspect, frame height, time depth. Rotating in [0,1]³
+   would shear every oblique cut by the frame's aspect. `volFrame()` is the one
+   definition, and the volume's cutaway uses it, so the cut face and the Slice
+   source cannot disagree. The test checks this (`cut face is the slice`).
+2. **`sampler2DArray`, not `sampler3D`.** A 3D texture would interpolate across
+   time for free, but render-to-layer on the array is what §4 proved and probed.
+   The price is one extra fetch per sample for the crossfade, which is
+   KinoSlitscan's method (it crossfades adjacent slices in its shader). Kino also
+   stores frames as YCgCo with chroma at ¼ resolution (~1.1 B/px against 4). That
+   is the route to a deeper ring if 120 frames ever feels short; not taken yet.
+
+**Ring sharing.** Volume reads `tdEngine.ring` and records what
+`td.captureSource` records. It is a puller in the consumption fixpoint (its reads
+are the capture source), and the capture gate is `td.enabled || volume used`.
+That is one history with readers added, as §2 intended.
+
+**Atlas path.** The slice works on both strategies (the same `ringFetch` split
+`DELAY_MAP_CHUNK` uses). The volume ray-march is array-only: hundreds of tile
+lookups per pixel on hardware that already failed the probe is the wrong trade.
+There the source shows the slice and warns once.
+
+**Open:** measure Glow at Full res on the iPad; the YCgCo ring; whether *Orbit*
+should get a default slow LFO in a named Look (memory: looks-first).

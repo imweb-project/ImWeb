@@ -97,6 +97,8 @@ import { MotionExtract } from "./inputs/MotionExtract.js";
 import { GrowthRD } from "./inputs/GrowthRD.js";
 import { GROWTH_RES, GROWTH_LOOKS } from "./inputs/GrowthPatterns.js";
 import { TimeDisplaceEngine } from "./inputs/TimeDisplaceEngine.js";
+import { SpacetimeSlice } from "./inputs/SpacetimeSlice.js";
+import { SpacetimeVolume } from "./inputs/SpacetimeVolume.js";
 import { VectorscopeInput } from "./inputs/VectorscopeInput.js";
 import { SlitScanBuffer } from "./inputs/SlitScanBuffer.js";
 import { VasulkaWarp } from "./inputs/VasulkaWarp.js";
@@ -634,6 +636,37 @@ async function main() {
     tdEngine.setBufferResolution(bw, bh);
   });
   ps.get("td.upscaleFilter").onChange((v) => tdEngine.setUpscaleFilter(v));
+  // Volume (source 34) — two more readers of the SAME ring (Blueprint §2/§13):
+  // an arbitrary plane through it, and the box seen by a camera. Neither owns
+  // history; both render only while the source is consumed (_srcUsed below).
+  const VOLUME_IDX = SOURCE_KEYS.indexOf("volume");
+  const VOL_RES = [0.25, 0.5, 1];   // index-aligned to vol.res options
+  const volSlice  = new SpacetimeSlice(renderer, _tdBW, _tdBH);
+  const volVolume = new SpacetimeVolume(renderer, W * VOL_RES[1], H * VOL_RES[1]);
+  // The volume view is array-path only (SpacetimeVolume header). On the atlas
+  // fallback the source shows the slice, and says why once.
+  let _volAtlasWarned = false;
+  const _volShowsVolume = () => {
+    if (ps.get("vol.view").value !== 1) return false;
+    if (tdEngine.ring.useArray) return true;
+    if (!_volAtlasWarned) {
+      console.warn("[Volume] the Volume view needs array textures; this backend uses the atlas fallback, so the Slice is shown.");
+      _volAtlasWarned = true;
+    }
+    return false;
+  };
+  const volumeTexture = () => (_volShowsVolume() ? volVolume.texture : volSlice.texture);
+  // DEV-only handle, same convention as __decks/__pipeline: lets a probe read
+  // the published target's pixels, which a headless screenshot cannot show.
+  if (import.meta.env.DEV) window.__volume = { slice: volSlice, volume: volVolume, ring: tdEngine.ring, renderer, ps };
+  // Presets are buttons that set the angles — nothing is stored but the angles.
+  const _volPreset = (pitch, yaw, time) => {
+    ps.set("vol.pitch", pitch); ps.set("vol.yaw", yaw);
+    ps.set("vol.roll", 0);      ps.set("vol.time", time);
+  };
+  ps.get("vol.axial").onTrigger(() => _volPreset(0, 0, 0));
+  ps.get("vol.coronal").onTrigger(() => _volPreset(90, 0, 50));
+  ps.get("vol.sagittal").onTrigger(() => _volPreset(0, 270, 50));
   const vectorscope = new VectorscopeInput();
   const slitScan = new SlitScanBuffer(W, H);
   // Tape lengths for vwarp.bufsize, index-aligned to that param's options
@@ -6168,6 +6201,7 @@ async function main() {
     if (key === "seq3") return seq3.texture;
     if (key === "analog") return analogTV.texture;
     if (key === "tdisp") return tdEngine.texture;
+    if (key === "volume") return volumeTexture();
     if (key === "mixbus") return pipeline.mixTextureAt(0);
     if (key === "mixbus2") return pipeline.mixTextureAt(1);
     if (key === "mixbus3") return pipeline.mixTextureAt(2);
@@ -10324,6 +10358,9 @@ void main() {
       { idx: MOTION_IDX,    reads: [_cMotion] },
       { idx: PARTICLES_IDX, reads: [_pmIdx] },
       { idx: GROWTH_IDX,    reads: [_cGrowSeed, _cGrowField] },
+      // Volume reads the ring, so it needs what the ring records — whether or
+      // not TimeDisp itself is on (the capture below follows the same rule).
+      { idx: VOLUME_IDX,    reads: [_captureIdx(ps.get("td.captureSource").value)] },
       { idx: SOURCE_KEYS.indexOf("scene3d"), reads: _s3dReads, seed: !!ps.get("scene3d.active")?.value },
       { idx: SOURCE_KEYS.indexOf("depth3d"), reads: _s3dReads },
     ];
@@ -10768,6 +10805,30 @@ void main() {
     // ticked, whatever it is.
     tdEngine.tick(ps, dt, _resolveCaptureTex(ps.get("td.mapSource").value));
 
+    // Volume (source 34) — READ before pipeline.render, beside the tdisp read,
+    // so inputs.volume is this frame's view of the ring (frame order: §9e).
+    if (_srcUsed(VOLUME_IDX)) {
+      const v = (id) => ps.get(id).value;
+      const volOpts = {
+        yaw: v("vol.yaw"), pitch: v("vol.pitch"), roll: v("vol.roll"),
+        cx: v("vol.cx") / 100, cy: v("vol.cy") / 100, time: v("vol.time") / 100,
+        zoom: v("vol.zoom") / 100, depth: v("vol.depth") / 100,
+        blend: v("vol.blend"), edge: v("vol.edge"),
+        render: v("vol.render"), cut: v("vol.cut"),
+        camYaw: v("vol.camYaw"), camPitch: v("vol.camPitch"),
+        camZoom: v("vol.camZoom") / 100, fov: v("vol.fov"),
+        threshold: v("vol.threshold") / 100, density: v("vol.density") / 100,
+        steps: v("vol.steps"), box: v("vol.box"),
+      };
+      if (_volShowsVolume()) {
+        const k = VOL_RES[v("vol.res")] ?? 0.5;
+        volVolume.setSize(W * k, H * k);
+        volVolume.render(tdEngine.ring, volOpts);
+      } else {
+        volSlice.render(tdEngine.ring, volOpts);
+      }
+    }
+
     // Render 3D scene if active OR used as a layer source
     const SCENE3D_IDX = 6; // index in SOURCES array
     const DEPTH3D_IDX = 20; // index in SOURCES array
@@ -10847,6 +10908,7 @@ void main() {
       sdfdepth: sdfGen.depthTexture,
       analog: analogTV.texture,
       tdisp: tdEngine.texture,
+      volume: volumeTexture(),
       seq1: seq1.texture,
       seq2: seq2.texture,
       seq3: seq3.texture,
@@ -11019,7 +11081,8 @@ void main() {
       _tdKey === "output" ? pipeline.prev.texture :
       _tdKey === "mixbus" ? pipeline.mixTexture   :
       (inputs[_tdKey] ?? null);
-    if (ps.get('td.enabled').value) tdEngine.capture(_tdSrc);
+    // Volume keeps the ring recording while it is routed — it IS the ring.
+    if (ps.get('td.enabled').value || _srcUsed(VOLUME_IDX)) tdEngine.capture(_tdSrc);
 
     // Warp Tape (source 22, formerly "Vasulka Warp"). NOT deprecated — this
     // comment used to claim it was "superseded by SequenceBuffer timewarp mode,

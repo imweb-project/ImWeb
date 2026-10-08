@@ -8,6 +8,31 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Added
+- **Volume (source 34): the frame history as a block of video in (x, y, time).**
+  Two more readers of the Time Displace ring. It is not a second copy of the
+  frames (Blueprint §13).
+  - *Slice*: an arbitrary plane through the block, (x, y, τ) = C + u·U + v·V,
+    set by pitch / yaw / roll and a time position. Axial is a plain delay,
+    Coronal is time down the screen (photo-finish), Sagittal is time across, and
+    every oblique cut lies between them, continuously. The time-displacement
+    source could not draw a cut that contains the time axis: it only picks a
+    delay per pixel.
+  - *Volume*: the block ray-marched in 3D (after three.js VolumeRenderShader1,
+    reading the sampler2DArray ring), with an orbit camera whose framing stays
+    put as the fov changes, down to orthographic at 0°. Render modes are Solid,
+    Glow, Max and Average. *Cut open* removes the camera's side of the slice
+    plane, so the exposed face is exactly the Slice: one plane definition,
+    `volFrame()`, shared by both.
+  - Neighbouring frames crossfade (KinoSlitscan's trick), so time does not band.
+    Found while testing: a time position meant to land on frame k read k − 1 from
+    float round-off; fixed with an epsilon before `floor`.
+  - Routing Volume keeps the ring recording with TimeDisp off (a puller row in the
+    consumption fixpoint, plus the capture gate). Presets are TRIGGERs that only
+    set the angles, so there is no Custom state.
+  - Test: `tests/spacetime-volume.html` checks 16 cases on both strategies.
+    Mutation-checked: reading the newer neighbour turns the blend checks red.
+
 ### Changed
 - **Growth, Neural: roughly half the frame cost** (owner: "will this be able
   to run at 60fps?", at 9 fps). Measured whole frames on the Intel UHD 630:
