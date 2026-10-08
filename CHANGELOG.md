@@ -32,6 +32,25 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
     set the angles, so there is no Custom state.
   - Test: `tests/spacetime-volume.html` checks 16 cases on both strategies.
     Mutation-checked: reading the newer neighbour turns the blend checks red.
+- **Volume: its own recording, with Freeze, Rec speed and any source**
+  (owner: "Can we freeze the volume or control the speed of it? … and add any
+  source?"). All three decide what is recorded, so Volume no longer shares
+  TimeDisp's ring. On the shared ring, freezing the sculpture would have frozen
+  TimeDisp's delay too. The new ring is allocated on first use, with
+  `vol.bufRes` as its VRAM knob. Rec speed records that fraction of frames
+  through an accumulator (25% = 8 s of history).
+- **Volume: camera by hand** (owner: "better 3d camera controls that also works
+  with the mouse zoom"). The Camera-mode gesture grammar's target is now
+  swappable (`GestureArbitrator` `camTarget`). While the Volume view is on
+  screen, the existing gestures drive its camera: drag orbit with flick coast,
+  wheel / trackpad-pinch zoom (eased), touch orbit and pinch, the 3-finger undo.
+  Right-drag pans (`vol.panX/Y`, in half-view-heights, so the picture follows
+  the pointer). Reset view button. The 3D scene path is unchanged.
+  New `tests/audit-gesture-camera-target.mjs` (in `npm test`) checks that both
+  targets get the same gestures, that tilt clamps at the poles rather than
+  wrapping, and that neither target leaks writes into the other. Mutation-checked
+  by restoring one hardcoded `scene3d.scale` write. The GPU test gains pan checks
+  (27 total).
 - **Volume key: sculpture instead of a box** (owner: "a build in keyer, luma
   and color for the input to the volume, so we can create an sculptur that is
   not cubed"). Luma / Chroma / Both, Invert, using the output keyer's maths.

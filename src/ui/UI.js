@@ -164,9 +164,10 @@ const GROWTH_LIVE = [
 // Volume's live set, in panel order: the view, the cut, the camera. The rest of
 // group 'vol' goes to the collapsed Advanced subsection.
 const VOL_LIVE = [
+  'vol.source', 'vol.freeze', 'vol.speed',
   'vol.view', 'vol.axial', 'vol.coronal', 'vol.sagittal',
   'vol.pitch', 'vol.yaw', 'vol.time', 'vol.depth',
-  'vol.render', 'vol.cut', 'vol.camYaw', 'vol.camPitch',
+  'vol.render', 'vol.cut', 'vol.camYaw', 'vol.camPitch', 'vol.resetCam',
 ];
 // Volume's key, its own subsection: the controls that turn the block into a
 // sculpture.

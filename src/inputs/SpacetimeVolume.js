@@ -192,7 +192,7 @@ const VOL_FRAG = /* glsl */ `
 export const VOLUME_DEFAULTS = {
   ...VOL_DEFAULTS,
   render: 0, cut: 0,
-  camYaw: 35, camPitch: 20, camZoom: 1, fov: 35,
+  camYaw: 35, camPitch: 20, camZoom: 1, fov: 35, panX: 0, panY: 0,
   threshold: 0.2, density: 0.3, steps: 200, box: 1, shade: 1,
 };
 
@@ -310,6 +310,18 @@ export class SpacetimeVolume {
     }
     cam.up.set(0, 1, 0);
     cam.lookAt(0, 0, 0);
+    // Pan: slide camera AND target along the view's own right/up axes, in
+    // half-view-heights, so a drag moves the picture under the pointer.
+    if (o.panX || o.panY) {
+      cam.updateMatrixWorld();
+      const m = cam.matrixWorld.elements;          // columns 0/1 = right/up
+      const off = new THREE.Vector3(
+        m[0] * o.panX + m[4] * o.panY,
+        m[1] * o.panX + m[5] * o.panY,
+        m[2] * o.panX + m[6] * o.panY).multiplyScalar(halfH);
+      cam.position.add(off);
+      cam.lookAt(off);
+    }
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
     cam.getWorldDirection(u.uCamDir.value);

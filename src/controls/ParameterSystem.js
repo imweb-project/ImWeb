@@ -7474,16 +7474,31 @@ export function registerCoreParameters(ps) {
   });
 
   // ── Volume (`vol.*`) — source 34, panel "Warp ▸ Volume" ───────────────────
-  // The Time Displace ring read as an (x, y, t) volume: cut by an arbitrary
-  // plane (Slice) or rendered as an object (Volume). SpacetimeSlice.js /
-  // SpacetimeVolume.js; Blueprint §13. It records what td.captureSource
-  // records — one shared history — and keeps the ring recording while routed,
-  // whether or not TimeDisp is on.
+  // A frame history read as an (x, y, t) volume: cut by an arbitrary plane
+  // (Slice) or rendered as an object (Volume). SpacetimeSlice.js /
+  // SpacetimeVolume.js; Blueprint §13. It has its OWN ring (allocated on first
+  // use): Source, Freeze and Rec speed decide what is recorded, and sharing
+  // TimeDisp's ring would have made each of them silently change TimeDisp too.
   // Group 'vol', so captured by Display States: every value here is a fixed-
   // meaning quantity or an index into a fixed in-code list.
   // The presets are TRIGGERs that only ps.set the angles. A preset SELECT would
   // need a Custom state, a re-entrancy guard and a restore-order contract
   // (Blueprint §3d) to buy nothing a button does not.
+  // What the volume records. options === CAPTURE_SOURCES, so it joins the
+  // capture-base migration by identity (CAPTURE_PARAM_IDS).
+  ps.register({
+    id: "vol.source", label: "Vol src", group: "vol",
+    type: PARAM_TYPE.SELECT, options: CAPTURE_SOURCES, value: 0,
+  });
+  // Stop recording: the history holds still and stays sculptable — the camera,
+  // the cut and the key all keep working on the frozen block.
+  ps.register({ id: "vol.freeze", label: "Freeze", group: "vol", type: PARAM_TYPE.TOGGLE, value: 0 });
+  // Fraction of frames recorded. 100% = every frame (2 s of history at 60 fps);
+  // 25% = every 4th (8 s) — slower recording, longer and more stretched block.
+  ps.register({
+    id: "vol.speed", label: "Rec speed", group: "vol",
+    min: 1, max: 100, value: 100, step: 1, unit: "%",
+  });
   ps.register({
     id: "vol.view", label: "View", group: "vol",
     type: PARAM_TYPE.SELECT, options: ["Slice", "Volume"], value: 0,
@@ -7554,6 +7569,23 @@ export function registerCoreParameters(ps) {
   ps.register({
     id: "vol.camZoom", label: "Orbit zoom", group: "vol",
     min: 25, max: 400, value: 100, step: 1, unit: "%",
+  });
+  // Camera pan across the screen, in half-heights of the view (right-drag).
+  ps.register({
+    id: "vol.panX", label: "Orbit pan X", group: "vol",
+    min: -300, max: 300, value: 0, step: 1, unit: "%",
+  });
+  ps.register({
+    id: "vol.panY", label: "Orbit pan Y", group: "vol",
+    min: -300, max: 300, value: 0, step: 1, unit: "%",
+  });
+  ps.register({ id: "vol.resetCam", label: "Reset view", group: "vol", type: PARAM_TYPE.TRIGGER });
+  // Ring resolution — VRAM is w×h×4×120, so this is the cost knob. Same
+  // options and Native clamp as td.bufferResolution.
+  ps.register({
+    id: "vol.bufRes", label: "Vol buffer res", group: "vol",
+    type: PARAM_TYPE.SELECT, select: true,
+    options: ["320×240", "640×360", "640×480", "Native"], value: 1,
   });
   // Perspective strength at constant framing; below 1° it is orthographic.
   ps.register({

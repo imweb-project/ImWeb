@@ -1332,11 +1332,25 @@ Object". It can be viewed two ways:
   the history of its top row. **Cut open** removes the camera's side of the cut
   plane, so the exposed face is exactly the Slice picture (the CT view).
 
-Volume records whatever **Capture src** above records. Routing it keeps the
-buffer recording even with TimeDisp switched off.
+Volume has **its own** 120-frame recording, separate from TimeDisp. **Vol src**
+picks what it records (any source, including the output or Volume itself for
+feedback), **Freeze** holds the history still while the camera, cut and key keep
+working on it, and **Rec speed** records only that fraction of frames: 25% keeps
+8 seconds instead of 2. The recording is allocated the first time Volume is
+routed, so an unused Volume costs no memory.
+
+**Camera by hand.** In Touch Mode *Camera* (the default), while the Volume view is
+on screen, the canvas gestures drive the Volume's camera instead of the 3D scene:
+drag to orbit (a flick keeps it turning), wheel or trackpad pinch to zoom,
+right-drag to pan, and on touch one finger orbits and two pinch. **Reset view**
+puts the camera back.
 
 | Parameter | Range | Description |
 |-----------|-------|-------------|
+| `vol.source` | SELECT | What the Volume records (any source) |
+| `vol.freeze` | TOGGLE | Stop recording; the frozen block stays sculptable |
+| `vol.speed` | 1–100 % | Fraction of frames recorded: lower = longer, more stretched history |
+| `vol.bufRes` | SELECT | Recording resolution: 320×240 / 640×360 / 640×480 / Native (VRAM = w×h×4×120) |
 | `vol.view` | SELECT | Slice / Volume |
 | `vol.axial` `vol.coronal` `vol.sagittal` | TRIGGER | Set the cut angles to that view (nothing else is stored) |
 | `vol.pitch` | 0–360° | Tilts the cut's vertical axis into time (90° = Coronal) |
@@ -1351,7 +1365,9 @@ buffer recording even with TimeDisp switched off.
 | `vol.render` | SELECT | Solid (opaque block) / Glow (bright motion becomes tubes, dark becomes clear) / Max (brightest along the view) / Average (time smear) |
 | `vol.cut` | TOGGLE | Cut the block open along the slice plane (Volume) |
 | `vol.camYaw` `vol.camPitch` | ° | Orbit around the block. An LFO on *Orbit* spins it |
-| `vol.camZoom` | 25–400 % | Orbit zoom |
+| `vol.camZoom` | 25–400 % | Orbit zoom (wheel / pinch) |
+| `vol.panX` `vol.panY` | ±300 % | Camera pan in half-view-heights (right-drag) |
+| `vol.resetCam` | TRIGGER | Orbit 35°, tilt 20°, zoom 100 %, no pan |
 | `vol.fov` | 0–120° | Perspective strength at constant framing; 0 = orthographic (straight front / side / top views) |
 | `vol.threshold` `vol.density` | 0–100 % | Glow: brightness where opacity starts, and how fast it builds |
 | `vol.steps` | 16–1024 | Ray samples across the block (Glow / Max / Average). Cost scales with it |

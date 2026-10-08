@@ -999,6 +999,16 @@ columns of R = Ry(yaw)·Rx(pitch)·Rz(roll). The axial case reduces to a delay, 
 are the capture source), and the capture gate is `td.enabled || volume used`.
 That is one history with readers added, as §2 intended.
 
+**CORRECTION (same day): Volume now owns its ring.** The owner asked for Freeze,
+a recording speed and "any source". All three are decisions about *what is
+recorded*. On a shared ring each would silently change TimeDisp too: freezing the
+sculpture would freeze TimeDisp's delay. §2's rule is about not keeping several
+copies of the *same* history. Once the recording controls differ, the two
+histories are no longer the same, so the rule does not apply. The ring is
+allocated on first use (`_volRingGet`), so an unrouted Volume costs no VRAM, and
+`vol.bufRes` is its cost knob. The fixpoint row now reads `vol.source`, and
+TimeDisp's capture gate is back to `td.enabled` alone.
+
 **Atlas path.** The slice works on both strategies (the same `ringFetch` split
 `DELAY_MAP_CHUNK` uses). The volume ray-march is array-only: hundreds of tile
 lookups per pixel on hardware that already failed the probe is the wrong trade.

@@ -175,6 +175,18 @@ function runVolume() {
   const glow = centre({ camYaw: 0, render: 1, threshold: 0, density: 0.5 });
   check('volume: Glow draws', glow > 0, `got ${glow}`);
 
+  // Pan: half-view-heights, so Pan X 50% in an orthographic 64px view moves
+  // the picture exactly 16px LEFT (camera right = content left).
+  const rightEdge = (opts) => {
+    vol.render(ring, { fov: 0, camPitch: 0, camYaw: 0, blend: 0, box: 0, ...opts });
+    const px = read(vol.renderTarget);
+    let e = -1; for (let x = 0; x < 64; x++) if (px(x, 32) > 0) e = x;
+    return e;
+  };
+  const e0 = rightEdge({}), e1 = rightEdge({ panX: 0.5 }), e2 = rightEdge({ panY: 0.5 });
+  check('volume: Pan X 50% moves the box 16px left', Math.abs((e0 - e1) - 16) <= 1, `edge ${e0} → ${e1}`);
+  check('volume: Pan Y leaves the horizontal edge alone', e2 === e0, `edge ${e0} → ${e2}`);
+
   // Perspective at constant framing still has the front face at the centre.
   const persp = centre({ camYaw: 0, fov: 60 });
   check('volume: perspective front face is the newest frame', Math.abs(persp - colourAt(ring, 0)) <= 2, `got ${persp}`);
