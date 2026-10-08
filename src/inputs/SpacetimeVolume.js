@@ -246,6 +246,7 @@ export const VOLUME_DEFAULTS = {
   render: 0, cut: 0,
   camYaw: 35, camPitch: 20, camZoom: 1, fov: 35, panX: 0, panY: 0,
   camSmooth: 0.12, dt: 1 / 60,   // camera easing time constant (s); 0 = none
+  autoTurn: 0,                   // °/s added to the camera's turn by the renderer
   threshold: 0.2, density: 0.3, steps: 200, box: 1, shade: 1, shape: 0,
 };
 
@@ -262,6 +263,7 @@ export class SpacetimeVolume {
     this._seen  = { rev: -1 };
     this._frame = { R: new THREE.Matrix3(), C: new THREE.Vector3() };
     this._n = 0;
+    this._spin = 0;   // auto-turn offset, degrees
     this._clearCol = new THREE.Color();
 
     this._persp = new THREE.PerspectiveCamera(35, 1, 0.01, 100);
@@ -367,10 +369,15 @@ export class SpacetimeVolume {
       cs.panY  += (o.panY - cs.panY) * k;
     }
     const c = this._camS;
+    // Auto turn: an angle the RENDERER accumulates on top of the camera's
+    // turn, not writes to vol.camYaw. Writing the param 60×/s would churn MIDI
+    // feedback and dirty every state, and would fight a drag; as an offset, a
+    // drag simply turns the camera relative to wherever the spin has got to.
+    this._spin = ((this._spin + o.autoTurn * Math.min(o.dt, 0.25)) % 360 + 360) % 360;
 
     // ── Camera: orbit about the box centre, framing independent of fov ──
     const r = THREE.MathUtils.DEG2RAD;
-    const yaw = c.yaw * r, pitch = THREE.MathUtils.clamp(c.pitch, -89, 89) * r;
+    const yaw = (c.yaw + this._spin) * r, pitch = THREE.MathUtils.clamp(c.pitch, -89, 89) * r;
     const dir = new THREE.Vector3(
       Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
     // Frame the box's bounding sphere at 100% zoom, whatever its proportions —
@@ -434,6 +441,9 @@ export class SpacetimeVolume {
 
   get texture() { return this._outRT.texture; }
   get renderTarget() { return this._outRT; }
+
+  /** Drop the auto-turn offset — Cam reset puts the camera exactly where it says. */
+  resetSpin() { this._spin = 0; }
 
   setSize(w, h) {
     w = Math.max(1, Math.floor(w));

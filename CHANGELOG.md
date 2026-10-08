@@ -39,6 +39,23 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   TimeDisp's delay too. The new ring is allocated on first use, with
   `vol.bufRes` as its VRAM knob. Rec speed records that fraction of frames
   through an accumulator (25% = 8 s of history).
+- **Second-screen mouse drives the camera; Volume Auto turn** (owner: "When
+  showing canvas on second monitor, the mouse doesnt work. add a slow
+  auto-rotate to the camera").
+  - The output window had no mouse path at all; it already forwarded keys. It
+    now forwards mouse drags and the wheel (`type:'cam'` messages) and the main
+    window runs them through the same down / move / up / wheel as its own
+    canvas. That code was factored out of the canvas listeners into one place, so
+    orbit, pan, zoom and the flick are identical on both screens, for the Volume
+    camera and the 3D scene alike. Mapping handles and the toolbar keep their
+    pointers, and the context menu is suppressed for right-drag pan. Verified
+    with real CDP mouse input inside the actual output window: turn 35 → 0, tilt
+    20 → 34, zoom 100 → 155 %, pan 25 %, all as calculated. The main canvas was
+    re-verified after the refactor.
+  - `vol.autoTurn` (°/s, default 5): the renderer accumulates it as an offset on
+    the camera's turn rather than writing `vol.camYaw` 60×/s, so there is no
+    MIDI or state churn and a drag works on top of it. Cam reset zeroes it.
+    2 more GPU checks (38): a half turn shows the back of the object.
 - **Volume: shapes, plain names, starts as Volume** (owner: "now the volume is a
   cube, can we have other shapes", "Cut through is not logical for me? Pitch and
   yaw?", "hiding the frame", "lets make it start as volume").

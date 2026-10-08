@@ -7589,6 +7589,15 @@ export function registerCoreParameters(ps) {
     min: -300, max: 300, value: 0, step: 1, unit: "%",
   });
   ps.register({ id: "vol.resetCam", label: "Cam reset", help: "Puts the camera back: turn 35°, tilt 20°, zoom 100%, no pan.", group: "vol", type: PARAM_TYPE.TRIGGER });
+  // Slow automatic turn of the camera round the object, °/s (negative = the
+  // other way). Applied by the renderer as an offset on top of Cam turn, so
+  // dragging still works while it spins. Default on, gently: a slowly turning
+  // object is the better first look (owner, 2026-10-08).
+  ps.register({
+    id: "vol.autoTurn", label: "Auto turn", group: "vol",
+    help: "Turns the camera slowly round the object by itself, degrees per second. 0 = still; negative turns the other way. Dragging still works while it turns.",
+    min: -60, max: 60, value: 5, step: 0.5, unit: "°/s",
+  });
   // How long the camera takes to glide to where the controls put it (time
   // constant, s). Smooths mouse, touch, MIDI and LFOs alike; 0 = immediate.
   ps.register({

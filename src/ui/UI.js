@@ -178,7 +178,7 @@ const VOL_CUT = [
 // cannot be mistaken for the cut's angles (the owner read "Orbit" as the cut
 // moving). Short: the label column truncates past ~10 characters.
 const VOL_CAM = [
-  'vol.camYaw', 'vol.camPitch', 'vol.camZoom', 'vol.panX', 'vol.panY',
+  'vol.autoTurn', 'vol.camYaw', 'vol.camPitch', 'vol.camZoom', 'vol.panX', 'vol.panY',
   'vol.fov', 'vol.camSmooth', 'vol.box', 'vol.resetCam',
 ];
 // Volume's key, its own subsection: the controls that turn the block into a

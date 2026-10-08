@@ -697,6 +697,7 @@ async function main() {
     },
   };
   ps.get("vol.resetCam").onTrigger(() => {
+    volVolume.resetSpin();
     for (const [id, v] of [["vol.camYaw", 35], ["vol.camPitch", 20], ["vol.camZoom", 100],
                            ["vol.panX", 0], ["vol.panY", 0]]) ps.set(id, v);
   });
@@ -3715,6 +3716,42 @@ async function main() {
     if(selTan)nudgeTangent(d[0],d[1]); else nudgePoint(d[0],d[1]);
   });
 
+  // Mouse → opener's camera. This window has no camera of its own: a drag on
+  // the picture orbits (right-drag pans) and the wheel zooms, by forwarding to
+  // the main window, which runs them through the same code as its own canvas.
+  // Projection-mapping handles and the toolbar keep their pointers. Mouse
+  // only — touch on a projector window is the mapping's.
+  var camId=null;
+  const camSend=(o)=>window.opener?.postMessage(Object.assign({type:'cam'},o),'*');
+  window.addEventListener('pointerdown',e=>{
+    if(e.pointerType!=='mouse')return;
+    if(e.target&&e.target.closest&&e.target.closest('.h,.th,#toolbar'))return;
+    if(e.button!==0&&e.button!==2)return;
+    camId=e.pointerId;
+    try{document.documentElement.setPointerCapture(e.pointerId);}catch(_){}
+    camSend({ev:'down',x:e.clientX,y:e.clientY,button:e.button,h:window.innerHeight});
+  });
+  window.addEventListener('pointermove',e=>{
+    if(e.pointerId!==camId)return;
+    camSend({ev:'move',x:e.clientX,y:e.clientY});
+  });
+  const camEnd=(ev)=>e=>{
+    if(e.pointerId!==camId)return;
+    camId=null;
+    camSend({ev:ev});
+  };
+  window.addEventListener('pointerup',camEnd('up'));
+  window.addEventListener('pointercancel',camEnd('cancel'));
+  window.addEventListener('wheel',e=>{
+    e.preventDefault();
+    camSend({ev:'wheel',dy:e.deltaY,mode:e.deltaMode,ctrl:e.ctrlKey});
+  },{passive:false});
+  // Right-drag pans, so the context menu must not open on the picture.
+  window.addEventListener('contextmenu',e=>{
+    if(e.target&&e.target.closest&&e.target.closest('#toolbar'))return;
+    e.preventDefault();
+  });
+
   // Anything this window does NOT own goes to the opener. While you are working
   // on the projector the output window has focus, so every ImWeb shortcut was
   // landing in the wrong document and doing nothing.
@@ -3871,7 +3908,22 @@ async function main() {
 
   // ── Projection Mapping ────────────────────────────────────────────────────
   // Corner handles live on the second screen. It sends updates back here.
+  // Mouse on the second-screen output window. That window owns no camera; it
+  // forwards its drags and wheel here and they run through the SAME down /
+  // move / up / wheel as this window's canvas (assigned in the desktop mouse
+  // block below), so orbit, pan, zoom and the flick feel identical on either
+  // screen. Null until that block has run.
+  let _camRemote = null;
   window.addEventListener("message", (e) => {
+    if (e.data?.type === "cam" && _camRemote) {
+      const d = e.data;
+      if (d.ev === "down") _camRemote.down(+d.x, +d.y, d.button | 0, +d.h);
+      else if (d.ev === "move") _camRemote.move(+d.x, +d.y);
+      else if (d.ev === "up") _camRemote.up();
+      else if (d.ev === "cancel") _camRemote.cancel();
+      else if (d.ev === "wheel") _camRemote.wheel(+d.dy, d.mode | 0, !!d.ctrl);
+      return;
+    }
     if (e.data?.type === "key" && typeof e.data.key === "string") {
       // Replayed, not re-implemented: the shortcut table stays in one place.
       // The synthesized event is untrusted, so anything needing a real user
@@ -9906,24 +9958,29 @@ void main() {
       _zoomStop();
     }
   };
+  // The zoom itself, shared by this canvas and the second-screen output window
+  // (which forwards its wheel here — see _camRemote).
+  const _camWheel = (deltaY, deltaMode, ctrlKey) => {
+    const id = _volCamLive && (ps.get("touch.mode")?.value ?? 2) === 0 ? "vol.camZoom" : "scene3d.scale";
+    if (id !== _zoomId) { _zoomStop(); _zoomId = id; }
+    const p = ps.get(_zoomId);
+    if (!p) return;
+    const sens = ps.get("canvas.wheelSens")?.value ?? 1;
+    const dy = deltaMode === 1 ? deltaY * 16 : deltaY; // lines → px
+    const k = ctrlKey ? 0.01 : 0.0015; // pinch deltas are much smaller
+    // Exponential zoom: equal wheel travel = equal zoom ratio, and the
+    // scale can never cross zero; clamp the target to the param range
+    const base = _zoomTarget ?? p.value;
+    _zoomTarget = Math.max(p.min, Math.min(p.max, base * Math.exp(-dy * k * sens)));
+    _zoomExpected = p.value;
+    if (!_zoomRaf) _zoomRaf = requestAnimationFrame(_zoomTick);
+  };
   canvas.addEventListener(
     "wheel",
     (e) => {
       if (!(ps.get("canvas.wheelZoom")?.value > 0.5)) return;
       e.preventDefault();
-      const id = _volCamLive && (ps.get("touch.mode")?.value ?? 2) === 0 ? "vol.camZoom" : "scene3d.scale";
-      if (id !== _zoomId) { _zoomStop(); _zoomId = id; }
-      const p = ps.get(_zoomId);
-      if (!p) return;
-      const sens = ps.get("canvas.wheelSens")?.value ?? 1;
-      const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY; // lines → px
-      const k = e.ctrlKey ? 0.01 : 0.0015; // pinch deltas are much smaller
-      // Exponential zoom: equal wheel travel = equal zoom ratio, and the
-      // scale can never cross zero; clamp the target to the param range
-      const base = _zoomTarget ?? p.value;
-      _zoomTarget = Math.max(p.min, Math.min(p.max, base * Math.exp(-dy * k * sens)));
-      _zoomExpected = p.value;
-      if (!_zoomRaf) _zoomRaf = requestAnimationFrame(_zoomTick);
+      _camWheel(e.deltaY, e.deltaMode, e.ctrlKey);
     },
     { passive: false },
   );
@@ -9937,52 +9994,51 @@ void main() {
     const PAN = 0.01; // pos-units/px
     const FLICK_MAX_AGE_MS = 80; // same freshness rule as the touch flick
     let drag = null;
-    canvas.addEventListener("pointerdown", (e) => {
-      if (e.pointerType !== "mouse") return;
-      if ((ps.get("touch.mode")?.value ?? 2) !== 0) return; // Camera only
-      if (e.button !== 0 && e.button !== 2) return;
-      canvas.setPointerCapture(e.pointerId);
+    // down / move / up are written once and fed by two surfaces: this canvas,
+    // and the second-screen output window, which forwards its mouse here as
+    // messages (_camRemote). Coordinates are client px of whichever surface;
+    // `h` is that surface's height, which is what makes the pan one-to-one.
+    const down = (x, y, button, h) => {
+      if ((ps.get("touch.mode")?.value ?? 2) !== 0) return false; // Camera only
+      if (button !== 0 && button !== 2) return false;
       // Tactile clutch, same as touch: grabbing the canvas kills a coast
       gestureArb._coastVX = 0;
       gestureArb._coastVY = 0;
       // Same spin handover as a touch grab: orbiting takes control from
       // auto-spin (freezes current orientation into rot, zeroes spin)
-      if (e.button === 0) gestureArb._grabSpinControl();
+      if (button === 0) gestureArb._grabSpinControl();
       // The orbit goes to whatever the arbitrator's camera target is — the 3D
       // scene, or the Volume's camera while the Volume view is on screen — so
       // mouse, touch and the flick coast can never disagree about it.
       const cam = gestureArb._cam();
       const c0 = cam.get();
       drag = {
-        btn: e.button,
-        x: e.clientX,
-        y: e.clientY,
-        cam, c0,
+        btn: button, x, y, cam, c0,
         vol: !cam.scene,
         panX: ps.get("vol.panX").value,
         panY: ps.get("vol.panY").value,
-        h: canvas.getBoundingClientRect().height || 1,
+        h: h || 1,
         posX: ps.get("scene3d.pos.x")?.value ?? 0,
         posY: ps.get("scene3d.pos.y")?.value ?? 0,
-        vx: 0, vy: 0, lastX: e.clientX, lastY: e.clientY,
+        vx: 0, vy: 0, lastX: x, lastY: y,
         lastT: performance.now(),
       };
-      e.preventDefault();
-    });
-    canvas.addEventListener("pointermove", (e) => {
-      if (!drag || !canvas.hasPointerCapture(e.pointerId)) return;
-      const dx = e.clientX - drag.x;
-      const dy = e.clientY - drag.y;
+      return true;
+    };
+    const move = (x, y) => {
+      if (!drag) return;
+      const dx = x - drag.x;
+      const dy = y - drag.y;
       if (drag.btn === 0) {
         drag.cam.set({ y: drag.c0.y + dx * ORBIT, x: drag.c0.x + dy * ORBIT });
         // Flick velocity (deg/s), same EMA smoothing as the touch orbit
         const now = performance.now();
         const mdt = (now - drag.lastT) / 1000;
         if (mdt > 0 && mdt < 0.1) {
-          drag.vx = drag.vx * 0.6 + (((e.clientX - drag.lastX) * ORBIT) / mdt) * 0.4;
-          drag.vy = drag.vy * 0.6 + (((e.clientY - drag.lastY) * ORBIT) / mdt) * 0.4;
+          drag.vx = drag.vx * 0.6 + (((x - drag.lastX) * ORBIT) / mdt) * 0.4;
+          drag.vy = drag.vy * 0.6 + (((y - drag.lastY) * ORBIT) / mdt) * 0.4;
         }
-        drag.lastX = e.clientX; drag.lastY = e.clientY; drag.lastT = now;
+        drag.lastX = x; drag.lastY = y; drag.lastT = now;
       } else if (drag.vol) {
         // Volume pan is in half-view-heights: the picture follows the pointer
         // one-to-one (exactly so in orthographic, at the box centre otherwise).
@@ -9993,23 +10049,38 @@ void main() {
         ps.set("scene3d.pos.x", drag.posX + dx * PAN);
         ps.set("scene3d.pos.y", drag.posY - dy * PAN); // screen up = +y
       }
-    });
-    canvas.addEventListener("pointerup", (e) => {
+    };
+    const up = () => {
       if (!drag) return;
       // Release flick → hand the velocity to the arbitrator's coast state;
       // the render loop's gestureArb.tick(dt) applies the SAME friction
       // physics as a touch flick (mouse never populates _pointers, so the
       // tick's touch guard cannot cancel a mouse-initiated coast).
-      if (
-        drag.btn === 0 &&
-        e.pointerType === "mouse" &&
-        performance.now() - drag.lastT < FLICK_MAX_AGE_MS
-      ) {
+      if (drag.btn === 0 && performance.now() - drag.lastT < FLICK_MAX_AGE_MS) {
         gestureArb._coastVX = drag.vx;
         gestureArb._coastVY = drag.vy;
       }
       drag = null;
+    };
+    canvas.addEventListener("pointerdown", (e) => {
+      if (e.pointerType !== "mouse") return;
+      if (!down(e.clientX, e.clientY, e.button, canvas.getBoundingClientRect().height)) return;
+      canvas.setPointerCapture(e.pointerId);
+      e.preventDefault();
     });
+    canvas.addEventListener("pointermove", (e) => {
+      if (!drag || !canvas.hasPointerCapture(e.pointerId)) return;
+      move(e.clientX, e.clientY);
+    });
+    canvas.addEventListener("pointerup", (e) => {
+      if (e.pointerType === "mouse") up(); else drag = null;
+    });
+    _camRemote = {
+      down, move, up, cancel: () => { drag = null; },
+      wheel: (dy, mode, ctrl) => {
+        if (ps.get("canvas.wheelZoom")?.value > 0.5) _camWheel(dy, mode, ctrl);
+      },
+    };
     canvas.addEventListener("pointercancel", () => { drag = null; });
     // Right-drag pan needs the context menu suppressed on the canvas
     canvas.addEventListener("contextmenu", (e) => e.preventDefault());
@@ -10880,7 +10951,7 @@ void main() {
         camZoom: v("vol.camZoom") / 100, fov: v("vol.fov"),
         panX: v("vol.panX") / 100, panY: v("vol.panY") / 100,
         camSmooth: v("vol.camSmooth"), dt,
-        shape: v("vol.shape"),
+        shape: v("vol.shape"), autoTurn: v("vol.autoTurn"),
         threshold: v("vol.threshold") / 100, density: v("vol.density") / 100,
         steps: v("vol.steps"), box: v("vol.box"),
         key: v("vol.key"), keyInvert: v("vol.keyInvert"), shade: v("vol.shade"),

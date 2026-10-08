@@ -1343,7 +1343,10 @@ routed, so an unused Volume costs no memory.
 on screen, the canvas gestures drive the Volume's camera instead of the 3D scene:
 drag to orbit (a flick keeps it turning), wheel or trackpad pinch to zoom,
 right-drag to pan, and on touch one finger orbits and two pinch. **Reset view**
-puts the camera back. The camera glides rather than jumps (*Camera smooth*), and
+puts the camera back. The same mouse gestures work on the **second-screen output
+window**: it forwards its drags and wheel to the main window, so the projector
+picture can be orbited directly. Drags that start on a projection-mapping handle or
+the toolbar stay with the mapping. The camera glides rather than jumps (*Camera smooth*), and
 all of its controls sit together in the **Camera** subsection, apart from the
 cut's own angles.
 
@@ -1367,6 +1370,7 @@ cut's own angles.
 | `vol.blend` | TOGGLE | Crossfade neighbouring frames; off shows the time steps |
 | `vol.render` | SELECT | Solid (opaque block) / Glow (bright motion becomes tubes, dark becomes clear) / Max (brightest along the view) / Average (time smear) |
 | `vol.cut` | TOGGLE | **Cut away**: remove everything between the camera and the cut, so you look into the object at the cut surface (Volume view) |
+| `vol.autoTurn` | −60–60 °/s | **Auto turn**: the camera slowly circles the object by itself (default 5 °/s; 0 = still). Dragging still works while it turns; Cam reset zeroes the accumulated turn |
 | `vol.camYaw` `vol.camPitch` | ° | *Camera turn* / *Camera tilt*: the camera circling the block (drag the output). An LFO on *Camera turn* spins it |
 | `vol.camZoom` | 25–400 % | *Camera zoom* (wheel / pinch) |
 | `vol.panX` `vol.panY` | ±300 % | Camera pan in half-view-heights (right-drag) |

@@ -204,6 +204,21 @@ function runVolume() {
     check('volume: yaw eases the short way round (350 → 10 = +20)', Math.abs(wrapStep - 20 * k) < 1e-6, `step ${wrapStep.toFixed(3)}`);
   }
 
+  // Auto turn: the renderer adds autoTurn·dt to the camera's turn each frame.
+  // 60 frames at 180°/s and dt 1/60 is a half turn — the camera then looks at
+  // the BACK of the box, so the centre is the oldest frame. resetSpin() zeroes it.
+  {
+    vol.resetSpin();
+    for (let i = 0; i < 60; i++) vol.render(ring, { fov: 0, camPitch: 0, camYaw: 0, camSmooth: 0, blend: 0, box: 0, autoTurn: 180, dt: 1 / 60 });
+    const spun = read(vol.renderTarget)(32, 32);
+    check('volume: Auto turn — a half turn shows the back (oldest frame)',
+          Math.abs(vol._spin - 180) < 1e-6 && Math.abs(spun - colourAt(ring, maxBack)) <= 2,
+          `spin ${vol._spin.toFixed(3)}°, centre ${spun}`);
+    vol.resetSpin();
+    const front = centre({ camYaw: 0 });
+    check('volume: Cam reset drops the spin — front face again', vol._spin === 0 && Math.abs(front - colourAt(ring, 0)) <= 2, `centre ${front}`);
+  }
+
   // Perspective at constant framing still has the front face at the centre.
   const persp = centre({ camYaw: 0, fov: 60 });
   check('volume: perspective front face is the newest frame', Math.abs(persp - colourAt(ring, 0)) <= 2, `got ${persp}`);
