@@ -39,6 +39,24 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   TimeDisp's delay too. The new ring is allocated on first use, with
   `vol.bufRes` as its VRAM knob. Rec speed records that fraction of frames
   through an accumulator (25% = 8 s of history).
+- **Volume camera: Auto turn starts at 0; the object cannot be panned off
+  screen** (owner: "make it start at 0. after playing with it it ended in a
+  blank black canvas and i couldn't get the volume back. I was using the mouse
+  to zoom and turn").
+  - Not reproduced as a permanent fault. A seeded storm of 60 random real-mouse
+    bursts (drags, wheel and pinch bursts, pans) kept the camera state finite,
+    and Cam reset always recovered it. The storm did show how the object gets
+    lost: wheel or trackpad zoom-out to the 25% floor leaves a ~1% speck, and
+    right-drag pan had no limit, so the object could be slid off screen where
+    nothing brings it back. Cut away from the wrong side also empties the view
+    legitimately.
+  - Pan is now bounded so the object's centre stays inside the view. A first
+    attempt also allowed for the object's bounding radius, which let it escape
+    when zoomed out (measured with lit = 0); the centre bound is exact for any
+    shape and zoom. Four 5000 px flings now leave it visible at each edge.
+  - `vol.autoTurn` defaults to 0. Cam reset is first in the Camera section. The
+    renderer's smoothed turn angle is kept in 0–360° (it had drifted to 757°
+    after the storm: harmless, but it is an angle, not a tally).
 - **Second-screen mouse drives the camera; Volume Auto turn** (owner: "When
   showing canvas on second monitor, the mouse doesnt work. add a slow
   auto-rotate to the camera").

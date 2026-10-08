@@ -363,6 +363,7 @@ export class SpacetimeVolume {
       this._camS = { yaw: o.camYaw, pitch: o.camPitch, zoom: o.camZoom, panX: o.panX, panY: o.panY };
     } else {
       cs.yaw   += ((((o.camYaw - cs.yaw) % 360) + 540) % 360 - 180) * k;
+      cs.yaw    = ((cs.yaw % 360) + 360) % 360;   // stay in range: it is an angle, not a tally
       cs.pitch += (o.camPitch - cs.pitch) * k;
       cs.zoom  *= Math.pow(o.camZoom / cs.zoom, k);   // zoom eases in ratio, not in steps
       cs.panX  += (o.panX - cs.panX) * k;

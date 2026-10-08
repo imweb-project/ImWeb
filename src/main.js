@@ -3729,7 +3729,7 @@ async function main() {
     if(e.button!==0&&e.button!==2)return;
     camId=e.pointerId;
     try{document.documentElement.setPointerCapture(e.pointerId);}catch(_){}
-    camSend({ev:'down',x:e.clientX,y:e.clientY,button:e.button,h:window.innerHeight});
+    camSend({ev:'down',x:e.clientX,y:e.clientY,button:e.button,h:window.innerHeight,w:window.innerWidth});
   });
   window.addEventListener('pointermove',e=>{
     if(e.pointerId!==camId)return;
@@ -3917,7 +3917,7 @@ async function main() {
   window.addEventListener("message", (e) => {
     if (e.data?.type === "cam" && _camRemote) {
       const d = e.data;
-      if (d.ev === "down") _camRemote.down(+d.x, +d.y, d.button | 0, +d.h);
+      if (d.ev === "down") _camRemote.down(+d.x, +d.y, d.button | 0, +d.h, +d.w);
       else if (d.ev === "move") _camRemote.move(+d.x, +d.y);
       else if (d.ev === "up") _camRemote.up();
       else if (d.ev === "cancel") _camRemote.cancel();
@@ -9998,7 +9998,7 @@ void main() {
     // and the second-screen output window, which forwards its mouse here as
     // messages (_camRemote). Coordinates are client px of whichever surface;
     // `h` is that surface's height, which is what makes the pan one-to-one.
-    const down = (x, y, button, h) => {
+    const down = (x, y, button, h, w) => {
       if ((ps.get("touch.mode")?.value ?? 2) !== 0) return false; // Camera only
       if (button !== 0 && button !== 2) return false;
       // Tactile clutch, same as touch: grabbing the canvas kills a coast
@@ -10018,6 +10018,7 @@ void main() {
         panX: ps.get("vol.panX").value,
         panY: ps.get("vol.panY").value,
         h: h || 1,
+        aspect: (w || h || 1) / (h || 1),
         posX: ps.get("scene3d.pos.x")?.value ?? 0,
         posY: ps.get("scene3d.pos.y")?.value ?? 0,
         vx: 0, vy: 0, lastX: x, lastY: y,
@@ -10043,8 +10044,16 @@ void main() {
         // Volume pan is in half-view-heights: the picture follows the pointer
         // one-to-one (exactly so in orthographic, at the box centre otherwise).
         const k = (2 / drag.h) * 100;
-        ps.set("vol.panX", drag.panX - dx * k);
-        ps.set("vol.panY", drag.panY + dy * k);
+        // The object's CENTRE stays inside the view: a pan that slid it off
+        // screen left nothing to drag back and read as a black canvas the
+        // camera could not recover (owner, 2026-10-08). Pan is in
+        // half-view-heights and the view spans ±1 vertically, ±aspect across,
+        // so the bound is exact for every shape and zoom. (A first version
+        // added the object's bounding radius and let it escape when zoomed
+        // out; measured, not assumed.)
+        const lx = 0.95 * drag.aspect * 100, ly = 0.95 * 100;
+        ps.set("vol.panX", Math.max(-lx, Math.min(lx, drag.panX - dx * k)));
+        ps.set("vol.panY", Math.max(-ly, Math.min(ly, drag.panY + dy * k)));
       } else {
         ps.set("scene3d.pos.x", drag.posX + dx * PAN);
         ps.set("scene3d.pos.y", drag.posY - dy * PAN); // screen up = +y
@@ -10064,7 +10073,8 @@ void main() {
     };
     canvas.addEventListener("pointerdown", (e) => {
       if (e.pointerType !== "mouse") return;
-      if (!down(e.clientX, e.clientY, e.button, canvas.getBoundingClientRect().height)) return;
+      const cr = canvas.getBoundingClientRect();
+      if (!down(e.clientX, e.clientY, e.button, cr.height, cr.width)) return;
       canvas.setPointerCapture(e.pointerId);
       e.preventDefault();
     });

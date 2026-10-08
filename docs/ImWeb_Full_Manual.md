@@ -1343,7 +1343,10 @@ routed, so an unused Volume costs no memory.
 on screen, the canvas gestures drive the Volume's camera instead of the 3D scene:
 drag to orbit (a flick keeps it turning), wheel or trackpad pinch to zoom,
 right-drag to pan, and on touch one finger orbits and two pinch. **Reset view**
-puts the camera back. The same mouse gestures work on the **second-screen output
+puts the camera back; it is first in the Camera section. **If the picture goes
+black:** press *Cam reset*. Zooming far out leaves a speck, and *Cut away* with the
+camera on the wrong side of the cut removes the whole object, which is correct
+but easy to do by accident. The same mouse gestures work on the **second-screen output
 window**: it forwards its drags and wheel to the main window, so the projector
 picture can be orbited directly. Drags that start on a projection-mapping handle or
 the toolbar stay with the mapping. The camera glides rather than jumps (*Camera smooth*), and
@@ -1370,10 +1373,10 @@ cut's own angles.
 | `vol.blend` | TOGGLE | Crossfade neighbouring frames; off shows the time steps |
 | `vol.render` | SELECT | Solid (opaque block) / Glow (bright motion becomes tubes, dark becomes clear) / Max (brightest along the view) / Average (time smear) |
 | `vol.cut` | TOGGLE | **Cut away**: remove everything between the camera and the cut, so you look into the object at the cut surface (Volume view) |
-| `vol.autoTurn` | −60–60 °/s | **Auto turn**: the camera slowly circles the object by itself (default 5 °/s; 0 = still). Dragging still works while it turns; Cam reset zeroes the accumulated turn |
+| `vol.autoTurn` | −60–60 °/s | **Auto turn**: the camera slowly circles the object by itself (default 0 = still; try 5). Dragging still works while it turns; Cam reset zeroes the accumulated turn |
 | `vol.camYaw` `vol.camPitch` | ° | *Camera turn* / *Camera tilt*: the camera circling the block (drag the output). An LFO on *Camera turn* spins it |
 | `vol.camZoom` | 25–400 % | *Camera zoom* (wheel / pinch) |
-| `vol.panX` `vol.panY` | ±300 % | Camera pan in half-view-heights (right-drag) |
+| `vol.panX` `vol.panY` | ±300 % | Camera pan in half-view-heights (right-drag). Dragging stops with the object's centre at the edge of the view, so it cannot be lost off screen |
 | `vol.resetCam` | TRIGGER | *Reset camera*: turn 35°, tilt 20°, zoom 100 %, no pan |
 | `vol.camSmooth` | 0–1 s | How long the camera takes to glide to where the controls put it. Smooths mouse, touch, MIDI and LFOs alike; 0 = immediate |
 | `vol.fov` | 0–120° | *Camera persp*: perspective strength at constant framing; 0 = orthographic (straight front / side / top views) |
