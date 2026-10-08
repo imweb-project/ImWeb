@@ -1315,6 +1315,84 @@ back into a captured frame buffer each pixel reads.
 > Buffer resolution is the dominant memory cost here — Native holds 120 full-size
 > frames. Drop to 640×360 first if you are tight on VRAM.
 
+#### Volume (source 34)
+
+Listed in source menus as **Volume**, panel **Sources ▸ Warp ▸ Volume**. The same
+120-frame buffer, treated as a block of video in (x, y, time), the "Time/Energy
+Object". It can be viewed two ways:
+
+- **Slice**: a flat cut through the block at any angle, like an MRI scan.
+  **Axial** is the frame at one moment (Time pos 0 = now). **Coronal** tilts the
+  cut so time runs down the screen: each row is one moment, the classic
+  slit-scan / photo-finish picture. **Sagittal** puts time across the screen.
+  Any angle in between is an oblique cut. Put an LFO on *Cut pitch* and the cut
+  tilts smoothly from "now" into the past.
+- **Volume**: the block itself, seen by a camera that orbits it. The front face
+  is the newest frame, the sides are slit-scans of the frame's edges, the top is
+  the history of its top row. **Cut open** removes the camera's side of the cut
+  plane, so the exposed face is exactly the Slice picture (the CT view).
+
+Volume has **its own** 120-frame recording, separate from TimeDisp. **Vol src**
+picks what it records (any source, including the output or Volume itself for
+feedback), **Freeze** holds the history still while the camera, cut and key keep
+working on it, and **Rec speed** records only that fraction of frames: 25% keeps
+8 seconds instead of 2. The recording is allocated the first time Volume is
+routed, so an unused Volume costs no memory.
+
+**Camera by hand.** In Touch Mode *Camera* (the default), while the Volume view is
+on screen, the canvas gestures drive the Volume's camera instead of the 3D scene:
+drag to orbit (a flick keeps it turning), wheel or trackpad pinch to zoom,
+right-drag to pan, and on touch one finger orbits and two pinch. **Reset view**
+puts the camera back.
+
+| Parameter | Range | Description |
+|-----------|-------|-------------|
+| `vol.source` | SELECT | What the Volume records (any source) |
+| `vol.freeze` | TOGGLE | Stop recording; the frozen block stays sculptable |
+| `vol.speed` | 1–100 % | Fraction of frames recorded: lower = longer, more stretched history |
+| `vol.bufRes` | SELECT | Recording resolution: 320×240 / 640×360 / 640×480 / Native (VRAM = w×h×4×120) |
+| `vol.view` | SELECT | Slice / Volume |
+| `vol.axial` `vol.coronal` `vol.sagittal` | TRIGGER | Set the cut angles to that view (nothing else is stored) |
+| `vol.pitch` | 0–360° | Tilts the cut's vertical axis into time (90° = Coronal) |
+| `vol.yaw` | 0–360° | Turns the cut's horizontal axis into time (270° = Sagittal, newest on the right) |
+| `vol.roll` | 0–360° | Spins the cut in its own plane |
+| `vol.time` | 0–100 % | Where the cut sits in time: 0 = newest, 100 = oldest captured |
+| `vol.cx` `vol.cy` | 0–100 % | Cut centre across the frame |
+| `vol.zoom` | 25–400 % | Slice magnification |
+| `vol.depth` | 10–400 % | How deep the block is, relative to the frame height |
+| `vol.edge` | SELECT | Black / Clamp / Mirror outside the block (Slice) |
+| `vol.blend` | TOGGLE | Crossfade neighbouring frames; off shows the time steps |
+| `vol.render` | SELECT | Solid (opaque block) / Glow (bright motion becomes tubes, dark becomes clear) / Max (brightest along the view) / Average (time smear) |
+| `vol.cut` | TOGGLE | Cut the block open along the slice plane (Volume) |
+| `vol.camYaw` `vol.camPitch` | ° | Orbit around the block. An LFO on *Orbit* spins it |
+| `vol.camZoom` | 25–400 % | Orbit zoom (wheel / pinch) |
+| `vol.panX` `vol.panY` | ±300 % | Camera pan in half-view-heights (right-drag) |
+| `vol.resetCam` | TRIGGER | Orbit 35°, tilt 20°, zoom 100 %, no pan |
+| `vol.fov` | 0–120° | Perspective strength at constant framing; 0 = orthographic (straight front / side / top views) |
+| `vol.threshold` `vol.density` | 0–100 % | Glow: brightness where opacity starts, and how fast it builds |
+| `vol.steps` | 16–1024 | Ray samples across the block (Glow / Max / Average). Cost scales with it |
+| `vol.res` | SELECT | Volume view resolution: Quarter / Half / Full |
+| `vol.box` | TOGGLE | Draw the block's outline |
+| `vol.key` | SELECT | Off / Luma / Chroma / Both: which parts of the history are material |
+| `vol.keyBlack` `vol.keyWhite` `vol.keySoft` | 0–100 % | Luma key: keep the brightness band between Black and White |
+| `vol.keyHue` `vol.keyRange` `vol.keyHueSoft` | °, % | Chroma key: remove this hue (grey survives, as in the output keyer) |
+| `vol.keyInvert` | TOGGLE | Swap kept and removed: carve the subject out, or keep only the keyed hue |
+| `vol.shade` | TOGGLE | Light the keyed Solid surface so it reads as a form |
+
+**Sculpting with the key.** With **Vol key** on, the block is no longer a box:
+only the keyed-in parts of each frame are solid. In **Solid** the camera sees the
+surface of what moved, swept through time. A figure becomes a tube in its own
+outline, and a hand wave becomes a fan. **Glow** lets only the keyed parts glow,
+and **Max / Average** count only them. Keyed-out areas are transparent, so with
+the output keyer's *Alpha* mode the sculpture stands on the background layer.
+The key works on the stored frames as they are read, so changing it reshapes
+the whole history at once, and TimeDisp (which shares the frames) is unaffected.
+
+> Solid costs about as much as Slice: one lookup per pixel. Glow, Max and Average
+> step through the whole block, so Ray steps × resolution is the cost. Lower
+> *Vol res* first. The Volume view needs WebGL2 array textures; on the fallback
+> path the source shows the Slice and says so in the console.
+
 ---
 
 ### 4.19 Mix Buses (×3)

@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<!-- Volume (source 34) acceptance test — docs/ImWeb-Spacetime-Blueprint.md §13.
+
+     Same method as spacetime-ring.html: every captured frame is a solid colour
+     encoding its own index, so each read has exactly one correct answer.
+
+     SLICE (both strategies)
+       axial     — the plane at time k/maxBack reads exactly frame age k
+       coronal   — pitch 90°: each output ROW reads one age, newest at the top
+       blend     — with Frame blend on, a coronal row lies between its two
+                   neighbouring frames, and some rows are strictly between
+                   (catches the crossfade reading the wrong neighbour)
+       edge      — zoomed out, Black leaves the corners black; Clamp does not
+     VOLUME (array path only)
+       front/back — orthographic Solid: front face = newest, back face = oldest
+       cut        — Cut open on an axial plane at the middle: the exposed face is
+                    the slice at that time (one source of truth)
+       max/avg    — Max reads the brightest frame; Average lands mid-range
+       glow       — compiles and draws something
+     KEY (frame k is red 20k+10, so luma rises with k: a luma key at Black
+     0.12 keeps the four newest frames and removes the four oldest)
+       slice      — a keyed-out frame is black AND transparent; a kept one is
+                    untouched; chroma removes red, Invert keeps it
+       solid      — from the back, the ray passes the removed history and lands
+                    on the boundary; with nothing kept it shows nothing (alpha 0)
+       average    — counts only kept frames (mean of the newest four, not all)
+       shade      — lighting changes the surface, and only by the headlight term
+
+     Run (any static server; the import map resolves three without Vite):
+       python3 -m http.server 4299 --bind 127.0.0.1
+       node tools/nca/cdp-run.mjs http://127.0.0.1:4299/tests/spacetime-volume.html
+     Result in window.__result. -->
+<meta charset="utf-8">
+<title>Volume test</title>
+<script type="importmap">
+{ "imports": { "three": "/node_modules/three/build/three.module.js" } }
+</script>
+<body style="background:#111;color:#ddd;font:12px monospace;white-space:pre"></body>
+<script type="module">
+import * as THREE from 'three';
+import { SpacetimeRing }   from '/src/inputs/SpacetimeRing.js';
+import { SpacetimeSlice }  from '/src/inputs/SpacetimeSlice.js';
+import { SpacetimeVolume } from '/src/inputs/SpacetimeVolume.js';
+
+const out = [];
+const log = (s) => { out.push(s); document.body.textContent = out.join('\n'); console.log(s); };
+const results = {};
+const check = (name, ok, detail = '') => {
+  results[name] = ok;
+  log(`   ${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ' — ' + detail : ''}`);
+};
+
+const W = 32, H = 32, N = 8, M = N + 3;
+const renderer = new THREE.WebGLRenderer({ antialias: false });
+renderer.debug.checkShaderErrors = true;
+renderer.setSize(W, H);
+
+const frameTex = (k) => {
+  const t = new THREE.DataTexture(new Uint8Array([20 * k + 10, 0, 0, 255]), 1, 1, THREE.RGBAFormat);
+  t.needsUpdate = true;
+  return t;
+};
+const forceAtlasOn = (ring) => {
+  if (ring._arrayRT) { ring._arrayRT.dispose(); ring._arrayRT = null; }
+  ring._useArray = false;
+  ring._allocateAtlas();
+  ring._rev++;
+  ring._head = 0; ring._count = 0;
+};
+
+function filledRing(atlas) {
+  const ring = new SpacetimeRing(renderer, W, H, N);
+  if (atlas) forceAtlasOn(ring);
+  for (let k = 0; k < M; k++) ring.capture(frameTex(k));
+  return ring;
+}
+/** Red value the ring holds at `age` frames back from the newest. */
+function colourAt(ring, age) {
+  const slot = ((ring.head - 1 - age) % ring.slots + ring.slots) % ring.slots;
+  for (let c = M - 1; c >= 0; c--) if (c % ring.slots === slot) return 20 * c + 10;
+  return -1;
+}
+function read(rt, ch = 0) {
+  const buf = new Uint8Array(rt.width * rt.height * 4);
+  renderer.readRenderTargetPixels(rt, 0, 0, rt.width, rt.height, buf);
+  return (x, y) => buf[(y * rt.width + x) * 4 + ch];   // red by default, row 0 = bottom
+}
+
+function runSlice(label, atlas) {
+  const ring = filledRing(atlas);
+  const sl = new SpacetimeSlice(renderer, W, H);
+  const maxBack = Math.max(1, Math.min(ring.slots - 1, ring.count - 1));
+  log(`\n── SLICE ${label} — strategy=${ring.strategy}, slots=${ring.slots}, maxBack=${maxBack}`);
+
+  // Axial: every pixel of the plane at time k/maxBack is frame age k.
+  let bad = 0;
+  for (let k = 0; k <= maxBack; k++) {
+    sl.render(ring, { time: k / maxBack, blend: 0 });
+    const px = read(sl.renderTarget);
+    const want = colourAt(ring, k);
+    for (const [x, y] of [[1, 1], [W >> 1, H >> 1], [W - 2, H - 2]])
+      if (Math.abs(px(x, y) - want) > 2) { bad++; if (bad < 5) log(`   axial k=${k} (${x},${y}) want ${want} got ${px(x, y)}`); }
+  }
+  check(`${label}: axial reads age k at time k/maxBack`, bad === 0);
+
+  // Coronal: pitch 90 about the middle of time. tau = 1 - v.
+  sl.render(ring, { pitch: 90, time: 0.5, blend: 0 });
+  let px = read(sl.renderTarget);
+  bad = 0;
+  for (let y = 0; y < H; y++) {
+    const v = (y + 0.5) / H;
+    const age = Math.min(Math.floor((1 - v) * maxBack), maxBack);
+    const want = colourAt(ring, age);
+    if (Math.abs(px(W >> 1, y) - want) > 2) { bad++; if (bad < 5) log(`   coronal row ${y} age ${age} want ${want} got ${px(W >> 1, y)}`); }
+  }
+  check(`${label}: coronal row r reads age floor((1-v)*maxBack)`, bad === 0,
+        `top=${px(W >> 1, H - 1)} bottom=${px(W >> 1, 0)}`);
+
+  // Blend: between the two neighbouring frames, and strictly between for some.
+  sl.render(ring, { pitch: 90, time: 0.5, blend: 1 });
+  px = read(sl.renderTarget);
+  bad = 0; let strict = 0;
+  for (let y = 0; y < H; y++) {
+    const d = (1 - (y + 0.5) / H) * maxBack;
+    const f = Math.min(Math.floor(d), maxBack);
+    const a = colourAt(ring, f), b = colourAt(ring, Math.min(f + 1, maxBack));
+    const got = px(W >> 1, y), lo = Math.min(a, b) - 2, hi = Math.max(a, b) + 2;
+    if (got < lo || got > hi) { bad++; if (bad < 5) log(`   blend row ${y} d=${d.toFixed(2)} want ${a}..${b} got ${got}`); }
+    if (got > Math.min(a, b) + 3 && got < Math.max(a, b) - 3) strict++;
+  }
+  check(`${label}: blend lies between neighbouring frames`, bad === 0 && strict > H / 4,
+        `${strict}/${H} rows strictly between`);
+
+  // Edge: zoomed out to 50% the plane overhangs the frame.
+  sl.render(ring, { zoom: 0.5, edge: 0, blend: 0 });
+  px = read(sl.renderTarget);
+  const blackCorner = px(0, 0) === 0, liveMid = px(W >> 1, H >> 1) > 0;
+  sl.render(ring, { zoom: 0.5, edge: 1, blend: 0 });
+  const clampCorner = read(sl.renderTarget)(0, 0) > 0;
+  check(`${label}: edge Black / Clamp`, blackCorner && liveMid && clampCorner);
+
+  sl.dispose();
+  ring.dispose();
+}
+
+function runVolume() {
+  const ring = filledRing(false);
+  log(`\n── VOLUME — strategy=${ring.strategy}`);
+  if (!ring.useArray) { check('volume: array path available', false); return; }
+  const vol = new SpacetimeVolume(renderer, 64, 64);
+  const maxBack = Math.max(1, Math.min(ring.slots - 1, ring.count - 1));
+  const centre = (opts) => { vol.render(ring, { fov: 0, camPitch: 0, blend: 0, box: 0, ...opts }); return read(vol.renderTarget)(32, 32); };
+
+  const front = centre({ camYaw: 0 }), back = centre({ camYaw: 180 });
+  check('volume: front face is the newest frame', Math.abs(front - colourAt(ring, 0)) <= 2, `got ${front}`);
+  check('volume: back face is the oldest frame', Math.abs(back - colourAt(ring, maxBack)) <= 2, `got ${back}`);
+
+  // Cut open on the axial plane at mid-time: the face is the slice there.
+  const cut = centre({ camYaw: 0, cut: 1, time: 0.5 });
+  const a = colourAt(ring, Math.floor(0.5 * maxBack)), b = colourAt(ring, Math.ceil(0.5 * maxBack));
+  check('volume: cut face is the slice at that time', cut >= Math.min(a, b) - 2 && cut <= Math.max(a, b) + 2,
+        `got ${cut}, want ${a}..${b}`);
+  // Cut from the BACK keeps the newer half and shows the same face.
+  const cutBack = centre({ camYaw: 180, cut: 1, time: 0.5 });
+  check('volume: cut works from either side', cutBack >= Math.min(a, b) - 2 && cutBack <= Math.max(a, b) + 2,
+        `got ${cutBack}`);
+
+  let hi = 0, sum = 0;
+  for (let k = 0; k <= maxBack; k++) { const c = colourAt(ring, k); hi = Math.max(hi, c); sum += c; }
+  const mx = centre({ camYaw: 0, render: 2, steps: 400 });
+  check('volume: Max reads the brightest frame', Math.abs(mx - hi) <= 3, `got ${mx}, want ${hi}`);
+  const av = centre({ camYaw: 0, render: 3, steps: 400 });
+  const mean = sum / (maxBack + 1);
+  check('volume: Average lands near the mean frame', Math.abs(av - mean) <= 15, `got ${av}, mean ${mean.toFixed(0)}`);
+  const glow = centre({ camYaw: 0, render: 1, threshold: 0, density: 0.5 });
+  check('volume: Glow draws', glow > 0, `got ${glow}`);
+
+  // Pan: half-view-heights, so Pan X 50% in an orthographic 64px view moves
+  // the picture exactly 16px LEFT (camera right = content left).
+  const rightEdge = (opts) => {
+    vol.render(ring, { fov: 0, camPitch: 0, camYaw: 0, blend: 0, box: 0, ...opts });
+    const px = read(vol.renderTarget);
+    let e = -1; for (let x = 0; x < 64; x++) if (px(x, 32) > 0) e = x;
+    return e;
+  };
+  const e0 = rightEdge({}), e1 = rightEdge({ panX: 0.5 }), e2 = rightEdge({ panY: 0.5 });
+  check('volume: Pan X 50% moves the box 16px left', Math.abs((e0 - e1) - 16) <= 1, `edge ${e0} → ${e1}`);
+  check('volume: Pan Y leaves the horizontal edge alone', e2 === e0, `edge ${e0} → ${e2}`);
+
+  // Perspective at constant framing still has the front face at the centre.
+  const persp = centre({ camYaw: 0, fov: 60 });
+  check('volume: perspective front face is the newest frame', Math.abs(persp - colourAt(ring, 0)) <= 2, `got ${persp}`);
+
+  vol.dispose();
+  ring.dispose();
+}
+
+const KEY = { key: 1, keyBlack: 0.12, keyWhite: 1.0, keySoft: 0.005 };
+
+function runKey() {
+  log(`\n── KEY`);
+  const ring = filledRing(false);
+  const maxBack = Math.max(1, Math.min(ring.slots - 1, ring.count - 1));
+  const sl = new SpacetimeSlice(renderer, W, H);
+  const sliceAt = (opts) => {
+    sl.render(ring, { blend: 0, ...opts });
+    return [read(sl.renderTarget, 0)(W >> 1, H >> 1), read(sl.renderTarget, 3)(W >> 1, H >> 1)];
+  };
+  const [oR, oA] = sliceAt({ ...KEY, time: 1 });          // oldest, keyed out
+  const [nR, nA] = sliceAt({ ...KEY, time: 0 });          // newest, kept
+  check('key: slice — keyed-out frame is black and transparent', oR === 0 && oA === 0, `rgba r=${oR} a=${oA}`);
+  check('key: slice — kept frame is untouched', Math.abs(nR - colourAt(ring, 0)) <= 2 && nA === 255, `r=${nR} a=${nA}`);
+  const [cR] = sliceAt({ key: 2, keyHue: 0, keyRange: 0.2, keyHueSoft: 0.05, time: 0 });
+  const [ciR] = sliceAt({ key: 2, keyHue: 0, keyRange: 0.2, keyHueSoft: 0.05, keyInvert: 1, time: 0 });
+  check('key: chroma removes the hue; Invert keeps only it', cR === 0 && Math.abs(ciR - colourAt(ring, 0)) <= 2,
+        `removed=${cR} inverted=${ciR}`);
+  sl.dispose();
+
+  const vol = new SpacetimeVolume(renderer, 64, 64);
+  const at = (opts, ch = 0) => { vol.render(ring, { fov: 0, camPitch: 0, blend: 0, box: 0, ...opts }); return read(vol.renderTarget, ch)(32, 32); };
+  // Kept: ages 0..3 (red 210..150). Removed: ages 4..7 (130..70).
+  const back = at({ ...KEY, camYaw: 180, shade: 0 });
+  check('key: solid from the back lands on the kept boundary, not the oldest face',
+        back >= 130 && back <= 170, `got ${back} (oldest face would be ${colourAt(ring, maxBack)})`);
+  const front = at({ ...KEY, camYaw: 0, shade: 0 });
+  check('key: solid front face is still the newest frame', Math.abs(front - colourAt(ring, 0)) <= 2, `got ${front}`);
+  const none = { ...KEY, keyBlack: 0.9 };
+  const nr = at({ ...none, camYaw: 30 }), na = at({ ...none, camYaw: 30 }, 3);
+  check('key: nothing kept shows nothing (transparent)', nr === 0 && na === 0, `r=${nr} a=${na}`);
+  let kept = 0, nk = 0;
+  for (let k = 0; k <= maxBack; k++) { const c = colourAt(ring, k); if (0.2126 * c / 255 > 0.12) { kept += c; nk++; } }
+  const av = at({ ...KEY, camYaw: 0, render: 3, steps: 400 });
+  check('key: Average counts only kept frames', Math.abs(av - kept / nk) <= 12, `got ${av}, kept mean ${(kept / nk).toFixed(0)}, all-frames mean 140`);
+  const mx = at({ ...KEY, camYaw: 180, render: 2, steps: 400 });
+  check('key: Max still reads the brightest kept frame', Math.abs(mx - colourAt(ring, 0)) <= 3, `got ${mx}`);
+  const lit = at({ ...KEY, camYaw: 180, shade: 1 });
+  // Back view: the boundary faces the camera; headlight from above gives
+  // 0.35 + 0.65 * dot((0,0,-1), normalize(0,0.6,-1)) = 0.907 of the unlit value.
+  const ratio = lit / back;
+  check('key: shade lights the surface by the headlight term', ratio > 0.85 && ratio < 0.95, `ratio ${ratio.toFixed(3)}`);
+  vol.dispose();
+  ring.dispose();
+}
+
+let threw = null;
+try {
+  runSlice('array', false);
+  runSlice('atlas', true);
+  runVolume();
+  runKey();
+} catch (e) { threw = String(e?.stack ?? e); log('EXCEPTION ' + threw); }
+const all = !threw && Object.values(results).every(Boolean) && Object.keys(results).length > 0;
+log(`\n=== RESULT: ${all ? 'ALL PASS' : 'FAILURE'} ===`);
+window.__result = { all, threw, results };
+</script>

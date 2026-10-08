@@ -1156,6 +1156,10 @@ export const SOURCE_DEFS = [
   // Appended at the true end; the indirect capture entries move with it, kept in
   // register by the base stamp in migrateCaptureBase().
   { key: "growth",    label: "Growth"    }, // 33
+  // 34 — the Time Displace ring as an (x, y, t) volume: cut by any plane, or
+  // seen as an object. Appended at the true end; the indirect capture entries
+  // move with it, kept in register by the base stamp in migrateCaptureBase().
+  { key: "volume",    label: "Volume"    }, // 34
 ];
 
 /** Source indices of the three mix buses, in evaluation order (1 → 2 → 3). */
@@ -1182,7 +1186,7 @@ export const SOURCE_DISPLAY_ORDER = [
                                 7 /* Draw */, 33 /* Growth */, 6 /* 3D Scene */, 20 /* 3D Depth */,
                                 23 /* Analog */, 29 /* Rutt-Etra */,
   { header: "From the Signal" }, 8 /* Output */, 13 /* Delay */, 31 /* RGB Delay */,
-                                32 /* Motion */, 24 /* TimeDisp */,
+                                32 /* Motion */, 24 /* TimeDisp */, 34 /* Volume */,
                                 15 /* SlitScan */, 17 /* Seq1 */, 18 /* Seq2 */,
                                 19 /* Seq3 */, 14 /* Scope */, 22 /* VWarp */,
   { header: "Mix" },            26 /* Mix 1 */, 27 /* Mix 2 */, 28 /* Mix 3 */,
@@ -7468,6 +7472,183 @@ export function registerCoreParameters(ps) {
     value: 0,
     step: 0.01,
   });
+
+  // ── Volume (`vol.*`) — source 34, panel "Warp ▸ Volume" ───────────────────
+  // A frame history read as an (x, y, t) volume: cut by an arbitrary plane
+  // (Slice) or rendered as an object (Volume). SpacetimeSlice.js /
+  // SpacetimeVolume.js; Blueprint §13. It has its OWN ring (allocated on first
+  // use): Source, Freeze and Rec speed decide what is recorded, and sharing
+  // TimeDisp's ring would have made each of them silently change TimeDisp too.
+  // Group 'vol', so captured by Display States: every value here is a fixed-
+  // meaning quantity or an index into a fixed in-code list.
+  // The presets are TRIGGERs that only ps.set the angles. A preset SELECT would
+  // need a Custom state, a re-entrancy guard and a restore-order contract
+  // (Blueprint §3d) to buy nothing a button does not.
+  // What the volume records. options === CAPTURE_SOURCES, so it joins the
+  // capture-base migration by identity (CAPTURE_PARAM_IDS).
+  ps.register({
+    id: "vol.source", label: "Vol src", group: "vol",
+    type: PARAM_TYPE.SELECT, options: CAPTURE_SOURCES, value: 0,
+  });
+  // Stop recording: the history holds still and stays sculptable — the camera,
+  // the cut and the key all keep working on the frozen block.
+  ps.register({ id: "vol.freeze", label: "Freeze", group: "vol", type: PARAM_TYPE.TOGGLE, value: 0 });
+  // Fraction of frames recorded. 100% = every frame (2 s of history at 60 fps);
+  // 25% = every 4th (8 s) — slower recording, longer and more stretched block.
+  ps.register({
+    id: "vol.speed", label: "Rec speed", group: "vol",
+    min: 1, max: 100, value: 100, step: 1, unit: "%",
+  });
+  ps.register({
+    id: "vol.view", label: "View", group: "vol",
+    type: PARAM_TYPE.SELECT, options: ["Slice", "Volume"], value: 0,
+  });
+  ps.register({ id: "vol.axial",    label: "Axial",    group: "vol", type: PARAM_TYPE.TRIGGER });
+  ps.register({ id: "vol.coronal",  label: "Coronal",  group: "vol", type: PARAM_TYPE.TRIGGER });
+  ps.register({ id: "vol.sagittal", label: "Sagittal", group: "vol", type: PARAM_TYPE.TRIGGER });
+  // Plane orientation. Pitch tilts y into time (90° = Coronal: time down the
+  // screen), Yaw turns x into time (270° = Sagittal: time across, newest right).
+  ps.register({
+    id: "vol.pitch", label: "Cut pitch", group: "vol",
+    min: 0, max: 360, value: 0, step: 1, unit: "°",
+  });
+  ps.register({
+    id: "vol.yaw", label: "Cut yaw", group: "vol",
+    min: 0, max: 360, value: 0, step: 1, unit: "°",
+  });
+  // Where the plane sits in time: 0 = newest frame, 100 = oldest captured.
+  ps.register({
+    id: "vol.time", label: "Time pos", group: "vol",
+    min: 0, max: 100, value: 0, step: 1, unit: "%",
+  });
+  // How deep the box is, relative to the frame's height. Decides how steeply an
+  // oblique cut runs through history, and how long the object looks.
+  ps.register({
+    id: "vol.depth", label: "Time depth", group: "vol",
+    min: 10, max: 400, value: 100, step: 1, unit: "%",
+  });
+  ps.register({
+    id: "vol.render", label: "Render", group: "vol",
+    type: PARAM_TYPE.SELECT, options: ["Solid", "Glow", "Max", "Average"], value: 0,
+  });
+  // Remove the camera's side of the cut plane (Volume view). With Solid, the
+  // exposed face is exactly the Slice picture.
+  ps.register({ id: "vol.cut", label: "Cut open", group: "vol", type: PARAM_TYPE.TOGGLE, value: 0 });
+  ps.register({
+    id: "vol.camYaw", label: "Orbit", group: "vol",
+    min: 0, max: 360, value: 35, step: 1, unit: "°",
+  });
+  ps.register({
+    id: "vol.camPitch", label: "Orbit tilt", group: "vol",
+    min: -89, max: 89, value: 20, step: 1, unit: "°",
+  });
+  // ── advanced ──
+  ps.register({
+    id: "vol.roll", label: "Cut roll", group: "vol",
+    min: 0, max: 360, value: 0, step: 1, unit: "°",
+  });
+  ps.register({
+    id: "vol.cx", label: "Cut X", group: "vol",
+    min: 0, max: 100, value: 50, step: 1, unit: "%",
+  });
+  ps.register({
+    id: "vol.cy", label: "Cut Y", group: "vol",
+    min: 0, max: 100, value: 50, step: 1, unit: "%",
+  });
+  ps.register({
+    id: "vol.zoom", label: "Cut zoom", group: "vol",
+    min: 25, max: 400, value: 100, step: 1, unit: "%",
+  });
+  // Outside the history (Slice): black, hold the edge, or reflect.
+  ps.register({
+    id: "vol.edge", label: "Cut edge", group: "vol",
+    type: PARAM_TYPE.SELECT, options: ["Black", "Clamp", "Mirror"], value: 0,
+  });
+  // Crossfade neighbouring frames (KinoSlitscan) — off shows the time steps.
+  ps.register({ id: "vol.blend", label: "Frame blend", group: "vol", type: PARAM_TYPE.TOGGLE, value: 1 });
+  ps.register({
+    id: "vol.camZoom", label: "Orbit zoom", group: "vol",
+    min: 25, max: 400, value: 100, step: 1, unit: "%",
+  });
+  // Camera pan across the screen, in half-heights of the view (right-drag).
+  ps.register({
+    id: "vol.panX", label: "Orbit pan X", group: "vol",
+    min: -300, max: 300, value: 0, step: 1, unit: "%",
+  });
+  ps.register({
+    id: "vol.panY", label: "Orbit pan Y", group: "vol",
+    min: -300, max: 300, value: 0, step: 1, unit: "%",
+  });
+  ps.register({ id: "vol.resetCam", label: "Reset view", group: "vol", type: PARAM_TYPE.TRIGGER });
+  // Ring resolution — VRAM is w×h×4×120, so this is the cost knob. Same
+  // options and Native clamp as td.bufferResolution.
+  ps.register({
+    id: "vol.bufRes", label: "Vol buffer res", group: "vol",
+    type: PARAM_TYPE.SELECT, select: true,
+    options: ["320×240", "640×360", "640×480", "Native"], value: 1,
+  });
+  // Perspective strength at constant framing; below 1° it is orthographic.
+  ps.register({
+    id: "vol.fov", label: "Perspective", group: "vol",
+    min: 0, max: 120, value: 35, step: 1, unit: "°",
+  });
+  ps.register({
+    id: "vol.threshold", label: "Glow thresh", group: "vol",
+    min: 0, max: 100, value: 20, step: 1, unit: "%",
+  });
+  ps.register({
+    id: "vol.density", label: "Glow density", group: "vol",
+    min: 0, max: 100, value: 30, step: 1, unit: "%",
+  });
+  // Ray samples across the whole box (Glow / Max / Average). Cost scales with it.
+  ps.register({
+    id: "vol.steps", label: "Ray steps", group: "vol",
+    min: 16, max: 1024, value: 200, step: 1,
+  });
+  // Volume view resolution, relative to the output.
+  ps.register({
+    id: "vol.res", label: "Vol res", group: "vol",
+    type: PARAM_TYPE.SELECT, options: ["Quarter", "Half", "Full"], value: 1,
+  });
+  ps.register({ id: "vol.box", label: "Box lines", group: "vol", type: PARAM_TYPE.TOGGLE, value: 1 });
+  // ── Volume key: which parts of the history are MATERIAL ──
+  // Applied as the volume is read, not when frames are captured, so it
+  // reshapes all 120 frames at once and leaves TimeDisp's shared ring alone.
+  // Keyed Solid is a sculpture: the shape of what moved, swept through time.
+  // Same vocabulary as the output keyer (keyer.white/black/softness,
+  // keyer.chromahue/range/soft): luma keeps the band between Black and White,
+  // chroma REMOVES a hue (Invert keeps only it).
+  ps.register({
+    id: "vol.key", label: "Vol key", group: "vol",
+    type: PARAM_TYPE.SELECT, options: ["Off", "Luma", "Chroma", "Both"], value: 0,
+  });
+  ps.register({
+    id: "vol.keyBlack", label: "Vol key black", group: "vol",
+    min: 0, max: 100, value: 10, step: 1, unit: "%",
+  });
+  ps.register({
+    id: "vol.keyWhite", label: "Vol key white", group: "vol",
+    min: 0, max: 100, value: 100, step: 1, unit: "%",
+  });
+  ps.register({
+    id: "vol.keySoft", label: "Vol key soft", group: "vol",
+    min: 0, max: 100, value: 5, step: 1, unit: "%",
+  });
+  ps.register({
+    id: "vol.keyHue", label: "Vol key hue", group: "vol",
+    min: 0, max: 360, value: 120, step: 1, unit: "°",
+  }); // default: green, as keyer.chromahue
+  ps.register({
+    id: "vol.keyRange", label: "Vol key range", group: "vol",
+    min: 0, max: 100, value: 20, step: 1, unit: "%",
+  });
+  ps.register({
+    id: "vol.keyHueSoft", label: "Vol key hue soft", group: "vol",
+    min: 0, max: 100, value: 10, step: 1, unit: "%",
+  });
+  ps.register({ id: "vol.keyInvert", label: "Vol key invert", group: "vol", type: PARAM_TYPE.TOGGLE, value: 0 });
+  // Keyed Solid: light the surface from the key's gradient so it reads as form.
+  ps.register({ id: "vol.shade", label: "Vol shade", group: "vol", type: PARAM_TYPE.TOGGLE, value: 1 });
 
   // ── Warp Tape (`vwarp.*`) — source 22, panel "Warp ▸ Tape" ────────────────
   // A tape whose horizontal axis is time: one column written per frame at a

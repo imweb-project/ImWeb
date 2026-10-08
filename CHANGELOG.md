@@ -8,6 +8,67 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Added
+- **Volume (source 34): the frame history as a block of video in (x, y, time).**
+  Two more readers of the Time Displace ring. It is not a second copy of the
+  frames (Blueprint §13).
+  - *Slice*: an arbitrary plane through the block, (x, y, τ) = C + u·U + v·V,
+    set by pitch / yaw / roll and a time position. Axial is a plain delay,
+    Coronal is time down the screen (photo-finish), Sagittal is time across, and
+    every oblique cut lies between them, continuously. The time-displacement
+    source could not draw a cut that contains the time axis: it only picks a
+    delay per pixel.
+  - *Volume*: the block ray-marched in 3D (after three.js VolumeRenderShader1,
+    reading the sampler2DArray ring), with an orbit camera whose framing stays
+    put as the fov changes, down to orthographic at 0°. Render modes are Solid,
+    Glow, Max and Average. *Cut open* removes the camera's side of the slice
+    plane, so the exposed face is exactly the Slice: one plane definition,
+    `volFrame()`, shared by both.
+  - Neighbouring frames crossfade (KinoSlitscan's trick), so time does not band.
+    Found while testing: a time position meant to land on frame k read k − 1 from
+    float round-off; fixed with an epsilon before `floor`.
+  - Routing Volume keeps the ring recording with TimeDisp off (a puller row in the
+    consumption fixpoint, plus the capture gate). Presets are TRIGGERs that only
+    set the angles, so there is no Custom state.
+  - Test: `tests/spacetime-volume.html` checks 16 cases on both strategies.
+    Mutation-checked: reading the newer neighbour turns the blend checks red.
+- **Volume: its own recording, with Freeze, Rec speed and any source**
+  (owner: "Can we freeze the volume or control the speed of it? … and add any
+  source?"). All three decide what is recorded, so Volume no longer shares
+  TimeDisp's ring. On the shared ring, freezing the sculpture would have frozen
+  TimeDisp's delay too. The new ring is allocated on first use, with
+  `vol.bufRes` as its VRAM knob. Rec speed records that fraction of frames
+  through an accumulator (25% = 8 s of history).
+- **Volume: camera by hand** (owner: "better 3d camera controls that also works
+  with the mouse zoom"). The Camera-mode gesture grammar's target is now
+  swappable (`GestureArbitrator` `camTarget`). While the Volume view is on
+  screen, the existing gestures drive its camera: drag orbit with flick coast,
+  wheel / trackpad-pinch zoom (eased), touch orbit and pinch, the 3-finger undo.
+  Right-drag pans (`vol.panX/Y`, in half-view-heights, so the picture follows
+  the pointer). Reset view button. The 3D scene path is unchanged.
+  New `tests/audit-gesture-camera-target.mjs` (in `npm test`) checks that both
+  targets get the same gestures, that tilt clamps at the poles rather than
+  wrapping, and that neither target leaks writes into the other. Mutation-checked
+  by restoring one hardcoded `scene3d.scale` write. The GPU test gains pan checks
+  (27 total).
+- **Volume key: sculpture instead of a box** (owner: "a build in keyer, luma
+  and color for the input to the volume, so we can create an sculptur that is
+  not cubed"). Luma / Chroma / Both, Invert, using the output keyer's maths.
+  It is applied as each sample is READ, never at capture. The shared ring stays
+  a plain record, and moving the key reshapes all 120 frames at once.
+  - Keyed Solid marches to the first material sample, then bisects to the 50%
+    crossing. The frame crossfade interpolates the key too, so the surface is
+    smooth along time. *Vol shade* lights it from the key's gradient; box faces
+    and the cut plane stay unlit, as flat cuts.
+  - Glow takes its opacity from the key. Max and Average weight samples by it.
+    Keyed-out is transparent (alpha = coverage), so the output keyer's Alpha mode
+    can stand the sculpture on a background. With the key Off, output is exactly
+    as before, opaque.
+  - Test: 9 more checks (25 total), covering keyed-out frames being black and
+    transparent, the back view landing on the kept boundary, Average counting only
+    kept frames, and shading matching the headlight term (0.907). Mutation-checked:
+    unweighted Average and a flipped normal each turn their check red.
+
 ### Changed
 - **Growth, Neural: roughly half the frame cost** (owner: "will this be able
   to run at 60fps?", at 9 fps). Measured whole frames on the Intel UHD 630:

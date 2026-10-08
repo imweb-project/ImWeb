@@ -1574,6 +1574,7 @@ export class Pipeline {
     if (key === 'rgbdelay'  && inputs.rgbdelay)  return inputs.rgbdelay;
     if (key === 'motion'    && inputs.motion)    return inputs.motion;
     if (key === 'growth'    && inputs.growth)    return inputs.growth;
+    if (key === 'volume'    && inputs.volume)    return inputs.volume;
     return inputs.color ?? this._getFallbackTexture();
   }
 

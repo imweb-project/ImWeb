@@ -97,6 +97,9 @@ import { MotionExtract } from "./inputs/MotionExtract.js";
 import { GrowthRD } from "./inputs/GrowthRD.js";
 import { GROWTH_RES, GROWTH_LOOKS } from "./inputs/GrowthPatterns.js";
 import { TimeDisplaceEngine } from "./inputs/TimeDisplaceEngine.js";
+import { SpacetimeRing } from "./inputs/SpacetimeRing.js";
+import { SpacetimeSlice } from "./inputs/SpacetimeSlice.js";
+import { SpacetimeVolume } from "./inputs/SpacetimeVolume.js";
 import { VectorscopeInput } from "./inputs/VectorscopeInput.js";
 import { SlitScanBuffer } from "./inputs/SlitScanBuffer.js";
 import { VasulkaWarp } from "./inputs/VasulkaWarp.js";
@@ -294,6 +297,7 @@ async function main() {
     console.warn('[ImWeb] WebGL context restored');
     pipeline.init?.();
     tdEngine.reinit?.();   // reallocate ring + re-run render-to-layer probe
+    volRing?.reinit();     // the Volume's own ring, if it has been allocated
     applyResolution(ps.get('output.resolution').value);
   }, false);
 
@@ -634,6 +638,76 @@ async function main() {
     tdEngine.setBufferResolution(bw, bh);
   });
   ps.get("td.upscaleFilter").onChange((v) => tdEngine.setUpscaleFilter(v));
+  // Volume (source 34) — its own frame ring, read two ways (Blueprint §13): an
+  // arbitrary plane through it, and the box seen by a camera. Both render only
+  // while the source is consumed (_srcUsed below). The ring is NOT TimeDisp's:
+  // vol.source / vol.freeze / vol.speed decide what is recorded, and on a
+  // shared ring each would silently have changed TimeDisp as well.
+  const VOLUME_IDX = SOURCE_KEYS.indexOf("volume");
+  const VOL_RES = [0.25, 0.5, 1];   // index-aligned to vol.res options
+  // Allocated on first use, so a project that never routes Volume pays no VRAM
+  // for it (120 frames at buffer res — the dominant cost).
+  let volRing = null;
+  const _volRingGet = () => {
+    if (!volRing) {
+      const [bw, bh] = _tdResolveBufRes(ps.get("vol.bufRes").value);
+      volRing = new SpacetimeRing(renderer, bw, bh, 120);
+    }
+    return volRing;
+  };
+  ps.get("vol.bufRes").onChange((v) => {
+    if (!volRing) return;                       // applied at allocation instead
+    const [bw, bh] = _tdResolveBufRes(v);
+    volRing.setBufferResolution(bw, bh);
+  });
+  let _volRecAcc = 0;                           // vol.speed accumulator (frames)
+  const volSlice  = new SpacetimeSlice(renderer, _tdBW, _tdBH);
+  const volVolume = new SpacetimeVolume(renderer, W * VOL_RES[1], H * VOL_RES[1]);
+  // The volume view is array-path only (SpacetimeVolume header). On the atlas
+  // fallback the source shows the slice, and says why once.
+  let _volAtlasWarned = false;
+  const _volShowsVolume = () => {
+    if (ps.get("vol.view").value !== 1) return false;
+    if (!volRing || volRing.useArray) return true;
+    if (!_volAtlasWarned) {
+      console.warn("[Volume] the Volume view needs array textures; this backend uses the atlas fallback, so the Slice is shown.");
+      _volAtlasWarned = true;
+    }
+    return false;
+  };
+  const volumeTexture = () => (_volShowsVolume() ? volVolume.texture : volSlice.texture);
+  // DEV-only handle, same convention as __decks/__pipeline: lets a probe read
+  // the published target's pixels, which a headless screenshot cannot show.
+  if (import.meta.env.DEV) window.__volume = { slice: volSlice, volume: volVolume, get ring() { return volRing; }, get camLive() { return _volCamLive; }, renderer, ps };
+  // Camera-mode gestures (mouse, wheel, touch) drive the Volume's orbit camera
+  // while the Volume VIEW is what is being rendered — set each frame where the
+  // source is ticked. The target is the GestureArbitrator's abstract
+  // { x: grows with downward drag, y: grows with rightward drag, s: zoom }.
+  let _volCamLive = false;
+  const _volCamTarget = {
+    get: () => ({
+      x: ps.get("vol.camPitch").value,
+      y: -ps.get("vol.camYaw").value,          // drag right = object turns right
+      s: ps.get("vol.camZoom").value / 100,
+    }),
+    set: ({ x, y, s }) => {
+      if (x !== undefined) ps.set("vol.camPitch", x);   // param clamps at the poles
+      if (y !== undefined) ps.set("vol.camYaw", (((-y) % 360) + 360) % 360);
+      if (s !== undefined) ps.set("vol.camZoom", s * 100);
+    },
+  };
+  ps.get("vol.resetCam").onTrigger(() => {
+    for (const [id, v] of [["vol.camYaw", 35], ["vol.camPitch", 20], ["vol.camZoom", 100],
+                           ["vol.panX", 0], ["vol.panY", 0]]) ps.set(id, v);
+  });
+  // Presets are buttons that set the angles — nothing is stored but the angles.
+  const _volPreset = (pitch, yaw, time) => {
+    ps.set("vol.pitch", pitch); ps.set("vol.yaw", yaw);
+    ps.set("vol.roll", 0);      ps.set("vol.time", time);
+  };
+  ps.get("vol.axial").onTrigger(() => _volPreset(0, 0, 0));
+  ps.get("vol.coronal").onTrigger(() => _volPreset(90, 0, 50));
+  ps.get("vol.sagittal").onTrigger(() => _volPreset(0, 270, 50));
   const vectorscope = new VectorscopeInput();
   const slitScan = new SlitScanBuffer(W, H);
   // Tape lengths for vwarp.bufsize, index-aligned to that param's options
@@ -6168,6 +6242,7 @@ async function main() {
     if (key === "seq3") return seq3.texture;
     if (key === "analog") return analogTV.texture;
     if (key === "tdisp") return tdEngine.texture;
+    if (key === "volume") return volumeTexture();
     if (key === "mixbus") return pipeline.mixTextureAt(0);
     if (key === "mixbus2") return pipeline.mixTextureAt(1);
     if (key === "mixbus3") return pipeline.mixTextureAt(2);
@@ -9796,6 +9871,7 @@ void main() {
     onPadDrive: padDrive,
     onPadRelease: padRelease,
     sceneManager: scene3d, // spin→rot handover when a grab takes control
+    camTarget: () => (_volCamLive ? _volCamTarget : null), // Volume view on screen
   });
   void gestureArb; // referenced by the render loop's inertia tick
 
@@ -9809,6 +9885,9 @@ void main() {
   // like the continuous touch pinch. The loop yields the instant anything
   // else writes scene3d.scale (controller, state recall, touch pinch).
   let _zoomTarget = null, _zoomRaf = 0, _zoomExpected = null;
+  // Which param the wheel eases: the 3D scene's scale, or the Volume's orbit
+  // zoom while the Volume view is on screen (the arbitrator's camera target).
+  let _zoomId = "scene3d.scale";
   const _zoomStop = () => {
     if (_zoomRaf) { cancelAnimationFrame(_zoomRaf); _zoomRaf = 0; }
     _zoomTarget = null;
@@ -9816,10 +9895,10 @@ void main() {
   };
   const _zoomTick = () => {
     _zoomRaf = 0;
-    const p = ps.get("scene3d.scale");
+    const p = ps.get(_zoomId);
     if (!p || _zoomTarget === null) return;
     if (_zoomExpected !== null && p.value !== _zoomExpected) { _zoomStop(); return; }
-    ps.set("scene3d.scale", p.value + (_zoomTarget - p.value) * 0.25);
+    ps.set(_zoomId, p.value + (_zoomTarget - p.value) * 0.25);
     _zoomExpected = p.value; // read back (setter clamps)
     if (Math.abs(_zoomTarget - p.value) > Math.max(0.001, p.value * 0.002)) {
       _zoomRaf = requestAnimationFrame(_zoomTick);
@@ -9832,7 +9911,9 @@ void main() {
     (e) => {
       if (!(ps.get("canvas.wheelZoom")?.value > 0.5)) return;
       e.preventDefault();
-      const p = ps.get("scene3d.scale");
+      const id = _volCamLive && (ps.get("touch.mode")?.value ?? 2) === 0 ? "vol.camZoom" : "scene3d.scale";
+      if (id !== _zoomId) { _zoomStop(); _zoomId = id; }
+      const p = ps.get(_zoomId);
       if (!p) return;
       const sens = ps.get("canvas.wheelSens")?.value ?? 1;
       const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY; // lines → px
@@ -9855,7 +9936,6 @@ void main() {
     const ORBIT = 0.35; // deg/px — matches GestureArbitrator's touch orbit
     const PAN = 0.01; // pos-units/px
     const FLICK_MAX_AGE_MS = 80; // same freshness rule as the touch flick
-    const wrap = (v) => ((v % 360) + 360) % 360;
     let drag = null;
     canvas.addEventListener("pointerdown", (e) => {
       if (e.pointerType !== "mouse") return;
@@ -9868,12 +9948,20 @@ void main() {
       // Same spin handover as a touch grab: orbiting takes control from
       // auto-spin (freezes current orientation into rot, zeroes spin)
       if (e.button === 0) gestureArb._grabSpinControl();
+      // The orbit goes to whatever the arbitrator's camera target is — the 3D
+      // scene, or the Volume's camera while the Volume view is on screen — so
+      // mouse, touch and the flick coast can never disagree about it.
+      const cam = gestureArb._cam();
+      const c0 = cam.get();
       drag = {
         btn: e.button,
         x: e.clientX,
         y: e.clientY,
-        rotX: ps.get("scene3d.rot.x")?.value ?? 0,
-        rotY: ps.get("scene3d.rot.y")?.value ?? 0,
+        cam, c0,
+        vol: !cam.scene,
+        panX: ps.get("vol.panX").value,
+        panY: ps.get("vol.panY").value,
+        h: canvas.getBoundingClientRect().height || 1,
         posX: ps.get("scene3d.pos.x")?.value ?? 0,
         posY: ps.get("scene3d.pos.y")?.value ?? 0,
         vx: 0, vy: 0, lastX: e.clientX, lastY: e.clientY,
@@ -9886,8 +9974,7 @@ void main() {
       const dx = e.clientX - drag.x;
       const dy = e.clientY - drag.y;
       if (drag.btn === 0) {
-        ps.set("scene3d.rot.y", wrap(drag.rotY + dx * ORBIT));
-        ps.set("scene3d.rot.x", wrap(drag.rotX + dy * ORBIT));
+        drag.cam.set({ y: drag.c0.y + dx * ORBIT, x: drag.c0.x + dy * ORBIT });
         // Flick velocity (deg/s), same EMA smoothing as the touch orbit
         const now = performance.now();
         const mdt = (now - drag.lastT) / 1000;
@@ -9896,6 +9983,12 @@ void main() {
           drag.vy = drag.vy * 0.6 + (((e.clientY - drag.lastY) * ORBIT) / mdt) * 0.4;
         }
         drag.lastX = e.clientX; drag.lastY = e.clientY; drag.lastT = now;
+      } else if (drag.vol) {
+        // Volume pan is in half-view-heights: the picture follows the pointer
+        // one-to-one (exactly so in orthographic, at the box centre otherwise).
+        const k = (2 / drag.h) * 100;
+        ps.set("vol.panX", drag.panX - dx * k);
+        ps.set("vol.panY", drag.panY + dy * k);
       } else {
         ps.set("scene3d.pos.x", drag.posX + dx * PAN);
         ps.set("scene3d.pos.y", drag.posY - dy * PAN); // screen up = +y
@@ -10324,6 +10417,9 @@ void main() {
       { idx: MOTION_IDX,    reads: [_cMotion] },
       { idx: PARTICLES_IDX, reads: [_pmIdx] },
       { idx: GROWTH_IDX,    reads: [_cGrowSeed, _cGrowField] },
+      // Volume reads the ring, so it needs what the ring records — whether or
+      // not TimeDisp itself is on (the capture below follows the same rule).
+      { idx: VOLUME_IDX,    reads: [_captureIdx(ps.get("vol.source").value)] },
       { idx: SOURCE_KEYS.indexOf("scene3d"), reads: _s3dReads, seed: !!ps.get("scene3d.active")?.value },
       { idx: SOURCE_KEYS.indexOf("depth3d"), reads: _s3dReads },
     ];
@@ -10768,6 +10864,38 @@ void main() {
     // ticked, whatever it is.
     tdEngine.tick(ps, dt, _resolveCaptureTex(ps.get("td.mapSource").value));
 
+    // Volume (source 34) — READ before pipeline.render, beside the tdisp read,
+    // so inputs.volume is this frame's view of the ring (frame order: §9e).
+    _volCamLive = false;
+    if (_srcUsed(VOLUME_IDX)) {
+      const ring = _volRingGet();
+      const v = (id) => ps.get(id).value;
+      const volOpts = {
+        yaw: v("vol.yaw"), pitch: v("vol.pitch"), roll: v("vol.roll"),
+        cx: v("vol.cx") / 100, cy: v("vol.cy") / 100, time: v("vol.time") / 100,
+        zoom: v("vol.zoom") / 100, depth: v("vol.depth") / 100,
+        blend: v("vol.blend"), edge: v("vol.edge"),
+        render: v("vol.render"), cut: v("vol.cut"),
+        camYaw: v("vol.camYaw"), camPitch: v("vol.camPitch"),
+        camZoom: v("vol.camZoom") / 100, fov: v("vol.fov"),
+        panX: v("vol.panX") / 100, panY: v("vol.panY") / 100,
+        threshold: v("vol.threshold") / 100, density: v("vol.density") / 100,
+        steps: v("vol.steps"), box: v("vol.box"),
+        key: v("vol.key"), keyInvert: v("vol.keyInvert"), shade: v("vol.shade"),
+        keyBlack: v("vol.keyBlack") / 100, keyWhite: v("vol.keyWhite") / 100,
+        keySoft: v("vol.keySoft") / 100, keyHue: v("vol.keyHue"),
+        keyRange: v("vol.keyRange") / 100, keyHueSoft: v("vol.keyHueSoft") / 100,
+      };
+      if (_volShowsVolume()) {
+        const k = VOL_RES[v("vol.res")] ?? 0.5;
+        volVolume.setSize(W * k, H * k);
+        volVolume.render(ring, volOpts);
+        _volCamLive = (ps.get("touch.mode")?.value ?? 2) === 0;
+      } else {
+        volSlice.render(ring, volOpts);
+      }
+    }
+
     // Render 3D scene if active OR used as a layer source
     const SCENE3D_IDX = 6; // index in SOURCES array
     const DEPTH3D_IDX = 20; // index in SOURCES array
@@ -10847,6 +10975,7 @@ void main() {
       sdfdepth: sdfGen.depthTexture,
       analog: analogTV.texture,
       tdisp: tdEngine.texture,
+      volume: volumeTexture(),
       seq1: seq1.texture,
       seq2: seq2.texture,
       seq3: seq3.texture,
@@ -11020,6 +11149,22 @@ void main() {
       _tdKey === "mixbus" ? pipeline.mixTexture   :
       (inputs[_tdKey] ?? null);
     if (ps.get('td.enabled').value) tdEngine.capture(_tdSrc);
+
+    // Volume ring WRITE — same frame position and self-feedback rules as the
+    // TimeDisp write above. Freeze holds the history still; Rec speed records
+    // that fraction of frames (an accumulator, so 30% is exactly 3 in 10).
+    if (volRing && _srcUsed(VOLUME_IDX) && !ps.get("vol.freeze").value) {
+      _volRecAcc += ps.get("vol.speed").value / 100;
+      if (_volRecAcc >= 1 - 1e-9) {
+        _volRecAcc -= 1;
+        const key = SOURCE_KEYS[_captureIdx(ps.get("vol.source").value)];
+        const mixAt = ["mixbus", "mixbus2", "mixbus3"].indexOf(key);
+        volRing.capture(
+          key === "output" ? pipeline.prev.texture :
+          mixAt >= 0       ? pipeline.mixTextureAt(mixAt) :
+          (inputs[key] ?? null));
+      }
+    }
 
     // Warp Tape (source 22, formerly "Vasulka Warp"). NOT deprecated — this
     // comment used to claim it was "superseded by SequenceBuffer timewarp mode,

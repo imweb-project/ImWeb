@@ -161,6 +161,21 @@ const GROWTH_LIVE = [
   'growth.plant', 'growth.clear',
 ];
 
+// Volume's live set, in panel order: the view, the cut, the camera. The rest of
+// group 'vol' goes to the collapsed Advanced subsection.
+const VOL_LIVE = [
+  'vol.source', 'vol.freeze', 'vol.speed',
+  'vol.view', 'vol.axial', 'vol.coronal', 'vol.sagittal',
+  'vol.pitch', 'vol.yaw', 'vol.time', 'vol.depth',
+  'vol.render', 'vol.cut', 'vol.camYaw', 'vol.camPitch', 'vol.resetCam',
+];
+// Volume's key, its own subsection: the controls that turn the block into a
+// sculpture.
+const VOL_KEY = [
+  'vol.key', 'vol.keyBlack', 'vol.keyWhite', 'vol.keySoft',
+  'vol.keyHue', 'vol.keyRange', 'vol.keyHueSoft', 'vol.keyInvert', 'vol.shade',
+];
+
 export function buildMappingPanels(ps, contextMenu) {
   /**
    * Named params in a stated order, for panels split out of one group.
@@ -404,6 +419,9 @@ export function buildMappingPanels(ps, contextMenu) {
     'growth-params':       GROWTH_LIVE.map(id => ps.get(id)).filter(Boolean),
     'growth-adv-params':   ps.getGroup('growth').filter(p => !GROWTH_LIVE.includes(p.id)),
     'tdisp-params':        ps.getGroup('td'),
+    'vol-params':          VOL_LIVE.map(id => ps.get(id)).filter(Boolean),
+    'vol-key-params':      VOL_KEY.map(id => ps.get(id)).filter(Boolean),
+    'vol-adv-params':      ps.getGroup('vol').filter(p => !VOL_LIVE.includes(p.id) && !VOL_KEY.includes(p.id)),
     'vectorscope-params':  ps.getGroup('vectorscope'),
     'slitscan-params':     ps.getGroup('slitscan'),
     // Warp Tape (Phase 24 Step 4) — source 22 is routable and its render path

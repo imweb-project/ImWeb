@@ -27,6 +27,13 @@
  *
  * Mouse pointers are ignored entirely — the desktop mouse grammar
  * (mouse-x/y controllers in ControllerManager) is untouched.
+ *
+ * WHAT the camera gestures drive is a swappable target (`opts.camTarget`): by
+ * default the 3D scene (scene3d.rot.x/y, scene3d.scale); main.js returns the
+ * Volume source's orbit camera instead while that is on screen. The target is
+ * an abstract { x, y, s }: x grows with DOWNWARD drag, y with RIGHTWARD drag,
+ * s is the zoom factor — so orbit, pinch, the 3-finger undo and the flick
+ * coast are written once and work for every target.
  */
 
 const MODE_CAMERA = 0;
@@ -51,6 +58,7 @@ export class GestureArbitrator {
     this.onPadDrive = opts.onPadDrive ?? null;     // (x, y) canvas fractions, screen-space
     this.onPadRelease = opts.onPadRelease ?? null; // all fingers lifted in Pad mode
     this.sm = opts.sceneManager ?? null; // for spin→rot handover on grab
+    this.camTarget = opts.camTarget ?? null; // () => target | null (null = 3D scene)
 
     this._pointers = new Map(); // pointerId → {x, y, sx, sy}
     this._suspended = false;    // 3+ finger null zone latch
@@ -93,6 +101,30 @@ export class GestureArbitrator {
     canvas.addEventListener('pointercancel', this._onEnd);
   }
 
+  /** The camera the gestures drive this instant — see the header. */
+  _cam() {
+    return this.camTarget?.() ?? this._sceneCam;
+  }
+
+  /** Default target: the 3D scene. Rotation wraps (periodic, endless orbit). */
+  get _sceneCam() {
+    const ps = this.ps;
+    const wrap = (v) => ((v % 360) + 360) % 360;
+    return {
+      scene: true,
+      get: () => ({
+        x: ps.get('scene3d.rot.x')?.value ?? 0,
+        y: ps.get('scene3d.rot.y')?.value ?? 0,
+        s: ps.get('scene3d.scale')?.value ?? 1,
+      }),
+      set: ({ x, y, s }) => {
+        if (x !== undefined) ps.set('scene3d.rot.x', wrap(x));
+        if (y !== undefined) ps.set('scene3d.rot.y', wrap(y));
+        if (s !== undefined) ps.set('scene3d.scale', Math.max(0.01, Math.min(50, s)));
+      },
+    };
+  }
+
   get _mode() {
     return this.ps.get('touch.mode')?.value ?? MODE_LOCKED;
   }
@@ -108,15 +140,16 @@ export class GestureArbitrator {
    *  finger count changes never cause value jumps. */
   _rebaseline() {
     [this._startCX, this._startCY] = this._centroid();
-    this._baseRotX = this.ps.get('scene3d.rot.x')?.value ?? 0;
-    this._baseRotY = this.ps.get('scene3d.rot.y')?.value ?? 0;
+    const c = this._cam().get();
+    this._baseRotX = c.x;
+    this._baseRotY = c.y;
     this._dragVX = 0;
     this._dragVY = 0;
     this._lastMoveT = 0; // stale velocity samples never leak across configs
     if (this._pointers.size === 2) {
       const [a, b] = [...this._pointers.values()];
       this._pinchBaseDist = Math.hypot(a.x - b.x, a.y - b.y);
-      this._pinchBaseScale = this.ps.get('scene3d.scale')?.value ?? 1;
+      this._pinchBaseScale = c.s;
     } else {
       this._pinchBaseDist = 0;
     }
@@ -128,6 +161,7 @@ export class GestureArbitrator {
    *  the rot params (wrapped to the 0–360 param range — no jump) and zero
    *  the spins. */
   _grabSpinControl() {
+    if (!this._cam().scene) return;   // auto-spin belongs to the 3D scene only
     const spinning =
       (this.ps.get('scene3d.spin.x')?.value ?? 0) !== 0 ||
       (this.ps.get('scene3d.spin.y')?.value ?? 0) !== 0 ||
@@ -162,11 +196,7 @@ export class GestureArbitrator {
       if (this._mode === MODE_CAMERA) this._grabSpinControl();
       // Snapshot camera values so a 3-finger tap can undo the micro-drive
       // from the first fingers landing a few ms apart
-      this._gestureStartVals = {
-        rotX: this.ps.get('scene3d.rot.x')?.value,
-        rotY: this.ps.get('scene3d.rot.y')?.value,
-        scale: this.ps.get('scene3d.scale')?.value,
-      };
+      this._gestureStartVals = this._cam().get();
     }
     this._pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY });
     this._gestureMaxCount = Math.max(this._gestureMaxCount, this._pointers.size);
@@ -175,10 +205,7 @@ export class GestureArbitrator {
       // Gesture isolation: undo whatever the first 1–2 fingers drove in the
       // milliseconds before the 3rd landed, so a 3-finger tap is a net no-op
       if (this._mode === MODE_CAMERA && this._gestureStartVals) {
-        const s = this._gestureStartVals;
-        if (s.rotX !== undefined) this.ps.set('scene3d.rot.x', s.rotX);
-        if (s.rotY !== undefined) this.ps.set('scene3d.rot.y', s.rotY);
-        if (s.scale !== undefined) this.ps.set('scene3d.scale', s.scale);
+        this._cam().set(this._gestureStartVals);
       }
     }
     this._rebaseline();
@@ -233,11 +260,9 @@ export class GestureArbitrator {
       this._coastVY = 0;
       return;
     }
-    const wrap = (v) => ((v % 360) + 360) % 360;
-    const ry = this.ps.get('scene3d.rot.y');
-    const rx = this.ps.get('scene3d.rot.x');
-    if (ry) this.ps.set('scene3d.rot.y', wrap(ry.value + this._coastVX * dt));
-    if (rx) this.ps.set('scene3d.rot.x', wrap(rx.value + this._coastVY * dt));
+    const cam = this._cam();
+    const c = cam.get();
+    cam.set({ x: c.x + this._coastVY * dt, y: c.y + this._coastVX * dt });
     const f = Math.pow(COAST_FRICTION, dt * 60);
     this._coastVX *= f;
     this._coastVY *= f;
@@ -286,12 +311,12 @@ export class GestureArbitrator {
     const n = this._pointers.size;
     if (n === 1) {
       const [cx, cy] = this._centroid();
-      // Wrap, don't clamp: rotation is periodic, so folding the value back
-      // into the 0–360 param range gives endless orbit instead of hitting
-      // the param bounds and stopping
-      const wrap = (v) => ((v % 360) + 360) % 360;
-      this.ps.set('scene3d.rot.y', wrap(this._baseRotY + (cx - this._startCX) * ORBIT_DEG_PER_PX));
-      this.ps.set('scene3d.rot.x', wrap(this._baseRotX + (cy - this._startCY) * ORBIT_DEG_PER_PX));
+      // The target wraps or clamps (scene rotation wraps — periodic, endless
+      // orbit; the Volume's orbit tilt clamps at the poles).
+      this._cam().set({
+        y: this._baseRotY + (cx - this._startCX) * ORBIT_DEG_PER_PX,
+        x: this._baseRotX + (cy - this._startCY) * ORBIT_DEG_PER_PX,
+      });
 
       // Sample flick velocity (deg/s), lightly smoothed against jitter
       const now = performance.now();
@@ -308,8 +333,7 @@ export class GestureArbitrator {
     } else if (n === 2 && this._pinchBaseDist > 0) {
       const [a, b] = [...this._pointers.values()];
       const ratio = Math.hypot(a.x - b.x, a.y - b.y) / this._pinchBaseDist;
-      this.ps.set('scene3d.scale',
-        Math.max(0.01, Math.min(50, this._pinchBaseScale * ratio)));
+      this._cam().set({ s: this._pinchBaseScale * ratio });
     }
   }
 
