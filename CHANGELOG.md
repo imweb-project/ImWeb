@@ -39,6 +39,24 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   TimeDisp's delay too. The new ring is allocated on first use, with
   `vol.bufRes` as its VRAM knob. Rec speed records that fraction of frames
   through an accumulator (25% = 8 s of history).
+- **Volume: shapes, plain names, starts as Volume** (owner: "now the volume is a
+  cube, can we have other shapes", "Cut through is not logical for me? Pitch and
+  yaw?", "hiding the frame", "lets make it start as volume").
+  - `vol.shape`: Box / Cylinder / Sphere / Tunnel (older frames shrink, the past
+    recedes) / Ring (time runs round a circle, newest meeting oldest at the
+    front). A shape function in the ray-march (`shapeP` / `matAt`), so Solid,
+    Glow, Max, Average, the key, Cut away and shading work on every shape;
+    curved surfaces are lit. Nothing is fetched outside the shape. Volume view
+    only. Ring turns Time depth into the circle's size.
+  - Cut controls get their own subsection and plain names with tooltips: Front /
+    Top / Side cut, Tilt ↕, Turn ↔, Spin, Time, Cut away. Camera labels are
+    shortened to Cam … because the label column truncated "Camera turn". The
+    frame outline is the **Frame** toggle, now in Camera.
+  - `vol.view` defaults to Volume.
+  - Why 50 fps: measured, not guessed. Average zoomed in to 300% costs 43 ms a
+    frame on the UHD 630 against 0.7 ms for Solid, because every pixel walks all
+    120 frames. Numbers are in the manual.
+  - Tests: 6 shape checks (36 total); the Ring's seam direction is mutation-checked.
 - **Volume camera: smooth motion, clear names** (owner: "some confusion with
   naming where move is named orbit. can we add a smoother motion to mouse
   control?"). The rendered camera eases toward its params, `vol.camSmooth`

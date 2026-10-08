@@ -1353,19 +1353,20 @@ cut's own angles.
 | `vol.freeze` | TOGGLE | Stop recording; the frozen block stays sculptable |
 | `vol.speed` | 1–100 % | Fraction of frames recorded: lower = longer, more stretched history |
 | `vol.bufRes` | SELECT | Recording resolution: 320×240 / 640×360 / 640×480 / Native (VRAM = w×h×4×120) |
-| `vol.view` | SELECT | Slice / Volume |
-| `vol.axial` `vol.coronal` `vol.sagittal` | TRIGGER | Set the cut angles to that view (nothing else is stored) |
-| `vol.pitch` | 0–360° | Tilts the cut's vertical axis into time (90° = Coronal) |
-| `vol.yaw` | 0–360° | Turns the cut's horizontal axis into time (270° = Sagittal, newest on the right) |
-| `vol.roll` | 0–360° | Spins the cut in its own plane |
-| `vol.time` | 0–100 % | Where the cut sits in time: 0 = newest, 100 = oldest captured |
+| `vol.view` | SELECT | Volume (default) / Slice |
+| `vol.shape` | SELECT | Box / Cylinder (each frame a disc) / Sphere / Tunnel (older frames shrink) / Ring (time runs round a circle; newest meets oldest at the front). Volume view |
+| `vol.axial` `vol.coronal` `vol.sagittal` | TRIGGER | **Front cut** (one moment) / **Top cut** (rows through time) / **Side cut** (time across). They only set the angles |
+| `vol.pitch` | 0–360° | **Tilt ↕**: the picture's up–down runs into time (90° = Top cut) |
+| `vol.yaw` | 0–360° | **Turn ↔**: the picture's left–right runs into time (270° = Side cut, newest on the right) |
+| `vol.roll` | 0–360° | **Spin**: the cut in its own plane |
+| `vol.time` | 0–100 % | **Time**: where the cut sits, 0 = now, 100 = oldest recorded |
 | `vol.cx` `vol.cy` | 0–100 % | Cut centre across the frame |
 | `vol.zoom` | 25–400 % | Slice magnification |
 | `vol.depth` | 10–400 % | How deep the block is, relative to the frame height |
 | `vol.edge` | SELECT | Black / Clamp / Mirror outside the block (Slice) |
 | `vol.blend` | TOGGLE | Crossfade neighbouring frames; off shows the time steps |
 | `vol.render` | SELECT | Solid (opaque block) / Glow (bright motion becomes tubes, dark becomes clear) / Max (brightest along the view) / Average (time smear) |
-| `vol.cut` | TOGGLE | Cut the block open along the slice plane (Volume) |
+| `vol.cut` | TOGGLE | **Cut away**: remove everything between the camera and the cut, so you look into the object at the cut surface (Volume view) |
 | `vol.camYaw` `vol.camPitch` | ° | *Camera turn* / *Camera tilt*: the camera circling the block (drag the output). An LFO on *Camera turn* spins it |
 | `vol.camZoom` | 25–400 % | *Camera zoom* (wheel / pinch) |
 | `vol.panX` `vol.panY` | ±300 % | Camera pan in half-view-heights (right-drag) |
@@ -1375,7 +1376,7 @@ cut's own angles.
 | `vol.threshold` `vol.density` | 0–100 % | Glow: brightness where opacity starts, and how fast it builds |
 | `vol.steps` | 16–1024 | Ray samples across the block (Glow / Max / Average). Cost scales with it |
 | `vol.res` | SELECT | Volume view resolution: Quarter / Half / Full |
-| `vol.box` | TOGGLE | Draw the block's outline |
+| `vol.box` | TOGGLE | **Frame**: draw the outline of the object's bounds (Camera section) |
 | `vol.key` | SELECT | Off / Luma / Chroma / Both: which parts of the history are material |
 | `vol.keyBlack` `vol.keyWhite` `vol.keySoft` | 0–100 % | Luma key: keep the brightness band between Black and White |
 | `vol.keyHue` `vol.keyRange` `vol.keyHueSoft` | °, % | Chroma key: remove this hue (grey survives, as in the output keyer) |
@@ -1391,6 +1392,12 @@ the output keyer's *Alpha* mode the sculpture stands on the background layer.
 The key works on the stored frames as they are read, so changing it reshapes
 the whole history at once, and TimeDisp (which shares the frames) is unaffected.
 
+> Measured at 820×450 (Vol res Half of a ~1640×900 output) on an Intel UHD 630:
+> Solid box 0.7 ms, Solid Cylinder/Ring ~2–3 ms, keyed Solid ~5 ms, Glow ~6 ms,
+> Max/Average ~13 ms, and **Average zoomed in until the object fills the screen
+> 43 ms**: every pixel then walks through all 120 frames. If the frame rate drops,
+> use Solid, zoom out, or set Vol res to Quarter.
+>
 > Solid costs about as much as Slice: one lookup per pixel. Glow, Max and Average
 > step through the whole block, so Ray steps × resolution is the cost. Lower
 > *Vol res* first. The Volume view needs WebGL2 array textures; on the fallback

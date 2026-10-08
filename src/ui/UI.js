@@ -165,16 +165,21 @@ const GROWTH_LIVE = [
 // group 'vol' goes to the collapsed Advanced subsection.
 const VOL_LIVE = [
   'vol.source', 'vol.freeze', 'vol.speed',
-  'vol.view', 'vol.axial', 'vol.coronal', 'vol.sagittal',
-  'vol.pitch', 'vol.yaw', 'vol.time', 'vol.depth',
-  'vol.render', 'vol.cut',
+  'vol.view', 'vol.shape', 'vol.render', 'vol.depth',
 ];
-// The Volume view's camera, its own subsection — the names say CAMERA so they
-// cannot be mistaken for the cut's angles above (the owner read "Orbit" as the
-// cut moving).
+// The cut: a flat plane through the recording — the Slice picture, and in the
+// Volume view what Cut away opens up. Plain names (owner: pitch/yaw were not
+// logical); the tooltips say what each does.
+const VOL_CUT = [
+  'vol.axial', 'vol.coronal', 'vol.sagittal',
+  'vol.pitch', 'vol.yaw', 'vol.time', 'vol.cut',
+];
+// The Volume view's camera, its own subsection — the names say CAM so they
+// cannot be mistaken for the cut's angles (the owner read "Orbit" as the cut
+// moving). Short: the label column truncates past ~10 characters.
 const VOL_CAM = [
   'vol.camYaw', 'vol.camPitch', 'vol.camZoom', 'vol.panX', 'vol.panY',
-  'vol.fov', 'vol.camSmooth', 'vol.resetCam',
+  'vol.fov', 'vol.camSmooth', 'vol.box', 'vol.resetCam',
 ];
 // Volume's key, its own subsection: the controls that turn the block into a
 // sculpture.
@@ -428,8 +433,9 @@ export function buildMappingPanels(ps, contextMenu) {
     'tdisp-params':        ps.getGroup('td'),
     'vol-params':          VOL_LIVE.map(id => ps.get(id)).filter(Boolean),
     'vol-key-params':      VOL_KEY.map(id => ps.get(id)).filter(Boolean),
+    'vol-cut-params':      VOL_CUT.map(id => ps.get(id)).filter(Boolean),
     'vol-cam-params':      VOL_CAM.map(id => ps.get(id)).filter(Boolean),
-    'vol-adv-params':      ps.getGroup('vol').filter(p => !VOL_LIVE.includes(p.id) && !VOL_KEY.includes(p.id) && !VOL_CAM.includes(p.id)),
+    'vol-adv-params':      ps.getGroup('vol').filter(p => ![...VOL_LIVE, ...VOL_CUT, ...VOL_KEY, ...VOL_CAM].includes(p.id)),
     'vectorscope-params':  ps.getGroup('vectorscope'),
     'slitscan-params':     ps.getGroup('slitscan'),
     // Warp Tape (Phase 24 Step 4) — source 22 is routable and its render path

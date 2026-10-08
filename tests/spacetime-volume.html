@@ -259,14 +259,46 @@ function runKey() {
   ring.dispose();
 }
 
+// Shapes (64px orthographic views of a 32×32 ring, A = 1, D = 1). Pixel
+// (47, 47) lies inside the block but outside a disc / ball, so it separates
+// Box from Cylinder and Sphere by construction.
+function runShapes() {
+  log(`\n── SHAPES`);
+  const ring = filledRing(false);
+  const maxBack = Math.max(1, Math.min(ring.slots - 1, ring.count - 1));
+  const vol = new SpacetimeVolume(renderer, 64, 64);
+  const px = (opts, x, y) => {
+    // shade 0: these checks are about WHICH frame shows; lighting is checked in KEY
+    vol.render(ring, { fov: 0, camPitch: 0, camYaw: 0, camSmooth: 0, blend: 0, box: 0, shade: 0, ...opts });
+    return read(vol.renderTarget)(x, y);
+  };
+  const newest = colourAt(ring, 0), oldest = colourAt(ring, maxBack);
+  check('shape: Box corner is material', px({ shape: 0 }, 47, 47) === newest);
+  const cylC = px({ shape: 1 }, 32, 32), cylK = px({ shape: 1 }, 47, 47);
+  check('shape: Cylinder — centre is the newest frame, corner is empty', cylC === newest && cylK === 0, `centre ${cylC} corner ${cylK}`);
+  const sphC = px({ shape: 2 }, 32, 32), sphK = px({ shape: 2 }, 47, 47);
+  check('shape: Sphere — front pole is recent, corner is empty', sphC >= colourAt(ring, 2) && sphK === 0, `centre ${sphC} corner ${sphK}`);
+  const tunC = px({ shape: 3, camYaw: 180 }, 32, 32), tunK = px({ shape: 3, camYaw: 180 }, 47, 47);
+  check('shape: Tunnel — from behind, the centre is old and the corner younger (the past shrinks)',
+        tunC <= colourAt(ring, maxBack - 1) && tunK >= tunC + 40, `centre ${tunC} corner ${tunK} (oldest ${oldest})`);
+  const ringR = px({ shape: 4 }, 36, 32), ringL = px({ shape: 4 }, 28, 32);
+  check('shape: Ring — newest just right of the front seam, oldest just left of it',
+        ringR >= colourAt(ring, 1) && ringL <= colourAt(ring, maxBack - 1), `right ${ringR} left ${ringL}`);
+  const hole = px({ shape: 4, camPitch: 89 }, 32, 32);
+  check('shape: Ring has a hole in the middle (seen from above)', hole === 0, `got ${hole}`);
+  vol.dispose();
+  ring.dispose();
+}
+
 let threw = null;
 try {
   runSlice('array', false);
   runSlice('atlas', true);
   runVolume();
   runKey();
+  runShapes();
 } catch (e) { threw = String(e?.stack ?? e); log('EXCEPTION ' + threw); }
 const all = !threw && Object.values(results).every(Boolean) && Object.keys(results).length > 0;
 log(`\n=== RESULT: ${all ? 'ALL PASS' : 'FAILURE'} ===`);
-window.__result = { all, threw, results };
+window.__result = { all, threw, results, fails: out.filter((l) => l.includes("FAIL")) };
 </script>

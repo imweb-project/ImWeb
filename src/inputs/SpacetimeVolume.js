@@ -70,6 +70,8 @@ const VOL_FRAG = /* glsl */ `
   uniform float uSigma;     // glow: extinction per world unit
   uniform float uFrame;     // jitter seed
   uniform int   uShade;     // keyed Solid: light the surface from its key gradient
+  uniform int   uShape;     // 0 box, 1 cylinder, 2 sphere, 3 tunnel, 4 ring
+  uniform vec3  uRing;      // ring: (major radius, cross-section half width, half height)
   in  vec3 vW;
   out vec4 outColor;
 
@@ -81,6 +83,54 @@ const VOL_FRAG = /* glsl */ `
   // Inside the box by construction; the clamp absorbs face round-off, which
   // would otherwise read as black speckle along every edge.
   vec4 at(vec3 W) { return volSample(clamp(volFromWorld(W), 0.0, 1.0)); }
+
+  // ── Shapes: which world points are inside the object, and which frame
+  // pixel each one shows. Box is the plain block. The others carve it, or for
+  // Ring bend it: a world point maps to volume coords P and an inside value
+  // that is soft over one ray step, so the shading has a gradient to follow.
+  //   Cylinder — each frame cut to a disc: a tube of time
+  //   Sphere   — the ellipsoid inscribed in the block
+  //   Tunnel   — older frames shrink: the past recedes like a perspective
+  //   Ring     — time runs round a circle; newest meets oldest at the front
+  vec3 shapeP(vec3 W, out float inside) {
+    float e = uStep;
+    float d;
+    vec3  P;
+    if (uShape == 4) {
+      float ang = atan(W.x, W.z);                         // 0 at the front (+z)
+      float rho = length(W.xz) - uRing.x;                 // across the tube
+      P = vec3(0.5 + rho / (2.0 * uRing.y), 0.5 + W.y / (2.0 * uRing.z),
+               fract(ang / 6.2831853));
+      d = max(abs(rho) - uRing.y, abs(W.y) - uRing.z);
+    } else {
+      P = volFromWorld(W);
+      vec2 q = (P.xy - 0.5) * vec2(uScale.x, 1.0);        // frame coords, height units
+      if (uShape == 0) {
+        inside = 1.0;
+        return P;
+      } else if (uShape == 1) {
+        d = length(q) - 0.5;
+      } else if (uShape == 2) {
+        d = (length((P - 0.5) * 2.0) - 1.0) * 0.5 * min(min(uScale.x, uScale.y), 1.0);
+      } else {
+        float sc = 1.0 - 0.85 * P.z;                      // 1 now → 0.15 at the oldest
+        P.xy = 0.5 + (P.xy - 0.5) / sc;
+        d = max(abs(q.x) - 0.5 * uScale.x * sc, abs(q.y) - 0.5 * sc);
+      }
+    }
+    inside = 1.0 - smoothstep(-e, e, d);
+    return P;
+  }
+  // Material at W: inside the shape AND kept by the key. Outside the shape
+  // nothing is fetched at all.
+  float matAt(vec3 W, out vec3 c) {
+    float inside;
+    vec3 P = shapeP(W, inside);
+    if (inside <= 0.0) { c = vec3(0.0); return 0.0; }
+    c = volSample(clamp(P, 0.0, 1.0)).rgb;
+    return inside * volKey(c);
+  }
+  float matAt(vec3 W) { vec3 c; return matAt(W, c); }
 
   void main() {
     vec3 rd = uOrtho == 1 ? normalize(uCamDir) : normalize(vW - cameraPosition);
@@ -112,19 +162,19 @@ const VOL_FRAG = /* glsl */ `
     float bgA = uKeyMode == 0 ? 1.0 : 0.0;
     if (tf <= tn) { outColor = vec4(0.0, 0.0, 0.0, bgA); return; }
 
-    // Unkeyed Solid: the block's faces are analytic — one sample, no march.
-    if (uRender == 0 && uKeyMode == 0) { outColor = vec4(at(ro + rd * tn).rgb, 1.0); return; }
+    // Unkeyed Solid box: the block's faces are analytic — one sample, no march.
+    if (uRender == 0 && uKeyMode == 0 && uShape == 0) { outColor = vec4(at(ro + rd * tn).rgb, 1.0); return; }
 
     if (uRender == 0) {
-      // KEYED SOLID — the sculpture. March to the first sample that is
-      // material (key >= 0.5), then bisect between it and the previous step so
-      // the surface sits on the 50% crossing rather than on the step grid. The
-      // frame crossfade interpolates the key too, which is what makes that
-      // surface smooth along time instead of stepped.
+      // SOLID SURFACE — a keyed sculpture and/or a shape. March to the first
+      // sample that is material (>= 0.5), then bisect between it and the
+      // previous step so the surface sits on the 50% crossing rather than on
+      // the step grid. The frame crossfade interpolates the key too, which is
+      // what makes that surface smooth along time instead of stepped.
       float tPrev = tn, tHit = -1.0;
       for (int i = 0; i < ${MAX_STEPS}; i++) {
         float t = min(tn + float(i) * uStep, tf);
-        if (volKey(at(ro + rd * t).rgb) >= 0.5) { tHit = t; break; }
+        if (matAt(ro + rd * t) >= 0.5) { tHit = t; break; }
         tPrev = t;
         if (t >= tf) break;
       }
@@ -134,20 +184,21 @@ const VOL_FRAG = /* glsl */ `
         float a = tPrev, b = tHit;
         for (int k = 0; k < 6; k++) {
           float mid = 0.5 * (a + b);
-          if (volKey(at(ro + rd * mid).rgb) >= 0.5) b = mid; else a = mid;
+          if (matAt(ro + rd * mid) >= 0.5) b = mid; else a = mid;
         }
         tHit = b;
       }
       vec3 W = ro + rd * tHit;
-      vec3 col = at(W).rgb;
+      vec3 col;
+      matAt(W, col);
       // A face is a flat cut through material — it keeps its picture unlit, as
       // the cut face does unkeyed. Elsewhere the key's gradient is the normal.
       if (uShade == 1 && !face) {
         float h = 1.5 * uStep;
         vec3 g = vec3(
-          volKey(at(W + vec3(h, 0, 0)).rgb) - volKey(at(W - vec3(h, 0, 0)).rgb),
-          volKey(at(W + vec3(0, h, 0)).rgb) - volKey(at(W - vec3(0, h, 0)).rgb),
-          volKey(at(W + vec3(0, 0, h)).rgb) - volKey(at(W - vec3(0, 0, h)).rgb));
+          matAt(W + vec3(h, 0, 0)) - matAt(W - vec3(h, 0, 0)),
+          matAt(W + vec3(0, h, 0)) - matAt(W - vec3(0, h, 0)),
+          matAt(W + vec3(0, 0, h)) - matAt(W - vec3(0, 0, h)));
         if (dot(g, g) > 1e-8) {
           vec3 n = -normalize(g);                          // key rises INTO material
           vec3 L = normalize(-rd + vec3(0.0, 0.6, 0.0));   // headlight, from above
@@ -167,12 +218,13 @@ const VOL_FRAG = /* glsl */ `
     for (int i = 0; i < ${MAX_STEPS}; i++) {
       float t = t0 + float(i) * uStep;
       if (t > tf) break;
-      vec3  c = at(ro + rd * t).rgb;
-      float m = volKey(c);              // 1 everywhere with the key Off
+      vec3  c;
+      float m = matAt(ro + rd * t, c);  // shape × key; 1 inside a box with the key Off
+      if (m <= 0.0) continue;
       if (uRender == 1) {
         // The key decides what glows once it is on; Off keeps the threshold.
         float l = dot(c, vec3(0.299, 0.587, 0.114));
-        float a = (uKeyMode == 0 ? smoothstep(uThresh, uThresh + 0.1, l) : m) * a1;
+        float a = (uKeyMode == 0 ? m * smoothstep(uThresh, uThresh + 0.1, l) : m) * a1;
         acc.rgb += (1.0 - acc.a) * a * c;
         acc.a   += (1.0 - acc.a) * a;
         if (acc.a > 0.98) break;
@@ -194,7 +246,7 @@ export const VOLUME_DEFAULTS = {
   render: 0, cut: 0,
   camYaw: 35, camPitch: 20, camZoom: 1, fov: 35, panX: 0, panY: 0,
   camSmooth: 0.12, dt: 1 / 60,   // camera easing time constant (s); 0 = none
-  threshold: 0.2, density: 0.3, steps: 200, box: 1, shade: 1,
+  threshold: 0.2, density: 0.3, steps: 200, box: 1, shade: 1, shape: 0,
 };
 
 export class SpacetimeVolume {
@@ -221,6 +273,8 @@ export class SpacetimeVolume {
         ...ringUniforms(),
         ...keyUniforms(),
         uShade:  { value: 1 },
+        uShape:  { value: 0 },
+        uRing:   { value: new THREE.Vector3(1, 0.5, 0.25) },
         uR:      { value: new THREE.Matrix3() },
         uC:      { value: new THREE.Vector3() },
         uHalf:   { value: new THREE.Vector3(0.5, 0.5, 0.5) },
@@ -263,10 +317,24 @@ export class SpacetimeVolume {
     const u = this._mat.uniforms;
     applyRingUniforms(u, ring, f, o.blend, this._seen);
 
-    this._box.scale.set(f.A, 1, f.D);
+    // Bounds: the block for every shape but Ring, which bends the block round
+    // a circle. Ring keeps the frame's proportions in its cross-section (half
+    // the block's height) and turns Time depth into the circle's size, so
+    // "how long the time path is" still means the same thing.
+    const shape = o.shape | 0;
+    let bx = f.A, by = 1, bz = f.D;
+    if (shape === 4) {
+      const hh = 0.25, hw = hh * f.A;            // cross-section half height / width
+      const R = hw + 0.4 * f.D;                  // inner radius 0.4·D, never closed
+      u.uRing.value.set(R, hw, hh);
+      bx = bz = 2 * (R + hw);
+      by = 2 * hh;
+    }
+    u.uShape.value = shape;
+    this._box.scale.set(bx, by, bz);
     this._edges.scale.copy(this._box.scale);
     this._edges.visible = !!o.box;
-    u.uHalf.value.set(f.A / 2, 0.5, f.D / 2);
+    u.uHalf.value.set(bx / 2, by / 2, bz / 2);
     u.uR.value.copy(f.R);
     u.uC.value.copy(f.C);
     u.uRender.value = o.render | 0;
@@ -275,7 +343,7 @@ export class SpacetimeVolume {
     applyKeyUniforms(u, o);
     // Step length from the box diagonal, so `steps` means "samples across the
     // whole object" whatever its proportions.
-    const diag = Math.hypot(f.A, 1, f.D);
+    const diag = Math.hypot(bx, by, bz);
     u.uStep.value   = diag / Math.max(8, Math.min(o.steps, 1024));
     u.uThresh.value = o.threshold;
     u.uSigma.value  = 200 * o.density * o.density;   // squared: the useful range is low

@@ -7499,26 +7499,35 @@ export function registerCoreParameters(ps) {
     id: "vol.speed", label: "Rec speed", group: "vol",
     min: 1, max: 100, value: 100, step: 1, unit: "%",
   });
+  // Starts on Volume (owner, 2026-10-08): the object is what you came for; the
+  // flat Slice is one click away.
   ps.register({
     id: "vol.view", label: "View", group: "vol",
-    type: PARAM_TYPE.SELECT, options: ["Slice", "Volume"], value: 0,
+    type: PARAM_TYPE.SELECT, options: ["Slice", "Volume"], value: 1,
+    help: "Volume: the recording as a 3D object you can orbit. Slice: one flat cut through it, as an image.",
   });
-  ps.register({ id: "vol.axial",    label: "Axial",    group: "vol", type: PARAM_TYPE.TRIGGER });
-  ps.register({ id: "vol.coronal",  label: "Coronal",  group: "vol", type: PARAM_TYPE.TRIGGER });
-  ps.register({ id: "vol.sagittal", label: "Sagittal", group: "vol", type: PARAM_TYPE.TRIGGER });
+  // The object's shape (Volume view). Append-only: the value persists as an index.
+  ps.register({
+    id: "vol.shape", label: "Shape", group: "vol",
+    type: PARAM_TYPE.SELECT, options: ["Box", "Cylinder", "Sphere", "Tunnel", "Ring"], value: 0,
+    help: "Box: the plain block. Cylinder: each frame cut to a disc. Sphere: a ball of time. Tunnel: older frames shrink into the distance. Ring: time runs round a circle, newest meeting oldest at the front.",
+  });
+  ps.register({ id: "vol.axial", label: "Front cut", help: "Cut straight across time: one moment, as a plain picture (Time picks which).", group: "vol", type: PARAM_TYPE.TRIGGER });
+  ps.register({ id: "vol.coronal", label: "Top cut", help: "Cut along time from above: each row of the screen is a moment, newest at the top.", group: "vol", type: PARAM_TYPE.TRIGGER });
+  ps.register({ id: "vol.sagittal", label: "Side cut", help: "Cut along time from the side: time runs across the screen, newest on the right.", group: "vol", type: PARAM_TYPE.TRIGGER });
   // Plane orientation. Pitch tilts y into time (90° = Coronal: time down the
   // screen), Yaw turns x into time (270° = Sagittal: time across, newest right).
   ps.register({
-    id: "vol.pitch", label: "Cut pitch", group: "vol",
+    id: "vol.pitch", label: "Tilt ↕", help: "Tilts the cut so the picture's up-down runs into time. 0° = one moment, 90° = Top cut.", group: "vol",
     min: 0, max: 360, value: 0, step: 1, unit: "°",
   });
   ps.register({
-    id: "vol.yaw", label: "Cut yaw", group: "vol",
+    id: "vol.yaw", label: "Turn ↔", help: "Turns the cut so the picture's left-right runs into time. 0° = one moment, 270° = Side cut.", group: "vol",
     min: 0, max: 360, value: 0, step: 1, unit: "°",
   });
   // Where the plane sits in time: 0 = newest frame, 100 = oldest captured.
   ps.register({
-    id: "vol.time", label: "Time pos", group: "vol",
+    id: "vol.time", label: "Time", help: "Where the cut sits in time: 0 = now, 100 = the oldest recorded frame.", group: "vol",
     min: 0, max: 100, value: 0, step: 1, unit: "%",
   });
   // How deep the box is, relative to the frame's height. Decides how steeply an
@@ -7533,18 +7542,18 @@ export function registerCoreParameters(ps) {
   });
   // Remove the camera's side of the cut plane (Volume view). With Solid, the
   // exposed face is exactly the Slice picture.
-  ps.register({ id: "vol.cut", label: "Cut open", group: "vol", type: PARAM_TYPE.TOGGLE, value: 0 });
+  ps.register({ id: "vol.cut", label: "Cut away", help: "Volume view: remove everything between the camera and the cut, so you look into the object at the cut surface.", group: "vol", type: PARAM_TYPE.TOGGLE, value: 0 });
   ps.register({
-    id: "vol.camYaw", label: "Camera turn", group: "vol",
+    id: "vol.camYaw", label: "Cam turn", help: "Turns the camera round the object (drag the output left-right).", group: "vol",
     min: 0, max: 360, value: 35, step: 1, unit: "°",
   });
   ps.register({
-    id: "vol.camPitch", label: "Camera tilt", group: "vol",
+    id: "vol.camPitch", label: "Cam tilt", help: "Raises or lowers the camera (drag the output up-down).", group: "vol",
     min: -89, max: 89, value: 20, step: 1, unit: "°",
   });
   // ── advanced ──
   ps.register({
-    id: "vol.roll", label: "Cut roll", group: "vol",
+    id: "vol.roll", label: "Spin", help: "Spins the cut in its own plane.", group: "vol",
     min: 0, max: 360, value: 0, step: 1, unit: "°",
   });
   ps.register({
@@ -7567,23 +7576,23 @@ export function registerCoreParameters(ps) {
   // Crossfade neighbouring frames (KinoSlitscan) — off shows the time steps.
   ps.register({ id: "vol.blend", label: "Frame blend", group: "vol", type: PARAM_TYPE.TOGGLE, value: 1 });
   ps.register({
-    id: "vol.camZoom", label: "Camera zoom", group: "vol",
+    id: "vol.camZoom", label: "Cam zoom", help: "Camera zoom (mouse wheel / pinch).", group: "vol",
     min: 25, max: 400, value: 100, step: 1, unit: "%",
   });
   // Camera pan across the screen, in half-heights of the view (right-drag).
   ps.register({
-    id: "vol.panX", label: "Camera pan X", group: "vol",
+    id: "vol.panX", label: "Cam pan X", help: "Slides the view sideways (right-drag the output).", group: "vol",
     min: -300, max: 300, value: 0, step: 1, unit: "%",
   });
   ps.register({
-    id: "vol.panY", label: "Camera pan Y", group: "vol",
+    id: "vol.panY", label: "Cam pan Y", help: "Slides the view up or down (right-drag the output).", group: "vol",
     min: -300, max: 300, value: 0, step: 1, unit: "%",
   });
-  ps.register({ id: "vol.resetCam", label: "Reset camera", group: "vol", type: PARAM_TYPE.TRIGGER });
+  ps.register({ id: "vol.resetCam", label: "Cam reset", help: "Puts the camera back: turn 35°, tilt 20°, zoom 100%, no pan.", group: "vol", type: PARAM_TYPE.TRIGGER });
   // How long the camera takes to glide to where the controls put it (time
   // constant, s). Smooths mouse, touch, MIDI and LFOs alike; 0 = immediate.
   ps.register({
-    id: "vol.camSmooth", label: "Camera smooth", group: "vol",
+    id: "vol.camSmooth", label: "Cam smooth", help: "How long the camera takes to glide to where you put it. 0 = immediate.", group: "vol",
     min: 0, max: 1, value: 0.12, step: 0.01, unit: "s",
   });
   // Ring resolution — VRAM is w×h×4×120, so this is the cost knob. Same
@@ -7595,7 +7604,7 @@ export function registerCoreParameters(ps) {
   });
   // Perspective strength at constant framing; below 1° it is orthographic.
   ps.register({
-    id: "vol.fov", label: "Camera persp", group: "vol",
+    id: "vol.fov", label: "Cam persp", help: "Perspective strength; 0 = flat (orthographic) front / side / top views.", group: "vol",
     min: 0, max: 120, value: 35, step: 1, unit: "°",
   });
   ps.register({
@@ -7616,7 +7625,7 @@ export function registerCoreParameters(ps) {
     id: "vol.res", label: "Vol res", group: "vol",
     type: PARAM_TYPE.SELECT, options: ["Quarter", "Half", "Full"], value: 1,
   });
-  ps.register({ id: "vol.box", label: "Box lines", group: "vol", type: PARAM_TYPE.TOGGLE, value: 1 });
+  ps.register({ id: "vol.box", label: "Frame", help: "Show the outline of the object's bounds.", group: "vol", type: PARAM_TYPE.TOGGLE, value: 1 });
   // ── Volume key: which parts of the history are MATERIAL ──
   // Applied as the volume is read, not when frames are captured, so it
   // reshapes all 120 frames at once and leaves TimeDisp's shared ring alone.
