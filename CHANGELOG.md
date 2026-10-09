@@ -8,6 +8,17 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Changed
+- **Warp is split into one section per engine** (owner: "Warp is getting
+  cluttered with all the new options. can we make a detach to the Time
+  Displace, Volume, Tape, SlitScan, VideoDelay"). Time Displace, Volume, Tape,
+  Slit Scan, Video Delay (with RGB Channel Delay inside it) and Motion
+  Extraction each fold and detach on their own, under From the Signal. A
+  section is the unit of detach, so before this one window carried all six.
+  Each has an id, because a detached window is remembered by section key, which
+  is otherwise the title, and "Tape" is already the audio section's title. A
+  saved layout with the old Warp window detached opens docked.
+
 ### Added
 - **Volume: a warning when Vol buffer res is Native** (owner: Volume "slowing
   down after using for a while"; the cause was Native). Native keeps 120 frames

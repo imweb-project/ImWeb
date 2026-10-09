@@ -717,71 +717,67 @@ ImWeb</textarea
                              Container ids are unchanged, so buildMappingPanels()
                              (UI.js) needs no edit: it is an id→params map with no
                              labels and no ordering. -->
-                        <div class="panel-section">
-                            <div class="section-header">Warp</div>
+                        <!-- Each Warp engine is its own section (owner, 2026-10-09: "Warp is
+                             getting cluttered … can we make a detach to the Time Displace, Volume,
+                             Tape, SlitScan, VideoDelay"). A section is the unit of collapse AND of
+                             detach, so one Warp section meant one window for six engines. Ids are
+                             set because sectionKey() falls back to the title slug, and "Tape" is
+                             already the audio section's title. Container ids are unchanged. -->
+                        <div class="panel-section" id="warp-tdisp-section">
+                            <div class="section-header">Time Displace</div>
+                            <div id="tdisp-params"></div>
+                        </div>
+                        <!-- Volume (source 34): its own ring (vol.source / freeze / speed). Live
+                             set first; the rest under Advanced. -->
+                        <div class="panel-section" id="warp-volume-section">
+                            <div class="section-header">Volume</div>
+                            <div id="vol-params"></div>
+                            <!-- Cut: one flat plane through the recording. -->
                             <div class="panel-subsection">
-                                <div class="subsection-header">Time Displace</div>
-                                <div id="tdisp-params"></div>
+                                <div class="subsection-header">Cut</div>
+                                <div id="vol-cut-params"></div>
                             </div>
-                            <!-- Volume (source 34) reads the Time Displace ring
-                                 above — Capture src and Buffer res there are ITS
-                                 controls too; routing it keeps the ring recording
-                                 even with TimeDisp off. Live set first; the rest
-                                 under Advanced. -->
+                            <!-- Camera: the Volume VIEW's camera. Drag the output to turn it,
+                                 wheel to zoom, right-drag to pan (Touch Mode: Camera). -->
                             <div class="panel-subsection">
-                                <div class="subsection-header">Volume</div>
-                                <div id="vol-params"></div>
-                                <!-- Cut: one flat plane through the recording. -->
-                                <div class="panel-subsection">
-                                    <div class="subsection-header">Cut</div>
-                                    <div id="vol-cut-params"></div>
-                                </div>
-                                <!-- Camera: the Volume VIEW's camera. Drag the
-                                     output to turn it, wheel to zoom, right-drag
-                                     to pan (Touch Mode: Camera). -->
-                                <div class="panel-subsection">
-                                    <div class="subsection-header">Camera</div>
-                                    <div id="vol-cam-params"></div>
-                                </div>
-                                <!-- Key: which parts of the history are material.
-                                     Keyed Solid is the sculpture. -->
-                                <div class="panel-subsection">
-                                    <div class="subsection-header">Key</div>
-                                    <div id="vol-key-params"></div>
-                                </div>
-                                <div class="panel-subsection collapsed">
-                                    <div class="subsection-header collapsed">Advanced</div>
-                                    <div id="vol-adv-params"></div>
-                                </div>
+                                <div class="subsection-header">Camera</div>
+                                <div id="vol-cam-params"></div>
                             </div>
+                            <!-- Key: which parts of the history are material. Keyed Solid is the
+                                 sculpture. -->
                             <div class="panel-subsection">
-                                <div class="subsection-header">Tape</div>
-                                <div id="vwarp-params"></div>
+                                <div class="subsection-header">Key</div>
+                                <div id="vol-key-params"></div>
                             </div>
-                            <div class="panel-subsection">
-                                <div class="subsection-header">Slit Scan</div>
-                                <div id="slitscan-params"></div>
+                            <div class="panel-subsection collapsed">
+                                <div class="subsection-header collapsed">Advanced</div>
+                                <div id="vol-adv-params"></div>
                             </div>
-                            <div class="panel-subsection">
-                                <div class="subsection-header">Video Delay</div>
-                                <div id="delay-params"></div>
-                            </div>
-                            <!-- RGB Channel Delay reads the Video Delay ring, so it
-                                 sits under it: Delay src, Ring depth and Buffer res
-                                 above are ITS controls too. It has no source
-                                 selector of its own by design. -->
+                        </div>
+                        <div class="panel-section" id="warp-tape-section">
+                            <div class="section-header">Tape</div>
+                            <div id="vwarp-params"></div>
+                        </div>
+                        <div class="panel-section" id="warp-slitscan-section">
+                            <div class="section-header">Slit Scan</div>
+                            <div id="slitscan-params"></div>
+                        </div>
+                        <!-- RGB Channel Delay reads the Video Delay ring, so it sits inside it:
+                             Delay src, Ring depth and Buffer res are ITS controls too. It has no
+                             source selector of its own by design. -->
+                        <div class="panel-section" id="warp-delay-section">
+                            <div class="section-header">Video Delay</div>
+                            <div id="delay-params"></div>
                             <div class="panel-subsection">
                                 <div class="subsection-header">RGB Channel Delay</div>
                                 <div id="rgbdelay-params"></div>
                             </div>
-                            <!-- Motion produces a MATTE, not a picture. It lives
-                                 here because it is the same family — inverting time
-                                 into space — but its destination is the keyer's Key
-                                 src, not a layer. -->
-                            <div class="panel-subsection">
-                                <div class="subsection-header">Motion Extraction</div>
-                                <div id="motion-params"></div>
-                            </div>
+                        </div>
+                        <!-- Motion produces a MATTE, not a picture: same family (time into space),
+                             but its destination is the keyer's Key src, not a layer. -->
+                        <div class="panel-section" id="warp-motion-section">
+                            <div class="section-header">Motion Extraction</div>
+                            <div id="motion-params"></div>
                         </div>
                     <div class="panel-section">
                         <div class="section-header">Frame Sequences</div>
