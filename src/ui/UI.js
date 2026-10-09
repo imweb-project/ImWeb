@@ -522,6 +522,25 @@ export function buildMappingPanels(ps, contextMenu) {
     params.forEach(p => el.appendChild(buildParamRow(p, contextMenu)));
   });
 
+  // ── Volume: Native buffer res warning ──
+  // Native keeps 120 frames at panel size (up to 1280×720 ≈ 440 MB). On a GPU
+  // that shares system memory that is the owner's "slows down after a while"
+  // (2026-10-09); 640×360 measured flat at ~17 ms/frame over 4 min.
+  {
+    const row = document.querySelector('#vol-adv-params [data-param-id="vol.bufRes"]');
+    const p = ps.get('vol.bufRes');
+    if (row && p) {
+      const note = document.createElement('div');
+      note.className = 'noise-note';
+      note.textContent = 'Native holds 120 full-size frames (up to ~440 MB of GPU memory) '
+        + 'and can slow down over a session. 640×360 looks the same in the Volume.';
+      row.after(note);
+      const refresh = () => { note.style.display = p.value === 3 ? '' : 'none'; };
+      refresh();
+      p.onChange(refresh);
+    }
+  }
+
   // ── Time Displace: per-mode Scan pos / Scan pos Y / Scan width visibility ──
   // Shear X/Y (0,1) and Noise (6) use neither; Warp Line/Shear Sym/Radial (2-5)
   // use Scan pos + Scan width; Radial (5) alone also uses Scan pos Y.

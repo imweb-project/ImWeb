@@ -8,6 +8,14 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Added
+- **Volume: a warning when Vol buffer res is Native** (owner: Volume "slowing
+  down after using for a while"; the cause was Native). Native keeps 120 frames
+  at panel size, up to 1280×720 or ~440 MB, which a GPU that shares system memory
+  feels more the longer it runs. A note under the row says so and suggests
+  640×360. Measured on the owner's Mac: Volume alone at 640×360 stayed flat at
+  ~17 ms/frame over 4 minutes, with no growth in textures, programs or heap.
+
 ---
 
 ## [0.26.0] — 2026-10-09 — TimeSpace Object
