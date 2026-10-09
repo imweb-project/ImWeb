@@ -8,6 +8,10 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+---
+
+## [0.26.0] — 2026-10-09 — TimeSpace Object
+
 ### Added
 - **Volume (source 34): the frame history as a block of video in (x, y, time).**
   Two more readers of the Time Displace ring. It is not a second copy of the
