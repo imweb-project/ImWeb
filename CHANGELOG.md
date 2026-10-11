@@ -20,6 +20,13 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   saved layout with the old Warp window detached opens docked.
 
 ### Added
+- **2Disp rate: ½ / Full** (owner: "is there a way to give more power only
+  to the 2display?"). The second screen was hardwired to every other frame, so
+  a main window at 45 fps fed the projector ~22. Full sends every frame.
+  Measured on the UHD 630 (synthetic load, 3 runs): Full costs the main window
+  ~1–2 ms/frame with 2Display "Same", ~3 ms with 2Display 1080 on a 540
+  render, because the resize-on-readback costs ~3× a plain copy. ½ stays the
+  default; session-only, like the 2Display row.
 - **Volume: a warning when Vol buffer res is Native** (owner: Volume "slowing
   down after using for a while"; the cause was Native). Native keeps 120 frames
   at panel size, up to 1280×720 or ~440 MB, which a GPU that shares system memory

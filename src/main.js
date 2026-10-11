@@ -5212,6 +5212,28 @@ async function main() {
   _outWinRow.title = outWinSel.title; // the label is the part people point at
   ioOutBlock.appendChild(_outWinRow);
 
+  // ── 2Display rate — how many main-window frames reach the second screen ──
+  // Session-only like _outWinResIdx above, for the same reason. ½ is the old
+  // hardwired throttle and stays the default; Full sends every frame, so the
+  // projector matches the main window's fps at the cost of one readback per
+  // frame instead of one per two.
+  let _outWinEvery = 2;
+  const outRateSel = _ioSel();
+  [["½", 2], ["Full", 1]].forEach(([label, n]) => {
+    const o = document.createElement("option");
+    o.value = n; o.textContent = label;
+    outRateSel.appendChild(o);
+  });
+  outRateSel.value = _outWinEvery;
+  outRateSel.title =
+    "How often the second screen gets a new frame. ½ sends every other " +
+    "frame (cheaper); Full sends every frame, so the second screen runs at " +
+    "the main window's frame rate, at the cost of a readback per frame.";
+  outRateSel.addEventListener("change", () => { _outWinEvery = +outRateSel.value; });
+  const _outRateRow = _ioRow("2Disp rate", outRateSel);
+  _outRateRow.title = outRateSel.title;
+  ioOutBlock.appendChild(_outRateRow);
+
   /**
    * Clip selection, as a parameter.
    *
@@ -11307,8 +11329,9 @@ void main() {
       _spyCanvas &&
       !document.getElementById("video-spy")?.classList.contains("hidden");
     const outWinOpen = _outWin && !_outWin.closed && _outWinReady;
-    // Second screen throttled to every 2nd frame (~30fps) to reduce GPU readback pressure
-    const outWinDue = outWinOpen && ++_outFrameTick % 2 === 0;
+    // Second screen throttled to every _outWinEvery-th frame (2Disp rate row;
+    // default every 2nd) to reduce GPU readback pressure
+    const outWinDue = outWinOpen && ++_outFrameTick % _outWinEvery === 0;
 
     if (spyVisible || outWinDue) {
       // 2Display: resize bitmap before postMessage to reduce transfer cost
