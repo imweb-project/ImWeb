@@ -10,7 +10,7 @@ import { recipeMenu, applyRecipe, captureRecipe, saveUserRecipe, deleteUserRecip
   NOISE_RECIPES, loadUserRecipes } from '../inputs/NoiseRecipes.js';
 import { XMAP_HZ_MIN, XMAP_HZ_MAX } from '../controls/ControllerManager.js';
 import { DEFAULT_FX_ORDER } from '../core/Pipeline.js';
-import { PROVIDERS } from '../ai/AIFeatures.js';
+import { PROVIDERS, detectProvider } from '../ai/AIFeatures.js';
 import { ResponseCurve } from '../state/TableManager.js';
 import { ColorPicker } from './ColorPicker.js';
 import { mkSelect as _mkSelect } from './components/Select.js';
@@ -4628,9 +4628,17 @@ export function buildAISettingsPanel(ai, panelEl) {
     id => {
       ai.setActiveProvider(id);
       refreshProviderUI(id);
+      // Ollama needs no key and costs nothing to probe, so look for it now.
+      if (!PROVIDERS[id].needsKey) autoConnect(id);
     }
   );
   panelEl.appendChild(row('Provider', provSel));
+
+  const hint = document.createElement('div');
+  hint.className = 'ai-settings-note';
+  hint.textContent = 'Paste a key from any provider — ImWeb recognises which one, ' +
+    'checks it and picks a model it can use.';
+  panelEl.appendChild(hint);
 
   // Provider-specific fields (key, model, link) — rebuilt on provider change
   const provFields = document.createElement('div');
@@ -4988,12 +4996,26 @@ export function buildAISettingsPanel(ai, panelEl) {
       keyWrap.appendChild(clearBtn);
     }
 
-    // Save key on blur or Enter
+    // Save key on paste, blur or Enter. A pasted key is enough: its prefix
+    // names the provider (switched to if it is not the selected one) and the
+    // check + model pick run without a click. Unchanged keys do nothing, so
+    // the blur that follows Enter does not check twice.
     const saveKey = () => {
-      ai.setProviderKey(providerId, keyInput.value.trim());
-      updateStatusFromKey(providerId);
+      const key = keyInput.value.trim();
+      if (key === (ai.getConfig().providers[providerId]?.apiKey ?? '')) return;
+      const target = (pDef.needsKey && key && detectProvider(key, providerId)) || providerId;
+      ai.setProviderKey(target, key);
+      if (target !== providerId) {
+        ai.setActiveProvider(target);
+        provSel.value = target;
+        refreshProviderUI(target);
+      } else {
+        updateStatusFromKey(target);
+      }
+      if (key || !pDef.needsKey) autoConnect(target);
     };
     keyInput.addEventListener('blur', saveKey);
+    keyInput.addEventListener('paste', () => setTimeout(saveKey, 0));
     keyInput.addEventListener('keydown', e => { if (e.key === 'Enter') { saveKey(); keyInput.blur(); } });
 
     provFields.appendChild(keyWrap);
@@ -5001,7 +5023,7 @@ export function buildAISettingsPanel(ai, panelEl) {
     // "Get API key" link
     const link = document.createElement('a');
     link.className   = 'ai-prov-link';
-    link.textContent = pDef.keyUrlLabel;
+    link.textContent = pDef.needsKey ? `Get your ${pDef.name} key → (opens a new tab)` : pDef.keyUrlLabel;
     link.href        = pDef.keyUrl;
     link.target      = '_blank';
     link.rel         = 'noopener noreferrer';
@@ -5056,6 +5078,49 @@ export function buildAISettingsPanel(ai, panelEl) {
     provFields.appendChild(modelRow);
 
     updateStatusFromKey(providerId);
+  }
+
+  // Check the key, pick a reachable model, report in words. A newer check
+  // supersedes an older one still in flight (paste, then a quick edit).
+  let connectSeq = 0;
+  async function autoConnect(providerId) {
+    const seq = ++connectSeq;
+    const name = PROVIDERS[providerId].name;
+    statusEl.textContent = `⏳ Checking ${name}…`;
+    statusEl.className = 'ai-key-status';
+    try {
+      const { model, models } = await ai.connect();
+      if (seq !== connectSeq) return;
+      if (models.length) fetchedModels[providerId] = models;
+      ai.setProviderTestResult(providerId, { ok: true, message: `Connected (${model})` });
+      if (ai.getConfig().activeProvider === providerId) refreshProviderUI(providerId);
+      statusEl.textContent = `✓ Ready — ${name} · ${model}`;
+      statusEl.className = 'ai-key-status ok';
+    } catch (err) {
+      if (seq !== connectSeq) return;
+      const msg = friendlyAIError(err, providerId);
+      ai.setProviderTestResult(providerId, { ok: false, message: msg });
+      statusEl.textContent = `✗ ${msg}`;
+      statusEl.className = 'ai-key-status error';
+    }
+  }
+
+  function friendlyAIError(err, providerId) {
+    const m = err?.message ?? String(err);
+    const pDef = PROVIDERS[providerId];
+    const base = ai.getConfig().providers[providerId]?.apiKey || pDef.defaultKey;
+    if (!pDef.needsKey && /fetch|network|Ollama/i.test(m))
+      return `Ollama isn't answering at ${base} — is it running? (\`ollama serve\`, ` +
+        `with OLLAMA_ORIGINS=* so the browser may reach it)`;
+    if (m === 'no-key') return 'No key set';
+    if (/\b(401|403)\b|invalid.*key|key not valid|API_KEY_INVALID/i.test(m))
+      return `${pDef.name} did not accept that key — check it was copied whole`;
+    if (/\b402\b|credit|billing|quota/i.test(m))
+      return `${pDef.name} accepted the key but the account has no credit or quota left`;
+    if (/\b429\b/.test(m)) return `${pDef.name} is rate-limiting — wait a moment and try again`;
+    if (/Failed to fetch|NetworkError|Load failed/i.test(m))
+      return `Couldn't reach ${pDef.name} — check the internet connection`;
+    return m;
   }
 
   function updateStatusFromKey(providerId) {

@@ -85,8 +85,10 @@ export const PROVIDERS = {
     keyUrl:      'https://platform.deepseek.com/api_keys',
     keyUrlLabel: 'Get API key →',
     keyPlaceholder: 'sk-…',
-    models:      ['deepseek-chat', 'deepseek-reasoner'],
-    defaultModel:'deepseek-chat',
+    // deepseek-chat / deepseek-reasoner are gone from the official list
+    // (2026-10-20); connect() picks from the live list either way.
+    models:      ['deepseek-flash', 'deepseek-v4-pro'],
+    defaultModel:'deepseek-flash',
     needsKey:    true,
   },
   kimi: {
@@ -615,6 +617,10 @@ async function _callStream(system, user, maxTokens, image, onDelta) {
 
   const canStream = typeof ReadableStream !== 'undefined'
     && typeof TextDecoder !== 'undefined';
+  // A cap learned by _callRaw applies here too. An unlearned cap error is a
+  // provider message, not 'error NNN', so it falls back to _callRaw below,
+  // which learns it and retries — the first such call just loses live typing.
+  maxTokens = _capFor(pcfg, pcfg.model ?? PROVIDERS[id]?.defaultModel ?? '?', maxTokens);
   if (canStream) {
     try {
       const res = (id in OPENAI_SHAPED)
@@ -625,7 +631,7 @@ async function _callStream(system, user, maxTokens, image, onDelta) {
         : null;
       if (res) {
         _recordUsage(id, pcfg.model ?? PROVIDERS[id]?.defaultModel ?? '?', res.usage);
-        return res;
+        return { ...res, maxTokens };
       }
     } catch (e) {
       // A 'no-key' or an HTTP error from the provider is a REAL failure and must
@@ -711,6 +717,42 @@ async function fetchModels(providerId) {
   }
 }
 
+// ── Key → provider detection ────────────────────────────────────────────────
+//
+// Only prefixes a provider documents as its own. A bare `sk-` is shared by
+// OpenAI, DeepSeek and Kimi, so it is ambiguous by design: if the user already
+// picked one of those three it is left alone, otherwise OpenAI is the guess.
+const KEY_PREFIXES = [
+  [/^sk-ant-/, 'anthropic'],
+  [/^sk-or-/,  'openrouter'],
+  [/^AIza/,    'gemini'],
+  [/^sk-(proj|svcacct|admin)-/, 'openai'],
+];
+const SK_FAMILY = ['openai', 'deepseek', 'kimi'];
+
+export function detectProvider(key, current) {
+  const k = (key ?? '').trim();
+  for (const [re, id] of KEY_PREFIXES) if (re.test(k)) return id;
+  if (/^sk-/.test(k)) return SK_FAMILY.includes(current) ? current : 'openai';
+  return null;
+}
+
+/**
+ * Choose a model the account can actually reach. Keeps the user's choice when
+ * it is available; otherwise the first seed model (PROVIDERS lists them in
+ * preference order) that is available exactly, then by prefix — live ids carry
+ * suffixes like `-preview-06` — and only then whatever the provider lists first.
+ */
+export function pickModel(providerId, available, current) {
+  if (!available?.length) return current;
+  if (current && available.includes(current)) return current;
+  const p = PROVIDERS[providerId];
+  const seeds = [...new Set([p.defaultModel, ...p.models])];
+  return seeds.find(m => available.includes(m))
+    ?? seeds.map(m => available.find(a => a.startsWith(m))).find(Boolean)
+    ?? available[0];
+}
+
 // ── Module-level call router ──────────────────────────────────────────────────
 
 // ── Token accounting ────────────────────────────────────────────────────────
@@ -741,6 +783,17 @@ const RATES = {
   'claude-haiku-4-5':   [1.00,  5.00],
   'claude-fable-5':     [10.00, 50.00],
   'claude-fable-5-1':   [10.00, 50.00],
+  // DeepSeek + Kimi VERIFIED 2026-10-20 against their official pricing pages.
+  // DeepSeek charges double in weekday peak hours (01–04 and 06–10 UTC) — these
+  // are the PEAK rates, so the display is an upper bound, never an undercount.
+  // deepseek-v4-flash is a retired name served by Flash at the Flash price.
+  'deepseek-flash':     [0.30,  1.20],
+  'deepseek-v4-flash':  [0.30,  1.20],
+  'deepseek-v4-pro':    [1.32,  3.96],
+  'kimi-k3':            [3.00, 15.00],
+  'kimi-k2.7-code':     [0.95,  4.00],
+  'kimi-k2.7-code-highspeed': [1.90, 8.00],
+  'kimi-k2.6':          [0.95,  4.00],
   // Local inference is free — a real zero, not an unknown.
   __ollama:             [0, 0],
 };
@@ -836,26 +889,66 @@ export function resetUsage() {
   try { localStorage.removeItem(USAGE_KEY); } catch { /* nothing to clear */ }
 }
 
-/** Full result: { text, stop, usage }. Use when the stop reason matters. */
+// ── Output ceilings, learned not listed ─────────────────────────────────────
+//
+// Each model has its own maximum output, and those maxima drift faster than
+// any table here would be kept (deepseek-chat was 8K, newer DeepSeek and Kimi
+// thinking models want 32K+, Gemini 2.0 Flash is 8K). So the shader paths ask
+// for generous room, and when a provider rejects the number as too high, the
+// limit is read out of ITS error message, remembered per model, and the call
+// is retried once. A request below the cap is never affected.
+const CAP_ERROR = /max[_ ]?(output[_ ]?|completion[_ ]?)?tokens|maxOutputTokens|output tokens/i;
+
+function _capFor(pcfg, model, maxTokens) {
+  const cap = pcfg.outputCaps?.[model];
+  return cap ? Math.min(cap, maxTokens) : maxTokens;
+}
+
+/** The cap a "max_tokens too large" error names, or null if it is some other error. */
+function _capFromError(msg, asked) {
+  // A rate limit also names "output tokens" and a number — that is a
+  // throughput ceiling, not the model's, and learning it would shrink every
+  // later request for no reason.
+  if (!CAP_ERROR.test(msg ?? '') || /rate|per minute|quota|credit/i.test(msg)) return null;
+  const nums = (msg.match(/\d[\d,]*/g) ?? [])
+    .map(n => Number(n.replace(/,/g, '')))
+    .filter(n => n >= 256 && n < asked);
+  return nums.length ? Math.max(...nums) : null;
+}
+
+/** Full result: { text, stop, usage, maxTokens }. Use when the stop reason matters. */
 async function _callRaw(system, user, maxTokens = 512, image = null) {
   const cfg  = _config();
   const id   = cfg.activeProvider;
   const pcfg = cfg.providers[id];
   if (!pcfg) throw new Error('No provider configured');
   if (PROVIDERS[id]?.needsKey && !pcfg.apiKey) throw new Error('no-key');
+  const model = pcfg.model ?? PROVIDERS[id]?.defaultModel ?? '?';
+  const send = (n) => (id in OPENAI_SHAPED)
+    ? callOpenAIShaped(id, pcfg, system, user, n, image)
+    : id === 'anthropic' ? callAnthropic(pcfg, system, user, n, image)
+    : id === 'gemini'    ? callGemini   (pcfg, system, user, n, image)
+    : id === 'ollama'    ? callOllama   (pcfg, system, user, n, image)
+    : null;
+  let n = _capFor(pcfg, model, maxTokens);
+  let res;
+  try {
+    res = await send(n);
+  } catch (e) {
+    const cap = _capFromError(e?.message, n);
+    if (!cap) throw e;
+    (pcfg.outputCaps ??= {})[model] = cap;
+    saveConfig(cfg);
+    n = cap;
+    res = await send(n);
+  }
+  if (!res) throw new Error(`Unknown provider: ${id}`);
   // ONE metering point. Every caller returns through here, so a new provider
   // is counted the moment it is routed — the alternative, a _recordUsage call
   // inside each of the four callers, is four places for the next one to be
   // forgotten, and an uncounted provider reads as "free".
-  const res = (id in OPENAI_SHAPED)
-    ? await callOpenAIShaped(id, pcfg, system, user, maxTokens, image)
-    : id === 'anthropic' ? await callAnthropic(pcfg, system, user, maxTokens, image)
-    : id === 'gemini'    ? await callGemini   (pcfg, system, user, maxTokens, image)
-    : id === 'ollama'    ? await callOllama   (pcfg, system, user, maxTokens, image)
-    : null;
-  if (!res) throw new Error(`Unknown provider: ${id}`);
-  _recordUsage(id, pcfg.model ?? PROVIDERS[id]?.defaultModel ?? '?', res.usage);
-  return res;
+  _recordUsage(id, model, res.usage);
+  return { ...res, maxTokens: n };
 }
 
 /**
@@ -1334,9 +1427,11 @@ export function extractGlsl(text) {
 async function _shaderCall(system, user, maxTokens, tag, image = null, onDelta = null) {
   // Stream only when someone is watching. Without an onDelta there is nothing
   // to show mid-flight, and the simpler path has fewer ways to go wrong.
-  const { text: raw, stop } = onDelta
+  const res = onDelta
     ? await _callStream(system, user, maxTokens, image, onDelta)
     : await _callRaw(system, user, maxTokens, image);
+  const { text: raw, stop } = res;
+  maxTokens = res.maxTokens ?? maxTokens;  // the room actually granted, after any model cap
   // DEV-only ground truth for diagnosing extraction/model misbehaviour —
   // filter the console with [glsl-ai]
   if (import.meta.env?.DEV) {
@@ -1351,9 +1446,12 @@ async function _shaderCall(system, user, maxTokens, tag, image = null, onDelta =
   if (stop === 'max_tokens') {
     throw new Error(
       `The model ran out of room at ${maxTokens} tokens, so the shader came back unfinished.\n` +
-      'This is not a quota or key problem. Ask for a smaller change, or shorten the shader ' +
-      'in the editor first — a refine has to rewrite the whole thing, so a long shader needs ' +
-      'more room than a short one.',
+      'This is not a quota or key problem. Thinking models (DeepSeek Reasoner, Kimi, Gemini Pro…) ' +
+      'spend much of that room reasoning before they write a line — a non-thinking model in ' +
+      '⚙ Settings, or a simpler request, usually fits.' +
+      (tag.startsWith('refine')
+        ? ' A refine also rewrites the whole shader, so a long one needs more room.'
+        : ''),
     );
   }
   if (stop === 'refusal') {
@@ -1406,9 +1504,13 @@ YOU CAN SEE THE OUTPUT:
  * refine of a ~60-line shader came back as 'Empty response from the AI
  * provider' — the budget had gone entirely on thinking, leaving no text block
  * at all. Raising a ceiling is free; hitting one wastes the whole request.
+ *
+ * 8000/16000 then proved too small for DeepSeek and Kimi, whose thinking alone
+ * can fill 8000 (2026-10-20). A model whose maximum is lower gets it learned
+ * from its own rejection — see _capFromError — so a high ceiling is safe.
  */
-const GENERATE_TOKENS = 8000;
-const REFINE_TOKENS   = 16000;
+const GENERATE_TOKENS = 32000;
+const REFINE_TOKENS   = 48000;
 
 /**
  * Generate a Live GLSL shader from a natural-language description.
@@ -1668,6 +1770,21 @@ export class AIFeatures {
 
   // Fetch the live model list for a provider from its API
   async fetchModels(id) { return fetchModels(id); }
+
+  // One-step setup for the ACTIVE provider: list its models, switch to one the
+  // account can reach if the saved one is not among them, then prove it with a
+  // real call. A failed listing is not fatal (OpenRouter's is public, so it
+  // proves nothing; some endpoints may refuse CORS) — the test call decides.
+  async connect() {
+    const id = _config().activeProvider;
+    let models = [];
+    try { models = await fetchModels(id); } catch { /* the test call below reports */ }
+    const current = _config().providers[id]?.model ?? PROVIDERS[id]?.defaultModel;
+    const model = pickModel(id, models, current);
+    if (model && model !== current) this.setProviderModel(id, model);
+    await this.testConnection();
+    return { id, model, models };
+  }
 
   // Token accounting
   getCoachLog()   { return getCoachLog(); }

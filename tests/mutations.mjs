@@ -1788,4 +1788,46 @@ export const MUTATIONS = [
     find: '          if (_pmRenderMesh !== undefined) _pmMsg.renderMesh = _pmRenderMesh;',
     replace: '',
   },
+  // ═════════════════════════════════════════════════════════════════════════
+  // Learned output caps (src/ai/AIFeatures.js) — 2026-10-20
+  {
+    name: 'output caps: the cap is parsed as the largest number, including the one we asked for',
+    audit: 'audit-ai-output-caps.mjs',
+    file: 'src/ai/AIFeatures.js',
+    why: 'Anthropic names both numbers ("32000 > 8192"), so dropping the < asked filter learns 32000 as the cap and every later request is refused again at the same size — the retry exists and never helps',
+    find: '    .filter(n => n >= 256 && n < asked);',
+    replace: '    .filter(n => n >= 256);',
+  },
+  {
+    name: 'output caps: a rate limit is learned as a model cap',
+    audit: 'audit-ai-output-caps.mjs',
+    file: 'src/ai/AIFeatures.js',
+    why: '"8,000 output tokens per minute" names tokens and a number, so without the rate/quota exclusion one busy minute caps that model at 8000 for good — and DeepSeek and Kimi die at 8000 again, which is the bug this replaced',
+    find: " || /rate|per minute|quota|credit/i.test(msg)) return null;",
+    replace: ") return null;",
+  },
+  {
+    name: 'output caps: the streaming router ignores the learned cap',
+    audit: 'audit-ai-output-caps.mjs',
+    file: 'src/ai/AIFeatures.js',
+    why: 'every streamed shader asks for 32000 again, is refused, and falls back to the unstreamed path — it works, so nobody notices, but live typing is gone for that model forever and each request costs a wasted round trip',
+    find: "  maxTokens = _capFor(pcfg, pcfg.model ?? PROVIDERS[id]?.defaultModel ?? '?', maxTokens);\n",
+    replace: '',
+  },
+  {
+    name: 'output caps: truncation reports the budget asked for, not the one granted',
+    audit: 'audit-ai-output-caps.mjs',
+    file: 'src/ai/AIFeatures.js',
+    why: '"ran out of room at 32000 tokens" on a model that was given 8192 sends the performer looking for a 32000-token problem that does not exist',
+    find: '  maxTokens = res.maxTokens ?? maxTokens;',
+    replace: '',
+  },
+  {
+    name: 'output caps: the cap is stored per provider, not per model',
+    audit: 'audit-ai-output-caps.mjs',
+    file: 'src/ai/AIFeatures.js',
+    why: 'switching from an 8K model to a 64K one on the same provider inherits the 8K ceiling, and the bigger model is starved exactly like the bug this replaced',
+    find: '  const cap = pcfg.outputCaps?.[model];',
+    replace: '  const cap = Object.values(pcfg.outputCaps ?? {})[0];',
+  },
 ];

@@ -20,6 +20,17 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   saved layout with the old Warp window detached opens docked.
 
 ### Added
+- **AI setup by pasting a key** (owner: "can we simplify the process for
+  user, make it more friendly and automatic?"). In ⚙ Settings a pasted key
+  names its provider by prefix (`sk-ant-`, `AIza`, `sk-or-`, `sk-proj-`) and
+  switches to it; the key is then checked, a model the account can reach is
+  picked from the live list, and the result is reported in words ("did not
+  accept that key", "no credit left", "Ollama isn't answering…"). Selecting
+  Ollama probes it at once. DeepSeek's seed list moves to `deepseek-flash` /
+  `deepseek-v4-pro` — the old names are gone from its official list.
+- **DeepSeek and Kimi prices** in Tokens Used (official pages, 2026-10-20).
+  DeepSeek is priced at its weekday-peak rate, so the figure is an upper bound.
+
 - **2Disp rate: ½ / Full** (owner: "is there a way to give more power only
   to the 2display?"). The second screen was hardwired to every other frame, so
   a main window at 45 fps fed the projector ~22. Full sends every frame.
@@ -33,6 +44,17 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   feels more the longer it runs. A note under the row says so and suggests
   640×360. Measured on the owner's Mac: Volume alone at 640×360 stayed flat at
   ~17 ms/frame over 4 minutes, with no growth in textures, programs or heap.
+
+### Fixed
+- **Thinking models no longer run out of room on a shader** (owner: DeepSeek
+  and Kimi both failed "at 8000 tokens"; Kimi thought for 153 s first).
+  Generate is now 32K and refine 48K — a ceiling costs nothing unless used. A
+  model whose maximum is lower names it when it refuses; the router reads it
+  from the error, retries once and remembers it per model, so no table of
+  limits has to be kept. The truncation message names the room actually
+  granted and no longer tells you to shorten the shader on a fresh generate.
+  New audit: `audit-ai-output-caps` (29 checks, 5 mutations).
+
 
 ---
 
