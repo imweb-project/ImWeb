@@ -4568,10 +4568,11 @@ async function main() {
         .getElementById("btn-export-project")
         ?.addEventListener("click", async () => {
           try {
+            // Never the bank name: a project file holds EVERY bank, and
+            // naming it after the one on screen read as "saving the bank".
             const name =
               document.getElementById("project-name-input")?.value.trim() ||
-              document.getElementById("status-bank")?.textContent ||
-              "imweb-session";
+              `ImWeb project ${new Date().toISOString().slice(0, 10)}`;
             await projectFile.export(name);
             setStatus(`✓ Exported "${name}"`, "var(--green)");
           } catch (err) {
@@ -4684,17 +4685,32 @@ async function main() {
         }
       });
 
-      // 💾 status-bar save button (beside Bank selector)
-      document.getElementById("btn-save-project")?.addEventListener("click", () => {
+      // ⌘S and 💾 ask first, so it is plain that this writes the whole
+      // PROJECT file — not the bank whose name sits next to the button. The
+      // answer is remembered in the Project-tab name field for the next save.
+      const saveProjectPrompted = () => {
+        const inp = document.getElementById("project-name-input");
+        const fallback = `ImWeb project ${new Date().toISOString().slice(0, 10)}`;
+        const answer = prompt(
+          "Save PROJECT file (.imweb)\n\n" +
+          "Saves everything: all banks, their states, tables and mappings.\n\n" +
+          "Project name:",
+          inp?.value.trim() || fallback,
+        );
+        if (answer === null) return; // cancelled
+        if (inp) inp.value = answer.trim() || fallback;
         document.getElementById("btn-export-project")?.click();
-      });
+      };
+
+      // 💾 status-bar save button (beside Bank selector)
+      document.getElementById("btn-save-project")?.addEventListener("click", saveProjectPrompted);
 
       window.addEventListener("keydown", (e) => {
         if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")
           return;
         if ((e.metaKey || e.ctrlKey) && e.key === "s") {
           e.preventDefault();
-          document.getElementById("btn-export-project")?.click();
+          saveProjectPrompted();
         }
         if ((e.metaKey || e.ctrlKey) && e.key === "e" && !e.shiftKey) {
           e.preventDefault();

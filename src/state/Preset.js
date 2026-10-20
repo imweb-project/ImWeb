@@ -305,9 +305,80 @@ export class PresetManager extends EventTarget {
   /** True while a state-to-state morph (global.morphspeed) is lerping values. */
   get morphing() { return this._morphActive; }
 
-  async activatePreset(index, { fade = true } = {}) {
+  /**
+   * True when what is on screen is not the current bank's active stored state —
+   * a look the user has been building and not yet saved.
+   *
+   * Compared by VALUE, not by an "edited" flag: a flag has to be cleared on every
+   * recall/save/import path, and one forgotten path makes it lie. Params driven
+   * by a controller are skipped (an LFO changes them every frame); the
+   * controller SET is compared instead. Global params are never in a state.
+   */
+  liveIsUnsaved() {
+    const bank = this.current;
+    if (!bank) return false;
+    if (this._morphActive) return false; // heading to a stored state
+    const ds = bank.activeState == null ? null : bank.getState(bank.activeState);
+    const live = this.ps.captureState();
+    if (!ds?.values) {
+      // Nothing stored to compare with: unsaved only if the look is not the
+      // bare defaults (an empty bank at startup is not "work").
+      return this.ps.getAll().some(p => p.group !== 'global' &&
+        !(this._locked(p.id)) && !p.controller && !this._same(p, p.value, p.defaultValue));
+    }
+    const stored = ds.values;
+    for (const p of this.ps.getAll()) {
+      if (p.group === 'global' || p.controller || this._locked(p.id)) continue;
+      if (!(p.id in stored)) continue; // param newer than the state
+      if (!this._same(p, live[p.id], stored[p.id])) return true;
+    }
+    const liveCtrl  = Object.entries(this.ps.serializeControllers())
+      .filter(([, c]) => c.controller).map(([id, c]) => `${id}:${c.controller.type}`).sort();
+    const savedCtrl = Object.entries(ds.controllers ?? {})
+      .filter(([, c]) => c?.controller).map(([id, c]) => `${id}:${c.controller.type}`).sort();
+    return liveCtrl.join('|') !== savedCtrl.join('|');
+  }
+
+  _locked(id) {
+    return id.startsWith('projmap.') && !!this.ps.get('projmap.lock')?.value;
+  }
+
+  _same(p, a, b) {
+    if (typeof a === 'number' && typeof b === 'number') {
+      const span = Math.abs((p.max ?? 1) - (p.min ?? 0)) || 1;
+      return Math.abs(a - b) <= span * 1e-4;
+    }
+    return a === b;
+  }
+
+  /**
+   * keepLive: a hand-driven bank switch. If the look on screen is unsaved,
+   * carry it into the new bank instead of replacing it with that bank's stored
+   * state — so an idea can be built first and then filed into the bank it
+   * belongs to (＋ / ⇧S saves it there). Off for loads, imports, MIDI program
+   * change and startup, which must land on the stored state.
+   */
+  async activatePreset(index, { fade = true, keepLive = false } = {}) {
     const p = this.presets[index];
     if (!p) return;
+
+    if (keepLive && index !== this.currentIdx && this.liveIsUnsaved()) {
+      // Controllers stay live too — they are part of the look being carried.
+      this.currentIdx = index;
+      p.activeState = null; // no stored tile is what is on screen
+      const _statusBank = document.getElementById('status-bank');
+      if (_statusBank) _statusBank.textContent = p.name;
+      const _statusState = document.getElementById('status-state');
+      if (_statusState) _statusState.textContent = 'Unsaved';
+      const _bankSel = document.getElementById('bank-select');
+      if (_bankSel) _bankSel.value = String(index);
+      this.dispatchEvent(new CustomEvent('presetActivated', {
+        detail: { index, preset: p, keptLive: true }
+      }));
+      this.dispatchEvent(new CustomEvent('toast', { detail: {
+        msg: `Unsaved look kept — press ＋ (⇧S) to save it into "${p.name}"` } }));
+      return;
+    }
 
     this.currentIdx = index;
 
@@ -443,6 +514,9 @@ export class PresetManager extends EventTarget {
     const pins        = this._getPins ? this._getPins() : null;
     const extra       = this._getExtra ? this._getExtra() : null;
     const idx = p.addState(values, stateIndex, fxOrder, controllers, mediaRefs, pins, extra);
+    // A look carried in from another bank has no active tile; once saved, the
+    // tile it went into IS what is on screen.
+    if (p.activeState == null && idx !== null) p.activeState = idx;
     await p.save();
     this.dispatchEvent(new CustomEvent('stateSaved',
       { detail: { presetIndex: this.currentIdx, stateIndex: idx } }));
@@ -576,12 +650,12 @@ export class PresetManager extends EventTarget {
 
   async nextPreset() {
     const next = (this.currentIdx + 1) % this.presets.length;
-    await this.activatePreset(next);
+    await this.activatePreset(next, { keepLive: true });
   }
 
   async prevPreset() {
     const prev = (this.currentIdx - 1 + this.presets.length) % this.presets.length;
-    await this.activatePreset(prev);
+    await this.activatePreset(prev, { keepLive: true });
   }
 
   async saveCurrentPreset(thumbnail = null) {
@@ -629,7 +703,7 @@ export class PresetManager extends EventTarget {
     const bank = new Preset(idx);
     this.presets[idx] = bank;
     await bank.save();
-    await this.activatePreset(idx);
+    await this.activatePreset(idx, { keepLive: true });
     return idx;
   }
 

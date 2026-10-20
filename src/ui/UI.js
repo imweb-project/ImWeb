@@ -1869,7 +1869,7 @@ export class StateBar {
       btn.textContent = bank.name || `Bank ${i + 1}`;
       btn.addEventListener('click', e => {
         e.stopPropagation();
-        this.pm.activatePreset(i);
+        this.pm.activatePreset(i, { keepLive: true });
         this.bankDropdown.classList.add('hidden');
       });
       this.bankDropdown.appendChild(btn);
@@ -3220,7 +3220,7 @@ export class MemoryPanel {
       switchBtn.className = 'bank-list-switch';
       switchBtn.textContent = '▶';
       switchBtn.title = 'Switch to this bank';
-      switchBtn.addEventListener('click', () => this.pm.activatePreset(i));
+      switchBtn.addEventListener('click', () => this.pm.activatePreset(i, { keepLive: true }));
       row.appendChild(switchBtn);
 
       el.appendChild(row);

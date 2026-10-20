@@ -9,6 +9,17 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Changed
+- **⌘S / 💾 asks for a project name** (owner: "it is confusing that it comes
+  up with the name of the bank"). A project file holds every bank, so it is no
+  longer named after the bank on screen: a dialog titled "Save PROJECT file
+  (.imweb)" asks for a name (default `ImWeb project <date>`), remembered in the
+  Project tab for the next save.
+- **Switching banks keeps an unsaved look** (owner: "the open unsaved state
+  gets lost"). A hand switch — bank menu, bank list ▶, numpad ±, + New Bank —
+  no longer replaces a look that differs from the bank's stored state; it is
+  carried into the new bank (status reads "Unsaved") so ＋ / ⇧S files it there.
+  A look that matches its stored state switches as before. MIDI program change,
+  imports and startup still always load the bank's state.
 - **Warp is split into one section per engine** (owner: "Warp is getting
   cluttered with all the new options. can we make a detach to the Time
   Displace, Volume, Tape, SlitScan, VideoDelay"). Time Displace, Volume, Tape,
