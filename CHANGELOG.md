@@ -36,6 +36,10 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   whenever that list is fetched, so its hundreds of models stay current with
   no table to maintain; "varies by route" prices stay a dash. Its seed list
   moves to `anthropic/claude-sonnet-5.5` and three other live models.
+- **Claude 5.5 models, direct from Anthropic** (owner: Sonnet 5.5 "works
+  well" via OpenRouter). `claude-sonnet-5-5` (new default), `claude-opus-5-5`
+  and `claude-haiku-5-5` are in the Anthropic list and priced at $2/$10,
+  $4/$20 and $0.10/$0.50 per MTok. A saved model choice is kept.
 
 - **2Disp rate: ½ / Full** (owner: "is there a way to give more power only
   to the 2display?"). The second screen was hardwired to every other frame, so

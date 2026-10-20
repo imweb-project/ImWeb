@@ -26,8 +26,12 @@ export const PROVIDERS = {
     keyUrl:      'https://console.anthropic.com/settings/keys',
     keyUrlLabel: 'Get API key →',
     keyPlaceholder: 'sk-ant-…',
-    models:      ['claude-sonnet-5', 'claude-opus-4-8', 'claude-haiku-4-5', 'claude-opus-4-6', 'claude-sonnet-4-6'],
-    defaultModel:'claude-sonnet-5',
+    // The 5.5 generation first (2026-10-20). Request shape needs no change for
+    // them: no temperature and no `thinking` field is sent, so they run their
+    // default adaptive thinking, and thinking-first content is already handled.
+    models:      ['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-haiku-5-5',
+                  'claude-sonnet-5', 'claude-opus-4-8', 'claude-haiku-4-5'],
+    defaultModel:'claude-sonnet-5-5',
     needsKey:    true,
   },
   gemini: {
@@ -784,6 +788,12 @@ const USAGE_KEY = 'imweb-ai-usage';
  * purpose: a missing row costs a dash on screen, a stale row costs trust.
  */
 const RATES = {
+  // Claude 5.5 VERIFIED 2026-10-20 (Anthropic model reference, 2026-10-06).
+  // Haiku 5.5 doubles past 100K-token prompts ($0.50/$2.50); ImWeb's prompts
+  // sit far below that, so the base rate is the one that applies.
+  'claude-opus-5-5':    [4.00, 20.00],
+  'claude-sonnet-5-5':  [2.00, 10.00],
+  'claude-haiku-5-5':   [0.10,  0.50],
   'claude-opus-5':      [5.00, 25.00],
   'claude-opus-4-8':    [5.00, 25.00],
   'claude-opus-4-7':    [5.00, 25.00],
