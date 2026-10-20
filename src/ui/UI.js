@@ -4744,7 +4744,16 @@ export function buildAISettingsPanel(ai, panelEl) {
       rows.push('<div class="ai-usage-note">— = no published rate on file for that model; its tokens are counted but not priced.</div>');
     }
     usageEl.innerHTML = rows.join('');
+    // OpenRouter is priced from its public model list. If tokens were spent
+    // before that list was ever fetched on this origin, fetch it once (no key
+    // needed) and redraw with prices.
+    if (!orRatesAsked && !ai.hasOpenRouterRates()
+        && Object.keys(totals).some(k => k.startsWith('openrouter:'))) {
+      orRatesAsked = true;
+      ai.fetchModels('openrouter').then(refreshUsage).catch(() => {});
+    }
   }
+  let orRatesAsked = false;
   refreshUsage();
 
   const usageBtnRow = document.createElement('div');

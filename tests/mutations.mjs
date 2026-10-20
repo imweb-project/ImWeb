@@ -1830,4 +1830,30 @@ export const MUTATIONS = [
     find: '  const cap = pcfg.outputCaps?.[model];',
     replace: '  const cap = Object.values(pcfg.outputCaps ?? {})[0];',
   },
+  // ═════════════════════════════════════════════════════════════════════════
+  // OpenRouter rates from its live model list (src/ai/AIFeatures.js) — 2026-10-20
+  {
+    name: 'openrouter rates: the per-token price is used as a per-million price',
+    audit: 'audit-ai-usage.mjs',
+    file: 'src/ai/AIFeatures.js',
+    why: 'OpenRouter quotes dollars per TOKEN and every other rate here is per million, so dropping the scale shows a $12 session as $0.000012 — "<$0.01", a believable free ride',
+    find: '    const i = Number(m.pricing?.prompt) * 1e6;',
+    replace: '    const i = Number(m.pricing?.prompt);',
+  },
+  {
+    name: 'openrouter rates: a "-1 = varies" price is taken literally',
+    audit: 'audit-ai-usage.mjs',
+    file: 'src/ai/AIFeatures.js',
+    why: 'openrouter/auto is listed at -1 because its price depends on the route it picks; priced literally it subtracts from the session total, which then reads as cheaper than it was',
+    find: '    if (Number.isFinite(i) && Number.isFinite(o) && i >= 0 && o >= 0) rates[m.id] = [i, o];',
+    replace: '    if (Number.isFinite(i) && Number.isFinite(o)) rates[m.id] = [i, o];',
+  },
+  {
+    name: 'openrouter rates: a malformed list wipes the stored rates',
+    audit: 'audit-ai-usage.mjs',
+    file: 'src/ai/AIFeatures.js',
+    why: 'one bad response (an outage page, a schema change) would turn every OpenRouter model back into a dash until the next good fetch, and nothing says why',
+    find: '  if (!Object.keys(rates).length) return;  // a malformed list must not wipe good rates\n',
+    replace: '',
+  },
 ];

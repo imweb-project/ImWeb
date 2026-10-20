@@ -30,6 +30,12 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   `deepseek-v4-pro` — the old names are gone from its official list.
 - **DeepSeek and Kimi prices** in Tokens Used (official pages, 2026-10-20).
   DeepSeek is priced at its weekday-peak rate, so the figure is an upper bound.
+- **OpenAI GPT-6 and OpenRouter prices.** OpenAI's seed list is now
+  `gpt-6.1-sol` (default), `gpt-6-luna`, `gpt-6-astra`, priced from the
+  official page. OpenRouter is priced from its own public model list, captured
+  whenever that list is fetched, so its hundreds of models stay current with
+  no table to maintain; "varies by route" prices stay a dash. Its seed list
+  moves to `anthropic/claude-sonnet-5.5` and three other live models.
 
 - **2Disp rate: ½ / Full** (owner: "is there a way to give more power only
   to the 2display?"). The second screen was hardwired to every other frame, so
@@ -54,6 +60,15 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   limits has to be kept. The truncation message names the room actually
   granted and no longer tells you to shorten the shader on a fresh generate.
   New audit: `audit-ai-output-caps` (29 checks, 5 mutations).
+- **OpenAI keys work with current models.** Every GPT-6 model reasons, and
+  OpenAI refuses `max_tokens` on reasoning models; ImWeb now sends
+  `max_completion_tokens` to OpenAI on both routers.
+- **Generated shaders respect WebGL 1 loops and a frame budget** (owner:
+  gpt-4o "Loop index cannot be compared with non-constant expression"; an
+  Astra shader dropped the instrument to 15–16 fps). The shader contract now
+  states the constant-loop-bound rule with the break-early pattern, and asks
+  for 60 fps on an integrated GPU: ~64 raymarch steps, ~100 loop iterations
+  per pixel.
 
 
 ---

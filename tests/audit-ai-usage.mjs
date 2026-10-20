@@ -149,10 +149,45 @@ for (const fn of PROVIDER_FNS) {
     !body.includes('_recordUsage('));
   check(`${fn} reports usage back to the router`, /usage: \{|usage,/.test(body));
 }
+// OpenRouter is priced from its own public model list, per token → per MTok.
+// Every way this goes wrong is a believable number: a unit slip is off by a
+// million, a "-1 = varies" price reads as a refund, and a bad fetch that
+// wipes the table turns every OpenRouter model back into a dash.
+store.clear();
+{
+  const m = await fresh('openrouter');
+  const realFetch = globalThis.fetch;
+  const list = (data) => async () => ({ ok: true, json: async () => ({ data }) });
+  globalThis.fetch = list([
+    { id: 'anthropic/claude-sonnet-5.5', pricing: { prompt: '0.000002', completion: '0.00001' } },
+    { id: 'openrouter/auto',             pricing: { prompt: '-1', completion: '-1' } },
+    { id: 'z-ai/glm-free',               pricing: { prompt: '0', completion: '0' } },
+  ]);
+  check('no OpenRouter rates before the list is fetched', !m.hasOpenRouterRates());
+  await new m.AIFeatures(null, null).fetchModels('openrouter');
+  // $2/MTok in, $10/MTok out → 1M + 1M = $12.
+  check('an OpenRouter model is priced per MTok from its per-token list price',
+    Math.abs(m.usageCost('openrouter', 'anthropic/claude-sonnet-5.5', 1e6, 1e6) - 12) < 1e-9);
+  check('a "varies by route" (-1) price stays unpriced, never negative',
+    m.usageCost('openrouter', 'openrouter/auto', 1e6, 1e6) === null);
+  check('a free OpenRouter model is a real zero', m.usageCost('openrouter', 'z-ai/glm-free', 1e6, 1e6) === 0);
+  check('a model missing from the list is unpriced', m.usageCost('openrouter', 'nobody/nothing', 1e6, 1e6) === null);
+  check('OpenRouter rates are not borrowed by a direct provider of the same model name',
+    m.usageCost('anthropic', 'anthropic/claude-sonnet-5.5', 1e6, 1e6) === null);
+  globalThis.fetch = list([{ id: 'broken' }]);
+  await new m.AIFeatures(null, null).fetchModels('openrouter').catch(() => {});
+  check('a malformed list does not wipe good rates',
+    m.usageCost('openrouter', 'anthropic/claude-sonnet-5.5', 1e6, 1e6) !== null);
+  const m2 = await fresh('openrouter-reload');
+  check('OpenRouter rates survive a reload', m2.hasOpenRouterRates()
+    && Math.abs(m2.usageCost('openrouter', 'anthropic/claude-sonnet-5.5', 1e6, 1e6) - 12) < 1e-9);
+  globalThis.fetch = realFetch;
+}
+
 // Rates carry a verification date, so a stale table is visible rather than assumed.
 check('the rate table records when it was verified', /RATES VERIFIED \d{4}-\d{2}-\d{2}/.test(src));
 
-const EXPECTED_CHECKS = 55;
+const EXPECTED_CHECKS = 63;
 if (ran !== EXPECTED_CHECKS) {
   console.error(`FAIL audit-ai-usage: ran ${ran} checks, expected ${EXPECTED_CHECKS} — a section was skipped or added without updating the count.`);
   process.exit(1);

@@ -48,8 +48,9 @@ export const PROVIDERS = {
     keyUrl:      'https://platform.openai.com/api-keys',
     keyUrlLabel: 'Get API key →',
     keyPlaceholder: 'sk-…',
-    models:      ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'],
-    defaultModel:'gpt-4o-mini',
+    // Current lineup per developers.openai.com (2026-10-20), balanced first.
+    models:      ['gpt-6.1-sol', 'gpt-6-luna', 'gpt-6-astra'],
+    defaultModel:'gpt-6.1-sol',
     needsKey:    true,
   },
   ollama: {
@@ -74,8 +75,10 @@ export const PROVIDERS = {
     keyUrl:      'https://openrouter.ai/keys',
     keyUrlLabel: 'Get API key →',
     keyPlaceholder: 'sk-or-…',
-    models:      ['anthropic/claude-sonnet-4.5', 'openai/gpt-4o-mini', 'google/gemini-2.0-flash-001', 'meta-llama/llama-3.3-70b-instruct'],
-    defaultModel:'anthropic/claude-sonnet-4.5',
+    // Checked against the live /models list 2026-10-20 — it is public, so
+    // "Refresh models" needs no key.
+    models:      ['anthropic/claude-sonnet-5.5', 'google/gemini-3.8-flash', 'z-ai/glm-5.3', 'x-ai/grok-4.7'],
+    defaultModel:'anthropic/claude-sonnet-5.5',
     needsKey:    true,
   },
   deepseek: {
@@ -304,7 +307,11 @@ async function callGemini(pcfg, system, user, maxTokens, image) {
  * request body, not just in address.
  */
 const OPENAI_SHAPED = {
-  openai:     { url: 'https://api.openai.com/v1/chat/completions',   label: 'OpenAI' },
+  // OpenAI's own endpoint refuses `max_tokens` on reasoning models — every
+  // current one (GPT-6 Astra/Sol/Luna) — and takes `max_completion_tokens` on
+  // all models, old ones included. The other three still take `max_tokens`.
+  openai:     { url: 'https://api.openai.com/v1/chat/completions',   label: 'OpenAI',
+                tokenParam: 'max_completion_tokens' },
   openrouter: { url: 'https://openrouter.ai/api/v1/chat/completions', label: 'OpenRouter',
                 headers: { 'HTTP-Referer': 'https://imweb.app', 'X-Title': 'ImWeb' } },
   // Both are documented as OpenAI-compatible; `/v1` is a compatibility path on
@@ -324,7 +331,7 @@ async function callOpenAIShaped(providerId, pcfg, system, user, maxTokens, image
     },
     body: JSON.stringify({
       model:      pcfg.model,
-      max_tokens: maxTokens,
+      [ep.tokenParam ?? 'max_tokens']: maxTokens,
       messages: [
         { role: 'system', content: system },
         {
@@ -540,7 +547,7 @@ async function streamOpenAIShaped(providerId, pcfg, system, user, maxTokens, ima
       ...(ep.headers ?? {}),
     },
     body: JSON.stringify({
-      model: pcfg.model, max_tokens: maxTokens, stream: true,
+      model: pcfg.model, [ep.tokenParam ?? 'max_tokens']: maxTokens, stream: true,
       // Usage is omitted from a stream unless asked for. Without this the
       // token counter would silently under-report every streamed call.
       stream_options: { include_usage: true },
@@ -694,6 +701,9 @@ async function fetchModels(providerId) {
       const res = await fetch('https://openrouter.ai/api/v1/models');
       if (!res.ok) throw new Error(`OpenRouter error ${res.status}`);
       const data = await res.json();
+      // The same public list carries every model's price, so it is also the
+      // rate table for OpenRouter — live, never hand-copied.
+      _setOpenRouterRates(data.data ?? []);
       return (data.data ?? []).map(m => m.id).sort();
     }
     // Both serve OpenAI's /models listing verbatim. This is the path that
@@ -794,6 +804,12 @@ const RATES = {
   'kimi-k2.7-code':     [0.95,  4.00],
   'kimi-k2.7-code-highspeed': [1.90, 8.00],
   'kimi-k2.6':          [0.95,  4.00],
+  // OpenAI VERIFIED 2026-10-20 (developers.openai.com/api/docs/pricing),
+  // standard tier, short context.
+  'gpt-6-astra':        [10.00, 50.00],
+  'gpt-6.1-sol':        [2.00, 10.00],
+  'gpt-6-sol':          [2.00, 10.00],
+  'gpt-6-luna':         [0.10,  0.50],
   // Local inference is free — a real zero, not an unknown.
   __ollama:             [0, 0],
 };
@@ -824,8 +840,42 @@ function _recordUsage(providerId, model, usage) {
 }
 
 /** USD for a provider:model row, or null when the rate is not known. */
+// ── OpenRouter rates, read from its own model list ──────────────────────────
+//
+// OpenRouter fronts hundreds of models and reprices them often, so a table
+// here would be wrong within weeks. Its public /models list prices each one
+// per token; that is captured whenever the list is fetched (connect, Refresh
+// models) and kept per origin. Negative prices mean "varies by route" (e.g.
+// openrouter/auto) and are left unpriced rather than guessed.
+const OR_RATES_KEY = 'imweb-ai-openrouter-rates';
+let _orRates = null;
+
+function _openRouterRates() {
+  if (_orRates) return _orRates;
+  try { _orRates = JSON.parse(localStorage.getItem(OR_RATES_KEY))?.rates ?? {}; }
+  catch { _orRates = {}; }
+  return _orRates;
+}
+
+function _setOpenRouterRates(models) {
+  const rates = {};
+  for (const m of models) {
+    const i = Number(m.pricing?.prompt) * 1e6;
+    const o = Number(m.pricing?.completion) * 1e6;
+    if (Number.isFinite(i) && Number.isFinite(o) && i >= 0 && o >= 0) rates[m.id] = [i, o];
+  }
+  if (!Object.keys(rates).length) return;  // a malformed list must not wipe good rates
+  _orRates = rates;
+  try { localStorage.setItem(OR_RATES_KEY, JSON.stringify({ ts: Date.now(), rates })); }
+  catch { /* priced for this session only */ }
+}
+
+export function hasOpenRouterRates() { return Object.keys(_openRouterRates()).length > 0; }
+
 export function usageCost(providerId, model, inTok, outTok) {
-  const r = providerId === 'ollama' ? RATES.__ollama : RATES[model];
+  const r = providerId === 'ollama' ? RATES.__ollama
+    : providerId === 'openrouter' ? _openRouterRates()[model]
+    : RATES[model];
   if (!r) return null;
   return (inTok / 1e6) * r[0] + (outTok / 1e6) * r[1];
 }
@@ -1324,7 +1374,17 @@ CRITICAL RULES — violating any of these breaks the instrument:
 - Strictly WebGL 1.0 / GLSL ES 1.00: use gl_FragColor and texture2D().
   NEVER use #version, precision statements, in/out qualifiers, texture(),
   fragColor, or any WebGL 2.0 / GLSL ES 3.00 syntax.
+- GLSL ES 1.00 loops: the loop bound MUST be a constant expression — a literal
+  or a const int. NEVER compare the index with a variable or uniform
+  (for (int i = 0; i < n; i++) does NOT compile). For a variable count, loop to
+  a constant maximum and stop early: for (int i = 0; i < 32; i++) { if (i >= n) break; ... }
+  Never modify the loop index inside the loop.
 - Output ONLY raw GLSL code. NO markdown, NO backticks, no prose.
+- It must hold 60 fps on an integrated laptop GPU at full screen. Keep the work
+  per pixel modest: at most ~64 raymarch steps, at most ~100 loop iterations in
+  total per pixel (nested loops multiply), few texture2D() reads, no per-pixel
+  loops over many objects. Prefer a cheap trick that looks rich over an
+  expensive simulation.
 
 Rules:
 - The FIRST line must be exactly: // uParams: <Label1> | <Label2> | <Label3> | <Label4>
@@ -1792,6 +1852,7 @@ export class AIFeatures {
   getUsage()   { return getUsage(); }
   resetUsage() { return resetUsage(); }
   usageCost(provider, model, inTok, outTok) { return usageCost(provider, model, inTok, outTok); }
+  hasOpenRouterRates() { return hasOpenRouterRates(); }
 
   // Feature methods (delegates to module-level functions)
   async generatePreset(description)    { return generatePreset(description, this.ps); }
