@@ -15,7 +15,7 @@
  * Zones are step 2 (§4.4).
  */
 
-const PROTO_VERSION = 5;
+const PROTO_VERSION = 6;
 const REFUSE_PROTO_MISMATCH = 1;
 const REFUSE_NO_TAPE = 2;
 const REFUSE_BAD_RANGE = 3;
@@ -23,6 +23,9 @@ const REFUSE_LAYOUT_LOCKED = 4;
 const REFUSE_BUSY = 5;
 const REFUSE_CTRL_OWNED = 6;
 const REFUSE_CANCELLED = 7;
+
+/** Ceiling on one `/tape/read` — a copy done in the message handler. */
+const MAX_READ_SECONDS = 10;
 
 /** Ceiling on `/engine/tape/alloc`, so a typo cannot ask for 40 GB. */
 const MAX_TAPE_SECONDS = 600;
@@ -776,6 +779,7 @@ class TapeProcessor extends AudioWorkletProcessor {
       case '/engine/panic':      return this._panic();
       case '/tape/write':        return this._write(v[0], v[1], v[2]);
       case '/tape/env/req':      return this._envReq(v[0], v[1], v[2], v[3]);
+      case '/tape/read':         return this._read(v[0], v[1], v[2]);
 
       case '/part/<n>/bounds':   return this._partBounds(idx[0], v[0], v[1]);
       case '/part/<n>/clear':    return this._partClear(idx[0]);
@@ -1552,6 +1556,32 @@ class TapeProcessor extends AudioWorkletProcessor {
       for (let i = 0; i < frames; i++) dst[startSample + i] = src[i * channels + lane];
     }
     this._markDirty(startSample, startSample + frames);
+  }
+
+  /**
+   * Raw samples for an explicit span, interleaved stereo — for carrying a
+   * recording across Audio Off and into a project file. Done in the handler,
+   * unlike the envelope, because it is a COPY bounded at MAX_READ_SECONDS per
+   * request (under a millisecond), not a scan of the whole tape; the client
+   * walks the tape in chunks. Correlated error, same reason as `/tape/env/err`.
+   */
+  _read(start, end, reqId) {
+    const fail = (code, msg) => {
+      this.port.postMessage({ a: '/tape/read/err', t: 'ii', v: [reqId, code] });
+      return this._refuse(code, msg);
+    };
+    if (!this._length) return fail(REFUSE_NO_TAPE, 'no tape allocated');
+    const a = Math.max(0, Math.min(start | 0, this._length));
+    const b = Math.max(a, Math.min(end | 0, this._length));
+    if (b - a > MAX_READ_SECONDS * sampleRate) {
+      return fail(REFUSE_BAD_RANGE, `read of ${b - a} samples exceeds ${MAX_READ_SECONDS} s`);
+    }
+    const n = b - a;
+    const out = new Float32Array(n * 2);
+    const l = this._tape[0], r = this._tape[1];
+    for (let i = 0; i < n; i++) { out[2 * i] = l[a + i]; out[2 * i + 1] = r[a + i]; }
+    this.port.postMessage(
+      { a: '/tape/read/data', t: 'iiib', v: [reqId, a, 2, out.buffer] }, [out.buffer]);
   }
 
   /**

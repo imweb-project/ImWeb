@@ -29,6 +29,7 @@ import { buildPitches, imageFromLuma, buildPan, PAN } from './spectral-image.js'
 import { CorpusView } from './CorpusView.js';
 import { DESCRIPTORS, buildIndex, nearest, grainTime } from './corpus-index.js';
 import { describeAudioGraph } from './graph-view.js';
+import { captureSnapshot, restoreSnapshot } from './tape-snapshot.js';
 import {
   AUDIO_TARGETS, describeController, describeSlew, descDiff, semitoneToHz,
   sampleSlewCurve, slewStrength, SLEW_MECHANISM, SLEW_SEGMENT,
@@ -53,6 +54,8 @@ export class AudioBinding {
     this.ps = ps;
     this.engine = new AudioEngine();
     this.running = false;
+    /** A recording copied out at Audio Off, or loaded from a project while off. */
+    this._heldTape = null;
     this._unsubs = [];
     // True while a param is being written BECAUSE the engine said so. See _on().
     this._fromEngine = false;
@@ -270,6 +273,12 @@ export class AudioBinding {
     });
 
     this.engine.allocTape(this.ps.get('audio.tapeSec').value);
+    // A recording held across Audio Off, or loaded from a project while audio
+    // was off, goes back in right after the allocation — messages arrive in
+    // order, so the writes land on the fresh tape and not the old one.
+    const held = this._heldTape;
+    this._heldTape = null;
+    const restored = held ? this._writeSnapshot(held, false) : 0;
     this._pushLayout();
     this._pushAll();
     this._subscribe();
@@ -290,7 +299,8 @@ export class AudioBinding {
     this._alive = await alive;
 
     if (this._alive) {
-      this._say(`audio running at ${this.engine.sampleRate} Hz`);
+      this._say(`audio running at ${this.engine.sampleRate} Hz` +
+        (restored ? ` — ${(restored / this.engine.sampleRate).toFixed(1)} s of recording restored` : ''));
     } else {
       this._say('ENGINE LOADED BUT SILENT — the audio callback never ran. '
         + 'No output device, or the browser was started with audio disabled.');
@@ -306,6 +316,14 @@ export class AudioBinding {
     // that never asked for the engine and must not be silenced by it (§8.6:
     // the controller layer is a consumer of the tap, not a client of the tape).
     if (!this._tapConsumers) this.engine.closeMic();
+    // Audio Off used to throw the recordings away with the worklet. Copy the
+    // tape out first; `start()` writes it back. Only from a LIVE engine — the
+    // reads are answered by the message handler even when process() never
+    // runs, but a silent engine never recorded anything worth keeping.
+    if (this._alive) {
+      try { this._heldTape = await this._captureSnapshot(); }
+      catch (e) { this._heldTape = null; this._say(`recording not kept: ${e.message}`); }
+    }
     // Stopping breaks the path whatever the mic is doing — refreshed after the
     // flag flips below, since `_loopLive` reads it.
     await this.engine.close();
@@ -338,6 +356,45 @@ export class AudioBinding {
     // exactly one context for the session and the engine suspends it instead.
     // Replacing the engine here would build a second one on the next start,
     // which is the very thing this step exists to remove.
+  }
+
+  // ── the tape as data (Audio Off, project files) ───────────────────────────
+
+  _captureSnapshot() {
+    return captureSnapshot(
+      (a, b) => this.engine.readTape(a, b), this._tapeLen, this.engine.sampleRate);
+  }
+
+  /** @returns {number} frames of recording written */
+  _writeSnapshot(snap, clear) {
+    return restoreSnapshot(snap, (at, ch, data) => this.engine.write(at, ch, data),
+      this.engine.sampleRate, this._tapeLen, { clear });
+  }
+
+  /**
+   * The recording, for a project save: read from the running engine, or the
+   * copy held since Audio Off / a project load. `null` = nothing recorded.
+   */
+  async tapeSnapshot() {
+    if (this.running && this._alive) return this._captureSnapshot();
+    return this._heldTape ?? null;
+  }
+
+  /**
+   * A recording from a project load. Written straight in when audio runs
+   * (clearing what was there — the project's tape replaces it); otherwise
+   * held, and written at the next Audio On.
+   */
+  loadTapeSnapshot(snap) {
+    if (!snap) return;
+    if (this.running) {
+      const n = this._writeSnapshot(snap, true);
+      this._say(`${(n / this.engine.sampleRate).toFixed(1)} s of recording loaded`);
+      this._refreshEnvelope();
+    } else {
+      this._heldTape = snap;
+      this._say('project recording loaded — turn Audio on to hear it');
+    }
   }
 
   /**

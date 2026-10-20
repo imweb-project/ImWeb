@@ -1549,6 +1549,7 @@ async function main() {
   // a working one unless you look for it (LEARNED 2026-08-13). Making the user
   // ask also means ImWeb never grabs the audio device just by being open.
   const audio = new AudioBinding(ps);
+  if (import.meta.env.DEV) window.__audio = audio;
   // Declared here rather than at its construction below because the audio block
   // that follows has to notify it: the microphone DEVICE opening is not a param
   // change, so the drawn loop (§8.6) has no other way to hear about it. Assigned
@@ -4205,6 +4206,10 @@ async function main() {
     stillsBuffer,
     scene3d: scene3d,
     seqBuffers: [seq1, seq2, seq3],
+    audioTape: {
+      capture: () => audio.tapeSnapshot(),
+      restore: (snap) => audio.loadTapeSnapshot(snap),
+    },
   });
   // Dev-only console access for headless verification (verdict-cli)
   if (import.meta.env.DEV) window.__projectFile = projectFile;

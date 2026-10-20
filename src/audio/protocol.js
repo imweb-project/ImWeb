@@ -49,7 +49,10 @@
 // first OPTIONAL upload. A render with no pan image and a render whose pan image
 // was refused sound identical, because both are mono — so the refusal has to be
 // visible somewhere the performer looks, which is what the status line is for.
-export const PROTO_VERSION = 5;
+//
+// 6 adds `/tape/read`: the raw samples back out, so a recording can outlive
+// Audio Off and travel in a project file. Same step-8 reason for the bump.
+export const PROTO_VERSION = 6;
 
 /** The complete permitted argument-type set. Rule 1 — do not extend casually. */
 export const TYPE_TAGS = Object.freeze(['i', 'f', 's', 'b', 'T', 'F']);
@@ -102,6 +105,10 @@ export const CLIENT_TO_ENGINE = Object.freeze({
   '/engine/glide': 'f',
   '/tape/write': 'iib',            // startSample, channels, float32 blob
   '/tape/env/req': 'iiii',         // start, end, columns, reqId
+  // Raw samples back out (§6 keeps video OFF this path — it is for keeping a
+  // recording across Audio Off and saving it in a project, never for drawing).
+  // Bounded per request so one read is a copy of seconds, not of the tape.
+  '/tape/read': 'iii',             // start, end, reqId
 
   // Partitions (§4.3). Layout is a setup act: /bounds is refused while a zone
   // bound to that slot is active, so the protocol enforces the rule instead of
@@ -337,6 +344,8 @@ export const ENGINE_TO_CLIENT = Object.freeze({
   // /engine/refuse: a refusal carrying no reqId cannot settle the promise it
   // belongs to, and with one-outstanding-per-view that wedges the view forever.
   '/tape/env/err': 'ii',           // reqId, refusal code
+  '/tape/read/data': 'iiib',       // reqId, start, channels, interleaved float32 blob
+  '/tape/read/err': 'ii',          // reqId, refusal code
   // The engine can stop a zone on its own (a dynamic recording reaching the
   // partition seam). Without this the client's Run toggle stays on over a zone
   // that has already stopped — state the engine knows and nobody else does.

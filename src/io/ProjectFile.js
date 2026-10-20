@@ -10,6 +10,7 @@
  *   - All user response curves (Tables)
  *   - Active preset index
  *   - Detached panel windows (which sections are floating, and where)
+ *   - The audio tape's recording (16-bit, recorded spans only)
  *   - App metadata (version, date, name)
  *
  * NOT saved (session-only):
@@ -24,6 +25,7 @@ import { CAPTURE_INDIRECT_BASE, migrateCaptureBase, migrateSdfParams,
          PARAM_SCHEMA, migrateBlendPercent,
          migrateHypercubeTexSrc } from '../controls/ParameterSystem.js';
 import { loadModelFiles, MODEL_FILE } from '../state/ModelStore.js';
+import { snapshotToJSON, snapshotFromJSON } from '../audio/tape-snapshot.js';
 
 const FORMAT_VERSION = 3;
 
@@ -54,8 +56,17 @@ export class ProjectFile {
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   }
 
-  async _collect(name) {
+  async _collect(name, { audio = true } = {}) {
     const presets = await this.presets.exportAll();
+
+    // The audio tape's recording, 16-bit, only the spans actually recorded
+    // (src/audio/tape-snapshot.js). Read from the running engine or the copy
+    // held since Audio Off; omitted when nothing has been recorded.
+    let audioTape = null;
+    if (audio && this.extras.audioTape) {
+      const snap = await this.extras.audioTape.capture();
+      if (snap?.runs.length) audioTape = snapshotToJSON(snap);
+    }
 
     // User tables (non-builtins)
     const tables = {};
@@ -172,6 +183,7 @@ export class ProjectFile {
       // Display States — see src/ui/layout/PanelLayout.js for why. Positions
       // are viewport px and are re-clamped to the opening machine's screen.
       panelLayout:  this.extras.panelLayout ? this.extras.panelLayout.capture() : null,
+      audioTape,
     };
   }
 
@@ -205,7 +217,8 @@ export class ProjectFile {
    * The developer downloads this file and places it in public/Projects/.
    */
   async exportAsMasterProject() {
-    const data = await this._collect('MasterProject');
+    // No recording in the factory project: it ships with the app.
+    const data = await this._collect('MasterProject', { audio: false });
     const json = JSON.stringify(data, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
     const a    = document.createElement('a');
@@ -255,6 +268,13 @@ export class ProjectFile {
       migrateHypercubeTexSrc(data.params, null, data._schema);
       migrateNoiseParams(data.params);
       this.ps.restoreState(data.params);
+    }
+
+    // Audio recording. Absent = leave the tape alone: an older project, or one
+    // saved with nothing recorded, says nothing about what is on it now.
+    if (data.audioTape && this.extras.audioTape) {
+      const snap = snapshotFromJSON(data.audioTape);
+      if (snap) this.extras.audioTape.restore(snap);
     }
 
     // Timewarp strip restore — runs after params so setMode() has already been called

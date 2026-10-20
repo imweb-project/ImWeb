@@ -78,6 +78,8 @@ export class AudioEngine {
     this._nextJobId = 1;
     /** job id → resolve, for paced renders (§8.3). */
     this._jobs = new Map();
+    /** reqId → resolve, for raw `/tape/read` chunks. */
+    this._reads = new Map();
     /** job id → payload that arrived before the job's terminal message. */
     this._jobData = new Map();
     /** Called with (jobId, samplesDone, samplesTotal) at frame cadence. */
@@ -221,9 +223,10 @@ export class AudioEngine {
    * holds no device callback, which is what Audio Off is actually asking for,
    * and the consumers' nodes stay valid across it.
    *
-   * The tape does not survive: the processor is discarded with the node, so the
-   * next `start()` gets an empty one. That is unchanged behaviour — Audio Off
-   * has always discarded recordings.
+   * The tape does not survive HERE: the processor is discarded with the node,
+   * so the next `start()` gets an empty one. AudioBinding copies the recording
+   * out with `readTape()` before calling this and writes it back after the
+   * next allocation — keeping it is the binding's job, not the worklet's.
    */
   async close() {
     if (!this.ctx) return;
@@ -241,6 +244,8 @@ export class AudioEngine {
     // word for "no envelope, not an error".
     for (const [, cur] of this._inflight) cur.resolve(null);
     for (const [, q] of this._queued) q.resolve(null);
+    for (const [, r] of this._reads) r(null);
+    this._reads.clear();
     this._inflight.clear();
     this._queued.clear();
     // Same rule for renders, and it matters more: a render promise is what a UI
@@ -359,6 +364,19 @@ export class AudioEngine {
   outGain(g) { this._send('/bus/out/gain', g); }
   outLimit(threshold, releaseSeconds) {
     this._send('/bus/out/limit', threshold, releaseSeconds);
+  }
+
+  /**
+   * Raw samples for [start, end) — at most 10 s per call (the engine refuses
+   * more). Resolves `{ start, channels, data }` with `data` interleaved, or
+   * `null` on a refusal or Audio Off; never rejects, like the envelope.
+   */
+  readTape(start, end) {
+    if (!this.node) return Promise.resolve(null);
+    const reqId = this._nextReqId++;
+    const p = new Promise((resolve) => this._reads.set(reqId, resolve));
+    this._send('/tape/read', start | 0, end | 0, reqId);
+    return p;
   }
 
   /** @param {Float32Array} samples interleaved for `channels` channels. */
@@ -538,6 +556,15 @@ export class AudioEngine {
           }
           return;
         }
+        return;
+      }
+      case '/tape/read/data':
+      case '/tape/read/err': {
+        const settle = this._reads.get(m.v[0]);
+        this._reads.delete(m.v[0]);
+        settle?.(m.a === '/tape/read/data'
+          ? { start: m.v[1], channels: m.v[2], data: new Float32Array(m.v[3]) }
+          : null);
         return;
       }
       case '/tape/env/dirty':

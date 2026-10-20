@@ -9,6 +9,15 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Changed
+- **Audio recordings survive Audio Off and are saved in the project** (owner:
+  "if i turn off the audio engine, then i loose my recordings?"). Audio Off
+  copies the tape out before the engine goes and writes it back at the next
+  Audio On (status: "N s of recording restored"). A saved .imweb now carries
+  the tape as 16-bit PCM, only the one-second blocks that were actually
+  recorded, so states that play from the tape come back with their sound.
+  Loading while audio runs replaces the tape; while off, it is held for the
+  next Audio On. A project with no recording leaves the tape alone, and Save
+  as MasterProject never includes one. Audio protocol 6 adds `/tape/read`.
 - **⌘S / 💾 asks for a project name** (owner: "it is confusing that it comes
   up with the name of the bank"). A project file holds every bank, so it is no
   longer named after the bank on screen: a dialog titled "Save PROJECT file
