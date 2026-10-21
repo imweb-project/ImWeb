@@ -8,6 +8,10 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+---
+
+## [0.27.0] — 2026-10-21 — Nothing Lost
+
 ### Added
 - **Live GLSL: Blend, and the shader is saved in states** (owner: "is the
   present shader saved with states? can we add a blend amount parameter").
