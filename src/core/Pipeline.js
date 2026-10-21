@@ -1152,6 +1152,7 @@ export class Pipeline {
         this._customMat.uniforms[key].value = vals[i] ?? 0;
       }
     }
+    if (this._customMat.uniforms.uGlslMix) this._customMat.uniforms.uGlslMix.value = vals[4] ?? 1;
   }
 
   /**
@@ -1190,6 +1191,8 @@ export class Pipeline {
         uParam2:     { value: 0 },
         uParam3:     { value: 0 },
         uParam4:     { value: 0 },
+        // Blend amount, used by the main() wrapper main.js adds (glsl.mix).
+        uGlslMix:    { value: 1 },
         // VJ uniform contract — fed per-frame in _applyCustomPass()
         tAudio:      { value: this._vjBlackTex },
         tPrev:       { value: null },

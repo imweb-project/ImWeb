@@ -1175,8 +1175,13 @@ async function main() {
     _modelSlotsUI.refresh();
   }
 
+  // Assigned by the Live GLSL block further down; read only when a state is
+  // saved or recalled, which is long after boot.
+  let _glslStateHooks = null;
+
   // Wire extra non-param state (text content, imported 3D model flag) into state system
   presetMgr.setExtraCallback(() => ({
+    glsl:             _glslStateHooks?.capture() ?? null,
     textContent:      textLayer._contentList.length > 0
                         ? [...textLayer._contentList]
                         : (textLayer._text ? [textLayer._text] : []),
@@ -1202,6 +1207,9 @@ async function main() {
   presetMgr.addEventListener('stateRecalled', (e) => {
     const ds    = e.detail.state;
     const extra = ds?.extra;
+
+    // ── Restore the Live GLSL shader ────────────────────────────────────────
+    if (extra?.glsl) _glslStateHooks?.restore(extra.glsl);
 
     // ── Restore text layer content ──────────────────────────────────────────
     if (Array.isArray(extra?.textContent) && extra.textContent.length > 0) {
@@ -4707,6 +4715,11 @@ async function main() {
         document.getElementById("btn-export-project")?.click();
       };
 
+      // 📂 status-bar open button — the same file picker as ⌘O / Import.
+      document.getElementById("btn-open-project")?.addEventListener("click", () => {
+        document.getElementById("btn-import-project")?.click();
+      });
+
       // 💾 status-bar save button (beside Bank selector)
       document.getElementById("btn-save-project")?.addEventListener("click", saveProjectPrompted);
 
@@ -7706,7 +7719,7 @@ void main() {
   // ── GLSL routing target + param uniform slots (uParam1..uParam4) ──────────
   const uniformsEl = document.getElementById("glsl-uniforms");
   if (uniformsEl) {
-    ["glsl.target", "glsl.param1", "glsl.param2", "glsl.param3", "glsl.param4"].forEach(
+    ["glsl.target", "glsl.mix", "glsl.param1", "glsl.param2", "glsl.param3", "glsl.param4"].forEach(
       (id) => {
         const p = ps.get(id);
         if (p) uniformsEl.appendChild(buildParamRow(p, contextMenu));
@@ -7749,12 +7762,35 @@ void main() {
       .join("\n");
   }
 
+  // Blend (glsl.mix) is done inside the shader's own pass: the user's main()
+  // is renamed and a wrapper mixes its result with the input. A separate mix
+  // pass would read the insert's input from the two-target ping-pong pool —
+  // the very target it may be writing — and cost a full-screen pass for it.
+  // Only the first `void main()` outside comments is renamed; a source without
+  // one compiles (or fails) exactly as written.
+  function wrapGlslMain(src) {
+    const re = /\bvoid\s+main\s*\(\s*(?:void\s*)?\)/;
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "))
+      .replace(/\/\/.*$/gm, (m) => " ".repeat(m.length));
+    const at = code.search(re);
+    if (at < 0) return src;
+    const len = code.slice(at).match(re)[0].length;
+    return src.slice(0, at) + "void imweb_user_main()" + src.slice(at + len) +
+      "\nuniform float uGlslMix;\nvoid main() {\n  imweb_user_main();\n" +
+      "  gl_FragColor = mix(texture2D(uTexture, vUv), gl_FragColor, uGlslMix);\n}\n";
+  }
+
+  // The source last compiled successfully, so a state recall that brings back
+  // the shader already running does not recompile it (a compile is a hitch).
+  let glslAppliedSrc = null;
+
   function applyGLSL() {
     const src = getGlslSource();
     if (!src) return;
     const header = buildGlslHeader(src);
-    const fullSrc = header ? `${header}\n${src}` : src;
+    const fullSrc = wrapGlslMain(header ? `${header}\n${src}` : src);
     const err = pipeline.setCustomShader(fullSrc);
+    if (!err) glslAppliedSrc = src;
     if (glslError) {
       glslError.style.display = err ? "block" : "none";
       glslError.textContent = err
@@ -7790,6 +7826,20 @@ void main() {
       else if (!d.active) pipeline.disableCustomShader();
     },
   };
+  // ── Display State hook (state.extra.glsl) ─────────────────────────────────
+  // The shader is part of a look, so a state carries its source. States saved
+  // before this have no `glsl` key and leave the running shader alone.
+  _glslStateHooks = {
+    capture: () => ({ source: getGlslSource(), active: !!pipeline._customActive }),
+    restore: (g) => {
+      if (!g || typeof g.source !== "string") return;
+      if (!g.active) { pipeline.disableCustomShader(); return; }
+      if (g.source === glslAppliedSrc && pipeline._customActive) return;
+      if (g.source !== getGlslSource()) setGlslSource(g.source); // may auto-apply
+      if (g.source !== glslAppliedSrc || !pipeline._customActive) applyGLSL();
+    },
+  };
+
   // The first-launch import stashes GLSL because this hook does not exist yet.
   // It is no longer awaited, so draining must WAIT for it: run this straight
   // and it finds nothing, the stash is filled a moment later, and the file's
@@ -11126,6 +11176,7 @@ void main() {
       ps.get("glsl.param2")?.normalized ?? 0,
       ps.get("glsl.param3")?.normalized ?? 0,
       ps.get("glsl.param4")?.normalized ?? 0,
+      (ps.get("glsl.mix")?.value ?? 100) / 100,
     ]);
 
     // VJ uniform contract — fill tAudio + beat/levels for the custom shader.

@@ -8078,6 +8078,18 @@ export function registerCoreParameters(ps) {
     step: 0.01,
   });
   ps.register({
+    // Wet/dry: 0 = the input untouched, 100 = the shader's output alone. Mixed
+    // INSIDE the shader's own pass (main() is wrapped in main.js applyGLSL), so
+    // it costs no extra ping-pong pass and cannot read the target it writes.
+    id: "glsl.mix",
+    label: "Blend",
+    group: "glsl",
+    min: 0,
+    max: 100,
+    value: 100,
+    step: 1,
+  });
+  ps.register({
     id: "glsl.target",
     label: "Target",
     group: "glsl",

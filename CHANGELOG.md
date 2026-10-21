@@ -8,6 +8,17 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Added
+- **Live GLSL: Blend, and the shader is saved in states** (owner: "is the
+  present shader saved with states? can we add a blend amount parameter").
+  `glsl.mix` (Blend, 0–100 %) mixes the shader's output with its input. It is
+  done inside the shader's own pass (the user's `main()` is wrapped), so it
+  costs no extra pass. A Display State now carries the shader source and
+  whether it is on; states saved before this leave the running shader alone,
+  and recalling the shader already running does not recompile it.
+- **📂 Open project** button beside 💾 in the state bar (same as ⌘O and
+  Import .imweb).
+
 ### Changed
 - **Audio recordings survive Audio Off and are saved in the project** (owner:
   "if i turn off the audio engine, then i loose my recordings?"). Audio Off

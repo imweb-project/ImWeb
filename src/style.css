@@ -2173,6 +2173,7 @@ body.sp-floating #signal-path-docked-space {
     display: flex;
     align-items: center;
 }
+#btn-open-project,
 #btn-save-project {
     background: var(--bg-3);
     border: 1px solid var(--border);
@@ -2184,7 +2185,9 @@ body.sp-floating #signal-path-docked-space {
     height: 100%;
     line-height: 1;
 }
+#btn-open-project:hover,
 #btn-save-project:hover { border-color: var(--accent); color: var(--accent); }
+#btn-open-project:active,
 #btn-save-project:active { background: var(--bg-4); }
 
 #bank-name-btn {

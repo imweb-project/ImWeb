@@ -8,7 +8,7 @@
 // content hash for the bundle each time — so a stale cached index.html points
 // at an asset that no longer exists on disk. That fails as a BLANK APP, not as
 // "my change didn't show up" (see docs/LEARNED.md, 2026-07-31).
-const CACHE = 'imweb-v0.26.0-6'; // bumped: audio tape survives Audio Off, saved in .imweb
+const CACHE = 'imweb-v0.26.0-7'; // bumped: GLSL Blend + shader in states, 📂 open
 // The `-N` suffix is the mid-cycle form audit-sw-cache-bump's STRICT mode
 // allows: it keeps naming the current app version (0.22.1) while still being
 // a NEW cache, so unreleased work reaches a returning visitor instead of
