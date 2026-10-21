@@ -2735,7 +2735,7 @@ Each step recalls a preset. Useful for rhythmic pattern-based switching.
 
 ---
 
-### Live GLSL Effect
+### Shader Code (GLSL)
 
 Live-code fragment shaders in a CodeMirror editor (syntax highlighting, line numbers, iPad-friendly, resizable via the drag handle). **Apply** (or Ctrl/Cmd+Enter) compiles; **Auto** recompiles on every keystroke. A compile error never interrupts the output — the previous working shader keeps running and the error (with line numbers) shows above the editor.
 

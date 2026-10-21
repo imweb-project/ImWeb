@@ -8082,12 +8082,23 @@ export function registerCoreParameters(ps) {
     // INSIDE the shader's own pass (main() is wrapped in main.js applyGLSL), so
     // it costs no extra ping-pong pass and cannot read the target it writes.
     id: "glsl.mix",
-    label: "Blend",
+    label: "Blend Amt",
     group: "glsl",
     min: 0,
     max: 100,
     value: 100,
     step: 1,
+  });
+  ps.register({
+    // How the shader's output (a) meets its input (b) before Blend Amt mixes
+    // the result back over the input — the same list, by index, as the layer
+    // blends. Copy = the shader alone.
+    id: "glsl.blend",
+    label: "Blend Mode",
+    group: "glsl",
+    type: PARAM_TYPE.SELECT,
+    options: BLEND_MODES,
+    value: 0,
   });
   ps.register({
     id: "glsl.target",

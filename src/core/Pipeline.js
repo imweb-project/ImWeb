@@ -1153,6 +1153,7 @@ export class Pipeline {
       }
     }
     if (this._customMat.uniforms.uGlslMix) this._customMat.uniforms.uGlslMix.value = vals[4] ?? 1;
+    if (this._customMat.uniforms.uGlslBlend) this._customMat.uniforms.uGlslBlend.value = vals[5] ?? 0;
   }
 
   /**
@@ -1193,6 +1194,7 @@ export class Pipeline {
         uParam4:     { value: 0 },
         // Blend amount, used by the main() wrapper main.js adds (glsl.mix).
         uGlslMix:    { value: 1 },
+        uGlslBlend:  { value: 0 },  // glsl.blend, BLEND_MODES index
         // VJ uniform contract — fed per-frame in _applyCustomPass()
         tAudio:      { value: this._vjBlackTex },
         tPrev:       { value: null },

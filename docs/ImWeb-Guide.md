@@ -82,7 +82,7 @@ which is why this is the first thing to learn.
 
 Everything else lives in the panel down the side of the screen. Its five tabs
 run left to right in signal order — **Sources · Mix · Effects · Output ·
-Project**. The big editors (3D, Analog, Draw, Live GLSL) are not permanent tabs:
+Project**. The big editors (3D, Analog, Draw, Shader Code) are not permanent tabs:
 open one from its row and it appears as an extra tab alongside these, then goes
 away again when you close it.
 
@@ -614,7 +614,7 @@ instrument draws its own displacement map while you play something else.
 Random with a long slew is the other good choice — it wanders instead of
 tracing.
 
-## Live GLSL
+## Shader Code (GLSL)
 <!-- guide
 track: instruments
 tab: effects

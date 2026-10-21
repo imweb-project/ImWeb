@@ -25,6 +25,7 @@
  */
 
 import * as THREE from "three";
+import { wrapGlslMain } from "./shaders/glsl-wrap.js";
 import { EditorView, basicSetup } from "codemirror";
 import { keymap } from "@codemirror/view";
 import { indentWithTab } from "@codemirror/commands";
@@ -2261,7 +2262,7 @@ async function main() {
     { key: "scene3d", pane: "tab-scene3d", label: "3D Scene" },
     { key: "analog",  pane: "tab-analog",  label: "Analog TV" },
     { key: "draw",    pane: "tab-draw",    label: "Draw" },
-    { key: "glsl",    pane: "tab-glsl",    label: "Live GLSL" },
+    { key: "glsl",    pane: "tab-glsl",    label: "Shader Code (GLSL)" },
   ];
   let _openWorkspace = null; // key of the open workspace, or null
   let _wsReturnTab = null;   // data-tab to restore when it closes
@@ -7719,7 +7720,7 @@ void main() {
   // ── GLSL routing target + param uniform slots (uParam1..uParam4) ──────────
   const uniformsEl = document.getElementById("glsl-uniforms");
   if (uniformsEl) {
-    ["glsl.target", "glsl.mix", "glsl.param1", "glsl.param2", "glsl.param3", "glsl.param4"].forEach(
+    ["glsl.target", "glsl.blend", "glsl.mix", "glsl.param1", "glsl.param2", "glsl.param3", "glsl.param4"].forEach(
       (id) => {
         const p = ps.get(id);
         if (p) uniformsEl.appendChild(buildParamRow(p, contextMenu));
@@ -7760,24 +7761,6 @@ void main() {
       .map(([probe, decl]) => (probe.test(code) ? "" : decl))
       .filter(Boolean)
       .join("\n");
-  }
-
-  // Blend (glsl.mix) is done inside the shader's own pass: the user's main()
-  // is renamed and a wrapper mixes its result with the input. A separate mix
-  // pass would read the insert's input from the two-target ping-pong pool —
-  // the very target it may be writing — and cost a full-screen pass for it.
-  // Only the first `void main()` outside comments is renamed; a source without
-  // one compiles (or fails) exactly as written.
-  function wrapGlslMain(src) {
-    const re = /\bvoid\s+main\s*\(\s*(?:void\s*)?\)/;
-    const code = src.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "))
-      .replace(/\/\/.*$/gm, (m) => " ".repeat(m.length));
-    const at = code.search(re);
-    if (at < 0) return src;
-    const len = code.slice(at).match(re)[0].length;
-    return src.slice(0, at) + "void imweb_user_main()" + src.slice(at + len) +
-      "\nuniform float uGlslMix;\nvoid main() {\n  imweb_user_main();\n" +
-      "  gl_FragColor = mix(texture2D(uTexture, vUv), gl_FragColor, uGlslMix);\n}\n";
   }
 
   // The source last compiled successfully, so a state recall that brings back
@@ -11177,6 +11160,7 @@ void main() {
       ps.get("glsl.param3")?.normalized ?? 0,
       ps.get("glsl.param4")?.normalized ?? 0,
       (ps.get("glsl.mix")?.value ?? 100) / 100,
+      Math.round(ps.get("glsl.blend")?.value ?? 0),
     ]);
 
     // VJ uniform contract — fill tAudio + beat/levels for the custom shader.

@@ -16,10 +16,24 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   costs no extra pass. A Display State now carries the shader source and
   whether it is on; states saved before this leave the running shader alone,
   and recalling the shader already running does not recompile it.
+- **Shader Code: Blend Mode** (owner: "should we add a blendmode? like the
+  list we have for layers"). `glsl.blend` offers the layer list by index
+  (Copy … Luminosity): the shader's output is blended onto its input, then
+  Blend Amt mixes the result over the input. The photographic modes are ONE
+  shared definition (`BLEND_PHOTO_FNS`, src/shaders/index.js) now used by the
+  layer blend too; the Shader Code copy is renamed `imweb_*` so a pasted shader
+  with its own `rgb2hsl` or `blendScreen` still compiles. XOR/OR/AND are done
+  bit by bit in floats because the editor's check is GLSL ES 1.00. The wrapper
+  lives in src/shaders/glsl-wrap.js.
 - **📂 Open project** button beside 💾 in the state bar (same as ⌘O and
   Import .imweb).
 
 ### Changed
+- **Live GLSL is now "Shader Code (GLSL)"** (owner: "rename it to Shader Code
+  (GLSL)"), in Effects, the workspace title and the Guide / Quick Reference /
+  Manual. The editor section is "Shader Code Editor"; a window of it saved
+  detached under the old title opens docked once. "Blend" is now "Blend Amt",
+  beside the new Blend Mode.
 - **Audio recordings survive Audio Off and are saved in the project** (owner:
   "if i turn off the audio engine, then i loose my recordings?"). Audio Off
   copies the tape out before the engine goes and writes it back at the next

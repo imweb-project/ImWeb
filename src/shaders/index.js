@@ -1944,37 +1944,11 @@ ${FEEDBACK_EDGE_GLSL}
   }
 `;
 
-// ── Transfer modes ────────────────────────────────────────────────────────────
-
-export const TRANSFERMODE = /* glsl */ `
-  uniform sampler2D uFG;
-  uniform sampler2D uBG;
-  uniform int       uMode;
-  uniform float     uBlendAmount;
-  // 0 = two-stop opacity  (0 → BG, 1 → the blended result)
-  // 1 = three-stop layers (0 → BG, 0.5 → blended, 1 → FG)
-  //
-  // Only the FG layer blend uses the three-stop curve. The BG self-process
-  // passes the same texture as both uFG and uBG, so its "FG end" is just the
-  // Background again and the curve would fold back on itself; the feedback
-  // blend is a different instrument entirely and its saved amounts must keep
-  // meaning what they meant. Like uBlendAmount, this MUST be set at every call
-  // site — the material is shared, and _pass() only writes what it is given.
-  uniform float     uCurve;
-
-  varying vec2 vUv;
-
-  vec3 blendMix(vec3 bgc, vec3 blended, vec3 fgc, float amt) {
-    if (uCurve < 0.5) return mix(bgc, blended, amt);
-    return amt < 0.5
-      ? mix(bgc, blended, amt * 2.0)
-      : mix(blended, fgc, (amt - 0.5) * 2.0);
-  }
-
-  // ── bitwise helpers ──────────────────────────────────────────────────────────
-  ivec3 floatToInt8(vec3 c) { return ivec3(clamp(c * 255.0, 0.0, 255.0)); }
-  vec3 int8ToFloat(ivec3 i)  { return vec3(i) / 255.0; }
-
+// ── Shared blend-mode functions ───────────────────────────────────────────────
+// ONE definition of the photographic modes, spliced into TRANSFERMODE and into
+// the Live GLSL wrapper (main.js wrapGlslMain). GLSL ES 1.00-safe — the GLSL
+// editor validates its source without a #version line — so no bitwise ops here.
+export const BLEND_PHOTO_FNS = /* glsl */ `
   // ── photographic blend helpers ───────────────────────────────────────────────
   vec3 blendMultiply(vec3 a, vec3 b)   { return a * b; }
   vec3 blendScreen(vec3 a, vec3 b)     { return 1.0 - (1.0 - a) * (1.0 - b); }
@@ -2078,6 +2052,64 @@ export const TRANSFERMODE = /* glsl */ `
     );
   }
 
+  // Photographic modes 4–21 by BLEND_MODES index (ParameterSystem); anything
+  // else returns a. Shared by TRANSFERMODE and the Live GLSL blend wrapper.
+  vec3 blendPhoto(int m, vec3 a, vec3 b) {
+    if      (m ==  4) return blendMultiply(a, b);
+    else if (m ==  5) return blendScreen(a, b);
+    else if (m ==  6) return blendAdd(a, b);
+    else if (m ==  7) return blendDiff(a, b);
+    else if (m ==  8) return blendExclude(a, b);
+    else if (m ==  9) return blendOverlay(a, b);
+    else if (m == 10) return blendHardlight(a, b);
+    else if (m == 11) return blendSoftlight(a, b);
+    else if (m == 12) return blendDodge(a, b);
+    else if (m == 13) return blendBurn(a, b);
+    else if (m == 14) return blendSubtract(a, b);
+    else if (m == 15) return blendDivide(a, b);
+    else if (m == 16) return blendPinLight(a, b);
+    else if (m == 17) return blendVividLight(a, b);
+    else if (m == 18) return blendHue(a, b);
+    else if (m == 19) return blendSaturation(a, b);
+    else if (m == 20) return blendColor(a, b);
+    else if (m == 21) return blendLuminosity(a, b);
+    return a;
+  }
+`;
+
+// ── Transfer modes ────────────────────────────────────────────────────────────
+
+export const TRANSFERMODE = /* glsl */ `
+  uniform sampler2D uFG;
+  uniform sampler2D uBG;
+  uniform int       uMode;
+  uniform float     uBlendAmount;
+  // 0 = two-stop opacity  (0 → BG, 1 → the blended result)
+  // 1 = three-stop layers (0 → BG, 0.5 → blended, 1 → FG)
+  //
+  // Only the FG layer blend uses the three-stop curve. The BG self-process
+  // passes the same texture as both uFG and uBG, so its "FG end" is just the
+  // Background again and the curve would fold back on itself; the feedback
+  // blend is a different instrument entirely and its saved amounts must keep
+  // meaning what they meant. Like uBlendAmount, this MUST be set at every call
+  // site — the material is shared, and _pass() only writes what it is given.
+  uniform float     uCurve;
+
+  varying vec2 vUv;
+
+  vec3 blendMix(vec3 bgc, vec3 blended, vec3 fgc, float amt) {
+    if (uCurve < 0.5) return mix(bgc, blended, amt);
+    return amt < 0.5
+      ? mix(bgc, blended, amt * 2.0)
+      : mix(blended, fgc, (amt - 0.5) * 2.0);
+  }
+
+  // ── bitwise helpers ──────────────────────────────────────────────────────────
+  ivec3 floatToInt8(vec3 c) { return ivec3(clamp(c * 255.0, 0.0, 255.0)); }
+  vec3 int8ToFloat(ivec3 i)  { return vec3(i) / 255.0; }
+
+  ${BLEND_PHOTO_FNS}
+
   void main() {
     vec4 fg = texture2D(uFG, vUv);
     vec4 bg = texture2D(uBG, vUv);
@@ -2104,25 +2136,7 @@ export const TRANSFERMODE = /* glsl */ `
     }
 
     // modes 4+: photographic
-    if      (uMode ==  4) r = blendMultiply(a, b);
-    else if (uMode ==  5) r = blendScreen(a, b);
-    else if (uMode ==  6) r = blendAdd(a, b);
-    else if (uMode ==  7) r = blendDiff(a, b);
-    else if (uMode ==  8) r = blendExclude(a, b);
-    else if (uMode ==  9) r = blendOverlay(a, b);
-    else if (uMode == 10) r = blendHardlight(a, b);
-    else if (uMode == 11) r = blendSoftlight(a, b);
-    else if (uMode == 12) r = blendDodge(a, b);
-    else if (uMode == 13) r = blendBurn(a, b);
-    else if (uMode == 14) r = blendSubtract(a, b);
-    else if (uMode == 15) r = blendDivide(a, b);
-    else if (uMode == 16) r = blendPinLight(a, b);
-    else if (uMode == 17) r = blendVividLight(a, b);
-    else if (uMode == 18) r = blendHue(a, b);
-    else if (uMode == 19) r = blendSaturation(a, b);
-    else if (uMode == 20) r = blendColor(a, b);
-    else if (uMode == 21) r = blendLuminosity(a, b);
-    else r = a;
+    r = blendPhoto(uMode, a, b);
 
     vec3 blended = clamp(r, 0.0, 1.0);
     gl_FragColor = vec4(blendMix(b, blended, a, uBlendAmount), fg.a);

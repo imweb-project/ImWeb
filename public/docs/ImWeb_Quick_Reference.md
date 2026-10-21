@@ -143,7 +143,7 @@ Right-click any parameter row to assign.
 
 ---
 
-## Live GLSL (Project tab)
+## Shader Code (GLSL) (Effects tab)
 
 | Control | Action |
 |---------|--------|
