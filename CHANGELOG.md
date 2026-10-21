@@ -8,6 +8,10 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+---
+
+## [0.28.0] — 2026-10-21 — Shader Source
+
 ### Added
 - **Shader Code as a source (35)** (owner: wants the shader usable as a
   source, e.g. as Growth's Seed src). `Shader Code` is appended to
