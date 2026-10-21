@@ -25,6 +25,15 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   Code workspace. New audit `tests/audit-glsl-source.mjs` (per-use uniform
   writes, own back buffer, render order, gate).
 
+### Fixed
+- **A mix bus read only by Growth, Motion, Particles or Volume now renders.**
+  Bus need was worked out from layers and bus→bus reads alone, before the
+  pullers were, so Growth seeded from Mix 1 (or Motion watching Mix 2, a
+  particle mask of Mix 3) got a bus nobody drew — black, silently. The buses
+  are now rows of the same puller closure in main.js, so a bus read by a
+  needed puller is needed and vice versa, to any depth. Guarded by
+  `tests/audit-mixbus-pullers.mjs`, which runs the real block from main.js.
+
 ### Changed
 - **Draw loops popup can be moved and closed** (owner: "what is the Loop
   l1 l2 l3 l4 … how do i close it? it should be dragable and have an x").

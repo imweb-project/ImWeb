@@ -10576,39 +10576,28 @@ void main() {
       const md = ps.get(`${pfx}.mode`).value;
       return {
         idx,
-        srcA: ps.get(`${pfx}.srcA`).value,
-        srcB: ps.get(`${pfx}.srcB`).value,
-        aReaches: !(md === 0 && xf >= 1),
-        bReaches: xf > 0,
-        needed: false,
+        reads: [
+          !(md === 0 && xf >= 1) ? ps.get(`${pfx}.srcA`).value : -1,   // aReaches
+          xf > 0                 ? ps.get(`${pfx}.srcB`).value : -1,   // bReaches
+        ],
       };
     });
-    // A bus is needed if a layer/TimeDisplace reads it, OR if a bus that is
-    // itself needed reads it. That is transitive in both directions (a later
-    // bus reads an earlier one this frame; an earlier bus reads a later one
-    // one frame behind — both are real consumers), so iterate to a fixpoint.
-    // Three nodes ⇒ three passes is provably enough. A bus feeding only
-    // itself never becomes needed, which is what we want: it costs nothing.
-    _bus.forEach((b) => { b.needed = _direct(b.idx); });
-    for (let pass = 0; pass < _bus.length; pass++) {
-      _bus.forEach((b) => {
-        if (!b.needed) return;
-        _bus.forEach((t) => {
-          if ((b.aReaches && b.srcA === t.idx) || (b.bReaches && b.srcB === t.idx)) t.needed = true;
-        });
-      });
-    }
-    const _mixbusNeeded = _bus.map((b) => b.needed);
-
-    const _usedBase = (i) =>
-      _direct(i) ||
-      _bus.some((b) => b.needed && ((b.aReaches && b.srcA === i) || (b.bReaches && b.srcB === i)));
 
     // PULLERS: sources that read other sources, but only while they are
-    // themselves needed — Motion (the source it watches), Particles (its luma
-    // mask), Growth (its seed and field). Any can name any other, so this is a
-    // closure: seed from _usedBase, then keep adding pullers read by needed
-    // pullers until nothing changes. It was hand-closed while there were two
+    // themselves needed — the mix buses (their reaching srcA/srcB), Motion (the
+    // source it watches), Particles (its luma mask), Growth (its seed and
+    // field). Any can name any other, so this is a closure: seed from _direct,
+    // then keep adding pullers read by needed pullers until nothing changes.
+    //
+    // The buses are rows HERE, not a fixpoint of their own beside this one.
+    // They once were — bus need was closed over _direct() and bus→bus reads
+    // only, BEFORE this loop ran — so a puller reading a bus (growth.seedSrc =
+    // Mix 1, motion.source = Mix 2, particle.masksrc = Mix 3) never marked it
+    // needed: Pipeline skipped the bus and the reader sampled a target nobody
+    // drew (black, or never allocated). One closure, one rule. Transitive in
+    // both directions as before: a later bus reads an earlier one this frame,
+    // an earlier bus reads a later one a frame behind — both real consumers.
+    // A bus feeding only itself never becomes needed: it costs nothing. It was hand-closed while there were two
     // (two nodes, two terms); a third made that a 3×3 of terms, so it became
     // the loop. Self-reference terminates because a needed puller is not
     // re-added. At most one pass per puller.
@@ -10630,6 +10619,7 @@ void main() {
       }),
     ].filter((i) => i >= 0);
     const _pullers = [
+      ..._bus,
       { idx: MOTION_IDX,    reads: [_cMotion] },
       { idx: PARTICLES_IDX, reads: [_pmIdx] },
       { idx: GROWTH_IDX,    reads: [_cGrowSeed, _cGrowField] },
@@ -10642,7 +10632,7 @@ void main() {
       { idx: SOURCE_KEYS.indexOf("scene3d"), reads: _s3dReads, seed: !!ps.get("scene3d.active")?.value },
       { idx: SOURCE_KEYS.indexOf("depth3d"), reads: _s3dReads },
     ];
-    const _pulled = new Set(_pullers.filter((p) => p.seed || _usedBase(p.idx)).map((p) => p.idx));
+    const _pulled = new Set(_pullers.filter((p) => p.seed || _direct(p.idx)).map((p) => p.idx));
     for (let grew = true; grew; ) {
       grew = false;
       for (const p of _pullers) {
@@ -10654,8 +10644,9 @@ void main() {
     }
 
     const _srcUsed = (i) =>
-      _usedBase(i) ||
+      _direct(i) ||
       _pullers.some((p) => _pulled.has(p.idx) && p.reads.includes(i));
+    const _mixbusNeeded = MIXBUS_IDX.map((i) => _pulled.has(i));
 
     // ── Idle-deck upload gating (v0.12 Step 5) ──────────────────────────────
     // Skip the texImage2D upload for a deck that cannot contribute to this

@@ -92,7 +92,7 @@ check('the _s3dReads block is present', i0 !== -1 && i1 !== -1 && i0 < i1);
 const s3dBlock = i0 !== -1 && i1 > i0 ? main.slice(i0, i1) : '';
 check('_s3dReads covers texsrc, dispsrc and the model slots',
   /scene3d\.mat\.texsrc/.test(s3dBlock) && /scene3d\.mat\.dispsrc/.test(s3dBlock) && /SLOT_PREFIXES\.map/.test(s3dBlock));
-check('the puller seed honours scene3d rendering on its own (p.seed)', /_pullers\.filter\(\(p\) => p\.seed \|\| _usedBase\(p\.idx\)\)/.test(main));
+check('the puller seed honours scene3d rendering on its own (p.seed)', /_pullers\.filter\(\(p\) => p\.seed \|\| _\w+\(p\.idx\)\)/.test(main));
 
 if (failures) { console.error(`\n${failures} material-texsrc check(s) failed.`); process.exit(1); }
 console.log('\nAll material-texsrc checks passed.');
