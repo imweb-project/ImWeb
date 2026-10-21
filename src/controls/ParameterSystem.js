@@ -1160,6 +1160,12 @@ export const SOURCE_DEFS = [
   // seen as an object. Appended at the true end; the indirect capture entries
   // move with it, kept in register by the base stamp in migrateCaptureBase().
   { key: "volume",    label: "Volume"    }, // 34
+  // 35 — the Shader Code (GLSL) shader as a generator/processor in its own
+  // right: the same compiled material the insert uses, rendered a second time
+  // into its own double-buffered target (Pipeline._renderCustomSource) with
+  // glsl.srcInput as its uTexture. Appended at the true end; the indirect
+  // capture entries move with it, kept in register by migrateCaptureBase().
+  { key: "glsl",      label: "Shader Code" }, // 35
 ];
 
 /** Source indices of the three mix buses, in evaluation order (1 → 2 → 3). */
@@ -1184,7 +1190,7 @@ export const SOURCE_DISPLAY_ORDER = [
                                 16 /* Particles */, 21 /* SDF */, 30 /* SDF Depth */,
                                 11 /* Text */,
                                 7 /* Draw */, 33 /* Growth */, 6 /* 3D Scene */, 20 /* 3D Depth */,
-                                23 /* Analog */, 29 /* Rutt-Etra */,
+                                23 /* Analog */, 29 /* Rutt-Etra */, 35 /* Shader Code */,
   { header: "From the Signal" }, 8 /* Output */, 13 /* Delay */, 31 /* RGB Delay */,
                                 32 /* Motion */, 24 /* TimeDisp */, 34 /* Volume */,
                                 15 /* SlitScan */, 17 /* Seq1 */, 18 /* Seq2 */,
@@ -8105,9 +8111,25 @@ export function registerCoreParameters(ps) {
     label: "Target",
     group: "glsl",
     type: PARAM_TYPE.SELECT,
-    options: ["Master", "Foreground", "Background", "Displace"], // append-only
+    // "Off (source only)": no insert anywhere — the shader still runs as the
+    // Shader Code source (35) wherever something reads it.
+    options: ["Master", "Foreground", "Background", "Displace", "Off (source only)"], // append-only
     value: 0,
   }); // insert-routing stage for the custom shader
+  ps.register({
+    // What the shader samples as uTexture when it runs as the Shader Code
+    // SOURCE (35). None = black, so a generator ignores it. OPT_SOURCES is
+    // 'None' + SOURCES: index − 1 is a SOURCE_DEFS index, stable under appends.
+    // The insert use is unaffected — there uTexture is the stage it sits on.
+    // Reading something that reads this source (Growth seeded from it, or the
+    // source itself) sees LAST frame: the source target is double-buffered.
+    id: "glsl.srcInput",
+    label: "Source In",
+    group: "glsl",
+    type: PARAM_TYPE.SELECT,
+    options: OPT_SOURCES,
+    value: 0,
+  });
   ps.register({
     id: "glsl.preset",
     label: "GLSL Preset",

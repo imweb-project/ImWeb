@@ -587,6 +587,20 @@ export class Pipeline {
     this._vj           = null;  // per-frame VJ data from setCustomVJ()
     this._vjBlackTex   = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
     this._vjBlackTex.needsUpdate = true; // tAudio fallback when sound is off
+    // Blend Amt / Blend Mode as last set by setCustomUniforms(). Kept here and
+    // written per USE: the insert applies them, the source render (below)
+    // writes 1 / 0 — one material, two uses a frame, so neither may inherit
+    // the other's values.
+    this._glslMix   = 1;
+    this._glslBlend = 0;
+    // Shader Code as a SOURCE (35) — its own double buffer, outside the
+    // ping-pong pool, same rule as the mix buses: the render writes the back
+    // buffer and flips _glslSrcCur only afterwards, so a self-read (or a read
+    // by anything rendered earlier in the frame, e.g. Growth) sees LAST frame
+    // without sampling the texture being written. Lazily allocated: a project
+    // that never routes the source pays no VRAM and no pass.
+    this._glslSrcRT  = null;   // [RenderTarget, RenderTarget]
+    this._glslSrcCur = 0;      // index holding the LATEST output
 
     // 3D LUT colour grade
     this._lutTex    = null;   // THREE.DataTexture
@@ -794,6 +808,16 @@ export class Pipeline {
         uMaskHi:  p.get(`${pfx}.maskHi`).value,
       }, dst);
       this._mixCur[k] ^= 1;
+    }
+
+    // ── Shader Code as a source (35) ─────────────────────────────────────────
+    // After the buses, so it can read one this frame; before layer
+    // resolution, so a layer shows this frame's render. Gated on
+    // inputs.glslSrcNeeded (main.js consumption fixpoint), so it costs nothing
+    // unless a layer, bus, capture or Growth reads it.
+    if (inputs.glslSrcNeeded && this._customActive && this._customMat) {
+      const si = p.get('glsl.srcInput')?.value ?? 0;   // OPT_SOURCES: 0 = None
+      this._renderCustomSource(si > 0 ? this._resolveSource(processedInputs, si - 1) : this._vjBlackTex);
     }
 
     // Resolve input textures
@@ -1121,6 +1145,48 @@ export class Pipeline {
    */
   _applyCustomPass(tex) {
     if (!this._customActive || !this._customMat || !tex) return tex;
+    this._feedCustom(tex);
+    const u = this._customMat.uniforms;
+    if (u.uGlslMix)   u.uGlslMix.value   = this._glslMix;
+    if (u.uGlslBlend) u.uGlslBlend.value = this._glslBlend;
+    return this._pass(this._customMat, {});
+  }
+
+  /**
+   * Run the custom material as the Shader Code SOURCE into its own double
+   * buffer. Raw shader output: Blend Amt 1, Blend Mode Copy — Blend is how an
+   * insert meets the stage it sits on, and a source has no stage. Compose it
+   * with a layer blend or a mix bus instead.
+   * `inputTex` may be this source's own front buffer (self-read) — safe,
+   * because the write goes to the other target.
+   */
+  _renderCustomSource(inputTex) {
+    if (!this._glslSrcRT) {
+      this._glslSrcRT = [
+        this._makeTarget(this.width, this.height),
+        this._makeTarget(this.width, this.height),
+      ];
+    }
+    this._feedCustom(inputTex);
+    const u = this._customMat.uniforms;
+    if (u.uGlslMix)   u.uGlslMix.value   = 1;
+    if (u.uGlslBlend) u.uGlslBlend.value = 0;
+    this._passTo(this._customMat, {}, this._glslSrcRT[this._glslSrcCur ^ 1]);
+    this._glslSrcCur ^= 1;
+  }
+
+  /**
+   * Latest Shader Code source output. Black while the shader is off or has
+   * never rendered as a source — explicitly black, so a route to a stopped
+   * shader reads as stopped rather than as some other picture.
+   */
+  get customSourceTexture() {
+    if (!this._customActive || !this._glslSrcRT) return this._vjBlackTex;
+    return this._glslSrcRT[this._glslSrcCur].texture;
+  }
+
+  /** Uniforms both uses share; everything per-use is set by the caller. */
+  _feedCustom(tex) {
     const u = this._customMat.uniforms;
     u.uTexture.value = tex;
     u.uTime.value = this._noiseTime;
@@ -1136,7 +1202,6 @@ export class Pipeline {
     if (u.uBass)  u.uBass.value  = this._vj?.bass  ?? 0;
     if (u.uMid)   u.uMid.value   = this._vj?.mid   ?? 0;
     if (u.uHigh)  u.uHigh.value  = this._vj?.high  ?? 0;
-    return this._pass(this._customMat, {});
   }
 
   /** Per-frame VJ data for the custom shader: { audio, bpm, beat, level, bass, mid, high } */
@@ -1145,6 +1210,9 @@ export class Pipeline {
   }
 
   setCustomUniforms(vals) {
+    // Applied per use in _applyCustomPass(); the source use writes 1 / 0.
+    this._glslMix   = vals[4] ?? 1;
+    this._glslBlend = vals[5] ?? 0;
     if (!this._customMat) return;
     for (let i = 0; i < 4; i++) {
       const key = `uParam${i + 1}`;
@@ -1152,8 +1220,6 @@ export class Pipeline {
         this._customMat.uniforms[key].value = vals[i] ?? 0;
       }
     }
-    if (this._customMat.uniforms.uGlslMix) this._customMat.uniforms.uGlslMix.value = vals[4] ?? 1;
-    if (this._customMat.uniforms.uGlslBlend) this._customMat.uniforms.uGlslBlend.value = vals[5] ?? 0;
   }
 
   /**
@@ -1324,6 +1390,7 @@ export class Pipeline {
     this.m.bokehDownsample.uniforms.uTexel.value.set(1 / w, 1 / h);
     this._mixRT.forEach(rt => rt && rt.forEach(t => t.setSize(w, h)));
     this._clipFadeRT.forEach(t => t && t.setSize(w, h));
+    this._glslSrcRT?.forEach(t => t.setSize(w, h));
     this._fbRT?.forEach(t => t.setSize(w, h));
     if (w !== this._lastResW || h !== this._lastResH) {
       this.m.pixelate.uniforms.uResolution.value.set(w, h);
@@ -1580,6 +1647,7 @@ export class Pipeline {
     if (key === 'motion'    && inputs.motion)    return inputs.motion;
     if (key === 'growth'    && inputs.growth)    return inputs.growth;
     if (key === 'volume'    && inputs.volume)    return inputs.volume;
+    if (key === 'glsl')                          return this.customSourceTexture;
     return inputs.color ?? this._getFallbackTexture();
   }
 

@@ -8,6 +8,23 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Added
+- **Shader Code as a source (35)** (owner: wants the shader usable as a
+  source, e.g. as Growth's Seed src). `Shader Code` is appended to
+  SOURCE_DEFS, so it is in every source menu — layers, mix buses, Growth
+  seed/field, captures — while the same shader can still run as an insert at
+  Master/FG/BG/Displace. One compiled material, two uses a frame; each use
+  writes its own uniforms. The source output is the raw shader (Blend Mode /
+  Blend Amt are insert-only). Its `uTexture` is the new `glsl.srcInput`
+  (Source In: None = black, or any source). It renders into its own
+  double-buffered target after the mix buses and before the layers, so a
+  self-read or a loop through Growth sees last frame with no guard; allocated
+  lazily and gated on the `_srcUsed()` fixpoint (new puller row), so an
+  unrouted source costs no pass and no VRAM. `glsl.target` gains
+  **Off (source only)**. Panel row in Sources ▸ Generators opens the Shader
+  Code workspace. New audit `tests/audit-glsl-source.mjs` (per-use uniform
+  writes, own back buffer, render order, gate).
+
 ### Changed
 - **Draw loops popup can be moved and closed** (owner: "what is the Loop
   l1 l2 l3 l4 … how do i close it? it should be dragable and have an x").

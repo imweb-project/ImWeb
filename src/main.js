@@ -536,6 +536,8 @@ async function main() {
   // field source), so the fixpoint needs its index — by key.
   const growthRD = new GrowthRD(renderer);
   const GROWTH_IDX = SOURCE_KEYS.indexOf("growth");
+  // Shader Code as a source (35) — rendered by Pipeline into its own target.
+  const GLSL_IDX = SOURCE_KEYS.indexOf("glsl");
   // Fade + Lifetime → the engine's three mechanisms. ONE choice of how growth
   // goes, one number for how long it lives — they were three overlapping
   // systems (Lifetime/Regrow, Grow time/Fade time, Pen fade) in the panel.
@@ -6352,6 +6354,9 @@ async function main() {
     if (key === "analog") return analogTV.texture;
     if (key === "tdisp") return tdEngine.texture;
     if (key === "volume") return volumeTexture();
+    // Front buffer: last frame's render to anything that reads it before
+    // pipeline.render (Growth's seed), black while the shader is off.
+    if (key === "glsl") return pipeline.customSourceTexture;
     if (key === "mixbus") return pipeline.mixTextureAt(0);
     if (key === "mixbus2") return pipeline.mixTextureAt(1);
     if (key === "mixbus3") return pipeline.mixTextureAt(2);
@@ -7774,7 +7779,7 @@ void main() {
   // ── GLSL routing target + param uniform slots (uParam1..uParam4) ──────────
   const uniformsEl = document.getElementById("glsl-uniforms");
   if (uniformsEl) {
-    ["glsl.target", "glsl.blend", "glsl.mix", "glsl.param1", "glsl.param2", "glsl.param3", "glsl.param4"].forEach(
+    ["glsl.target", "glsl.blend", "glsl.mix", "glsl.srcInput", "glsl.param1", "glsl.param2", "glsl.param3", "glsl.param4"].forEach(
       (id) => {
         const p = ps.get(id);
         if (p) uniformsEl.appendChild(buildParamRow(p, contextMenu));
@@ -10631,6 +10636,9 @@ void main() {
       // Volume reads the ring, so it needs what the ring records — whether or
       // not TimeDisp itself is on (the capture below follows the same rule).
       { idx: VOLUME_IDX,    reads: [_captureIdx(ps.get("vol.source").value)] },
+      // Shader Code reads glsl.srcInput (OPT_SOURCES: 0 = None) — only while a
+      // shader is running, since Pipeline skips the render otherwise.
+      { idx: GLSL_IDX, reads: [pipeline._customActive ? ps.get("glsl.srcInput").value - 1 : -1] },
       { idx: SOURCE_KEYS.indexOf("scene3d"), reads: _s3dReads, seed: !!ps.get("scene3d.active")?.value },
       { idx: SOURCE_KEYS.indexOf("depth3d"), reads: _s3dReads },
     ];
@@ -11196,6 +11204,8 @@ void main() {
       // Not a texture — the MixBus render gate. Computed here because the
       // consumption analysis (layers + TimeDisplace) lives in main.js.
       mixbusNeeded: _mixbusNeeded,
+      // Not a texture — the Shader Code source render gate, same reason.
+      glslSrcNeeded: _srcUsed(GLSL_IDX),
     };
 
     // Stroboscope: on "off" phase, freeze output (skip pipeline, blit prev)

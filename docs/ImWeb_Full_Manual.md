@@ -2743,7 +2743,14 @@ Live-code fragment shaders in a CodeMirror editor (syntax highlighting, line num
 
 **Presets** — the dropdown holds the built-ins plus your saved shaders. **📄** clears to a blank boilerplate, **💾** saves the current code under a custom name (browser localStorage, listed under "— User —"), **✕** deletes the selected user preset. The loaded shader, Auto state, and routing target are also saved in `.imweb` project files.
 
-**Target routing** — run the shader as an insert on **Master** output (default), **Foreground**, **Background**, or the **Displace** layer source. Routing is a normal parameter: state-recallable and controller-assignable.
+**Target routing** — run the shader as an insert on **Master** output (default), **Foreground**, **Background**, or the **Displace** layer source — or **Off (source only)**, no insert at all. Routing is a normal parameter: state-recallable and controller-assignable.
+
+**As a source (Shader Code, source 35)** — the same shader is also a source in every source menu (Generators ▸ **Shader Code**; panel **Sources ▸ Generators ▸ Shader Code**, which opens this workspace). Put it on a layer, a mix bus, Growth's **Seed src**, anything that takes a source — at the same time as it runs as an insert. As a source:
+
+- `uTexture` is **Source In** (`glsl.srcInput`): **None** (default, black — for generators) or any source, for a shader that processes one.
+- The output is the **raw shader**: Blend Mode and Blend Amt apply to the insert only (a source has no stage to blend onto — compose it with a layer blend or a mix bus instead).
+- A read of something that reads this source — Growth seeded from Shader Code while Source In is Growth, or Source In set to Shader Code itself — sees **last frame**, the same rule as the mix buses. Feedback is safe.
+- It renders only while something reads it, into its own target (allocated on first use), so an unrouted source costs nothing. With the shader stopped (Reset), it is black.
 
 **The VJ uniform contract** — auto-declared, just use them:
 
@@ -2765,7 +2772,10 @@ Write GLSL ES 1.00 (`texture2D()`, `gl_FragColor`). Pasted ShaderToy-style decla
 
 | Parameter | Range | Description |
 |-----------|-------|-------------|
-| `glsl.target` | SELECT | Master / Foreground / Background / Displace |
+| `glsl.target` | SELECT | Master / Foreground / Background / Displace / Off (source only) |
+| `glsl.blend` | SELECT | Blend Mode — the layer list (insert only) |
+| `glsl.mix` | 0–100 | Blend Amt (insert only) |
+| `glsl.srcInput` | SELECT | Source In — `uTexture` when running as the Shader Code source; None = black |
 | `glsl.preset` | SELECT | Mirrors the preset dropdown — built-ins plus your `user:` shaders |
 | `glsl.param1`…`4` | 0–1 | The `uParam1..4` performance knobs |
 
