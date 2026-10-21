@@ -6923,15 +6923,69 @@ async function main() {
     // right-handed pen/mouse working the canvas.
     const loopPopup = document.createElement("div");
     loopPopup.id = "drawloop-popup";
+    // Header = drag handle + close. The title says what it is: the Draw
+    // layer's stroke loopers, not a general "loop" (owner could not tell).
     const loopPopupLabel = document.createElement("div");
     loopPopupLabel.className = "drawloop-popup-label";
-    loopPopupLabel.textContent = "LOOP";
+    loopPopupLabel.title = "Drag to move";
+    const loopPopupTitle = document.createElement("span");
+    loopPopupTitle.textContent = "DRAW LOOPS";
+    const loopPopupClose = document.createElement("button");
+    loopPopupClose.className = "drawloop-popup-close";
+    loopPopupClose.textContent = "✕";
+    loopPopupClose.title = "Hide (comes back the next time you draw on the canvas)";
+    loopPopupLabel.append(loopPopupTitle, loopPopupClose);
     loopPopup.appendChild(loopPopupLabel);
     document.body.appendChild(loopPopup);
     const popupLoopRows = _buildLoopRows(loopPopup);
-    ps.get("touch.mode")?.onChange((m) => {
-      loopPopup.classList.toggle("show", Math.round(m) === 3);
+
+    // Closed = hidden until ⊕ Canvas is entered again, not forever: it is the
+    // only way to reach the loopers while the side panel is out of reach.
+    let loopPopupClosed = false;
+    loopPopupClose.addEventListener("click", () => {
+      loopPopupClosed = true;
+      loopPopup.classList.remove("show");
     });
+    ps.get("touch.mode")?.onChange((m) => {
+      const canvasMode = Math.round(m) === 3;
+      if (!canvasMode) loopPopupClosed = false;
+      loopPopup.classList.toggle("show", canvasMode && !loopPopupClosed);
+    });
+
+    // Draggable by its header; the spot is a per-browser convenience.
+    const LOOP_POS_KEY = "imweb.drawloopPopupPos";
+    const placeLoopPopup = (x, y) => {
+      const r = loopPopup.getBoundingClientRect();
+      const cx = Math.max(0, Math.min(window.innerWidth - (r.width || 120), x));
+      const cy = Math.max(0, Math.min(window.innerHeight - (r.height || 120), y));
+      loopPopup.style.left = `${cx}px`;
+      loopPopup.style.top = `${cy}px`;
+      loopPopup.style.bottom = "auto";
+    };
+    try {
+      const saved = JSON.parse(localStorage.getItem(LOOP_POS_KEY) || "null");
+      if (saved) placeLoopPopup(saved.x, saved.y);
+    } catch { /* no storage: default bottom-left */ }
+    let loopDrag = null;
+    loopPopupLabel.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 || e.target === loopPopupClose) return;
+      const r = loopPopup.getBoundingClientRect();
+      loopDrag = { id: e.pointerId, dx: e.clientX - r.left, dy: e.clientY - r.top };
+      try { loopPopupLabel.setPointerCapture(e.pointerId); } catch { /* synthetic pointer */ }
+      e.preventDefault();
+    });
+    loopPopupLabel.addEventListener("pointermove", (e) => {
+      if (!loopDrag || e.pointerId !== loopDrag.id) return;
+      placeLoopPopup(e.clientX - loopDrag.dx, e.clientY - loopDrag.dy);
+    });
+    const endLoopDrag = (e) => {
+      if (!loopDrag || e.pointerId !== loopDrag.id) return;
+      loopDrag = null;
+      const r = loopPopup.getBoundingClientRect();
+      try { localStorage.setItem(LOOP_POS_KEY, JSON.stringify({ x: r.left, y: r.top })); } catch { /* ignore */ }
+    };
+    loopPopupLabel.addEventListener("pointerup", endLoopDrag);
+    loopPopupLabel.addEventListener("pointercancel", endLoopDrag);
 
     // Reflect looper state on both sets of buttons on any path (MIDI, param
     // row, project load) — chain the param-sync hook wired at the trigger

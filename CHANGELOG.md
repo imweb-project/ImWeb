@@ -8,6 +8,13 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Changed
+- **Draw loops popup can be moved and closed** (owner: "what is the Loop
+  l1 l2 l3 l4 … how do i close it? it should be dragable and have an x").
+  The panel that appears while drawing on the main canvas (⊕ Canvas) is now
+  titled DRAW LOOPS, drags by its header (position remembered per browser),
+  and ✕ hides it until the next time ⊕ Canvas is entered.
+
 ---
 
 ## [0.27.0] — 2026-10-21 — Nothing Lost
