@@ -8,6 +8,21 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Fixed
+- **Opening a project no longer multiplies its banks** (owner: "after saving
+  project and open what i saved, the banks with the project file are multiple
+  the same"). Import appended every bank under a new index even when an
+  identical one was already there, and the next save carried the copies — so
+  each save → open round trip multiplied them. A bank whose name, states and
+  mappings match one already present (or an earlier one in the same file) is
+  now skipped; a same-named bank with different content is still added.
+
+### Added
+- **Banks panel: select several to delete, and Remove duplicates.** Each row
+  has a checkbox (Shift-click ticks a range) and **✕ Delete N selected**;
+  **⧉ Remove duplicates** deletes exact copies, keeping one of each (the
+  current bank if it is one). At least one bank always remains.
+
 ---
 
 ## [0.28.0] — 2026-10-21 — Shader Source

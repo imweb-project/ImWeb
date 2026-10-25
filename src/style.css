@@ -2400,6 +2400,19 @@ body.sp-floating #signal-path-docked-space {
     flex-shrink: 0;
 }
 .bank-list-switch:hover { color: var(--text-1); border-color: var(--border-hi); }
+.bank-list-tools {
+    display: flex;
+    gap: 5px;
+    padding: 4px 12px 6px;
+}
+.bank-list-tools .import-btn { flex: 1; }
+.bank-list-tools .import-btn:disabled { opacity: 0.45; cursor: default; }
+.bank-list-tick {
+    margin: 0;
+    flex-shrink: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
 
 /* ── CONTEXT MENU ────────────────────────────────────────────────────────── */
 

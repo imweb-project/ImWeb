@@ -2093,6 +2093,7 @@ export class StateBar {
     this.pm.addEventListener('stateSaved',      () => this._refresh());
     this.pm.addEventListener('stateRecalled',   () => this._refresh());
     this.pm.addEventListener('bankRenamed',     () => this._refresh());
+    this.pm.addEventListener('banksChanged',    () => this._refresh());
     this.pm.addEventListener('morphStarted', e => {
       const { fromIndex, toIndex } = e.detail;
       this._morphingIndices = new Set([fromIndex, toIndex]);
@@ -3096,6 +3097,7 @@ export class MemoryPanel {
     this.pm.addEventListener('stateSaved',      () => this._build());
     this.pm.addEventListener('stateRecalled',   () => this._build());
     this.pm.addEventListener('bankRenamed',     () => { this._updateBankName(); this._buildBankList(); });
+    this.pm.addEventListener('banksChanged',    () => { this._updateBankName(); this._buildBankList(); });
     this._updateBankName();
   }
 
@@ -3204,10 +3206,75 @@ export class MemoryPanel {
     const el = document.getElementById('bank-list');
     if (!el) return;
     el.innerHTML = '';
+    // Selection survives a rebuild (switching banks rebuilds the list), but
+    // only for banks that still exist.
+    this._bankSel = new Set([...(this._bankSel ?? [])].filter((i) => this.pm.presets[i]));
+    const toast = (msg) => this.pm.dispatchEvent(new CustomEvent('toast', { detail: { msg } }));
+
+    // ── Tidy-up bar: delete what is ticked, or every exact copy ──────────────
+    const bar = document.createElement('div');
+    bar.className = 'bank-list-tools';
+    const delSel = document.createElement('button');
+    delSel.className = 'import-btn btn-danger';
+    const nSel = this._bankSel.size;
+    delSel.textContent = nSel ? `✕ Delete ${nSel} selected` : '✕ Delete selected';
+    delSel.disabled = !nSel;
+    delSel.title = 'Tick banks below (Shift-click ticks a range)';
+    delSel.addEventListener('click', async () => {
+      const idx = [...this._bankSel];
+      const names = idx.map((i) => this.pm.presets[i]?.name).filter(Boolean);
+      if (idx.length >= this.pm.presets.filter(Boolean).length) {
+        toast('⚠ Keep at least one bank'); return;
+      }
+      if (!confirm(`Delete ${idx.length} bank(s) and all their states?\n\n${names.join('\n')}`)) return;
+      this._bankSel.clear();
+      const n = await this.pm.deleteBanks(idx);
+      toast(`✓ ${n} bank(s) deleted`);
+    });
+    const dedupe = document.createElement('button');
+    dedupe.className = 'import-btn';
+    // Counted on click, not here: this list rebuilds on every bank switch
+    // (MIDI program change mid-set included), and fingerprinting every bank
+    // is the most expensive thing on the panel.
+    dedupe.textContent = '⧉ Remove duplicates';
+    dedupe.title = 'Delete banks that are exact copies of another (same name, states and mappings); one of each is kept';
+    dedupe.addEventListener('click', async () => {
+      const extra = this.pm.duplicateBanks();
+      if (!extra.length) { toast('No duplicate banks — every bank is different'); return; }
+      if (!confirm(`Remove ${extra.length} duplicate bank(s)? One copy of each is kept.`)) return;
+      this._bankSel.clear();
+      const n = await this.pm.deleteBanks(extra);
+      toast(`✓ ${n} duplicate bank(s) removed`);
+    });
+    bar.append(delSel, dedupe);
+    el.appendChild(bar);
+
+    const order = [];
     this.pm.presets.forEach((bank, i) => {
       if (!bank) return;
+      order.push(i);
       const row = document.createElement('div');
       row.className = 'bank-list-item' + (i === this.pm.currentIdx ? ' active' : '');
+
+      const tick = document.createElement('input');
+      tick.type = 'checkbox';
+      tick.className = 'bank-list-tick';
+      tick.checked = this._bankSel.has(i);
+      tick.title = 'Select (Shift-click: range)';
+      tick.addEventListener('click', (e) => {
+        const on = tick.checked;
+        if (e.shiftKey && this._bankLastTick != null) {
+          const a = order.indexOf(this._bankLastTick), b = order.indexOf(i);
+          const lo = Math.min(a, b), hi = Math.max(a, b);
+          // `order` is complete by click time — the forEach has finished.
+          for (const j of order.slice(lo, hi + 1)) on ? this._bankSel.add(j) : this._bankSel.delete(j);
+        } else {
+          on ? this._bankSel.add(i) : this._bankSel.delete(i);
+        }
+        this._bankLastTick = i;
+        this._buildBankList();
+      });
+      row.appendChild(tick);
 
       const name = document.createElement('span');
       name.className = 'bank-list-name';

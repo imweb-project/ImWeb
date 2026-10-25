@@ -729,9 +729,44 @@ export class PresetManager extends EventTarget {
    * @returns {Map<number,number>} imported index → final index, for callers
    *          that stored an index (activePreset) and must remap it.
    */
+  /**
+   * What a bank IS, for spotting copies: name, states and controller bag —
+   * not its index, timestamps, cover thumbnail, export stamps or which tile is
+   * lit (activeState is null after a carried-in look), which differ between
+   * two copies of the same bank. Keys are sorted so two banks that
+   * went through different JSON round trips still compare equal.
+   */
+  static fingerprint(bank) {
+    const { name, controllers, states } = bank.serialize();
+    const stable = (v) => {
+      if (Array.isArray(v)) return v.map(stable);
+      if (v && typeof v === 'object') {
+        const o = {};
+        for (const k of Object.keys(v).sort()) o[k] = stable(v[k]);
+        return o;
+      }
+      return v;
+    };
+    return JSON.stringify(stable({ name, controllers, states }));
+  }
+
   async importAll(presetDataArray, { replace = false } = {}) {
     const existing = await Preset.loadAll();
     const indexMap = new Map();
+    // A bank identical to one already here is NOT added again. Opening a
+    // project you saved from this same browser used to append every bank under
+    // a new index — and the next save carried the copies, so each round trip
+    // multiplied them (owner: "the banks with the project file are multiple the
+    // same"). Repeats inside the incoming file collapse the same way. A bank
+    // with the same NAME but different content is still added: that is a
+    // different version, and silently dropping either one would lose work.
+    const known = new Map(); // fingerprint → index
+    if (!replace) {
+      for (const p of [...existing, ...this.presets.filter(Boolean)]) {
+        const fp = PresetManager.fingerprint(p);
+        if (!known.has(fp)) known.set(fp, p.index);
+      }
+    }
 
     if (replace) {
       await Promise.all(existing.map(p => Preset.delete(p.index)));
@@ -750,7 +785,10 @@ export class PresetManager extends EventTarget {
     for (const data of presetDataArray) {
       const p = Preset.deserialize(data);
       const orig = p.index;
+      const fp = PresetManager.fingerprint(p);
+      if (known.has(fp)) { indexMap.set(orig, known.get(fp)); continue; }
       if (taken.has(orig)) p.index = lowestFree();
+      known.set(fp, p.index);
       taken.add(p.index);
       indexMap.set(orig, p.index);
       this.presets[p.index] = p;
@@ -768,5 +806,47 @@ export class PresetManager extends EventTarget {
 
   async loadPreset(index) {
     await this.activatePreset(index, { fade: false });
+  }
+
+  /**
+   * Delete several banks at once. Refuses to delete every bank (there must be
+   * one to stand on). If the current bank goes, the first remaining one is
+   * loaded. @returns {number} how many were deleted
+   */
+  async deleteBanks(indices) {
+    const doomed = new Set(indices.filter((i) => this.presets[i]));
+    const remaining = this.presets.filter((p, i) => p && !doomed.has(i));
+    if (!doomed.size || !remaining.length) return 0;
+    for (const i of doomed) {
+      await Preset.delete(i);
+      this.presets[i] = null;
+    }
+    if (doomed.has(this.currentIdx)) {
+      await this.activatePreset(this.presets.findIndex(Boolean));
+    }
+    this.dispatchEvent(new CustomEvent('banksChanged'));
+    return doomed.size;
+  }
+
+  /**
+   * Indices of banks that are exact copies of an earlier bank (same
+   * fingerprint). The first copy is kept — the current bank wins if it is one
+   * of a group, so cleaning up never yanks the bank being played.
+   */
+  duplicateBanks() {
+    const groups = new Map();
+    this.presets.forEach((p, i) => {
+      if (!p) return;
+      const fp = PresetManager.fingerprint(p);
+      if (!groups.has(fp)) groups.set(fp, []);
+      groups.get(fp).push(i);
+    });
+    const extra = [];
+    for (const idxs of groups.values()) {
+      if (idxs.length < 2) continue;
+      const keep = idxs.includes(this.currentIdx) ? this.currentIdx : idxs[0];
+      extra.push(...idxs.filter((i) => i !== keep));
+    }
+    return extra;
   }
 }
