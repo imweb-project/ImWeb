@@ -128,6 +128,8 @@ export function buildTeletextUI(container, ps, teletextSource, contextMenu) {
     { label: 'Open Culture',          url: 'https://www.openculture.com/feed', direct: true },
     { label: 'Pitchfork News',        url: 'https://pitchfork.com/rss/news/', direct: true },
     { label: 'Earthquakes (USGS)',    url: 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.atom', direct: true },
+    { label: 'Space Weather Alerts (NOAA)', url: 'https://services.swpc.noaa.gov/products/alerts.json', direct: true },
+    { label: 'NASA Sun',              url: 'https://science.nasa.gov/category/sun/feed/', direct: true },
     { label: 'BBC News',              url: 'https://feeds.bbci.co.uk/news/rss.xml' },
     { label: 'RÚV',                   url: 'https://www.ruv.is/rss/frettir' },
     { label: 'Yle Uutiset',           url: 'https://yle.fi/rss/uutiset/tuoreimmat' },
@@ -136,6 +138,9 @@ export function buildTeletextUI(container, ps, teletextSource, contextMenu) {
     { label: 'Dezeen',                url: 'https://www.dezeen.com/feed/' },
     { label: 'Hyperallergic',         url: 'https://hyperallergic.com/feed/' },
     { label: 'Creative Applications', url: 'https://www.creativeapplications.net/feed/' },
+    { label: 'EarthSky Sun & Aurora', url: 'https://earthsky.org/sun/feed/' },
+    { label: 'Spaceweather.com',      url: 'https://spaceweatherarchive.com/feed/' },
+    { label: 'Aurora Forecast Iceland', url: 'https://auroraforecast.is/feed/' },
   ];
 
   const presetDiv = document.createElement('div');

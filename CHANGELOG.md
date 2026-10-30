@@ -9,6 +9,13 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Teletext: northern lights and solar activity feeds.** P150 presets gain
+  **Space Weather Alerts (NOAA)** — live geomagnetic storm watches, warnings
+  and alerts with their G-scale and where aurora may be visible — and **NASA
+  Sun**, both loading directly. **EarthSky Sun & Aurora**, **Spaceweather.com**
+  and **Aurora Forecast Iceland** need the feed proxy (`tools/feed-proxy/`,
+  allowlist extended). NOAA's JSON bulletins are turned into headlines; NASA
+  Science feeds, which currently ship malformed XML, now parse.
 - **OSD Mode: Touched** (new default). Instead of a list of 29 internal names
   over the picture, the OSD shows the last few controls you moved — by hand,
   MIDI, OSC or key — with value and bar, fading after a moment; recalling a
