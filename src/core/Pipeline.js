@@ -888,13 +888,13 @@ export class Pipeline {
     // uCurve 0 for the self-process: its uFG and uBG are the same texture, so
     // the three-stop curve's "FG end" would just be the Background again.
     if (bgBlend > 0 && !BG_DEGENERATE) bgTexFinal  = this._pass(this.m.transfermode, {
-      uFG: bgTexFinal, uBG: bgTexFinal, uMode: bgBlend, uCurve: 0,
+      uFG: bgTexFinal, uBG: bgTexFinal, uMode: bgBlend, uCurve: 0, uAlphaBG: 0,
       uBlendAmount: (p.get('layer.bg.blendAmount')?.value ?? 100) / 100,
     });
     // uCurve 1: 0 % = Background alone, 50 % = the blend at full strength,
     // 100 % = Foreground alone. One knob fades out either layer.
     if (fgBlend > 0) workingFG   = this._pass(this.m.transfermode, {
-      uFG: workingFG, uBG: bgTexFinal, uMode: fgBlend, uCurve: 1,
+      uFG: workingFG, uBG: bgTexFinal, uMode: fgBlend, uCurve: 1, uAlphaBG: 0,
       uBlendAmount: (p.get('layer.fg.blendAmount')?.value ?? 50) / 100,
     });
 
@@ -1050,6 +1050,7 @@ export class Pipeline {
           // Two-stop: feedback amounts in every saved patch predate the layer
           // curve and must keep meaning what they meant.
           uCurve:       0,
+          uAlphaBG:     1,   // the live picture's alpha, not the buffer's — see TRANSFERMODE
           uBlendAmount: p.get('blend.amount').value / 100,
         });
       }
@@ -1722,7 +1723,7 @@ export class Pipeline {
         uMirror:    { value: 0 },
         uEdge:      { value: 0 },
       }),
-      transfermode: this._mat(TRANSFERMODE, { uMode: { value: 0 }, uBlendAmount: { value: 1.0 }, uCurve: { value: 0 } }),
+      transfermode: this._mat(TRANSFERMODE, { uMode: { value: 0 }, uBlendAmount: { value: 1.0 }, uCurve: { value: 0 }, uAlphaBG: { value: 0 } }),
       clipFade:     this._mat(CLIP_FADE, {
         uFrom: { value: null }, uTo: { value: null }, uMix: { value: 0 },
       }),
