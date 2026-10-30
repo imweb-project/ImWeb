@@ -31,6 +31,11 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   implementation (`FloatingWindow.js`) with the docs viewer.
 
 ### Fixed
+- **One black State no longer blacks out the next.** With feedback on, the
+  output kept the feedback buffer's alpha, so a single transparent frame (the
+  Volume State with no camera) latched alpha 0 and every following State that
+  kept feedback on stayed black. The feedback blend now takes the live
+  picture's alpha, as feedback Off already did.
 - **All six tabs fit the panel.** "Project" sat past the edge at 1440px;
   tabs now fit the 320px and 280px panels and share spare width.
 

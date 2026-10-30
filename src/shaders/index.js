@@ -2094,6 +2094,13 @@ export const TRANSFERMODE = /* glsl */ `
   // meaning what they meant. Like uBlendAmount, this MUST be set at every call
   // site — the material is shared, and _pass() only writes what it is given.
   uniform float     uCurve;
+  // Whose alpha the result keeps: 0 = uFG's (the layer blends), 1 = uBG's.
+  // The feedback blend passes LAST frame as uFG and the live picture as uBG,
+  // so with 0 it inherited the buffer's alpha: one alpha-0 frame (the Volume
+  // source with no camera) wrote alpha 0, which fed back as alpha 0 forever and
+  // blacked out every later State that kept feedback on. The live picture owns
+  // the coverage — what feedback Off outputs too. Set at every call site.
+  uniform float     uAlphaBG;
 
   varying vec2 vUv;
 
@@ -2131,7 +2138,7 @@ export const TRANSFERMODE = /* glsl */ `
       // AND — three of twenty-one modes silently ignoring their own strength
       // control. uMode 0 (Copy) still returns fg untouched: it is the identity
       // pass, not a blend, and mixing it would turn Copy into a dissolve.
-      gl_FragColor = vec4(blendMix(b, int8ToFloat(ir), a, uBlendAmount), fg.a);
+      gl_FragColor = vec4(blendMix(b, int8ToFloat(ir), a, uBlendAmount), mix(fg.a, bg.a, uAlphaBG));
       return;
     }
 
@@ -2139,7 +2146,7 @@ export const TRANSFERMODE = /* glsl */ `
     r = blendPhoto(uMode, a, b);
 
     vec3 blended = clamp(r, 0.0, 1.0);
-    gl_FragColor = vec4(blendMix(b, blended, a, uBlendAmount), fg.a);
+    gl_FragColor = vec4(blendMix(b, blended, a, uBlendAmount), mix(fg.a, bg.a, uAlphaBG));
   }
 `;
 
