@@ -1,6 +1,26 @@
 # ImWeb — Quick Reference
 
-> Browser-based real-time video synthesis instrument · v0.17.0
+> Browser-based real-time video synthesis instrument · v0.28.0
+
+---
+
+## The Panel
+
+Six tabs: **Sources · Mix · Effects · Output · Audio · Project**.
+
+| Tab | Holds |
+|-----|-------|
+| **Sources** | Every picture source, grouped **Live In · Media · Generators · From the Signal** — the same groups the layer dropdowns use |
+| **Mix** | Layers, Layer Color, Mix 1–3, Keyer, Displacement, Displacement Map Editor |
+| **Effects** | Blend & Feedback, the post-FX chain, LUT / Colour Grade, Shader Code (GLSL) |
+| **Output** | Projection Mapping, Global / BPM / Morph |
+| **Audio** | Tape, Engine, Partitions, Recording / Playback Zone, Spectral Writer, Corpus, Grain Player, Voice |
+| **Project** | Project files, AI, Banks, States, State Step Sequencer, Response Curves (tables) |
+
+**Workspaces** — 3D Scene, Analog TV, Draw (with Growth) and Shader Code (GLSL)
+are larger editors. **⤢ Open workspace** on their row in Sources (Shader Code
+also in Effects) opens one as an extra tab at the end of the tab bar; **✕**
+closes it.
 
 ---
 
@@ -47,6 +67,12 @@ FX Chain is **reorderable** by dragging nodes in the Signal Path display.
 | **Color / Color2** | Two independent solid-or-gradient generators |
 | **BG1 / BG2** | Two frozen background stills held by the Stills Buffer. `Freeze BG1` / `Freeze BG2` (triggers) grab the current frame into them — a held plate to key or mix against |
 | **Output** | The finished frame, fed back in as a source (`pipeline.prev`) — the raw material for feedback routing |
+| **Growth** | Growth patterns (reaction-diffusion and related engines) seeded by a source (**Seed src**, Draw by default) — paint, and it grows out of the strokes. Pick a **Look**; six engines (**GrowMode**: Single / Nested / Frost / Hyphae / Curves / Neural). Panel lives in the Draw workspace |
+| **Volume** | Recorded history as an (x, y, t) block of time, with its own source (**Vol src**). **View**: Volume (an object you orbit — Box / Cylinder / Sphere / Tunnel / Ring) or Slice (one flat cut through it, as an image); Front / Top / Side cut presets |
+| **Shader Code** | The Shader Code (GLSL) shader as a source of its own. **Source In** picks what it reads as `uTexture` (None = a pure generator). Set **Target** to *Off (source only)* to use it only as a source |
+
+36 sources in all. `Q` / `A` / `Z` step through them in the order the layer
+dropdowns list them.
 
 ---
 
@@ -132,9 +158,9 @@ Right-click any parameter row to assign.
 | Concept | Description |
 |---------|-------------|
 | **Project** | The full session — all Banks, tables, warp maps, settings |
-| **Bank** | A named group of up to 32 States; switch via bottom-right dropdown or `+`/`−` |
+| **Bank** | A named group of up to 32 States; switch via bottom-right dropdown or **numpad** `+`/`−` |
 | **State** | Full snapshot: parameter values + FX order + controller assignments + media filenames |
-| **Neutral State** | Resets all parameter values without touching controller assignments (`Shift+0` or ○ tile) |
+| **Neutral State** | Resets all parameter values without touching controller assignments (`⌘⇧0` / `Ctrl+Shift+0`, or the ○ tile) |
 | **Morph** | Smooth crossfade when recalling a State; set time in the MORPH control in the bottom bar |
 | **MIDI PC** | Program Change 0–127 → Bank 0–127 |
 | **Quick-save State** | `Shift+S` — saves to next empty slot with auto-thumbnail |
@@ -143,15 +169,20 @@ Right-click any parameter row to assign.
 
 ---
 
-## Shader Code (GLSL) (Effects tab)
+## Shader Code (GLSL) workspace
+
+Open with **⤢ Open workspace** in Effects ▸ Shader Code (GLSL), or in
+Sources ▸ Generators ▸ Shader Code.
 
 | Control | Action |
 |---------|--------|
-| **Apply** / Ctrl+Enter | Compile the editor code (errors never kill the running shader) |
+| **▶ Apply** / ⌘/Ctrl+Enter | Compile the editor code (errors never kill the running shader) |
 | **Auto** | Recompile on every keystroke |
 | **✨ Prompt AI** | Natural-language shader generation (needs API key in AI panel) |
 | **📄 / 💾 / ✕** | New blank · save as named user preset · delete user preset |
-| **Target** | Insert point: Master / Foreground / Background / Displace |
+| **Target** | Insert point: Master / Foreground / Background / Displace / Off (source only) |
+| **Blend Mode** / **Blend Amt** | How the shader output meets its input; 0 = input untouched, 100 = shader alone |
+| **Source In** | What the shader reads when it runs as the **Shader Code** source (35) |
 | **uParam1–4** | Performance knobs — controller-assignable, AI names the labels |
 
 Auto-declared uniforms: `uTexture` `tAudio` (FFT+waveform) `tPrev` (feedback) `uResolution` `uTime` `uBPM` `uBeat` `uLevel` `uBass` `uMid` `uHigh` `uParam1..4` `vUv`. GLSL ES 1.00 — `texture2D()`, `gl_FragColor`.
@@ -185,23 +216,26 @@ Auto-declared uniforms: `uTexture` `tAudio` (FFT+waveform) `tPrev` (feedback) `u
 | Key | Action |
 |-----|--------|
 | `0–9` | Recall State |
-| `Shift+0` | Neutral State (reset params, keep controllers) |
+| `⌘⇧0` / `Ctrl+Shift+0` | Neutral State (reset params, keep controllers) |
 | `Shift+S` | Quick-save State (auto-thumbnail) |
-| `+` / `−` | Next / previous Bank |
-| `Shift+1–8` | Select clip on Movie **A** rack |
-| `Option+1–8` | Select clip on Movie **B** rack |
-| `/` | Parameter search |
+| Numpad `✱` then `0–9` | Store the current look into State 0–9 |
+| Numpad `+` / `−` | Next / previous Bank (the numpad keys only — the main-keyboard `+`/`−` do nothing here) |
+| `Shift+1–8` | Select clip on Movie **A** rack (`Shift+0` = clip 1) |
+| `Option+1–8` | Select clip on Movie **B** rack (`Option+0` = clip 1) |
+| `⌘K` / `Ctrl+K` | Parameter search — works on every keyboard layout |
+| `/` | Parameter search (US layout) |
+| `Shift+G` | Guided tour |
 | `?` | Keyboard help |
 
 ### Global
 
 | Key | Action |
 |-----|--------|
-| `Cmd+S` | Save project → download `.imweb` |
-| `Cmd+E` | Export `.imweb` (same as Cmd+S) |
+| `Cmd+S` | Save project → asks for a project name, then downloads `.imweb` |
+| `Cmd+E` | Export `.imweb` straight away, no name prompt |
 | `Cmd+O` | Import `.imweb` |
 | `F` | Fullscreen (or double-click the canvas) |
-| `Shift+Esc` | **Panic** — reset all parameters to defaults |
+| `Shift+Esc` | **Panic** — after a confirm, resets all parameters to defaults **and clears every controller assignment**; layers go back to Camera |
 | `D` | Debug overlay |
 | `Shift+P` | Float/dock signal path |
 | `Shift+V` | Output spy |
@@ -247,12 +281,12 @@ ImWeb  |  fps · CPU · VRAM  |  Bank name  |  State name  |  BPM ♩  |  MIDI  
 ## Bottom Bar
 
 ```
-[○ neutral]  [ state 1 ][ state 2 ][ ... ][ state 32 ]   MORPH  Bank 1 ▼
+[○ neutral]  [ state 0 ][ state 1 ][ ... ][ state 31 ]   MORPH  Bank 1 ▼
 ```
 
 The state grid holds 32 thumbnail tiles (2 rows × 16 columns). Tiles show auto-captured thumbnails for saved states and are dim/empty for unsaved slots.
 
-- **Left-click** an empty tile: save current state there. Left-click a saved tile: recall it.
+- **Left-click** a saved tile: recall it. A click on an empty tile does nothing — save with `Shift+S` (next empty slot) or right-click → Save here.
 - **Right-click** a tile: Save here / Import .imstate / Export .imstate / Clear.
 - **○** (leftmost): Neutral State — reset all parameter values, leave controllers intact.
 - **MORPH** (right of state grid): morph time in seconds for crossfading between states. Drag up/down to adjust; double-click to type. `0` / `OFF` = instant snap. Highlighted (gold) when active.
@@ -334,6 +368,30 @@ Requires: **Node.js** + **FFmpeg** (`brew install ffmpeg` / `apt install ffmpeg`
 
 ---
 
+## Audio (Audio tab)
+
+The sound half of the instrument: one **tape** that is recorded into, played,
+written from pictures and granulated.
+
+| Section | What it does |
+|---------|--------------|
+| **Tape** | The whole tape drawn as a waveform, with the partitions and zone regions marked on it |
+| **Engine** | **Audio On** starts the engine (the browser needs this to come from a click). **Tape** = tape length, 5–600 s (default 60) — changing it reallocates the tape and erases what is on it. **Mic** opens the microphone. **Monitoring** (Headphones / Speakers, default Speakers) changes no level — it tells the instrument whether a mic → speakers → mic loop is possible, so it can warn you. **Tap** = what the sound-reactive controllers and the Vectorscope hear: Mic or Master Out. **Out Gain**, **Glide**, and the output limiter's **Ceiling** / **Limit Rel** (the limiter itself is always on) |
+| **Partitions** | The tape is divided into four partitions, **P0–P3**, each a Start and Length (fractions of the tape) |
+| **Recording Zone** | Records the microphone into a region of one partition: **Partition**, **Start**, **Length** (fractions of the partition), **Dynamic** (the take's length is set by when you stop), **Unsafe**, **Run** |
+| **Playback Zone** | Plays a region: same region controls plus **Rate** (−4…4; negative = reverse), **Pos** (jump to a point in the region), **Level**, and 8 region cues (**CueSlot** / **CueStore**) |
+| **Spectral Writer** | Renders the **current output picture** into a region of tape as sound — rows become pitches, columns become time. **Scale** (10 scales incl. Chromatic, Major, Pentatonic, Harmonic series), **Root**, **Rows**, **Columns**, **Contrast**, **Floor**, **Pan Image** (Off / Colour / Spread / Sweep), **Pan Width**, **Level**, then **Render** / **Cancel**. Render overwrites that region |
+| **Corpus** | **Analyse** measures the tape in short grains (**Grain Hop**, **Analysis Window**) by Loudness, Brightness, Pitch and Periodicity. Pick two as **X Axis** / **Y Axis**; drag on the pad (or drive **Corpus X/Y**) to point the grain player at matching sounds |
+| **Grain Player** | Granular playback of one partition: **Grain Pos**, **Run Grain**, **Grain Size** (5–500 ms), **Density** (1–200 grains/s), **Grain Pitch** (±24 st), **Spray**, **Level Grain** |
+| **Voice** | A synth voice: **Source** (Osc / Noise), **Wave** (Sine / Saw / Square / Tri), **Pitch** (semitones; 57 = A3, 220 Hz), **FM Ratio** / **FM Index**, **Colour**, a filter (**Cutoff**, **Resonance**, **Filter Type** sweeping low-pass → band-pass → high-pass → notch), **Drive**, **Level** |
+
+Zones stay inside their own partition; **Unsafe** lets one reach across the
+whole tape. Tape length, Mic, Monitoring, partition layout and the Render /
+Analyse buttons are setup actions and are *not* captured by Display States —
+recalling a State never erases tape or opens a device.
+
+---
+
 ## Performance Notes
 
 - Sequencer frames = full-resolution VRAM × frame count — keep counts low when not needed
@@ -342,11 +400,4 @@ Requires: **Node.js** + **FFmpeg** (`brew install ffmpeg` / `apt install ffmpeg`
 
 ---
 
-## Known Issues
-
-- **Chrome 148 ANGLE/Metal backend regression (macOS)**: Vertex shader rendering is broken for Hypercube wireframe edges (`LineSegments`) and Harabara GLB model (`SkinnedMesh`).
-  - *Workaround*: Launch Chrome from the terminal with the `--use-angle=gl` flag.
-
----
-
-*ImWeb v0.8.9 · H. Karlsson · [Full manual →](ImWeb_Full_Manual.md)*
+*ImWeb v0.28.0 · H. Karlsson · [Full manual →](ImWeb_Full_Manual.md)*

@@ -1,6 +1,6 @@
 # ImWeb — Full Operation Manual
 
-> **Version:** 0.17.0
+> **Version:** 0.28.0
 > **Platform:** Browser (Chrome 113+ recommended)
 > **Original concept:** Image/ine — Tom Demeyer, STEIM Amsterdam 1997/2008
 > **ImWeb:** H. Karlsson
@@ -59,7 +59,8 @@ Open Chrome at `localhost:5173`. On first load:
 2. Open the **Mix** tab to see layer routing and the main compositing parameters
 3. Right-click any parameter row to assign a controller
 4. Press `?` for the keyboard shortcut overlay
-5. Press `/` to search for any parameter by name
+5. Press `Cmd+K` (Ctrl+K), or `/` on a US keyboard, to search for any parameter by name
+6. Press `Shift+G` for the guided tour
 
 ---
 
@@ -106,8 +107,9 @@ Open Chrome at `localhost:5173`. On first load:
 > ⬡ appears twice — projection mapping sits in the left cluster of the toolbar,
 > the AI Coach in the group at the far right beside 𝔸 and ⚙.
 
-Output resolution is no longer a row of toolbar buttons. It is the
-`output.resolution` parameter in the Output tab — see §8.
+Output resolution is no longer a row of toolbar buttons. It is the **Display**
+selector in **Output ▸ Display & Record** (the `output.resolution` parameter) —
+see §8.
 
 ### Tabs
 
@@ -117,16 +119,24 @@ alongside.
 
 | Tab | Contents |
 |-----|----------|
-| **Sources** | Live In (camera, sound, I/O), Media (Movie Library, Movie A, Movie B, Clip Library, stills, BG1/BG2), Generators, and taps From the Signal |
-| **Mix** | Layer routing, per-layer colour, the three mix buses, keyer, displacement, warp map editor |
-| **Effects** | Blend & Feedback, the post-FX chain and its ordering |
-| **Output** | Output modes, LUT, interlace, recording |
-| **Project** | Project save/load, AI generator, Banks, States, Step Sequencer, response curves, live GLSL |
+| **Sources** | **Live In** (I/O, Camera, Sound), **Media** (Movie Library, Movie A, Movie B, Clip Library, Stills Buffer, BG1/BG2), **Generators** (Color / Gradient, Noise, Particles, SDF, Rutt-Etra, Text, 3D Scene, Analog TV, Draw, Shader Code), and **From the Signal** (Time Displace, Volume, Tape, Slit Scan, Video Delay, Motion Extraction, Frame Sequences, Vectorscope) |
+| **Mix** | Layers, Layer Color, Mix 1 / Mix 2 / Mix 3, Keyer, Displacement, Displacement Map Editor |
+| **Effects** | Blend & Feedback, the post-FX chain and its ordering, LUT / Colour Grade, Shader Code (GLSL) |
+| **Output** | Display & Record (display and record resolution, UI size, second-display window and its rate), Projection Mapping, Global / BPM / Morph |
+| **Audio** | Tape, Engine, Partitions, Recording Zone, Playback Zone, Spectral Writer, Corpus, Grain Player, Voice — see §9 *Audio* |
+| **Project** | Project save/load, AI, Banks, States, State Step Sequencer, Response Curves (tables) |
 
-There are **five** tabs. Phase 24 retired the separate 3D, Analog and Draw tabs:
-those three are large source editors, and they are now opened as workspaces from
-their own rows inside **Sources**, next to the source they belong to. Their
-panels are unchanged — only the way you reach them moved.
+There are **six** tabs. The first four follow the video signal; **Audio** is a
+top-level tab of its own because it is a large editor for a different kind of
+material, not a stage in the video chain.
+
+**Workspaces.** Phase 24 retired the separate 3D, Analog and Draw tabs. The large
+editors — **3D Scene**, **Analog TV**, **Draw** (which also holds **Growth**) and
+**Shader Code (GLSL)** — are opened with the **⤢ Open workspace** button on their
+row in **Sources** (Shader Code also from **Effects**). The workspace appears as
+an extra tab at the end of the tab bar with a **✕** that closes it and returns
+you to the tab you came from. Their panels are unchanged — only the way you
+reach them moved.
 
 Any panel can be **detached** into a floating, resizable window with the ⊞ button
 in its section header — useful for the Movie Library, which then shows as many rows
@@ -140,10 +150,10 @@ The bottom bar runs across the full width of the app and contains three zones:
 
 | Action | Result |
 |--------|--------|
-| Left-click an empty tile | Save current state to that slot |
 | Left-click a saved tile | Recall that state |
+| Left-click an empty tile | Nothing — save with `Shift+S` or right-click → Save here |
 | Right-click any tile | Context menu: Save here / Import .imstate / Export .imstate / Clear |
-| ○ (leftmost tile) | Neutral State — resets all parameter values without touching controller assignments |
+| ○ (leftmost tile) | Neutral State (also `Cmd+Shift+0`) — resets all parameter values without touching controller assignments |
 
 **Bank dropdown** (bottom-right) — shows the current Bank name followed by ▼. Clicking it opens a menu:
 - Bank list — click any Bank to switch to it
@@ -833,6 +843,7 @@ than rotating the object itself.
 ### 4.8 Slit Scan Buffer
 
 Classic slit-scan effect: reads a thin strip of pixels each frame and accumulates over time.
+Panel: **Sources ▸ From the Signal ▸ Slit Scan**.
 
 | Parameter | Range | Description |
 |-----------|-------|-------------|
@@ -1118,6 +1129,8 @@ mode the arrow keys page through and Escape exits.
 
 A raymarched 3D field rendered as a source. Shapes are described mathematically
 rather than as meshes, so they combine, repeat and deform continuously.
+Panel: **Sources ▸ Generators ▸ SDF**. It renders nothing until its **SDF**
+toggle (`sdf.active`) is on.
 
 **Geometry**
 
@@ -1213,6 +1226,8 @@ rather than as meshes, so they combine, repeat and deform continuously.
 
 A modern reading of the Rutt/Etra scan processor: each scanline of the source is
 displaced in Z by its brightness and drawn as a beam in 3D.
+Panel: **Sources ▸ Generators ▸ Rutt-Etra**. It renders nothing until its
+**Rutt-Etra** toggle (`rutt.active`) is on.
 
 | Parameter | Range | Description |
 |-----------|-------|-------------|
@@ -1248,6 +1263,7 @@ displaced in Z by its brightness and drawn as a beam in 3D.
 
 A rolling buffer that records the source over time and lets you scrub or smear
 across the recorded axis — a tape head over a time-image.
+Panel: **Sources ▸ From the Signal ▸ Tape**.
 
 | Parameter | Range | Description |
 |-----------|-------|-------------|
@@ -1293,6 +1309,7 @@ tape is the fast path, the ring is the general case.
 
 Listed in source menus as **TimeDisp**. Displaces each pixel *in time* rather than in space: a map image selects how far
 back into a captured frame buffer each pixel reads.
+Panel: **Sources ▸ From the Signal ▸ Time Displace**.
 
 | Parameter | Range | Description |
 |-----------|-------|-------------|
@@ -1317,7 +1334,7 @@ back into a captured frame buffer each pixel reads.
 
 #### Volume (source 34)
 
-Listed in source menus as **Volume**, panel **Sources ▸ Warp ▸ Volume**. The same
+Listed in source menus as **Volume**, panel **Sources ▸ From the Signal ▸ Volume**. The same
 120-frame buffer, treated as a block of video in (x, y, time), the "Time/Energy
 Object". It can be viewed two ways:
 
@@ -1500,7 +1517,20 @@ Three routing layers feed the pipeline:
 | **BG** | `layer.bg` | Background source |
 | **DS** | `layer.ds` | Displacement source (grayscale) |
 
-Source options for each layer: Camera / Movie / Screen / Draw / Noise / Color / Buffer / 3D / SlitScan / Particles / Sequencer 1–3 / Text / Vectorscope / Analog
+Each layer can take any of the **36 sources**, listed in the dropdown in four
+groups plus the mix buses (the menu labels, in menu order):
+
+| Group | Sources |
+|-------|---------|
+| **Live In** | Camera, Sound |
+| **Media** | Movie A, Movie B, Buffer, BG1, BG2 |
+| **Generators** | Color, Color2, Noise, Particles, SDF, SDF Depth, Text, Draw, Growth, 3D Scene, 3D Depth, Analog, Rutt-Etra, Shader Code |
+| **From the Signal** | Output, Delay, RGB Delay, Motion, TimeDisp, Volume, SlitScan, Seq1, Seq2, Seq3, Scope, Warp Tape |
+| **Mix** | Mix 1, Mix 2, Mix 3 |
+
+The list is append-only: a saved State stores a source as its position in the
+internal list, so new sources are always added at the end (Growth = 33,
+Volume = 34, Shader Code = 35) and never re-number older ones.
 
 #### Mirroring
 
@@ -1577,7 +1607,7 @@ Warp the image using the DS layer as an offset map.
 
 ### 5.6 WarpMap Editor
 
-An interactive 128×128 displacement texture editor. Access via the Mapping tab WarpMap section.
+An interactive 128×128 displacement texture editor. Access via **Mix ▸ Displacement Map Editor**.
 
 **Grid:** 24 columns × 18 rows of control points.
 
@@ -1939,6 +1969,8 @@ The tail of the chain — small global adjustments rather than looks.
 #### Video Delay Line
 
 Replays a source some number of frames late, out of a ring buffer.
+Panel: **Sources ▸ From the Signal ▸ Video Delay** (listed in source menus as
+**Delay**).
 
 | Parameter | Range | Description |
 |-----------|-------|-------------|
@@ -1961,7 +1993,7 @@ where three frames agree, taking one channel from each reproduces the pixel, so
 **equal values on all three are a bit-exact passthrough**.
 
 Select it as a source (Foreground / Background / DisplaceSrc → *From the
-Signal* → **RGB Delay**); the controls are in **Sources ▸ Warp ▸ RGB Channel
+Signal* → **RGB Delay**); the controls are in **Sources ▸ From the Signal ▸ Video Delay ▸ RGB Channel
 Delay**.
 
 | Parameter | Range | Description |
@@ -1979,6 +2011,8 @@ oldest available frame rather than dropping to black.
 Minimum is 1, not 0, because age 0 and age 1 are the same frame.
 
 #### Motion Extraction (source 32)
+
+Panel: **Sources ▸ From the Signal ▸ Motion Extraction**.
 
 Produces a **matte**, not a picture: white where the source is moving, black
 where it is not. Its destination is the keyer's **Key src**, not a layer —
@@ -2057,7 +2091,7 @@ Apply professional colour grading using a `.cube` file.
 |-----------|-------|-------------|
 | `effect.lutamount` | 0–100% | Blend with original (0=bypass) |
 
-Load a LUT via the LUT section in the Mapping tab (standard `.cube` format, typically 32³ or 64³). Click "Clear LUT" to remove.
+Load a LUT via **Effects ▸ LUT / Colour Grade** (standard `.cube` format, typically 32³ or 64³). Click "Clear LUT" to remove.
 
 ---
 
@@ -2115,7 +2149,7 @@ Axes are compensated for screen orientation, so Tilt X always means
 "toward/away" whether the device is in portrait or landscape.
 
 **iOS permission:** the first assignment (or a tap on **Enable Motion**
-in the GLOBAL section) triggers Apple's motion-access prompt — it must
+in Output ▸ Global / BPM / Morph) triggers Apple's motion-access prompt — it must
 come from a touch, so if a recalled preset contains tilt controllers,
 tap **Enable Motion** once to activate them. The result is flashed
 on-screen (`MOTION: GRANTED / DENIED`). If no prompt appears, fully
@@ -2283,7 +2317,7 @@ After assigning, right-click the parameter again to access options:
 | **Invert** | Flip output: 1 − value |
 | **Feedback** | Show live value overlay on output canvas |
 | **Lock** | Disable controller input (freeze the value) |
-| **Assign Table** | Apply a response curve (see Tables tab) |
+| **Assign Table** | Apply a response curve (see Project ▸ Response Curves) |
 | **Set Slew** | Add lag (enter time in seconds, optionally `ease` or `lag`) |
 
 **Slew** adds smooth easing to a controller's output. For example, 0.5 sec slew on Sound makes audio reactivity feel organic rather than jittery.
@@ -2489,7 +2523,7 @@ and there is no way to tell them apart while playing.
 
 ### Response Curves (Tables)
 
-The Tables tab contains a visual curve editor. Draw a custom 16,384-point transformation. Assign it to any parameter via right-click → "Assign Table". The controller's output is passed through the curve before reaching the parameter.
+**Project ▸ Response Curves** (formerly the Tables tab) contains a visual curve editor. Draw a custom 16,384-point transformation. Assign it to any parameter via right-click → "Assign Table". The controller's output is passed through the curve before reaching the parameter.
 
 Built-in presets: Linear, Logarithmic, Exponential, S-curve, Step.
 
@@ -2502,9 +2536,9 @@ ImWeb uses a three-level memory hierarchy. Understanding it makes saving and rec
 ```
 Project (.imweb)
   └── Bank 1 — SDF Metaballs
-  │     └── State 1 · State 2 · … · State 32
+  │     └── State 0 · State 1 · … · State 31
   └── Bank 2 — Noise Feedback
-        └── State 1 · State 2 · …
+        └── State 0 · State 1 · …
 ```
 
 ---
@@ -2529,7 +2563,7 @@ A Bank is a named group of up to 32 States. Banks also carry the current control
 #### Switching Banks
 
 - **Bottom-right dropdown** ("Bank 1 ▼") — click to open, then click any Bank name
-- **Numpad `+` / `−`** — step forward/backward through Banks
+- **Numpad `+` / `−`** — step forward/backward through Banks (the numpad keys only; the main-keyboard `+`/`−` do not switch Banks)
 - **MIDI Program Change (PC 0–127)** — recalls Bank at the same index
 
 #### Managing Banks (Project tab → Banks section)
@@ -2567,8 +2601,10 @@ Each Bank holds up to **32 States**, displayed as a thumbnail grid in the bottom
 | Method | Action |
 |--------|--------|
 | **Shift+S** | Quick-save to the next empty slot; generates an auto-thumbnail |
-| Left-click an empty tile | Save to that specific slot |
 | Right-click any tile → "Save here" | Save to that specific slot |
+| Numpad `✱`, then `0–9` | Save to State 0–9 |
+
+A plain left-click on an empty tile does nothing.
 
 #### Recalling a State
 
@@ -2581,7 +2617,7 @@ When `global.morphspeed` > 0, recalling a State triggers a smooth morph animatio
 
 #### Neutral State
 
-Press **`Shift+0`** or click the **○** tile at the far left of the bottom bar to trigger a Neutral State. This resets all parameter values to their defaults without touching any controller assignments. Useful as a clean starting point or a "panic" reset.
+Press **`Cmd+Shift+0`** (Ctrl+Shift+0) or click the **○** tile at the far left of the bottom bar to trigger a Neutral State. This resets all parameter values to their defaults without touching any controller assignments, and it does not ask first. Useful as a clean starting point. (`Shift+0` used to do this; it now selects clip 1 on Movie A.) The full panic reset is `Shift+Esc` — it asks for confirmation, and it *also* clears every controller assignment.
 
 #### Per-State operations (right-click a tile)
 
@@ -2685,12 +2721,15 @@ can be recalled per State — useful when one show plays to two surfaces.
 
 ### Resolution
 
-Resolution is the `output.resolution` parameter, not a toolbar button.
+Resolution is the `output.resolution` parameter, not a toolbar button. Its
+control is the **Display** selector in **Output ▸ Display & Record**, beside
+**Record** (recording resolution), **UI Size**, **2Display** (the second-display
+window) and **2Disp rate**.
 
 | Parameter | Options | Description |
 |-----------|---------|-------------|
-| `output.resolution` | Display / 720p / 1080p / 540p / Quarter | Render resolution. **Display** follows the window |
-| `output.interp` | none / linear / bicubic | Upscaling filter when rendering below display resolution |
+| `output.resolution` | Display / 720p / 1080p / 540p / Quarter / 1440p / 4K | Render resolution. **Display** follows the window |
+| `output.interp` | none / linear / bicubic | Upscaling filter when rendering below display resolution (no panel row — reach it with parameter search or a controller) |
 | `output.solo` | TOGGLE | **Solo** (`S`) — bypass effects and show the raw composite |
 
 Dropping to 540p or Quarter is the first thing to try when frame rate suffers;
@@ -2736,6 +2775,8 @@ Each step recalls a preset. Useful for rhythmic pattern-based switching.
 ---
 
 ### Shader Code (GLSL)
+
+Open it with **⤢ Open workspace** in **Effects ▸ Shader Code (GLSL)** (or in **Sources ▸ Generators ▸ Shader Code**); it opens as an extra tab, **✕** closes it.
 
 Live-code fragment shaders in a CodeMirror editor (syntax highlighting, line numbers, iPad-friendly, resizable via the drag handle). **Apply** (or Ctrl/Cmd+Enter) compiles; **Auto** recompiles on every keystroke. A compile error never interrupts the output — the previous working shader keeps running and the error (with line numbers) shows above the editor.
 
@@ -2788,6 +2829,121 @@ Write GLSL ES 1.00 (`texture2D()`, `gl_FragColor`). Pasted ShaderToy-style decla
 >
 > If your saved shaders seem to have vanished, check the port before assuming
 > data loss — "lost presets" is almost always "different origin".
+
+---
+
+### Audio
+
+The **Audio** tab is the sound half of the instrument. Everything is built
+around one **tape**: a buffer that is recorded into, played back, written from
+pictures and granulated. The tab's sections, top to bottom:
+
+#### Tape
+
+A drawing of the whole tape — its waveform (peaks, not averages) with the four
+partitions and the recording / playback regions marked on it.
+
+#### Engine
+
+| Parameter | Range | Description |
+|-----------|-------|-------------|
+| `audio.enable` | TOGGLE | **Audio On** — starts the engine. The browser only allows audio to start from a click, so the engine never starts on load |
+| `audio.tapeSec` | 5–600 s (default 60) | **Tape** length. Changing it reallocates the tape, which **erases everything recorded on it** |
+| `audio.mic` | TOGGLE | **Mic** — opens the microphone (the browser asks for permission) |
+| `audio.monitor` | Headphones / Speakers | **Monitoring** — how you are listening. Changes no level and no routing; it tells the instrument whether a mic → speakers → mic loop is physically possible, so it can warn you. Default is Speakers, the cautious assumption |
+| `audio.tapSrc` | Mic / Master Out | **Tap** — what the sound-reactive controllers and the Vectorscope listen to |
+| `audio.outGain` | 0–1 | **Out Gain** |
+| `audio.glide` | 0–50 ms | **Glide** — how long a zone's Start/Length takes to reach a new value. 0 = exact, best for scrubbing by hand |
+| `audio.limitThresh` | 0.1–1 | **Ceiling** of the output limiter |
+| `audio.limitRel` | 0.01–2 s | **Limit Rel** — limiter release |
+
+The output limiter cannot be switched off — only its Ceiling and Release are
+adjustable. A status line under the Engine section reports what the engine last
+did (or refused), and a separate warning line appears while a feedback loop is
+possible.
+
+#### Partitions
+
+The tape is divided into four **partitions**, **P0–P3**. Each has a **Start**
+and **Length** (`apartN.start` / `apartN.len`, fractions of the whole tape).
+Zones work inside one partition; a zone's **Unsafe** toggle lets it reach across
+the whole tape instead.
+
+#### Recording Zone and Playback Zone
+
+| Parameter | Zone | Description |
+|-----------|------|-------------|
+| **Partition** | both | Which partition the zone works in |
+| **Start** / **Length** | both | The zone's region, as fractions of its partition — so a layout means the same thing on a tape of a different length |
+| **Unsafe** | both | Allow the zone outside its partition |
+| **Run** | both | Start / stop recording or playback |
+| **Dynamic** | Recording | The take's length is set by when you stop it (or when it reaches the end of the partition), and Length updates to match |
+| **Rate** | Playback | −4 … 4; negative plays backwards |
+| **Pos** | Playback | Jump the playhead to a point in the region (a seek, not a slide) |
+| **Level** | Playback | The zone's fader |
+| **CueSlot** / **CueStore** | Playback | Eight stored regions, the same eight-cue scheme the movie decks have |
+
+The Recording zone records the microphone, so turn **Mic** on first.
+
+#### Spectral Writer
+
+Turns a picture into sound: it reads the **current output frame** — whatever
+ImWeb is showing, with the whole effect chain in it — and renders it once into
+a region of tape, after which it is ordinary tape. Rows become pitches, columns
+become time.
+
+| Parameter | Description |
+|-----------|-------------|
+| **Partition Spec** / **Start Spec** / **Length Spec** / **Unsafe Spec** | Where on the tape the render lands |
+| **Scale** | Chromatic, Major, Natural minor, Harmonic minor, Dorian, Pentatonic, Minor pentatonic, Whole tone, Octatonic, Harmonic series |
+| **Root** | Lowest pitch, in semitones (45 = A2, 110 Hz) |
+| **Rows** | How many pitches (4–128). A request, not a promise: rows that would land above the highest frequency the tape can hold are dropped |
+| **Columns** | How many time steps the picture is read as (2–1024) |
+| **Contrast** / **Floor** | How brightness becomes loudness; Floor silences the faint rows so the render is not a wash of every pitch at once |
+| **Pan Image** / **Pan Width** | Off / Colour / Spread / Sweep — how the picture becomes stereo position; Width 0 = mono |
+| **Level Spec** | Render level |
+| **Render** / **Cancel** | Write the picture into the tape — this **overwrites** that region |
+
+#### Corpus
+
+A map of the tape's sound. **Analyse** cuts the tape into short grains
+(**Grain Hop**, **Analysis Window**) and measures each by **Loudness**,
+**Brightness**, **Pitch** and **Periodicity**; **Cancel Analysis** stops it.
+Choose two measurements as **X Axis** / **Y Axis** (default Brightness against
+Loudness) and the pad draws every grain as a point. Drag on the pad — or drive
+**Corpus X** / **Corpus Y** with any controller — to point the grain player at
+the sounds there. A position on the pad means "this bright, this loud", not a
+place in the picture.
+
+#### Grain Player
+
+| Parameter | Range | Description |
+|-----------|-------|-------------|
+| **Partition Grain** | P0–P3 | Which partition it reads |
+| **Grain Pos** | 0–1 | Position within the partition — attach an LFO for time-stretch |
+| **Run Grain** | TOGGLE | Start / stop |
+| **Grain Size** | 5–500 ms | Length of each grain |
+| **Density** | 1–200 /s | Grains per second |
+| **Grain Pitch** | ±24 st | Transposition |
+| **Spray** | 0–500 ms | Random scatter of each grain's read position, either side of Grain Pos |
+| **Level Grain** | 0–1 | Level |
+| **Unsafe Grain** | TOGGLE | Read across the whole tape |
+
+#### Voice
+
+A synth voice: **Voice** (on/off), **Source** (Osc / Noise), **Wave** (Sine /
+Saw / Square / Tri), **Pitch** (12–120 semitones; 57 = A3, 220 Hz), **FM Ratio**
+and **FM Index** (0 = no FM), **Colour**, a filter — **Cutoff** (semitones),
+**Resonance**, **Filter Type** (continuous: low-pass → band-pass → high-pass →
+notch) — then **Drive** and **Level**.
+
+#### What a Display State captures
+
+Performance controls (zone regions, rates, levels, the voice, grain settings,
+the corpus axes) **are** captured by Display States. Setup actions are **not**:
+Audio On, Tape length, Mic, Monitoring, the partition layout, the cue slots,
+Render / Cancel, and the corpus analysis settings. Recalling a State therefore
+never erases tape, re-renders, or opens a device.
 
 ---
 
@@ -2846,7 +3002,7 @@ Right-click any parameter → "Toggle Lock". Locked parameters ignore all contro
 
 ### Parameter Search
 
-Press `/` to open a search overlay. Type to filter all parameters. Results navigate to the correct tab and highlight the parameter row. Press `Esc` to close.
+Press `Cmd+K` (Ctrl+K) — or `/` on a US keyboard — to open a search overlay. Type to filter all parameters. Results navigate to the correct tab and highlight the parameter row. Press `Esc` to close.
 
 ---
 
@@ -2863,7 +3019,9 @@ Click the ⊞ button in any section header to detach it as a floating panel. Dra
 | Key | Action |
 |-----|--------|
 | `?` | Keyboard help overlay |
-| `/` | Parameter search |
+| `Cmd+K` / `Ctrl+K` | Parameter search — works on every keyboard layout |
+| `/` | Parameter search (US layout; on layouts where `/` needs Shift, use `Cmd+K`) |
+| `Shift+G` | Guided tour |
 | `Shift+P` | Float / dock signal path (floating always shows it) |
 | `I` | Parameter OSD on/off (feedback text over the canvas) |
 | `U` | State bar show/hide (canvas reclaims the strip) |
@@ -2897,7 +3055,7 @@ internal index order, so the keyboard and the menu always agree.
 | `B` | Toggle blend (motion persistence) |
 | `S` | Solo (bypass all effects) |
 | `X` | Toggle external key |
-| `Shift+Esc` | Reset all parameters to defaults — the panic button |
+| `Shift+Esc` | The panic button — after a confirm, resets all parameters to defaults **and clears every controller assignment**; layers go back to Camera |
 
 ### Memory
 
@@ -2906,7 +3064,8 @@ internal index order, so the keyboard and the menu always agree.
 | `0–9` | Recall State at index |
 | `Cmd+Shift+0` | Neutral State (reset all params, keep controllers). Moved off `Shift+0`, which now selects a clip |
 | `Shift+S` | Quick-save State to next empty slot (auto-thumbnail) |
-| `+` / `−` | Next / previous Bank (Numpad) |
+| Numpad `✱`, then `0–9` | Store the current look into State 0–9 |
+| Numpad `+` / `−` | Next / previous Bank — the numpad keys only; the main-keyboard `+`/`−` do not switch Banks |
 
 ### Global
 
@@ -2914,8 +3073,8 @@ internal index order, so the keyboard and the menu always agree.
 |-----|--------|
 | `T` | Tap tempo |
 | `H` | Fade to black (toggle) |
-| `Cmd+S` | Save project → download `.imweb` |
-| `Cmd+E` | Export `.imweb` (same as Cmd+S) |
+| `Cmd+S` | Save project → asks for a project name, then downloads `.imweb` |
+| `Cmd+E` | Export `.imweb` straight away, no name prompt |
 | `Cmd+O` | Import `.imweb` project |
 
 ### AI & Tools
@@ -3081,7 +3240,7 @@ Plain `npm run dev` stays http for desktop work.
 ### Canvas touch grammar
 
 Touch behaviour on the output canvas is governed by **Touch Mode**
-(`touch.mode`, GLOBAL section). It has five settings, and `G` cycles all of them:
+(`touch.mode`, Output ▸ Global / BPM / Morph). It has five settings, and `G` cycles all of them:
 
 | Mode | Canvas does |
 |------|-------------|

@@ -93,7 +93,7 @@ export class MobileStatePad {
       pad.dataset.idx = i;
       const num = document.createElement('span');
       num.className = 'msp-pad-num';
-      num.textContent = i + 1;
+      num.textContent = i; // 0-based, like the number keys and status bar
       const label = document.createElement('span');
       label.className = 'msp-pad-name';
       pad.appendChild(num);
@@ -224,7 +224,7 @@ export class MobileStatePad {
   }
 
   _stateName(state, i) {
-    return state?.name || `State ${i + 1}`;
+    return state?.name || `State ${i}`;
   }
 
   /** One persistent strip tile per occupied slot, keyed by state index
@@ -235,7 +235,7 @@ export class MobileStatePad {
     tile.className = 'msb-tile';
     const num = document.createElement('span');
     num.className = 'msb-tile-num';
-    num.textContent = i + 1;
+    num.textContent = i;
     tile.appendChild(num);
     tile.addEventListener('click', () => {
       if (tile._lpFired) { tile._lpFired = false; return; }

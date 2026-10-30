@@ -1659,7 +1659,7 @@ body.dnd-active::after {
     min-width: 260px;
     max-width: 340px;
     max-height: 420px;
-    background: var(--bg2);
+    background: var(--bg-2);
     border: 1px solid var(--border);
     border-radius: 4px;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
@@ -1672,13 +1672,13 @@ body.dnd-active::after {
     align-items: center;
     gap: 4px;
     padding: 5px 8px;
-    background: var(--bg3);
+    background: var(--bg-3);
     border-bottom: 1px solid var(--border);
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: var(--fg2);
+    color: var(--text-1);
 }
 .cm-titlebar span {
     flex: 1;
@@ -1686,7 +1686,7 @@ body.dnd-active::after {
 .cm-titlebar button {
     background: none;
     border: 1px solid var(--border);
-    color: var(--fg2);
+    color: var(--text-1);
     border-radius: 2px;
     padding: 1px 5px;
     font-size: 10px;
@@ -1703,7 +1703,7 @@ body.dnd-active::after {
 }
 .cm-empty {
     padding: 12px;
-    color: var(--fg3);
+    color: var(--text-2);
     text-align: center;
     font-style: italic;
 }
@@ -1722,11 +1722,11 @@ body.dnd-active::after {
     cursor: default;
 }
 .cm-row:hover {
-    background: var(--bg3);
+    background: var(--bg-3);
 }
 .cm-pid {
     flex: 1;
-    color: var(--fg1);
+    color: var(--text-0);
     font-family: monospace;
     font-size: 10px;
 }
@@ -1735,14 +1735,14 @@ body.dnd-active::after {
     min-width: 52px;
 }
 .cm-detail {
-    color: var(--fg3);
+    color: var(--text-2);
     min-width: 44px;
     font-size: 10px;
 }
 .cm-remove {
     background: none;
     border: none;
-    color: var(--fg3);
+    color: var(--text-2);
     cursor: pointer;
     font-size: 10px;
     padding: 0 2px;

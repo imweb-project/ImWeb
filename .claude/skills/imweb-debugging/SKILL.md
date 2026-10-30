@@ -53,6 +53,13 @@ duplicating it. Never delete one.
 2. State one way the fix could still fail before sending the prompt.
    Per the Guard Logic Rules in CLAUDE.md: if you cannot answer this, the fix
    is not fully understood.
+3. **A visual bug that has survived two explanations gets no third guess.**
+   Stop reading the shader for what it SHOULD do: reimplement the shading path
+   in JS against the owner's actual slider values (ask for a screenshot with
+   the panels visible — it carries them) and print a profile across the
+   feature. That found the halo^2 coupling in one pass after three wrong
+   diagnoses, one of which cost the owner a pointless test (LEARNED.md
+   2026-07-31).
 
 ## One task per prompt — hard rule
 

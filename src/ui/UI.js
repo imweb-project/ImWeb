@@ -1795,7 +1795,9 @@ export class StateBar {
       tile.dataset.idx = i;
       const num = document.createElement('span');
       num.className = 'state-tile-num';
-      num.textContent = i + 1;
+      // 0-based, like the number keys (Digit N recalls index N) and the status
+      // bar. Printing i + 1 made key 3 light the tile labelled 4.
+      num.textContent = i;
       tile.appendChild(num);
       tile.addEventListener('click', e => {
         // Ctrl+click is the tile's context-menu gesture on a trackpad; macOS
@@ -2039,7 +2041,7 @@ export class StateBar {
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = (bank.states[idx]?.name || `State-${idx + 1}`) + '.imstate';
+        a.download = (bank.states[idx]?.name || `State-${idx}`) + '.imstate';
         a.click();
         URL.revokeObjectURL(a.href);
       });
@@ -2074,12 +2076,15 @@ export class StateBar {
     this.tiles.forEach((tile, i) => {
       const state = bank.states[i];
       tile.className = 'state-tile';
+      // A click on an empty tile does nothing, so say how to fill one.
       if (!state) {
         tile.classList.add('state-tile--empty');
         tile.style.backgroundImage = '';
+        tile.title = `State ${i} — empty. Right-click → Save here, or ⇧S saves to the next empty slot`;
       } else {
         tile.classList.add('state-tile--stored');
         tile.style.backgroundImage = state.thumbnail ? `url(${state.thumbnail})` : '';
+        tile.title = `${state.name || `State ${i}`} — click${i < 10 ? ` or press ${i}` : ''} to recall · right-click for more`;
       }
       if (bank.activeState === i) tile.classList.add('state-tile--active');
       if (this._morphingIndices.has(i)) tile.classList.add('state-tile--morphing');
@@ -2984,6 +2989,12 @@ export class ContextMenu {
     popup.style.cssText = `position:fixed;left:${r.right + 4}px;top:${r.top}px;z-index:3000;
       background:var(--bg-3);border:1px solid var(--border-hi);border-radius:4px;padding:4px;
       box-shadow:0 4px 12px rgba(0,0,0,.5);min-width:110px;`;
+    // Keep it on screen: the context menu that anchors it often sits at the
+    // panel's right edge, where `r.right + 4` put the list past the window.
+    // Not in the zoomed set, so viewport px are element px here.
+    const pr = popup.getBoundingClientRect();
+    if (pr.right > window.innerWidth - 4) popup.style.left = `${Math.max(4, r.left - pr.width - 4)}px`;
+    if (pr.bottom > window.innerHeight - 4) popup.style.top = `${Math.max(4, window.innerHeight - pr.height - 4)}px`;
 
     // Close on outside click
     const closeHandler = e => {
@@ -3135,12 +3146,12 @@ export class MemoryPanel {
 
       const num = document.createElement('span');
       num.className = 'memory-state-num';
-      num.textContent = i + 1;
+      num.textContent = i; // 0-based, matching keys, tiles and status bar
       row.appendChild(num);
 
       const name = document.createElement('span');
       name.className = 'memory-state-name';
-      name.textContent = state.name || `State ${i + 1}`;
+      name.textContent = state.name || `State ${i}`;
       name.title = 'Click to rename';
       name.addEventListener('click', () => this._startRename(name, state, bank));
       row.appendChild(name);
@@ -3148,21 +3159,21 @@ export class MemoryPanel {
       const recallBtn = document.createElement('button');
       recallBtn.className = 'memory-state-btn';
       recallBtn.textContent = '▶';
-      recallBtn.title = `Recall State ${i + 1}`;
+      recallBtn.title = `Recall State ${i}`;
       recallBtn.addEventListener('click', () => this.pm.recallState(i));
       row.appendChild(recallBtn);
 
       const exportBtn = document.createElement('button');
       exportBtn.className = 'memory-state-btn';
       exportBtn.textContent = '⬇';
-      exportBtn.title = `Export State ${i + 1} as .imstate`;
+      exportBtn.title = `Export State ${i} as .imstate`;
       exportBtn.addEventListener('click', () => {
         const data = this.pm.exportState(i);
         if (!data) return;
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = (state.name || `State-${i + 1}`) + '.imstate';
+        a.download = (state.name || `State-${i}`) + '.imstate';
         a.click();
         URL.revokeObjectURL(a.href);
       });
@@ -3171,7 +3182,7 @@ export class MemoryPanel {
       const clearBtn = document.createElement('button');
       clearBtn.className = 'memory-state-btn memory-state-btn--danger';
       clearBtn.textContent = '✕';
-      clearBtn.title = `Delete State ${i + 1}`;
+      clearBtn.title = `Delete State ${i}`;
       clearBtn.addEventListener('click', async () => {
         bank.removeState(i);
         await bank.save?.();
@@ -3874,7 +3885,9 @@ export class DebugOverlay {
       'border-radius:4px', 'pointer-events:none',
       'white-space:pre', 'z-index:50', 'display:none',
     ].join(';');
-    document.getElementById('canvas-wrap')?.appendChild(el);
+    // #output-panel is the canvas's positioned parent. This once targeted
+    // #canvas-wrap, which does not exist, so the `d` key showed nothing.
+    document.getElementById('output-panel')?.appendChild(el);
     this.el = el;
   }
 
@@ -3885,10 +3898,11 @@ export class DebugOverlay {
     this.el.style.display = active ? 'block' : 'none';
     if (!active) return;
 
-    const SNAMES = ['CAM','MOV','BUF','COL','NSE','3D','DRW','OUT','BG1','BG2','COL2','TXT','SND','DEL','SCO','SLI','PAR'];
-    const fg  = SNAMES[p.get('layer.fg')?.value] ?? '?';
-    const bg  = SNAMES[p.get('layer.bg')?.value] ?? '?';
-    const ds  = SNAMES[p.get('layer.ds')?.value] ?? '?';
+    // SOURCES, not a local copy: the hand-kept 17-name list here had drifted
+    // (Color2 missing at 4, so every name from Noise on was off by one).
+    const fg  = SOURCES[p.get('layer.fg')?.value] ?? '?';
+    const bg  = SOURCES[p.get('layer.bg')?.value] ?? '?';
+    const ds  = SOURCES[p.get('layer.ds')?.value] ?? '?';
     const warp = p.get('displace.warp')?.options?.[p.get('displace.warp')?.value] ?? 'off';
     const warpAmt = ((p.get('displace.warpamt')?.value ?? 0)).toFixed(0);
     const blend = p.get('blend.active')?.value ? `${(p.get('blend.amount')?.value ?? 0).toFixed(0)}%` : 'off';
