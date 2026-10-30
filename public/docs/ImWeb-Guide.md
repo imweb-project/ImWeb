@@ -37,7 +37,7 @@ show: #layer-params
 ImWeb composites video sources through a chain of effects and renders to a
 WebGL canvas. Everything you can hear yourself thinking about — a camera, a
 movie, a noise field, a raymarched solid, the picture from two seconds ago — is
-a **source**, and there are 33 of them.
+a **source**, and there are 36 of them.
 
 The whole instrument is three ideas:
 
@@ -80,9 +80,9 @@ which is why this is the first thing to learn.
 
 ### The side panel
 
-Everything else lives in the panel down the side of the screen. Its five tabs
-run left to right in signal order — **Sources · Mix · Effects · Output ·
-Project**. The big editors (3D, Analog, Draw, Shader Code) are not permanent tabs:
+Everything else lives in the panel down the side of the screen. Its first four
+tabs run left to right in signal order — **Sources · Mix · Effects · Output** —
+then come **Audio**, the instrument's sound half, and **Project**. The big editors (3D, Analog, Draw, Shader Code) are not permanent tabs:
 open one from its row and it appears as an extra tab alongside these, then goes
 away again when you close it.
 
@@ -272,7 +272,7 @@ at the panel. `?` shows all of them; these are the ones you will use in the
 first hour:
 
 - **`q` / `a` / `z`** — cycle the Foreground / Background / DisplaceSrc source.
-  This is how you audition 33 sources in a minute. Every one of them is also in
+  This is how you audition 36 sources in a minute. Every one of them is also in
   the **Source** dropdown on the matching row in **Mix ▸ Layers** — the keys are
   for auditioning in order, the dropdown for going straight to one you can name.
   The rest of this tour says "press `a` until Background reads *X*"; picking *X*
@@ -442,7 +442,7 @@ until v0.15. Built faithful before general, on the argument that the machine is
 beautiful because it lies about depth.
 
 Press **`a`** until Background reads `Rutt-Etra`, then find it in
-**Sources ▸ From the Signal ▸ Rutt-Etra**. Four subsections: **Scan · Depth ·
+**Sources ▸ Generators ▸ Rutt-Etra**. Four subsections: **Scan · Depth ·
 Camera · Phosphor**.
 
 Drag **Z Gain** right until the picture leaves the plane. It is signed —
@@ -546,7 +546,8 @@ to be hardwired to the composite. Since v0.15 they share one frame history and
 each picks its own way in, and Time Displace additionally gets an arbitrary
 angle and a **map source**.
 
-They all live in **Sources ▸ From the Signal ▸ Warp**. Warp Tape defaults to the
+They all live under **Sources ▸ From the Signal**, each in its own section —
+**Time Displace**, **Tape** (Warp Tape), **Slit Scan**, **Video Delay**. Warp Tape defaults to the
 camera rather than the composite, which matches the lineage: Steina performed to
 a camera.
 
@@ -563,7 +564,7 @@ keys: a
 
 **srcA** and **srcB** are free source selectors resolved through the same
 resolver the layers use — a bus is a real graph node, not a hardwired deck
-crossfader. Pick any two of the 33.
+crossfader. Pick any two of the 36.
 
 Press **`a`** until Background reads `Mix 1`. Then set **Mix 2 ▸ srcA** to
 `Mix 1`: buses can read each other.
@@ -657,7 +658,7 @@ track: instruments
 keys: q, a, z
 -->
 
-Thirty-three routable sources, any of which can drive any other.
+Thirty-six routable sources, any of which can drive any other.
 
 The patches worth finding are the ones where an engine's *output* becomes
 another engine's *displacement*, *key*, or *time map* — not the ones where you

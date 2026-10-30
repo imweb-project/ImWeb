@@ -8,7 +8,27 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Changed
+- **The docs viewer is a floating window, not a modal.** Try This First, the
+  Quick Start and the manuals say "do this, watch the picture" — so the window
+  no longer dims or blocks the instrument. Drag it by the title bar, resize it
+  from the corner, collapse it to the title bar (▾ or double-click), and it
+  reopens where you left it. **⎙ prints** the current document, black on
+  white.
+
 ### Fixed
+- **The guided tour points at panels that exist.** Rutt-Etra is under
+  Sources ▸ Generators (not From the Signal); the temporal engines each have
+  their own section now that Warp is split; source count 36 (was 33); the tab
+  list includes Audio.
+- **Keyboard overlay (`?`) tells the truth:** bank stepping is numpad −/+
+  only; ⌘E (export, no prompt) is listed; Solo is described as what it does
+  (raw layer mix, effects bypassed). A dead ⌘S branch that could never run is
+  removed — the working ⌘S is the project save.
+- **Movie A no longer shows developer instructions** (`node imweb-prep.js`,
+  `_raw_videos/`) to browser users; it says what encode to export instead.
+- **"Try This First — 10 minutes"** is in the Help menu, served and checked
+  for drift like the other docs.
 - **State numbers agree everywhere.** Number key 3 recalled the tile labelled
   "4" while the status bar said "State 3". Tiles, the memory panel, the iPad
   state pad and default export names now count from 0, like the keys and the

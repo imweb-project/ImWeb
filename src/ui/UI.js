@@ -21,7 +21,8 @@ import { createClipStrip } from './components/ClipStrip.js';
 import { getModelSpeed, setModelSpeed } from '../state/ModelStore.js';
 import { favKey, getFavs, toggleFav } from '../state/TakeFavs.js';
 import { openGuide } from './Guide.js';
-import { setViewportPos } from './layout/LayoutManager.js';
+import { setViewportPos, setViewportSize, elementZoom } from './layout/LayoutManager.js';
+import { clampPos, clampSize } from './layout/PanelLayout.js';
 const DEFAULT_FX_ORDER_SP = DEFAULT_FX_ORDER;
 
 // ── Tab switching ──────────────────────────────────────────────────────────────
@@ -4516,6 +4517,7 @@ export function initHelpMenu() {
     ['Keyboard Shortcuts', '?', () => document.getElementById('kb-help')?.classList.remove('hidden')],
     ['—'],
     ['Quick Start', '', () => openDocsViewer('docs/ImWeb_Quick_Start.md', 'Quick Start')],
+    ['Try This First — 10 minutes', '', () => openDocsViewer('docs/ImWeb-Try-This-First.md', 'Try This First')],
     ['Quick Reference', '', () => openDocsViewer('docs/ImWeb_Quick_Reference.md', 'Quick Reference')],
     ['Full Manual', '', () => openDocsViewer('docs/ImWeb_Full_Manual.md', 'Full Manual')],
     ['—'],
@@ -4584,35 +4586,168 @@ export function initHelpMenu() {
 
 let _docsViewerWired = false;
 
+// The viewer is a floating window (drag · resize · collapse), so a reader can
+// keep "Try This First" open beside the picture it is describing. Geometry is
+// remembered per origin in viewport px, like detached panels, and clamped on
+// every open so a window left on a second monitor comes back on screen.
+const DOCS_GEOM_KEY = 'imweb.docsViewerGeom';
+
+function _loadDocsGeom() {
+  try { return JSON.parse(localStorage.getItem(DOCS_GEOM_KEY)) || null; }
+  catch { return null; }
+}
+
+function _saveDocsGeom(box) {
+  const b = box.getBoundingClientRect();
+  const prev = _loadDocsGeom() || {};
+  const collapsed = box.classList.contains('collapsed');
+  const g = {
+    x: Math.round(b.left),
+    y: Math.round(b.top),
+    // A collapsed box is only a title bar tall — keep the expanded size.
+    w: Math.round(b.width),
+    h: collapsed ? prev.h ?? null : Math.round(b.height),
+  };
+  try { localStorage.setItem(DOCS_GEOM_KEY, JSON.stringify(g)); } catch { /* private mode */ }
+}
+
 /**
- * Fetch a markdown file and render it into the #docs-viewer modal.
+ * Saved geometry if any, else centred at the stylesheet's default size.
+ * Always EXPANDED: opening a document is asking to read it, and placing a
+ * collapsed box would clamp a title-bar height and then let the expanded
+ * window hang off the bottom of the screen.
+ */
+function _placeDocsViewer(box) {
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const z = elementZoom(box);  // after un-hiding: a hidden node has no computed zoom
+  const g = _loadDocsGeom();
+  box.classList.remove('collapsed');
+  _syncDocsCollapseBtn(box);
+  if (g && Number.isFinite(g.w)) {
+    const size = clampSize(g.w, Number.isFinite(g.h) ? g.h : null, vw, vh);
+    setViewportSize(box, size.w, size.h, z);
+  }
+  const b = box.getBoundingClientRect();
+  const x = g && Number.isFinite(g.x) ? g.x : (vw - b.width) / 2;
+  const y = g && Number.isFinite(g.y) ? g.y : (vh - b.height) / 2;
+  const pos = clampPos(x, y, b.width, b.height, vw, vh);
+  setViewportPos(box, pos.x, pos.y, z);
+}
+
+function _syncDocsCollapseBtn(box) {
+  const btn = document.getElementById('docs-viewer-collapse');
+  if (!btn) return;
+  const c = box.classList.contains('collapsed');
+  btn.textContent = c ? '▸' : '▾';
+  btn.title = c ? 'Expand' : 'Collapse to the title bar';
+}
+
+/**
+ * Print only the document, black on white, from a hidden iframe — no popup
+ * for a blocker to eat, and no reuse of a named window (window.open('', name)
+ * returns the existing one; LEARNED.md 2026-09-25).
+ */
+function _printDocs(title, html) {
+  const frame = document.createElement('iframe');
+  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+  document.body.appendChild(frame);
+  const doc = frame.contentDocument;
+  doc.open();
+  doc.write(`<!doctype html><html><head><meta charset="utf-8">
+<title>${title.replace(/</g, '&lt;')}</title>
+<base href="${location.origin}/docs/">
+<style>
+  body { font: 11pt/1.5 -apple-system, "Helvetica Neue", Arial, sans-serif; color: #000; margin: 0; }
+  h1, h2, h3 { break-after: avoid; } h1 { font-size: 18pt; } h2 { font-size: 14pt; margin-top: 1.4em; }
+  code, pre { font: 9.5pt "IBM Plex Mono", Menlo, monospace; background: #f2f2f2; }
+  pre { padding: 8px; white-space: pre-wrap; } code { padding: 0 2px; }
+  table { border-collapse: collapse; margin: 8px 0; } th, td { border: 1px solid #999; padding: 3px 6px; text-align: left; vertical-align: top; }
+  tr, pre, blockquote { break-inside: avoid; }
+  blockquote { border-left: 3px solid #999; margin: 8px 0; padding-left: 10px; color: #333; }
+  a { color: #000; } img { max-width: 100%; }
+  @page { margin: 16mm; }
+</style></head><body>${html}</body></html>`);
+  doc.close();
+  const win = frame.contentWindow;
+  const done = () => setTimeout(() => frame.remove(), 1000);
+  win.addEventListener('afterprint', done);
+  setTimeout(() => { win.focus(); win.print(); done(); }, 100);
+}
+
+/**
+ * Fetch a markdown file and render it into the #docs-viewer window.
  * url — path to the .md file (relative to the site root)
- * title — display title for the modal titlebar
+ * title — display title for the window's titlebar
  */
 export async function openDocsViewer(url, title) {
   const overlay = document.getElementById('docs-viewer');
+  const box = document.getElementById('docs-viewer-box');
   const titleEl = document.getElementById('docs-viewer-title');
   const contentEl = document.getElementById('docs-viewer-content');
-  if (!overlay || !titleEl || !contentEl) return;
+  if (!overlay || !box || !titleEl || !contentEl) return;
 
   if (!_docsViewerWired) {
-    document.getElementById('docs-viewer-close')?.addEventListener('click', () => {
-      overlay.classList.add('hidden');
-    });
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) overlay.classList.add('hidden');
-    });
+    const close = () => { _saveDocsGeom(box); overlay.classList.add('hidden'); };
+    const toggleCollapse = () => {
+      box.classList.toggle('collapsed');
+      _syncDocsCollapseBtn(box);
+      _saveDocsGeom(box);
+    };
+    document.getElementById('docs-viewer-close')?.addEventListener('click', close);
+    document.getElementById('docs-viewer-collapse')?.addEventListener('click', toggleCollapse);
+    document.getElementById('docs-viewer-print')?.addEventListener('click', () =>
+      _printDocs(titleEl.textContent, contentEl.innerHTML));
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && !overlay.classList.contains('hidden')) {
-        overlay.classList.add('hidden');
-      }
+      if (e.key === 'Escape' && !overlay.classList.contains('hidden')) close();
     });
+
+    // Drag by the title bar. gBCR, not offsetLeft: the box is zoomed by
+    // --ui-scale, and mixing element px with clientX makes it jump on grab.
+    const bar = document.getElementById('docs-viewer-titlebar');
+    let pid = null, ox = 0, oy = 0, z = 1;
+    bar.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('button') || e.button !== 0) return;
+      bar.setPointerCapture(e.pointerId);
+      pid = e.pointerId;
+      z = elementZoom(box);
+      const b = box.getBoundingClientRect();
+      ox = e.clientX - b.left;
+      oy = e.clientY - b.top;
+      e.preventDefault();
+    });
+    bar.addEventListener('pointermove', (e) => {
+      if (pid !== e.pointerId) return;
+      const b = box.getBoundingClientRect();
+      const pos = clampPos(e.clientX - ox, e.clientY - oy, b.width, b.height,
+        window.innerWidth, window.innerHeight);
+      setViewportPos(box, pos.x, pos.y, z);
+    });
+    const endDrag = (e) => {
+      if (pid !== e.pointerId) return;
+      pid = null;
+      _saveDocsGeom(box);
+    };
+    bar.addEventListener('pointerup', endDrag);
+    bar.addEventListener('pointercancel', endDrag);
+    bar.addEventListener('dblclick', (e) => {
+      if (!e.target.closest('button')) toggleCollapse();
+    });
+
+    // `resize: both` has no event of its own; remember the size it leaves.
+    let t = null;
+    new ResizeObserver(() => {
+      if (overlay.classList.contains('hidden') || box.classList.contains('collapsed')) return;
+      clearTimeout(t);
+      t = setTimeout(() => _saveDocsGeom(box), 200);
+    }).observe(box);
     _docsViewerWired = true;
   }
 
   titleEl.textContent = title;
   contentEl.textContent = 'Loading…';
+  const needsPlacing = overlay.classList.contains('hidden') || box.classList.contains('collapsed');
   overlay.classList.remove('hidden');
+  if (needsPlacing) _placeDocsViewer(box);
 
   try {
     // Retry once bypassing any HTTP/service-worker cache. A bare "Failed to
