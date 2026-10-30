@@ -1274,15 +1274,31 @@ async function main() {
     _hcPanelRebuild?.();
   });
 
+  // Neutral and ⇧Esc both route every layer to Camera. A Camera route with no
+  // stream falls through to the Color source in _resolveSource(), and Color's
+  // default is red — so either reset left a red screen whenever the camera was
+  // not running.
+  async function _ensureCamera() {
+    if (camera3d.active) return;
+    const ok = await camera3d.start(null);
+    if (!ok) return;
+    const btnCam = document.getElementById("btn-camera-on");
+    if (btnCam) btnCam.textContent = "■ Camera";
+    ps.set("camera.active", 1);
+  }
+
   presetMgr.addEventListener('neutralState', () => {
     const _morphParam = ps.get('global.morphspeed');
     const _savedMorph = _morphParam?._value ?? 0;
     if (_morphParam) _morphParam._value = 0; // TODO: migrate to ps.suspendMorph() if added — suppress morph during reset cascade without firing onChange
-    ps.getAll().forEach(p => p.reset());
+    // camera.active defaults to 0, and resetting it STOPS the camera through
+    // its onChange — the very source this reset routes every layer to.
+    ps.getAll().forEach(p => { if (p.id !== 'camera.active') p.reset(); });
     if (_morphParam) _morphParam.value = _savedMorph; // intentional: fires onChange → syncDisplay, correct one-time morph readout update after reset
     ps.set('layer.fg', 0);
     ps.set('layer.bg', 0);
     ps.set('layer.ds', 0);
+    _ensureCamera();
   });
   // The store's name list must be read before init() recalls the first state.
   await initModelStore();
@@ -2418,15 +2434,7 @@ async function main() {
     // (Proposal §7. State recall deliberately does NOT do this.)
     closeWorkspace();
     _collapseToDefaultOpen();
-    // Start camera if not already running
-    if (!camera3d.active) {
-      const ok = await camera3d.start(null);
-      if (ok) {
-        const btnCam = document.getElementById("btn-camera-on");
-        if (btnCam) btnCam.textContent = "■ Camera";
-        ps.set("camera.active", 1);
-      }
-    }
+    await _ensureCamera();
   }
   document
     .getElementById("btn-reset-all")

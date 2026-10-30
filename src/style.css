@@ -3961,6 +3961,13 @@ body.fullscreen-output #app {
     transition: opacity 0.6s ease;
 }
 
+/* ✦ draws far smaller than its neighbours (𝔸, ⚙) at the shared 13px. Enlarge
+   the glyph only — the fixed line-height keeps the button the same height. */
+#btn-ai-coach {
+    font-size: 18px;
+    line-height: 18px;
+}
+
 /* Active state for AI status bar buttons */
 #btn-ai-narrator.active {
     color: var(--accent) !important;
