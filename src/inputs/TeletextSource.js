@@ -88,6 +88,31 @@ export async function fetchText(url, timeoutMs = 10000) {
   }
 }
 
+/**
+ * NOAA SWPC alerts.json → headline items. The headline is the bulletin's
+ * "ALERT: / WARNING: / WATCH: / SUMMARY:" line; the description keeps the
+ * validity window and NOAA scale lines. Newest first, as NOAA sends them.
+ */
+export function parseSwpcAlerts(alerts) {
+  // Case-sensitive on purpose: headlines are upper case ("CONTINUED ALERT:",
+  // "EXTENDED WARNING:"), and "Active Warning: YES" must not match.
+  const HEAD = /^([A-Z]+ )?(ALERT|WARNING|WATCH|SUMMARY|CANCEL[A-Z]*)\b[^:]*:/;
+  const KEEP = /^(Valid From|Valid To|Now Valid Until|Threshold Reached|Observed|NOAA Scale|Aurora -|[A-Z][a-z]{2} \d{2}:\s)/i;
+  return (Array.isArray(alerts) ? alerts : []).slice(0, 40).map(a => {
+    const lines = String(a.message ?? '').split(/\r?\n/)
+      .map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    const head  = lines.find(l => HEAD.test(l)) ?? lines[0] ?? '';
+    const when  = String(a.issue_datetime ?? '').slice(5, 16);   // "MM-DD HH:MM" UTC
+    const seen  = new Set();
+    const keep  = lines.filter(l => KEEP.test(l) && !seen.has(l.toLowerCase()) && seen.add(l.toLowerCase()));
+    return {
+      title: (when ? when + 'Z ' : '') + head,
+      link: 'https://www.swpc.noaa.gov/',
+      description: keep.join(' · '),
+    };
+  }).filter(i => i.title);
+}
+
 // ── TeletextSource ────────────────────────────────────────────────────────────
 
 export class TeletextSource {
@@ -362,7 +387,28 @@ export class TeletextSource {
     try {
       const xml = await fetchText(url);
 
-      const doc = new DOMParser().parseFromString(xml, 'text/xml');
+      // NOAA SWPC alerts.json is the one non-XML preset: an array of
+      // { issue_datetime, message } whose message is a plain-text bulletin.
+      if (xml.trimStart().startsWith('[')) {
+        const items = parseSwpcAlerts(JSON.parse(xml));
+        this._cachedData.rss = {
+          data: { items, feedTitle: 'NOAA SPACE WEATHER', fetchedAt: Date.now() },
+          fetchedAt: Date.now(),
+        };
+        if (!items.length) throw new Error('no alerts in feed');
+        this.setSubPageCount(Math.ceil(items.length / 8));
+        this._dirty = true;
+        return;
+      }
+
+      let doc = new DOMParser().parseFromString(xml, 'text/xml');
+      // NASA Science feeds (2026-10) emit `…/apod/"xmlns:media=…` with no space
+      // between attributes, and the strict parser rejects the whole document.
+      // Only on a failed parse: put the missing space back and try once more.
+      if (doc.querySelector('parsererror')) {
+        doc = new DOMParser().parseFromString(
+          xml.replace(/"(?=[A-Za-z_][\w.-]*(:[\w.-]+)?=")/g, '" '), 'text/xml');
+      }
 
       // Support RSS 2.0 (<item>) and Atom (<entry>)
       const itemEls = [...doc.querySelectorAll('item, entry')];

@@ -3,7 +3,8 @@
 Teletext page P150 reads RSS feeds in the browser. Some sites (NASA, NYT,
 Wired, Open Culture, Pitchfork, USGS) send CORS headers and are read
 directly. The rest — BBC, RÚV, Yle, Al Jazeera, the Guardian, Dezeen,
-Hyperallergic, CreativeApplications — don't, so the browser needs a proxy.
+Hyperallergic, CreativeApplications, EarthSky, Spaceweather.com, Aurora
+Forecast Iceland — don't, so the browser needs a proxy.
 This Worker is that proxy. It holds no key and no secret.
 
 What it does:

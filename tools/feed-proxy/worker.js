@@ -16,6 +16,9 @@ const ALLOWED_HOSTS = new Set([
   'www.dezeen.com',
   'hyperallergic.com',
   'www.creativeapplications.net',
+  'earthsky.org',
+  'spaceweatherarchive.com',
+  'auroraforecast.is',
 ]);
 
 const ALLOWED_ORIGINS = new Set([
