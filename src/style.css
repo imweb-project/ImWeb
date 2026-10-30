@@ -1089,6 +1089,13 @@ div.param-select .imw-sel-trigger {
     font-size: 9px;
     flex-shrink: 0;
 }
+/* Long names ("Motion Extraction", "Output (feedback)") in a narrow trigger:
+   an ellipsis rather than a hard clip, full name on the trigger's tooltip. */
+.imw-sel-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
 .imw-sel-menu {
     position: absolute;
     top: calc(100% + 2px);

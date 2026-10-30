@@ -14,7 +14,7 @@
  *   buildActivitySnapshot                  — pure state helpers
  */
 
-import { SOURCES, PARAM_TYPE } from '../controls/ParameterSystem.js';
+import { SOURCES, SOURCE_DEFS, PARAM_TYPE } from '../controls/ParameterSystem.js';
 
 // ── Provider definitions ──────────────────────────────────────────────────────
 
@@ -1682,36 +1682,41 @@ const SOURCE_NAMES = SOURCES;
 // Adds a short, source-specific detail (e.g. which noise type or 3D geometry
 // is active) so the Narrator can describe what's actually on screen, not just
 // which slot it's routed through.
-function describeSourceDetail(name, ps) {
-  switch (name) {
-    case 'Noise': {
+//
+// Switches on the source KEY, never the label: labels may change freely
+// (CLAUDE.md), and matching them had already rotted — 'VWarp' had been
+// "Warp Tape" for a while, so that case never fired.
+function describeSourceDetail(idx, ps) {
+  const key = SOURCE_DEFS[idx]?.key;
+  switch (key) {
+    case 'noise': {
       const t = ps.get('noise.type');
       return t?.options ? `noise=${t.options[t.value] ?? '?'}` : null;
     }
-    case '3D Scene':
-    case '3D Depth': {
+    case 'scene3d':
+    case 'depth3d': {
       if (!ps.get('scene3d.active')?.value) return null;
       const g = ps.get('scene3d.geo');
       return g?.options ? `3D=${(g.options[g.value] ?? '?').replace(/^.*: /, '')}` : null;
     }
-    case 'SDF': {
+    case 'sdf': {
       if (!ps.get('sdf.active')?.value) return null;
       const s = ps.get('sdf.shape');
       return s?.options ? `SDF=${s.options[s.value] ?? '?'}` : null;
     }
-    case 'Analog': {
+    case 'analog': {
       const t = ps.get('analog.sourceType');
       return t?.options ? `analog=${t.options[t.value] ?? '?'}` : null;
     }
-    case 'Seq1': case 'Seq2': case 'Seq3': {
-      const s = ps.get(`${name.toLowerCase()}.source`);
-      return s?.options ? `${name} src=${s.options[s.value] ?? '?'}` : null;
+    case 'seq1': case 'seq2': case 'seq3': {
+      const s = ps.get(`${key}.source`);
+      return s?.options ? `${SOURCES[idx]} src=${s.options[s.value] ?? '?'}` : null;
     }
-    case 'SlitScan':
+    case 'slitscan':
       return ps.get('slitscan.active')?.value ? 'slit-scan' : null;
-    case 'Particles': return 'particle field';
-    case 'VWarp':     return 'vasulka warp';
-    case 'TimeDisp':  return 'time-displaced';
+    case 'particles': return 'particle field';
+    case 'vwarp':     return 'vasulka warp';
+    case 'tdisp':     return 'time-displaced';
     default: return null;
   }
 }
@@ -1722,8 +1727,9 @@ export function buildStateSnapshot(ps) {
   const ds = SOURCE_NAMES[ps.get('layer.ds').value] ?? '?';
   const parts = [`FG=${fg}`, `BG=${bg}`, `DS=${ds}`];
 
-  for (const name of new Set([fg, bg, ds])) {
-    const detail = describeSourceDetail(name, ps);
+  const idxs = ['layer.fg', 'layer.bg', 'layer.ds'].map(id => ps.get(id).value);
+  for (const idx of new Set(idxs)) {
+    const detail = describeSourceDetail(idx, ps);
     if (detail) parts.push(detail);
   }
 

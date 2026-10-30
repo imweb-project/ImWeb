@@ -32,7 +32,11 @@ export function mkSelect(opts, initVal, onChangeVal, extraClass = '', order = nu
   trigger.className = 'imw-sel-trigger';
 
   const lbl = document.createElement('span');
-  lbl.textContent = opts[state.v] ?? '';
+  lbl.className = 'imw-sel-label';
+  // Narrow triggers (the Layers source column is ~90px) clip long names, so
+  // the label ellipsizes in CSS and the full name rides on the tooltip.
+  const setLbl = (text) => { lbl.textContent = text; trigger.title = text; };
+  setLbl(opts[state.v] ?? '');
 
   const chev = document.createElement('span');
   chev.className = 'imw-sel-chev';
@@ -69,7 +73,7 @@ export function mkSelect(opts, initVal, onChangeVal, extraClass = '', order = nu
         e.stopPropagation();
         _close();
         state.v = i;
-        lbl.textContent = opts[i] ?? '';
+        setLbl(opts[i] ?? '');
         menu.querySelectorAll('.imw-sel-item').forEach(el =>
           el.classList.toggle('sel', +el.dataset.idx === i));
         onChangeVal(i);
@@ -140,7 +144,7 @@ export function mkSelect(opts, initVal, onChangeVal, extraClass = '', order = nu
     set: v => {
       const i = Math.round(v);
       state.v = i;
-      lbl.textContent = opts[i] ?? opts[0] ?? '';
+      setLbl(opts[i] ?? opts[0] ?? '');
       menu?.querySelectorAll('.imw-sel-item').forEach(el =>
         el.classList.toggle('sel', +el.dataset.idx === i));
     },

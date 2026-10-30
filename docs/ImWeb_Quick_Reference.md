@@ -58,15 +58,15 @@ FX Chain is **reorderable** by dragging nodes in the Signal Path display.
 | **Warp Tape** | Rolling time buffer (8/16/32 s); scrub or smear along Time (X) or Picture (Y). One *column* per time step — ~18× cheaper than Time Displace for an axis-aligned gradient, and cannot express anything else. Params are `vwarp.*`; the old `vasulka.*` namespace is deprecated and unreachable |
 | **Time Displace** | Per-pixel delay from a map image; 7 modes; up to 119 frames deep. Buffer res is the memory cost — drop from Native first |
 | **3D Depth / SDF Depth** | Depth outputs of the 3D Scene and SDF field, routable like any source |
-| **Sequencers ×3** | Record/loop any source; 4–480 frames; ±300% speed (negative = reverse); independent |
+| **Frame Seq 1 / 2 / 3** | Record/loop any source; 4–480 frames; ±300% speed (negative = reverse); independent |
 | **Vectorscope** | Audio visualiser (Lissajous / Waveform / FFT) |
 | **Motion Extraction** | A **matte**, not a picture — white where the source moves. Route it to the keyer's **Key src**. `Bg adapt` spans background subtraction (long) to frame differencing (0); `Smoothness` is what makes a live camera usable |
-| **Delay** | Frame ring; 0.5–8 s depth, resolution-capped for VRAM |
+| **Video Delay** | Frame ring; 0.5–8 s depth, resolution-capped for VRAM |
 | **RGB Delay** | Reads the *same* ring three times, one per channel — moving edges separate into coloured fringes. Equal values = bit-exact passthrough |
 | **Sound** | Microphone / audio input as a routable texture |
-| **Color / Color2** | Two independent solid-or-gradient generators |
+| **Color / Color 2** | Two independent solid-or-gradient generators |
 | **BG1 / BG2** | Two frozen background stills held by the Stills Buffer. `Freeze BG1` / `Freeze BG2` (triggers) grab the current frame into them — a held plate to key or mix against |
-| **Output** | The finished frame, fed back in as a source (`pipeline.prev`) — the raw material for feedback routing |
+| **Output (feedback)** | The finished frame, fed back in as a source (`pipeline.prev`) — the raw material for feedback routing |
 | **Growth** | Growth patterns (reaction-diffusion and related engines) seeded by a source (**Seed src**, Draw by default) — paint, and it grows out of the strokes. Pick a **Look**; six engines (**GrowMode**: Single / Nested / Frost / Hyphae / Curves / Neural). Panel lives in the Draw workspace |
 | **Volume** | Recorded history as an (x, y, t) block of time, with its own source (**Vol src**). **View**: Volume (an object you orbit — Box / Cylinder / Sphere / Tunnel / Ring) or Slice (one flat cut through it, as an image); Front / Top / Side cut presets |
 | **Shader Code** | The Shader Code (GLSL) shader as a source of its own. **Source In** picks what it reads as `uTexture` (None = a pure generator). Set **Target** to *Off (source only)* to use it only as a source |
