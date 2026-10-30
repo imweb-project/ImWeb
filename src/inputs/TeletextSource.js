@@ -48,6 +48,46 @@ const DATA_KEYS = {
   P700: 'movie',
 };
 
+// Fetched as soon as Teletext is the source, whatever page is showing, so
+// flipping to P150/P400 finds data waiting instead of "FETCHING…".
+const PREFETCH_KEYS = ['rss', 'weather'];
+
+// Works without a proxy: NASA sends Access-Control-Allow-Origin: *.
+export const DEFAULT_RSS_URL = 'https://www.nasa.gov/feed/';
+export const PROXY_KEY = 'imweb-teletext-proxy';
+export const PLACE_KEY = 'imweb-teletext-place';
+
+/**
+ * Fetch text from a feed the browser may not be allowed to read.
+ *
+ * DIRECT first: feeds that send CORS headers (NASA, NYT, Wired, USGS) need no
+ * third party at all. Only when that fails is the request retried through a
+ * proxy — and only one the user configured (localStorage PROXY_KEY, a URL
+ * template containing {url}). There is no built-in proxy: corsproxy.io's
+ * keyless URLs, hardcoded here until 2026-10, began answering 403
+ * "keyless_legacy_url" for every request, which left P150 on "FETCHING…"
+ * forever, everywhere. A key must not be baked into the bundle.
+ */
+export async function fetchText(url, timeoutMs = 10000) {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.text();
+  } catch (direct) {
+    const tpl = localStorage.getItem(PROXY_KEY)?.trim();
+    if (!tpl) {
+      // A CORS refusal surfaces as a bare TypeError — name it for the page.
+      throw new Error(direct.name === 'TypeError' ? 'needs a proxy' : direct.message);
+    }
+    const proxied = tpl.includes('{url}')
+      ? tpl.replace('{url}', encodeURIComponent(url))
+      : tpl + encodeURIComponent(url);
+    const res = await fetch(proxied, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!res.ok) throw new Error(`proxy HTTP ${res.status}`);
+    return await res.text();
+  }
+}
+
 // ── TeletextSource ────────────────────────────────────────────────────────────
 
 export class TeletextSource {
@@ -97,6 +137,10 @@ export class TeletextSource {
       this._subPageCount = 1;
       this._cursorIdx  = 0;
       this._dirty      = true;
+    }
+
+    for (const k of PREFETCH_KEYS) {
+      if (!this._cachedData[k] && !this._fetchInFlight[k]) this._dispatchFetch(k, ps);
     }
 
     // Poll data sources when on a data page
@@ -233,10 +277,7 @@ export class TeletextSource {
 
   async _fetchArticle(url) {
     try {
-      const proxy = 'https://corsproxy.io/?' + encodeURIComponent(url);
-      const res   = await fetch(proxy, { signal: AbortSignal.timeout(10000) });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const html  = await res.text();
+      const html  = await fetchText(url);
 
       const doc   = new DOMParser().parseFromString(html, 'text/html');
 
@@ -295,6 +336,16 @@ export class TeletextSource {
       if (json.latitude == null)  json.latitude  = lat;
       if (json.longitude == null) json.longitude = lon;
       json._fetchedAt = Date.now();
+      // The place name chosen by search — only while the coordinates are still
+      // the ones it set. Lat/lon are captured by Display States and the name is
+      // per-browser, so a State recalled with other coordinates shows numbers,
+      // never the wrong city.
+      try {
+        const place = JSON.parse(localStorage.getItem(PLACE_KEY));
+        if (place && Math.abs(place.lat - lat) < 1e-3 && Math.abs(place.lon - lon) < 1e-3) {
+          json._place = place.name;
+        }
+      } catch { /* none stored */ }
 
       this._cachedData.weather = { data: json, fetchedAt: Date.now() };
       this._dirty = true;
@@ -307,13 +358,9 @@ export class TeletextSource {
 
   async _fetchRSS(ps) {
     this._fetchInFlight.rss = true;
+    const url = localStorage.getItem('imweb-teletext-rssUrl') || DEFAULT_RSS_URL;
     try {
-      const url = localStorage.getItem('imweb-teletext-rssUrl')
-                ?? 'https://feeds.bbci.co.uk/news/rss.xml';
-      const proxy = 'https://corsproxy.io/?' + encodeURIComponent(url);
-      const res = await fetch(proxy);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const xml = await res.text();
+      const xml = await fetchText(url);
 
       const doc = new DOMParser().parseFromString(xml, 'text/xml');
 
@@ -338,10 +385,15 @@ export class TeletextSource {
         data: { items, feedTitle, fetchedAt: Date.now() },
         fetchedAt: Date.now(),
       };
+      if (!items.length) throw new Error('no items in feed');
       this.setSubPageCount(Math.ceil(items.length / 8));
       this._dirty = true;
     } catch (e) {
       console.warn('[TeletextSource] RSS fetch failed:', e.message);
+      // Cache the failure so P150 can SAY it failed. With nothing cached the
+      // page read "FETCHING…" forever; with this the poll interval retries.
+      this._cachedData.rss = { data: { error: e.message, url }, fetchedAt: Date.now() };
+      this._dirty = true;
     } finally {
       this._fetchInFlight.rss = false;
     }
@@ -363,10 +415,7 @@ export class TeletextSource {
     }
     this._fetchInFlight.calendar = true;
     try {
-      const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(url);
-      const res = await fetch(proxyUrl);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const text = await res.text();
+      const text = await fetchText(url);
       const events = parseICal(text);
       if (events.length === 0) throw new Error('No VEVENT blocks found in .ics file');
       this._cachedData.calendar = {
@@ -379,6 +428,13 @@ export class TeletextSource {
     } finally {
       this._fetchInFlight.calendar = false;
     }
+  }
+
+  /** Drop cached weather and fetch again — after the location changes. */
+  refreshWeather(ps) {
+    delete this._cachedData.weather;
+    this._fetchInFlight.weather = false;
+    this._fetchWeather(ps);
   }
 
   fetchCalendar(url) {

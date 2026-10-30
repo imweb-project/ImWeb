@@ -18,14 +18,19 @@ export function renderP400(ctx, data) {
 
   const cur = data.current || {};
   const daily = (data.daily && data.daily.time) ? data.daily : null;
-  const todayIdx = daily ? daily.time.findIndex(t => {
-    const d = new Date();
-    return t === d.toISOString().substring(0, 10);
-  }) : -1;
+  // "Today" at the LOCATION: daily.time is its local date (timezone=auto), and
+  // current.time is its local clock. A UTC date from the viewer's machine
+  // missed after local midnight and showed "--" for high and low.
+  const localDate = (cur.time ?? '').substring(0, 10);
+  const todayIdx = daily ? Math.max(0, daily.time.indexOf(localDate)) : -1;
 
-  // Row 2: Location
+  // Row 2: Location \u2014 the searched place name when there is one, and the
+  // coordinates with their hemisphere letter (\u221221.9\u00B0 is 21.9\u00B0W, not "\u221221.9\u00B0E").
+  const lat = data.latitude, lon = data.longitude;
+  const coords = lat == null || lon == null ? '--'
+    : `${Math.abs(lat).toFixed(2)}\u00B0${lat < 0 ? 'S' : 'N'}  ${Math.abs(lon).toFixed(2)}\u00B0${lon < 0 ? 'W' : 'E'}`;
   ttRow(ctx, '  LOCATION', 2, '#ffffff');
-  ttRow(ctx, `  ${data.latitude?.toFixed(4)} \u00B0N  ${data.longitude?.toFixed(4)} \u00B0E`, 3, '#00ffff');
+  ttRow(ctx, data._place ? `  ${data._place.toUpperCase()}  ${coords}` : `  ${coords}`, 3, '#00ffff');
 
   // Row 5: Temperature
   ttRow(ctx, '  TEMPERATURE', 5, '#ffffff');
