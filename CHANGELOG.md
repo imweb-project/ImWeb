@@ -8,6 +8,32 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Added
+- **OSD Mode: Touched** (new default). Instead of a list of 29 internal names
+  over the picture, the OSD shows the last few controls you moved — by hand,
+  MIDI, OSC or key — with value and bar, fading after a moment; recalling a
+  State shows a card with its name and routing. LFO/random/audio-driven
+  values, recalls and morphs are not shown (measured in the built app: idle,
+  only controller-driven params write; a recall writes ~49 at once, morph
+  frames 9–27). **Pinned list** keeps the classic feedback text; the
+  right-click item is now "Pin to OSD" (was "Toggle Feedback"), and pinning
+  switches to the list.
+- **Splash: three ways in** — Explore the Looks (shows and highlights the
+  State tiles), Learn step by step (the tour), Just start — plus the gestures
+  that surprise people, a note on the camera prompt, and Esc to close.
+  **Welcome screen** in the ? menu reopens it. Fixes the splash's stale ⇧0
+  (Neutral State is ⌘⇧0).
+
+- **⌘K parameter search is a floating window:** drag it by its title bar,
+  resize it from the corner (the result list fills it), and it reopens where
+  you left it. **📌** keeps it open while you click elsewhere, so the live
+  rows can be played beside the picture; ✕ or Esc closes it. Shares one
+  implementation (`FloatingWindow.js`) with the docs viewer.
+
+### Fixed
+- **All six tabs fit the panel.** "Project" sat past the edge at 1440px;
+  tabs now fit the 320px and 280px panels and share spare width.
+
 ### Changed
 - **One name per source.** A source's dropdown label is now the title of its
   section in the Sources tab: Stills Buffer, Color 2, Output (feedback), Video

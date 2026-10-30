@@ -21,8 +21,8 @@ import { createClipStrip } from './components/ClipStrip.js';
 import { getModelSpeed, setModelSpeed } from '../state/ModelStore.js';
 import { favKey, getFavs, toggleFav } from '../state/TakeFavs.js';
 import { openGuide } from './Guide.js';
-import { setViewportPos, setViewportSize, elementZoom } from './layout/LayoutManager.js';
-import { clampPos, clampSize } from './layout/PanelLayout.js';
+import { setViewportPos } from './layout/LayoutManager.js';
+import { makeFloating } from './components/FloatingWindow.js';
 const DEFAULT_FX_ORDER_SP = DEFAULT_FX_ORDER;
 
 // ── Tab switching ──────────────────────────────────────────────────────────────
@@ -3010,8 +3010,35 @@ export class ContextMenu {
 
 // ── Feedback overlay (floating parameter values on output canvas) ─────────────
 
+// Touched-mode OSD tuning. MAX_BATCH sits below the smallest app-made batch
+// measured (a 9-param morph frame) and above a real gesture (one param; a
+// key toggle writes one or two).
+const TOUCH_MAX_BATCH = 6;
+const TOUCH_MAX_ROWS  = 4;
+const TOUCH_HOLD_MS   = 2200;
+const STATE_CARD_MS   = 3000;
+
+/** Controllers that write a param on their own, every frame — not a hand. */
+function isMachineDriven(p) {
+  const t = p.controller?.type;
+  if (!t || t === 'none') return false;
+  return !(t.startsWith('midi') || t === 'osc' || t === 'key' ||
+           t.startsWith('gamepad') || t.startsWith('pad') ||
+           t === 'wacom-pressure' || t === 'pen-pressure');
+}
+
+/** Short tag for the controller that moved it: MIDI, OSC, KEY, PAD, PEN. */
+function ctrlTag(t) {
+  if (t.startsWith('midi')) return 'MIDI';
+  if (t === 'osc') return 'OSC';
+  if (t === 'key') return 'KEY';
+  if (t.startsWith('gamepad') || t.startsWith('pad')) return 'PAD';
+  if (t.endsWith('pressure')) return 'PEN';
+  return t.toUpperCase();
+}
+
 export class FeedbackOverlay {
-  constructor(ps) {
+  constructor(ps, presets = null) {
     this.ps = ps;
     this.el = document.getElementById('feedback-overlay');
     this.items = new Map(); // paramId → element
@@ -3025,7 +3052,7 @@ export class FeedbackOverlay {
 
     // Wire value updates for all params (even hidden ones — they may become visible)
     ps.getAll().forEach(p => {
-      p.onChange(() => this._updateItem(p));
+      p.onChange(() => { this._updateItem(p); this._noteTouch(p); });
     });
 
     // Listen for feedbackVisible toggling from context menu
@@ -3033,10 +3060,133 @@ export class FeedbackOverlay {
       const p = e.detail;
       if (p.feedbackVisible && !this.items.has(p.id)) {
         this._addItem(p);
+        // Pinning while the OSD shows Touched would show nothing — a menu
+        // item that visibly does nothing reads as broken. Switch to the list.
+        if (this._touchedMode) ps.set('global.osdMode', 1);
       } else if (!p.feedbackVisible && this.items.has(p.id)) {
         this._removeItem(p);
       }
     });
+
+    // ── Touched mode ──────────────────────────────────────────────────────
+    // The last few controls a PERSON moved. Param writes carry no origin, so
+    // three value-level signals separate a hand from the app (measured in
+    // the built app before writing this: idle, only LFO-driven params write;
+    // a recall writes 49 params in one task, then morph frames of 9–27):
+    //   1. a controller that drives the param continuously (LFO, random,
+    //      audio, mouse, tilt…) — that is the machine, not a hand;
+    //   2. a batch of more than TOUCH_MAX_BATCH changes in one task — a
+    //      recall, reset or load, not a gesture;
+    //   3. stateRecalled (fires in the same task as its writes) and the
+    //      morphStarted…morphEnded window, which also drops a morph that
+    //      happens to change only a few params.
+    this._touchEl = document.createElement('div');
+    this._touchEl.id = 'osd-touched';
+    this.el?.appendChild(this._touchEl);
+    this._touchRows = new Map();   // paramId → { row, timer }
+    this._pending = null;          // Set of params changed in the current task
+    this._recallInTask = false;
+    this._morphing = false;
+    if (presets) {
+      presets.addEventListener('stateRecalled', e => {
+        this._recallInTask = true;
+        this._showStateCard(e.detail?.state, e.detail?.stateIndex);
+      });
+      presets.addEventListener('morphStarted', () => { this._morphing = true; });
+      presets.addEventListener('morphEnded',   () => { this._morphing = false; });
+    }
+    const modeP = ps.get('global.osdMode');
+    const applyMode = () => {
+      this._touchedMode = (modeP?.value ?? 0) === 0;
+      this.el?.classList.toggle('osd-touched-mode', this._touchedMode);
+      if (!this._touchedMode) this._clearTouched();
+    };
+    modeP?.onChange(applyMode);
+    applyMode();
+  }
+
+  _noteTouch(p) {
+    if (!this._touchedMode || p.id.startsWith('global.osd')) return;
+    if (!this._pending) {
+      this._pending = new Set();
+      queueMicrotask(() => this._flushTouches());
+    }
+    this._pending.add(p);
+  }
+
+  _flushTouches() {
+    const batch = this._pending;
+    this._pending = null;
+    const bulk = this._recallInTask || this._morphing || batch.size > TOUCH_MAX_BATCH;
+    this._recallInTask = false;
+    if (bulk) return;
+    for (const p of batch) if (!isMachineDriven(p)) this._showTouch(p);
+  }
+
+  _showTouch(p) {
+    let entry = this._touchRows.get(p.id);
+    if (!entry) {
+      const row = document.createElement('div');
+      row.className = 'osd-touch';
+      row.innerHTML = '<span class="osd-touch-label"></span><span class="osd-touch-value"></span><span class="osd-touch-bar"><i></i></span>';
+      entry = { row, timer: null };
+      this._touchRows.set(p.id, entry);
+    }
+    // Newest on top; drop the oldest beyond TOUCH_MAX_ROWS.
+    this._touchEl.prepend(entry.row);
+    while (this._touchEl.querySelectorAll('.osd-touch').length > TOUCH_MAX_ROWS) {
+      const last = [...this._touchEl.querySelectorAll('.osd-touch')].pop();
+      for (const [id, e] of this._touchRows) if (e.row === last) { clearTimeout(e.timer); this._touchRows.delete(id); }
+      last.remove();
+    }
+    const ctrlType = p.controller?.type;
+    entry.row.querySelector('.osd-touch-label').textContent =
+      p.label + (ctrlType && ctrlType !== 'none' ? `  ·  ${ctrlTag(ctrlType)}` : '');
+    entry.row.querySelector('.osd-touch-value').textContent = p.displayValue; // already carries the unit
+    const bar = entry.row.querySelector('.osd-touch-bar');
+    const showBar = p.type === 'continuous';
+    bar.style.display = showBar ? '' : 'none';
+    if (showBar) bar.firstChild.style.width = `${Math.round(Math.max(0, Math.min(1, p.normalized)) * 100)}%`;
+    entry.row.classList.remove('fading');
+    clearTimeout(entry.timer);
+    entry.timer = setTimeout(() => {
+      entry.row.classList.add('fading');
+      entry.timer = setTimeout(() => {
+        entry.row.remove();
+        this._touchRows.delete(p.id);
+      }, 600);
+    }, TOUCH_HOLD_MS);
+  }
+
+  _showStateCard(state, idx) {
+    if (!this._touchedMode) return;
+    const g = (id) => this.ps.get(id)?.value;
+    const src = (id) => SOURCES[g(id)] ?? '?';
+    const parts = [`FG ${src('layer.fg')}`, `BG ${src('layer.bg')}`];
+    if (g('keyer.active')) parts.push('Keyer on');
+    if ((g('displace.amount') ?? 0) > 0) parts.push(`Displaced by ${src('layer.ds')}`);
+    if (g('blend.active')) parts.push('Blend on');
+    this._clearTouched();
+    const card = document.createElement('div');
+    card.className = 'osd-touch osd-state-card';
+    const name = document.createElement('div');
+    name.className = 'osd-state-name';
+    name.textContent = state?.name || `State ${idx ?? ''}`.trim();
+    const route = document.createElement('div');
+    route.className = 'osd-state-route';
+    route.textContent = parts.join('  ·  ');
+    card.append(name, route);
+    this._touchEl.prepend(card);
+    const timer = setTimeout(() => {
+      card.classList.add('fading');
+      setTimeout(() => card.remove(), 600);
+    }, STATE_CARD_MS);
+    this._touchRows.set('__state', { row: card, timer });
+  }
+
+  _clearTouched() {
+    for (const { row, timer } of this._touchRows.values()) { clearTimeout(timer); row.remove(); }
+    this._touchRows.clear();
   }
 
   _addItem(p) {
@@ -4513,6 +4663,7 @@ export function initHelpMenu() {
   };
 
   const items = [
+    ['Welcome screen', '', () => window.dispatchEvent(new Event('imweb:welcome'))],
     ['Guided Tour', '⇧G', () => openGuide()],
     ['Keyboard Shortcuts', '?', () => document.getElementById('kb-help')?.classList.remove('hidden')],
     ['—'],
@@ -4586,53 +4737,11 @@ export function initHelpMenu() {
 
 let _docsViewerWired = false;
 
-// The viewer is a floating window (drag · resize · collapse), so a reader can
-// keep "Try This First" open beside the picture it is describing. Geometry is
-// remembered per origin in viewport px, like detached panels, and clamped on
+// The viewer is a floating window (drag · resize · collapse, via the shared
+// makeFloating), so a reader can keep "Try This First" open beside the
+// picture it is describing. Geometry is remembered per origin and clamped on
 // every open so a window left on a second monitor comes back on screen.
-const DOCS_GEOM_KEY = 'imweb.docsViewerGeom';
-
-function _loadDocsGeom() {
-  try { return JSON.parse(localStorage.getItem(DOCS_GEOM_KEY)) || null; }
-  catch { return null; }
-}
-
-function _saveDocsGeom(box) {
-  const b = box.getBoundingClientRect();
-  const prev = _loadDocsGeom() || {};
-  const collapsed = box.classList.contains('collapsed');
-  const g = {
-    x: Math.round(b.left),
-    y: Math.round(b.top),
-    // A collapsed box is only a title bar tall — keep the expanded size.
-    w: Math.round(b.width),
-    h: collapsed ? prev.h ?? null : Math.round(b.height),
-  };
-  try { localStorage.setItem(DOCS_GEOM_KEY, JSON.stringify(g)); } catch { /* private mode */ }
-}
-
-/**
- * Saved geometry if any, else centred at the stylesheet's default size.
- * Always EXPANDED: opening a document is asking to read it, and placing a
- * collapsed box would clamp a title-bar height and then let the expanded
- * window hang off the bottom of the screen.
- */
-function _placeDocsViewer(box) {
-  const vw = window.innerWidth, vh = window.innerHeight;
-  const z = elementZoom(box);  // after un-hiding: a hidden node has no computed zoom
-  const g = _loadDocsGeom();
-  box.classList.remove('collapsed');
-  _syncDocsCollapseBtn(box);
-  if (g && Number.isFinite(g.w)) {
-    const size = clampSize(g.w, Number.isFinite(g.h) ? g.h : null, vw, vh);
-    setViewportSize(box, size.w, size.h, z);
-  }
-  const b = box.getBoundingClientRect();
-  const x = g && Number.isFinite(g.x) ? g.x : (vw - b.width) / 2;
-  const y = g && Number.isFinite(g.y) ? g.y : (vh - b.height) / 2;
-  const pos = clampPos(x, y, b.width, b.height, vw, vh);
-  setViewportPos(box, pos.x, pos.y, z);
-}
+let _docsWin = null;
 
 function _syncDocsCollapseBtn(box) {
   const btn = document.getElementById('docs-viewer-collapse');
@@ -4687,11 +4796,16 @@ export async function openDocsViewer(url, title) {
   if (!overlay || !box || !titleEl || !contentEl) return;
 
   if (!_docsViewerWired) {
-    const close = () => { _saveDocsGeom(box); overlay.classList.add('hidden'); };
+    const bar = document.getElementById('docs-viewer-titlebar');
+    _docsWin = makeFloating(box, bar, 'imweb.docsViewerGeom', {
+      isCollapsed: () => box.classList.contains('collapsed'),
+      isHidden: () => overlay.classList.contains('hidden'),
+    });
+    const close = () => { _docsWin.save(); overlay.classList.add('hidden'); };
     const toggleCollapse = () => {
       box.classList.toggle('collapsed');
       _syncDocsCollapseBtn(box);
-      _saveDocsGeom(box);
+      _docsWin.save();
     };
     document.getElementById('docs-viewer-close')?.addEventListener('click', close);
     document.getElementById('docs-viewer-collapse')?.addEventListener('click', toggleCollapse);
@@ -4701,45 +4815,9 @@ export async function openDocsViewer(url, title) {
       if (e.key === 'Escape' && !overlay.classList.contains('hidden')) close();
     });
 
-    // Drag by the title bar. gBCR, not offsetLeft: the box is zoomed by
-    // --ui-scale, and mixing element px with clientX makes it jump on grab.
-    const bar = document.getElementById('docs-viewer-titlebar');
-    let pid = null, ox = 0, oy = 0, z = 1;
-    bar.addEventListener('pointerdown', (e) => {
-      if (e.target.closest('button') || e.button !== 0) return;
-      bar.setPointerCapture(e.pointerId);
-      pid = e.pointerId;
-      z = elementZoom(box);
-      const b = box.getBoundingClientRect();
-      ox = e.clientX - b.left;
-      oy = e.clientY - b.top;
-      e.preventDefault();
-    });
-    bar.addEventListener('pointermove', (e) => {
-      if (pid !== e.pointerId) return;
-      const b = box.getBoundingClientRect();
-      const pos = clampPos(e.clientX - ox, e.clientY - oy, b.width, b.height,
-        window.innerWidth, window.innerHeight);
-      setViewportPos(box, pos.x, pos.y, z);
-    });
-    const endDrag = (e) => {
-      if (pid !== e.pointerId) return;
-      pid = null;
-      _saveDocsGeom(box);
-    };
-    bar.addEventListener('pointerup', endDrag);
-    bar.addEventListener('pointercancel', endDrag);
     bar.addEventListener('dblclick', (e) => {
       if (!e.target.closest('button')) toggleCollapse();
     });
-
-    // `resize: both` has no event of its own; remember the size it leaves.
-    let t = null;
-    new ResizeObserver(() => {
-      if (overlay.classList.contains('hidden') || box.classList.contains('collapsed')) return;
-      clearTimeout(t);
-      t = setTimeout(() => _saveDocsGeom(box), 200);
-    }).observe(box);
     _docsViewerWired = true;
   }
 
@@ -4747,7 +4825,14 @@ export async function openDocsViewer(url, title) {
   contentEl.textContent = 'Loading…';
   const needsPlacing = overlay.classList.contains('hidden') || box.classList.contains('collapsed');
   overlay.classList.remove('hidden');
-  if (needsPlacing) _placeDocsViewer(box);
+  if (needsPlacing) {
+    // Always EXPANDED before placing: opening a document is asking to read
+    // it, and clamping a title-bar-tall box would let the expanded window
+    // hang off the bottom of the screen.
+    box.classList.remove('collapsed');
+    _syncDocsCollapseBtn(box);
+    _docsWin.place();
+  }
 
   try {
     // Retry once bypassing any HTTP/service-worker cache. A bare "Failed to

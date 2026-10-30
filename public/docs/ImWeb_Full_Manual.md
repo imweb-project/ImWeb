@@ -2670,7 +2670,8 @@ The tap interval derives BPM. All BPM-synced LFOs retrigger.
 
 | Parameter | Range | Description |
 |-----------|-------|-------------|
-| `global.osd` | TOGGLE | **Param OSD** (`I`) — parameter feedback text over the canvas. Default on |
+| `global.osd` | TOGGLE | **Param OSD** (`I`) — the on-screen display over the canvas. Default on |
+| `global.osdMode` | Touched / Pinned list | **OSD Mode** — **Touched** (default): the last few controls you moved by hand, MIDI, OSC or key, each with its value and a bar, fading after a moment; a State recall shows a card with the State's name and routing instead. Controllers that move a value on their own (LFO, random, audio, mouse) are not shown. **Pinned list**: the classic ImOs9 feedback text — right-click any row → **Pin to OSD**, drag the text to place it. Pinning a row switches to Pinned list |
 | `global.keylock` | TOGGLE | **KeyLock** (⌨) — block letter/number shortcuts so typing in fields works |
 | `global.showwarpgrid` | TOGGLE | **WarpGrid** — overlay the warp map's grid on the canvas while editing |
 | `global.debug` | TOGGLE | **Debug** (`D`) — diagnostic overlay |

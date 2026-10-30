@@ -5742,6 +5742,20 @@ export function registerCoreParameters(ps) {
     type: PARAM_TYPE.TOGGLE,
     value: 1,
   });
+  // What the OSD shows when it is on. Touched (default): the last few
+  // controls a person moved — panel, MIDI, OSC, keys — fading after a moment,
+  // plus a card naming the State on recall. Pinned list: the ImOs9 feedback
+  // text, the flagged params at their dragged positions. 'global' so a State
+  // never changes it; a file written before this existed gets the default.
+  ps.register({
+    id: "global.osdMode",
+    label: "OSD Mode",
+    group: "global",
+    type: PARAM_TYPE.SELECT,
+    options: ["Touched", "Pinned list"],
+    value: 0,
+    help: "Touched: the controls you just moved, and the State you recalled. Pinned list: chosen values stay on screen — right-click any row → Pin to OSD.",
+  });
   ps.register({
     id: "global.tableSlot",
     label: "Table Slot",
