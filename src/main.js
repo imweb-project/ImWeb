@@ -178,6 +178,7 @@ import {
   initHelpMenu,
 } from "./ui/UI.js";
 import { openCtrlPopover } from "./ui/components/CtrlPopover.js";
+import { makeFloating } from "./ui/components/FloatingWindow.js";
 import {
   initGuide,
   openGuide,
@@ -2497,7 +2498,7 @@ async function main() {
       signalPath._render();
     },
   });
-  const feedbackOl = new FeedbackOverlay(ps);
+  const feedbackOl = new FeedbackOverlay(ps, presetMgr);
   const memoryPanel = new MemoryPanel(presetMgr, scene3d);
   const profiler = new Profiler();
   const debugOverlay = new DebugOverlay(ps);
@@ -4164,6 +4165,30 @@ async function main() {
       // instrument, and the Instruments track assumes they can work a row.
       openGuide("basics");
     });
+  // "Explore the Looks": the fastest way to a picture is a State tile, so
+  // make sure the state bar is showing and draw the eye to it. Writes the
+  // body class + stored pref directly rather than calling _applyStatebar,
+  // which is declared further down main() and is not yet initialised while
+  // the slow init awaits — a click then would throw.
+  document
+    .getElementById("onboarding-looks")
+    ?.addEventListener("click", () => {
+      _dismissOnboarding();
+      document.body.classList.remove("statebar-hidden");
+      localStorage.setItem("imweb-statebar-hidden", "0");
+      document.getElementById("btn-statebar")?.classList.add("active");
+      const bar = document.getElementById("state-bar");
+      bar?.classList.add("statebar-hint");
+      setTimeout(() => bar?.classList.remove("statebar-hint"), 4500);
+    });
+  // Esc closes the splash like it closes the other overlays.
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !_onboarding?.classList.contains("hidden")) {
+      _dismissOnboarding();
+    }
+  });
+  // Reopened from the ? menu ("Welcome screen").
+  window.addEventListener("imweb:welcome", () => _onboarding?.classList.remove("hidden"));
 
   // Keyboard lock toggle
   const _keylockBtn = document.getElementById("btn-keylock");
@@ -9178,9 +9203,36 @@ void main() {
   let _searchSel = 0;
   let _searchFilter = "all";
 
+  // A floating window like the docs viewer (one shared implementation).
+  // First open: centred near the top, where the palette always sat.
+  const _searchWin = searchEl && makeFloating(
+    searchEl,
+    document.getElementById("param-search-titlebar"),
+    "imweb.paramSearchGeom",
+    {
+      isHidden: () => searchEl.classList.contains("hidden"),
+      defaultPos: (w, h, vw) => ({ x: (vw - w) / 2, y: 60 }),
+    },
+  );
+  // 📌 — stay open when you click elsewhere, so the live rows can be played
+  // beside the picture. Remembered per origin, like the window's geometry.
+  const _searchPinBtn = document.getElementById("param-search-pin");
+  let _searchPinned = localStorage.getItem("imweb.paramSearchPinned") === "1";
+  _searchPinBtn?.classList.toggle("active", _searchPinned);
+  _searchPinBtn?.addEventListener("click", () => {
+    _searchPinned = !_searchPinned;
+    _searchPinBtn.classList.toggle("active", _searchPinned);
+    try { localStorage.setItem("imweb.paramSearchPinned", _searchPinned ? "1" : "0"); } catch { /* private mode */ }
+    searchInp?.focus();
+  });
+  document.getElementById("param-search-close")
+    ?.addEventListener("click", () => closeParamSearch());
+
   function openParamSearch() {
     if (!searchEl) return;
+    const wasHidden = searchEl.classList.contains("hidden");
     searchEl.classList.remove("hidden");
+    if (wasHidden) _searchWin?.place();
     searchInp.value = "";
     _searchSel = 0;
     _searchFilter = "all";
@@ -9327,7 +9379,7 @@ void main() {
   });
 
   document.addEventListener("click", (e) => {
-    if (searchEl && !searchEl.contains(e.target)) closeParamSearch();
+    if (searchEl && !_searchPinned && !searchEl.contains(e.target)) closeParamSearch();
   });
 
   // ── UI chrome toggles — OSD (param: persists, MIDI-assignable) and

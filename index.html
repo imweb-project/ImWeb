@@ -1303,7 +1303,18 @@ ImWeb</textarea
         <div id="mobile-state-modal" class="hidden"></div>
 
         <!-- PARAM SEARCH OVERLAY (/ key) -->
+        <!-- ⌘K / "/" parameter search. A floating window (drag the title bar,
+             resize from the corner; makeFloating in main.js). 📌 keeps it open
+             while you click elsewhere, so the live result rows can be played
+             beside the picture. -->
         <div id="param-search" class="hidden">
+            <div id="param-search-titlebar" title="Drag to move">
+                <span>Parameters</span>
+                <span class="psearch-winbtns">
+                    <button id="param-search-pin" title="Keep open while you click elsewhere">📌</button>
+                    <button id="param-search-close" title="Close (Esc)">✕</button>
+                </span>
+            </div>
             <input
                 id="param-search-input"
                 type="text"
@@ -1506,7 +1517,7 @@ ImWeb</textarea
                 Toggle Invert
             </button>
             <button class="menu-item" data-action="show">
-                Toggle Feedback
+                Pin to OSD / unpin
             </button>
             <button class="menu-item" data-action="lock">Toggle Lock</button>
             <button class="menu-item" data-action="table">Assign Table…</button>
@@ -1740,40 +1751,54 @@ ImWeb</textarea
                 <div id="onboarding-sub">
                     Real-time video synthesis instrument
                 </div>
+                <!-- Three ways in, because "where do I start?" is the first
+                     question and the old splash only taught gestures. Every
+                     door closes the splash first: each one points AT the
+                     instrument the splash is covering. -->
+                <div id="onboarding-doors">
+                    <button class="ob-door ob-door--primary" id="onboarding-looks">
+                        <span class="ob-door-title">Explore the Looks</span>
+                        <span class="ob-door-desc">Each thumbnail along the bottom
+                            is a complete patch — click one, or press
+                            <kbd>0</kbd>–<kbd>9</kbd>.</span>
+                    </button>
+                    <button class="ob-door" id="onboarding-guide">
+                        <span class="ob-door-title">Learn step by step</span>
+                        <span class="ob-door-desc">A guided tour that points at each
+                            control while you try it.</span>
+                    </button>
+                    <button class="ob-door" id="onboarding-dismiss">
+                        <span class="ob-door-title">Just start</span>
+                        <span class="ob-door-desc">Close this and play.</span>
+                    </button>
+                </div>
                 <div id="onboarding-gestures">
                     <div class="ob-gesture">
                         <div class="ob-icon">⇌</div>
                         <div class="ob-desc">
-                            <strong>Drag</strong> any value field to change it.
-                            Right-click a parameter badge to assign a controller
-                            — MIDI, LFO, random, audio.
+                            <strong>Drag a value sideways</strong> to change it.
+                            <kbd>⌘</kbd>-click to type a number, double-click to
+                            reset it, right-click to give it a controller — MIDI,
+                            LFO, audio…
                         </div>
                     </div>
                     <div class="ob-gesture">
-                        <div class="ob-icon">0–9</div>
+                        <div class="ob-icon">◉</div>
                         <div class="ob-desc">
-                            <strong>Number keys</strong> recall States.
-                            <kbd>⇧0</kbd> = Neutral State. <kbd>+</kbd> /
-                            <kbd>−</kbd> on numpad step through Banks. Press
-                            <kbd>?</kbd> for all shortcuts.
+                            Your browser will ask for the <strong>camera</strong> —
+                            allow it to put yourself in the picture.
                         </div>
                     </div>
                     <div class="ob-gesture">
-                        <div class="ob-icon">⊡</div>
+                        <div class="ob-icon">?</div>
                         <div class="ob-desc">
-                            <strong>Second screen</strong> button sends output
-                            to a new window — open on a projector or second
-                            display for performance.
+                            The <strong>?</strong> button, top right, has the tour,
+                            the manuals and this screen again. The <kbd>?</kbd> key
+                            lists every shortcut.
                         </div>
                     </div>
                 </div>
                 <div id="onboarding-actions">
-                    <button id="onboarding-dismiss">Start</button>
-                    <!-- The splash is where a first-time reader already is, so
-                         it is the one place the tour is worth offering rather
-                         than hiding behind ⇧G. Dismisses the splash first: the
-                         tour points AT the panel the splash is covering. -->
-                    <button id="onboarding-guide">Guided tour</button>
                     <a id="onboarding-support" href="https://opencollective.com/imweb"
                        target="_blank" rel="noopener">💖 Support ImWeb</a>
                 </div>
