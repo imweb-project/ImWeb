@@ -3,6 +3,7 @@
 // Follows the same pattern as buildAnalogPresetBar() in src/ui/UI.js.
 
 import { buildParamRow } from '../ui/UI.js';
+import { DEFAULT_RSS_URL, PROXY_KEY, PLACE_KEY } from './TeletextSource.js';
 
 const PAGE_LABELS = ['P100', 'P150', 'P400', 'P401', 'P500', 'P700', 'P900'];
 const RSS_KEY = 'imweb-teletext-rssUrl';
@@ -113,14 +114,28 @@ export function buildTeletextUI(container, ps, teletextSource, contextMenu) {
   rssInput.spellcheck = false;
 
   // ── RSS preset source dropdown ───────────────────────────────────────
+  // `direct` feeds send Access-Control-Allow-Origin: * and load with no proxy
+  // (checked 2026-10-30). The rest are refused by the browser unless a proxy
+  // is set below — they stay listed, grouped, so the choice is honest.
   const RSS_PRESETS = [
-    { label: 'BBC News',      url: 'https://feeds.bbci.co.uk/news/rss.xml' },
-    { label: 'RÚV',           url: 'https://www.ruv.is/rss/frettir' },
-    { label: 'Reuters',       url: 'https://feeds.reuters.com/reuters/topNews' },
-    { label: 'Al Jazeera',    url: 'https://www.aljazeera.com/xml/rss/all.xml' },
-    { label: 'NASA',          url: 'https://www.nasa.gov/rss/dyn/breaking_news.rss' },
-    { label: 'Hacker News',   url: 'https://news.ycombinator.com/rss' },
-    { label: 'The Verge',     url: 'https://www.theverge.com/rss/index.xml' },
+    { label: 'NASA News',             url: DEFAULT_RSS_URL, direct: true },
+    { label: 'NASA Image of the Day', url: 'https://www.nasa.gov/feeds/iotd-feed/', direct: true },
+    { label: 'NYT World',             url: 'https://rss.nytimes.com/services/xml/rss/nyt/World.xml', direct: true },
+    { label: 'NYT Art & Design',      url: 'https://rss.nytimes.com/services/xml/rss/nyt/ArtandDesign.xml', direct: true },
+    { label: 'NYT Science',           url: 'https://rss.nytimes.com/services/xml/rss/nyt/Science.xml', direct: true },
+    { label: 'Wired Culture',         url: 'https://www.wired.com/feed/category/culture/latest/rss', direct: true },
+    { label: 'Wired Science',         url: 'https://www.wired.com/feed/category/science/latest/rss', direct: true },
+    { label: 'Open Culture',          url: 'https://www.openculture.com/feed', direct: true },
+    { label: 'Pitchfork News',        url: 'https://pitchfork.com/rss/news/', direct: true },
+    { label: 'Earthquakes (USGS)',    url: 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.atom', direct: true },
+    { label: 'BBC News',              url: 'https://feeds.bbci.co.uk/news/rss.xml' },
+    { label: 'RÚV',                   url: 'https://www.ruv.is/rss/frettir' },
+    { label: 'Yle Uutiset',           url: 'https://yle.fi/rss/uutiset/tuoreimmat' },
+    { label: 'Al Jazeera',            url: 'https://www.aljazeera.com/xml/rss/all.xml' },
+    { label: 'Guardian Art & Design', url: 'https://www.theguardian.com/artanddesign/rss' },
+    { label: 'Dezeen',                url: 'https://www.dezeen.com/feed/' },
+    { label: 'Hyperallergic',         url: 'https://hyperallergic.com/feed/' },
+    { label: 'Creative Applications', url: 'https://www.creativeapplications.net/feed/' },
   ];
 
   const presetDiv = document.createElement('div');
@@ -136,11 +151,16 @@ export function buildTeletextUI(container, ps, teletextSource, contextMenu) {
   defaultOpt.disabled = true;
   presetSelect.appendChild(defaultOpt);
 
-  RSS_PRESETS.forEach(p => {
-    const opt = document.createElement('option');
-    opt.value = p.url;
-    opt.textContent = p.label;
-    presetSelect.appendChild(opt);
+  [['Works directly', true], ['Needs a proxy', false]].forEach(([groupLabel, direct]) => {
+    const group = document.createElement('optgroup');
+    group.label = groupLabel;
+    RSS_PRESETS.filter(p => !!p.direct === direct).forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.url;
+      opt.textContent = p.label;
+      group.appendChild(opt);
+    });
+    presetSelect.appendChild(group);
   });
 
   const customOpt = document.createElement('option');
@@ -148,8 +168,9 @@ export function buildTeletextUI(container, ps, teletextSource, contextMenu) {
   customOpt.textContent = 'Custom\u2026';
   presetSelect.appendChild(customOpt);
 
-  // Pre-select matching preset (or custom if no match)
-  const storedUrl = localStorage.getItem(RSS_KEY) ?? '';
+  // Pre-select matching preset (or custom if no match). Nothing stored means
+  // the default feed is the one playing, so show it rather than a blank.
+  const storedUrl = localStorage.getItem(RSS_KEY) || DEFAULT_RSS_URL;
   const matchedPreset = RSS_PRESETS.find(p => p.url === storedUrl);
   if (matchedPreset) {
     presetSelect.value = matchedPreset.url;
@@ -190,6 +211,89 @@ export function buildTeletextUI(container, ps, teletextSource, contextMenu) {
 
   rssDiv.appendChild(rssInput);
   rssDiv.appendChild(connectBtn);
+
+  // ── Optional proxy ──────────────────────────────────────────────────────
+  // For feeds marked "Needs a proxy". Stored per browser, never in a State or
+  // the bundle: a proxy may carry the user's own key.
+  const proxyDiv = document.createElement('div');
+  proxyDiv.className = 'tt-rss-row';
+  container.appendChild(proxyDiv);
+
+  const proxyLabel = document.createElement('small');
+  proxyLabel.className = 'tt-field-label';
+  proxyLabel.textContent = 'Proxy for blocked feeds (optional) — URL with {url}';
+  proxyDiv.appendChild(proxyLabel);
+
+  const proxyInput = document.createElement('input');
+  proxyInput.className = 'tt-rss-url';
+  proxyInput.type = 'text';
+  proxyInput.placeholder = 'https://your-proxy.example/?url={url}';
+  proxyInput.value = localStorage.getItem(PROXY_KEY) ?? '';
+  proxyInput.spellcheck = false;
+
+  const proxyBtn = document.createElement('button');
+  proxyBtn.className = 'tt-connect-btn';
+  proxyBtn.textContent = 'Save';
+  proxyBtn.addEventListener('click', () => {
+    const v = proxyInput.value.trim();
+    if (v) localStorage.setItem(PROXY_KEY, v); else localStorage.removeItem(PROXY_KEY);
+    teletextSource.fetchRSS?.(localStorage.getItem(RSS_KEY) || DEFAULT_RSS_URL);
+  });
+  proxyInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); proxyBtn.click(); }
+  });
+  proxyDiv.appendChild(proxyInput);
+  proxyDiv.appendChild(proxyBtn);
+
+  // ── Weather place search ────────────────────────────────────────────────
+  // Open-Meteo's geocoder answers CORS directly, so no proxy. The result
+  // writes teletext.latitude/longitude (params: MIDI-able, captured by
+  // States) and remembers the name for P400 while those coordinates hold.
+  const placeDiv = document.createElement('div');
+  placeDiv.className = 'tt-rss-row';
+  container.appendChild(placeDiv);
+
+  const placeLabel = document.createElement('small');
+  placeLabel.className = 'tt-field-label';
+  placeLabel.textContent = 'Weather location (P400 / P401)';
+  placeDiv.appendChild(placeLabel);
+
+  const placeInput = document.createElement('input');
+  placeInput.className = 'tt-rss-url';
+  placeInput.type = 'text';
+  placeInput.placeholder = 'City, e.g. Rovaniemi';
+  placeInput.spellcheck = false;
+  try { placeInput.value = JSON.parse(localStorage.getItem(PLACE_KEY))?.name ?? ''; } catch { /* none */ }
+
+  const placeBtn = document.createElement('button');
+  placeBtn.className = 'tt-connect-btn';
+  placeBtn.textContent = 'Find';
+  placeBtn.addEventListener('click', async () => {
+    const q = placeInput.value.trim();
+    if (!q) return;
+    placeBtn.disabled = true;
+    try {
+      const res = await fetch('https://geocoding-api.open-meteo.com/v1/search?count=1&name='
+        + encodeURIComponent(q), { signal: AbortSignal.timeout(8000) });
+      const hit = (await res.json()).results?.[0];
+      if (!hit) { placeInput.value = ''; placeInput.placeholder = `"${q}" not found`; return; }
+      const name = hit.country_code ? `${hit.name}, ${hit.country_code}` : hit.name;
+      localStorage.setItem(PLACE_KEY, JSON.stringify({ name, lat: hit.latitude, lon: hit.longitude }));
+      placeInput.value = name;
+      ps.set('teletext.latitude', hit.latitude);
+      ps.set('teletext.longitude', hit.longitude);
+      teletextSource.refreshWeather?.(ps);
+    } catch (e) {
+      console.warn('[TeletextUI] Place search failed:', e.message);
+    } finally {
+      placeBtn.disabled = false;
+    }
+  });
+  placeInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); placeBtn.click(); }
+  });
+  placeDiv.appendChild(placeInput);
+  placeDiv.appendChild(placeBtn);
 
   // ── Calendar ICS URL input ──────────────────────────────────────────────
   const calDiv = document.createElement('div');

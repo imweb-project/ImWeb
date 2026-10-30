@@ -1,5 +1,6 @@
 // P150 — RSS Headlines
-// Fetches RSS/Atom XML via corsproxy.io + DOMParser.
+// RSS/Atom XML fetched by TeletextSource.fetchText (direct, else the user's
+// proxy) and parsed with DOMParser.
 
 import { CANVAS_W, CH, COLS, XSCALE, drawHeader, ttRow, ttCentered, ttRule } from '../teletext_draw.js';
 
@@ -11,6 +12,20 @@ import { CANVAS_W, CH, COLS, XSCALE, drawHeader, ttRow, ttCentered, ttRule } fro
  */
 export function renderP150(ctx, data, subPageIdx, cursorIdx = 0) {
   drawHeader(ctx, '150', 'HEADLINES');
+
+  if (data?.error) {
+    let host = '';
+    try { host = new URL(data.url).hostname.replace(/^www\./, ''); } catch { /* bad URL */ }
+    ttCentered(ctx, 'FEED UNAVAILABLE', 3, '#ff4444');
+    ttCentered(ctx, host.toUpperCase().slice(0, COLS - 2), 5, '#ffffff');
+    ttCentered(ctx, data.error.toUpperCase().slice(0, COLS - 2), 6, '#ffff00');
+    if (data.error === 'needs a proxy') {
+      ttCentered(ctx, 'This site blocks direct reading.', 8, '#888888');
+      ttCentered(ctx, 'Pick a feed marked "direct",', 9, '#888888');
+      ttCentered(ctx, 'or set a proxy in the panel.', 10, '#888888');
+    }
+    return;
+  }
 
   if (!data || !data.items || !data.items.length) {
     ttCentered(ctx, 'FETCHING HEADLINES...', 3, '#888888');

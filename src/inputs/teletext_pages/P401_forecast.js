@@ -22,19 +22,12 @@ export function renderP401(ctx, data) {
   const precip  = h.precipitation_probability || [];
   const codes   = h.weather_code || [];
 
-  // Find the first hour that starts at or after the current hour
-  const now = new Date();
-  const currentHour = now.getHours();
-  const currentDate = now.toISOString().substring(0, 10); // YYYY-MM-DD
-  const dateTimes = times.map((t, i) => ({ t, i }));
-
-  // Find index of today's HH:00 matching currentHour, or first >= currentHour
-  let startIdx = dateTimes.findIndex(dt => {
-    const t = dt.t;
-    const hh = parseInt(t.substring(11, 13), 10);
-    const dd = t.substring(0, 10);
-    return dd >= currentDate && hh >= currentHour;
-  });
+  // First hour at or after NOW AT THE LOCATION. The hourly times are the
+  // location's local time (timezone=auto), and so is current.time — compare
+  // those two. The viewer's clock hour paired with a UTC date matched the
+  // wrong day for any location in another zone, and after midnight anywhere.
+  const nowHour = (data.current?.time ?? '').substring(0, 13); // YYYY-MM-DDTHH
+  let startIdx = nowHour ? times.findIndex(t => t.substring(0, 13) >= nowHour) : 0;
   if (startIdx < 0) startIdx = 0;
 
   // Column header

@@ -1123,6 +1123,16 @@ built-in page set, with cursor, sub-page and item-open triggers exposed as
 parameters so a page can be navigated from MIDI or the step sequencer. In reader
 mode the arrow keys page through and Escape exits.
 
+Headlines (P150) and weather (P400/P401) load as soon as Teletext is selected,
+whichever page is showing. The feed menu is split in two. Feeds under **Works
+directly** load in any browser: NASA, the New York Times, Wired, Open Culture,
+Pitchfork and USGS earthquakes. Feeds under **Needs a proxy** (BBC, RÚV, Yle,
+Dezeen and others) are blocked by the browser unless you enter a proxy address
+in the **Proxy** field. That address must contain `{url}` and is stored only in
+this browser. If a feed can't load, P150 says why. **Weather location** finds a
+city by name and sets `teletext.latitude` / `teletext.longitude`, which States
+save; P400 shows the place name while those coordinates are unchanged.
+
 ---
 
 ### 4.15 SDF (Signed Distance Field Raymarcher)

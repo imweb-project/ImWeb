@@ -29,8 +29,30 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   you left it. **📌** keeps it open while you click elsewhere, so the live
   rows can be played beside the picture; ✕ or Esc closes it. Shares one
   implementation (`FloatingWindow.js`) with the docs viewer.
+- **Start Here bank** in the factory project, opened on first launch: ten
+  named States that each render without a camera and look the same whatever
+  was recalled before them (tested both ways). Existing bank numbers are
+  unchanged.
+- **Teletext: feeds that work, and weather by city.** The feed menu is split
+  into feeds that load directly (NASA, NASA Image of the Day, NYT World / Art
+  & Design / Science, Wired Culture / Science, Open Culture, Pitchfork, USGS
+  earthquakes) and feeds that need a proxy (BBC, RÚV, Yle, Al Jazeera,
+  Guardian Art & Design, Dezeen, Hyperallergic, Creative Applications), with
+  an optional proxy field stored per browser. **Weather location** finds a
+  city by name; P400 shows its name. Headlines and weather load as soon as
+  Teletext is selected, and the Teletext TV State opens on Headlines.
 
 ### Fixed
+- **Teletext headlines loaded nothing, anywhere.** Feeds, articles and the
+  calendar went through corsproxy.io, which now refuses keyless requests
+  (403 "keyless_legacy_url"), so P150 sat on "FETCHING…" forever. Feeds are
+  now read directly, falling back to a proxy only if one is set, and P150
+  says why a feed failed. Reuters' feed (shut 2020) is gone from the list.
+- **Teletext weather dates and labels.** Today's high/low showed "--" after
+  midnight, and the hourly forecast could start nearly a day ahead, because
+  the location's local times were compared with the viewer's UTC date and
+  clock hour. Both now use the location's own clock. West longitudes read
+  "°W" (they read "-21.97 °E").
 - **One black State no longer blacks out the next.** With feedback on, the
   output kept the feedback buffer's alpha, so a single transparent frame (the
   Volume State with no camera) latched alpha 0 and every following State that
