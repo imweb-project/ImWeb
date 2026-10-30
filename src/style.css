@@ -159,6 +159,9 @@
    overflow, the card would drift off-centre, and at 200% half of it would sit
    outside the window with no way to scroll to it. Zooming the card leaves the
    backdrop exactly covering the screen and the centring intact.
+   #docs-viewer is the exception in kind but not in rule: a click-through layer
+   (no dimming) whose box is a floating window placed by JS — still unzoomed
+   itself, box zoomed.
    #panel-overlay is a bare scrim with no content and so wants no zoom at all —
    there is nothing inside it to read. */
 #onboarding-box,
@@ -524,13 +527,6 @@ button {
         border-color 0.1s;
     white-space: nowrap;
     flex-shrink: 0;
-}
-/* Visual break between the signal-flow tabs (Sources · Mix · Effects · Output)
-   and the editor tabs (3D · Analog · Draw · Project). The bar already scrolls
-   horizontally, so 8 tabs overflow rather than wrap. */
-.tab.tab-sep {
-    border-left: 1px solid var(--border);
-    margin-left: 4px;
 }
 .tab:hover {
     color: var(--text-1);
@@ -2803,28 +2799,51 @@ body.sp-floating #signal-path-docked-space {
     margin-top: 18px;
 }
 
+/* A floating window, not a modal: the layer covers the viewport but takes no
+   clicks and draws nothing, so the instrument stays visible and playable while
+   a reader follows the manual. Still `position: fixed; inset: 0` and unzoomed
+   (the UI-scale audit's scrim rule) — only the box is zoomed, and it is placed
+   with setViewportPos/Size in UI.js. */
 #docs-viewer {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.7);
     z-index: 3100;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    pointer-events: none;
 }
 #docs-viewer.hidden {
     display: none;
 }
 #docs-viewer-box {
+    position: absolute;
+    pointer-events: auto;
     background: var(--bg-2);
     border: 1px solid var(--accent-dim);
     border-radius: 8px;
     box-shadow: 0 12px 48px rgba(0, 0, 0, 0.8);
     width: 720px;
-    max-width: calc(90 * var(--vw));
+    max-width: calc(96 * var(--vw));
     height: calc(80 * var(--vh));
+    max-height: calc(96 * var(--vh));
+    min-width: 280px;
+    min-height: 120px;
     display: flex;
     flex-direction: column;
+    resize: both;
+    overflow: hidden;
+}
+/* Collapsed: just the title bar, so the picture underneath is clear. The
+   inline height a resize wrote is overridden, not discarded — expanding
+   brings the window back at the size it had. */
+#docs-viewer-box.collapsed {
+    height: auto !important;
+    min-height: 0;
+    resize: none;
+}
+#docs-viewer-box.collapsed .docs-viewer-content {
+    display: none;
+}
+#docs-viewer-box.collapsed #docs-viewer-titlebar {
+    border-bottom: none;
 }
 #docs-viewer-titlebar {
     display: flex;
@@ -2832,6 +2851,28 @@ body.sp-floating #signal-path-docked-space {
     justify-content: space-between;
     padding: 12px 16px;
     border-bottom: 1px solid var(--bg-4);
+    cursor: move;
+    user-select: none;
+    touch-action: none;
+    flex-shrink: 0;
+}
+#docs-viewer-btns {
+    display: flex;
+    gap: 6px;
+}
+#docs-viewer-collapse,
+#docs-viewer-print {
+    background: none;
+    border: none;
+    color: var(--text-2);
+    font-size: 14px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 2px 4px;
+}
+#docs-viewer-collapse:hover,
+#docs-viewer-print:hover {
+    color: var(--accent);
 }
 #docs-viewer-title {
     font-family: var(--mono);
@@ -2854,6 +2895,8 @@ body.sp-floating #signal-path-docked-space {
     color: var(--accent);
 }
 .docs-viewer-content {
+    flex: 1;
+    min-height: 0; /* let it shrink and scroll inside a resized window */
     overflow-y: auto;
     padding: 16px 24px;
     color: var(--text-1);

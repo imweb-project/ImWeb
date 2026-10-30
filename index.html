@@ -212,25 +212,26 @@
             <!-- RIGHT: Control panels -->
             <div id="control-panel">
                 <div id="tab-bar">
-                    <!-- Five fixed tabs = the signal flow. Phase 24 retires the 3D /
-                         Analog / Draw tabs; those become workspaces opened from their row
-                         in Sources. Their .tab-content divs remain in the DOM (main.js
-                         still targets #tab-scene3d) and are reachable again once the
-                         workspace router lands in Step 2.
+                    <!-- Six fixed tabs: the four signal-flow stages, then Audio and
+                         Project. 3D / Analog / Draw / Shader Code are WORKSPACES (Phase
+                         24): opened with "⤢ Open workspace" from their row in Sources,
+                         shown as a seventh contextual tab in #tab-workspace-slot by the
+                         workspace router in main.js. Their .tab-content divs stay in the
+                         DOM (main.js targets #tab-scene3d).
                          The active classes are a FIRST-PAINT HINT only — activateDefaultTab()
                          derives the real landing tab from data-default-open. -->
                     <button class="tab" data-tab="sources">Sources</button>
                     <button class="tab active" data-tab="mix">Mix</button>
                     <button class="tab" data-tab="effects">Effects</button>
                     <button class="tab" data-tab="output">Output</button>
-                    <!-- Audio is top-level for the same reason 3D/Analog/Draw
-                         are: it is a large editor for its own kind of material,
+                    <!-- Audio is top-level, not a workspace: it is a large editor
+                         for its own kind of material, always available,
                          not a stage in the video signal flow. Folding it into
                          Sources would file the instrument's other half as a
                          video input, which it is not. -->
                     <button class="tab" data-tab="audio">Audio</button>
                     <button class="tab" data-tab="presets">Project</button>
-                    <!-- Contextual workspace tab is injected here by Step 2. -->
+                    <!-- Contextual workspace tab is injected here (workspace router, main.js). -->
                     <span id="tab-workspace-slot"></span>
                 </div>
                 <!-- SOURCES TAB -->
@@ -306,23 +307,12 @@
                                 line-height: 1.5;
                             "
                         >
-                            Best formats: H.264 MP4, WebM. For frame-accurate
-                            scrubbing run
-                            <code
-                                style="
-                                    color: var(--accent);
-                                    font-family: var(--mono);
-                                "
-                                >node imweb-prep.js</code
-                            >
-                            — drop raw files in
-                            <code
-                                style="
-                                    color: var(--accent);
-                                    font-family: var(--mono);
-                                "
-                                >_raw_videos/</code
-                            >.
+                            Best formats: H.264 MP4, WebM. For smooth scrubbing
+                            and reverse play, export with a keyframe on every
+                            frame (keyframe interval 1, "all-intra").
+                            <!-- Was a developer instruction (node imweb-prep.js,
+                                 _raw_videos/) that no browser user can run; the
+                                 script makes exactly this kind of encode. -->
                         </div>
                     </div>
                     <div class="panel-section" id="movie-b-section">
@@ -1041,7 +1031,7 @@ ImWeb</textarea
                         <div id="global-params"></div>
                     </div>
                 </div>
-                <!-- 3D TAB -->
+                <!-- 3D WORKSPACE (opened from Sources ▸ Generators ▸ 3D Scene) -->
                 <div id="tab-scene3d" class="tab-content">
                     <div class="panel-section">
                         <div class="section-header">Geometry</div>
@@ -1076,7 +1066,7 @@ ImWeb</textarea
                         <div id="model-import"></div>
                     </div>
                 </div>
-                <!-- ANALOG TAB -->
+                <!-- ANALOG WORKSPACE (opened from Sources ▸ Generators ▸ Analog TV) -->
                 <div id="tab-analog" class="tab-content">
                     <div id="analog-preset-bar"></div>
                     <div class="panel-section">
@@ -1108,7 +1098,7 @@ ImWeb</textarea
                         <div id="analog-tuner-params"></div>
                     </div>
                 </div>
-                <!-- DRAW TAB -->
+                <!-- DRAW WORKSPACE (opened from Sources ▸ Generators ▸ Draw) -->
                 <div id="tab-draw" class="tab-content">
                     <div class="panel-section">
                         <div class="section-header">Draw Layer</div>
@@ -1278,7 +1268,9 @@ ImWeb</textarea
                     <div id="state-seq-section" class="panel-section">
                         <div class="section-header">State Step Sequencer</div>
                     </div>
-                    <!-- Response Curves (merged from former Tables tab; wrapper id kept for JS) -->
+                    <!-- Response Curves (merged from former Tables tab). The #tab-tables
+                         wrapper has no JS or CSS readers left; it is harmless and kept
+                         only to avoid moving this markup. -->
                     <div id="tab-tables">
                         <div class="panel-section">
                             <div class="section-header" id="tables-section-header">
@@ -1594,7 +1586,7 @@ ImWeb</textarea
                             <kbd>x</kbd><span>External key</span>
                         </div>
                         <div class="kb-row">
-                            <kbd>s</kbd><span>Solo output</span>
+                            <kbd>s</kbd><span>Solo — raw layer mix, effects bypassed</span>
                         </div>
                         <div class="kb-row">
                             <kbd>h</kbd><span>Hold / Fade to black</span>
@@ -1631,10 +1623,10 @@ ImWeb</textarea
                     <div class="kb-col">
                         <div class="kb-section">States</div>
                         <div class="kb-row">
-                            <kbd>−</kbd><span>Previous bank</span>
+                            <kbd>num −</kbd><span>Previous bank (numpad only)</span>
                         </div>
                         <div class="kb-row">
-                            <kbd>+</kbd><span>Next bank</span>
+                            <kbd>num +</kbd><span>Next bank (numpad only)</span>
                         </div>
                         <div class="kb-row">
                             <kbd>0–9</kbd><span>Recall state</span>
@@ -1653,7 +1645,10 @@ ImWeb</textarea
                         </div>
                         <div class="kb-section">Global</div>
                         <div class="kb-row">
-                            <kbd>⌘S</kbd><span>Save project (.imweb)</span>
+                            <kbd>⌘S</kbd><span>Save project (.imweb) — asks for a name</span>
+                        </div>
+                        <div class="kb-row">
+                            <kbd>⌘E</kbd><span>Export project — no prompt</span>
                         </div>
                         <div class="kb-row">
                             <kbd>⌘O</kbd><span>Open project (.imweb)</span>
@@ -1692,11 +1687,20 @@ ImWeb</textarea
         </div>
 
         <!-- IN-APP MARKDOWN DOCS VIEWER -->
+        <!-- Docs viewer: a floating WINDOW, not a modal. The manuals and
+             Try This First say "do this, watch the picture", so the instrument
+             must stay visible and playable underneath — #docs-viewer is a
+             click-through layer, #docs-viewer-box the draggable, resizable,
+             collapsible window (UI.js, openDocsViewer). -->
         <div id="docs-viewer" class="hidden">
             <div id="docs-viewer-box">
-                <div id="docs-viewer-titlebar">
+                <div id="docs-viewer-titlebar" title="Drag to move · double-click to collapse">
                     <span id="docs-viewer-title"></span>
-                    <button id="docs-viewer-close">✕</button>
+                    <span id="docs-viewer-btns">
+                        <button id="docs-viewer-print" title="Print this document">⎙</button>
+                        <button id="docs-viewer-collapse" title="Collapse to the title bar">▾</button>
+                        <button id="docs-viewer-close" title="Close (Esc)">✕</button>
+                    </span>
                 </div>
                 <div id="docs-viewer-content" class="docs-viewer-content"></div>
             </div>
