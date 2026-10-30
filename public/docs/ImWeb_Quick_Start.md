@@ -1,6 +1,6 @@
 # ImWeb Quick-Start: From Zero to Real-Time Performance
 
-> Browser-based live video synthesis ecosystem · v0.17.0
+> Browser-based live video synthesis ecosystem · v0.28.0
 
 Welcome to **ImWeb**. Think of this interface as a digital video instrument:
 every slider can be performed live, automated, or mapped to your surroundings.
@@ -19,18 +19,21 @@ seeded from the factory project, so several tiles already hold complete,
 pre-configured visual ecosystems. Click a tile that **has a thumbnail** to
 recall it instantly and see what the software can do.
 
-> Clicking an **empty** (dark) tile does not recall — it *saves* your current
-> state into that slot. That is the intended way to keep a look you like, but it
-> is worth knowing before you start clicking around.
+> Clicking an **empty** (dark) tile does nothing. To keep a look you like,
+> press **Shift+S** (saves into the next empty slot) or right-click a tile →
+> **Save here**.
 
-The leftmost **○** tile is the **Neutral State**: it resets every parameter value
-without touching your controller assignments.
+The leftmost **○** tile is the **Neutral State** (keyboard: **⌘⇧0** /
+**Ctrl+Shift+0**): it resets every parameter value without touching your
+controller assignments.
 
 **The Panic Button (toolbar, top right).** If the screen goes entirely crazy or
 breaks into extreme feedback, press the **↺** button in the toolbar at the right
-end of the top status bar — or just hit **Shift+Esc**. It resets all parameters
-to their defaults, which strips the heavy processing away and leaves your raw,
-clean camera input on screen.
+end of the top status bar — or just hit **Shift+Esc**. After an *OK* to confirm,
+it resets all parameters to their defaults **and clears every controller
+assignment**, routes all three layers back to Camera, and closes any open
+workspace — which strips the heavy processing away and leaves your raw, clean
+camera input on screen.
 
 Two gentler versions of the same escape, when you want your settings kept:
 
@@ -56,11 +59,15 @@ Each press steps to the next source in exactly the order the LAYERS dropdowns
 list them (Live In → Media → Generators → From the Signal → Mix), so the
 keyboard and the menu always agree.
 
-> **Panel orientation.** The control panel has five tabs, in signal order:
-> **Sources · Mix · Effects · Output · Project**. Where a picture comes from,
-> how pictures are combined, what is done to them, where they go — and Project
-> for saving it all. The 3D, Analog and Draw editors are opened from their rows
-> in **Sources**.
+> **Panel orientation.** The control panel has six tabs:
+> **Sources · Mix · Effects · Output · Audio · Project**. The first four follow
+> the signal — where a picture comes from, how pictures are combined, what is
+> done to them, where they go. **Audio** is the sound half of the instrument
+> (tape, zones, spectral writer, grains, voice), and **Project** is for saving
+> it all. The larger editors — **3D Scene**, **Analog TV**, **Draw** and
+> **Shader Code (GLSL)** — are *workspaces*: click **⤢ Open workspace** on their
+> row in Sources (Shader Code also from Effects) and they open as an extra tab
+> with a **✕** to close it.
 
 ---
 
@@ -128,7 +135,7 @@ Project files are *not* canvas drops — load `.imweb` with **Cmd+O**, and
 Your imported videos are listed in the **Movie Library** (Sources tab ▸ Media) —
 every movie you have, with thumbnails and a filter box. Drag a row onto a deck,
 or use its `→A` / `→B` buttons, to assign it. `Shift+1–8` selects clips on Deck A,
-`Option+1–8` on Deck B.
+`Option+1–8` on Deck B (`Shift+0` / `Option+0` also pick clip 1).
 
 > Don't confuse the Movie Library with the **Clip Library** below it — that one
 > holds short clips you *record* out of ImWeb's own live output.
@@ -154,5 +161,6 @@ it move on its own, every other parameter in the instrument has been explained.
 - **[Quick Reference](ImWeb_Quick_Reference.md)** — every source, effect and
   shortcut on a few pages.
 - **[Full Manual](ImWeb_Full_Manual.md)** — the complete parameter reference.
-- Press **?** in the app for the keyboard shortcut overlay, and **/** to search
-  for any parameter by name.
+- Press **?** in the app for the keyboard shortcut overlay, and **⌘K** (Ctrl+K)
+  or **/** to search for any parameter by name — ⌘K works on every keyboard
+  layout, `/` only where it is a single key (US layout).

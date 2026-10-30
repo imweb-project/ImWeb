@@ -34,7 +34,8 @@ ImWeb is a ground-up reimagining for the modern browser — an instrument rooted
 ```
 INPUT SOURCES
   Camera · Movie A · Movie B · Stills Buffer · Color · Noise
-  3D Scene · Draw · Slit Scan · Sequencer · GPU Particles · SDF Raymarcher
+  3D Scene · Draw · Growth · Slit Scan · Sequencer · GPU Particles · SDF Raymarcher
+  Rutt-Etra · Shader Code · Time Displace · Volume · Delay · Motion …   (36 in all)
         ↓ any two into ↓
   Mix 1 | Mix 2 | Mix 3   (crossfade / Add / Multiply / Luma Mask / Displace)
         ↓ assigned to ↓
@@ -82,6 +83,10 @@ Firefox and Safari supported in WebGL mode with minor limitations.
 - GPU particle system
 - Sequencer buffers ×3 — record and loop any source; variable frame count (4–480 frames)
 - SDF raymarching generator — GPU-raymarched metaballs routable as pipeline source; Sphere/Box/Torus shapes; KIFS fractal folding; camera navigation; domain repetition; surface displacement; luma warp; triplanar video texturing; AO + glow; HSV colour; glass refraction + Fresnel; dedicated texSrc/refractSrc routing
+- Growth — reaction-diffusion and related growth engines (incl. a Neural Cellular Automaton), seeded from Draw or any source; panel in the Draw workspace
+- Volume — the recorded video history as a block of (x, y, time): orbit it as an object or cut a plane through it
+- Shader Code — the Shader Code (GLSL) shader as a source of its own, reading any source as its input
+- From the Signal — Time Displace, Warp Tape, Slit Scan, Video Delay, RGB Channel Delay and Motion Extraction, each with its own source selector
 - Rutt-Etra Scan Processor — the 1972 scan processor, scanlines deflected by the luminance of any source and viewed through an orbiting perspective camera; drawn as beams or spherically shaded dots with independent widths; depth transfer function (gamma + pivot); asymmetric temporal slew in seconds, so live video becomes a viscous topography rather than jittery spikes; phosphor persistence with spatial bleed; phosphor tint or the source's own colour; full 360° orbit on both axes and free placement; and the raster wraps onto a Plane, Sphere, Cylinder, Torus, Catenoid, Helicoid or Gyroid
 - Drag-and-drop to load video/image files
 
@@ -154,7 +159,7 @@ Right-click any parameter to assign:
 - Fullscreen (double-click canvas or `Cmd+F`)
 - Second monitor — `⊡` opens letterboxed popup on any connected display
 - Ghost mode — dims main canvas when second screen is active
-- Output resolution — Display / 720p / 1080p / 540p / Quarter
+- Output resolution — Display / 720p / 1080p / 540p / Quarter / 1440p / 4K (Output ▸ Display & Record)
 - WebM recording
 - Non-realtime frame capture — 📷 pauses render loop; Step Frame / Auto-Run exports numbered PNG sequence
 
@@ -167,6 +172,16 @@ Right-click any parameter to assign:
 - **Neutral State** — resets all parameter values without touching controller assignments
 - **Bank export/import (.imbank)** — share a single bank
 - **State export/import (.imstate)** — share a single state
+
+### Audio
+
+The **Audio** tab is the instrument's sound half, built around one tape:
+
+- **Tape** — 5–600 s, split into four partitions; recording and playback zones (rate −4…4, cues, dynamic-length takes)
+- **Spectral Writer** — renders the current output picture into the tape as sound, quantised to one of ten scales, with stereo placement from the image
+- **Corpus** — analyses the tape by loudness, brightness, pitch and periodicity; drag on a 2D pad to steer a **Grain Player** through it
+- **Voice** — oscillator / noise synth with FM and a morphing filter
+- Always-on output limiter; a Headphones / Speakers setting so it can warn about mic feedback loops
 
 ### AI
 
@@ -183,13 +198,14 @@ Built into the instrument, not beside it — and with no backend: API keys stay 
 ### UI
 
 - Signal path display — hidden by default; ┄ toolbar toggle; float/dock via `Shift+P`
-- Live GLSL editor — CodeMirror 6 with GLSL syntax highlighting; built-in and saveable user presets, recallable from MIDI/LFO over a configurable index range; auto-injected VJ uniform contract (audio FFT, previous frame, BPM/beat, level/bass/mid/high); insert routing to Master Output, Foreground, Background or Displace; compile errors fall back to the last good shader instead of dropping the render loop
+- Six tabs — Sources · Mix · Effects · Output · Audio · Project; 3D Scene, Analog TV, Draw and Shader Code open as workspaces (**⤢ Open workspace**) from their row in Sources
+- Shader Code (GLSL) editor — CodeMirror 6 with GLSL syntax highlighting; built-in and saveable user presets, recallable from MIDI/LFO over a configurable index range; auto-injected VJ uniform contract (audio FFT, previous frame, BPM/beat, level/bass/mid/high); insert routing to Master Output, Foreground, Background or Displace, or none (source only); compile errors fall back to the last good shader instead of dropping the render loop
 - First-visit onboarding overlay
 - Help menu (status-bar `?`) — guided tour, keyboard shortcuts, the three manuals, About
 - Guided tour (`Shift+G`) — 27 steps in three tracks (Basics / Principles / Instruments); it points at controls, it never sets them
 - LFO visualiser in context menu
 - Vectorscope (Lissajous / waveform / FFT) as source
-- Parameter search overlay (`/`)
+- Parameter search overlay (`Cmd/Ctrl+K` on any keyboard layout, or `/`)
 - Keyboard help overlay (`?`)
 - Audio VU meter in status bar
 - Projection mapping — CSS homography corner-pin on second screen; calibration grid (`G`); corner nudge (arrow keys)
@@ -215,16 +231,20 @@ Built into the instrument, not beside it — and with no backend: API keys stay 
 | `I` | Toggle parameter OSD |
 | `U` | Toggle state bar |
 | `?` | Keyboard help overlay |
-| `/` | Parameter search overlay |
+| `Cmd/Ctrl+K` | Parameter search overlay (any keyboard layout) |
+| `/` | Parameter search overlay (US layout) |
 | `0–9` | Recall State 0–9 |
-| `Shift+0` | Neutral State |
+| `Cmd/Ctrl+Shift+0` | Neutral State (reset all parameters, keep controller assignments) |
+| `Shift+Esc` | Panic — after a confirm, reset all parameters and clear controller assignments |
 | `Shift+G` | Guided tour (resumes where you left off) |
 | `Shift+S` | Quick-save State to next empty slot |
-| `Shift+1–8` | Select clip 1–8 on Movie Deck A |
-| `Option+1–8` | Select clip 1–8 on Movie Deck B |
-| `Cmd/Ctrl+S` | Save project → downloads `.imweb` |
+| `Shift+1–8` | Select clip 1–8 on Movie Deck A (`Shift+0` = clip 1) |
+| `Option+1–8` | Select clip 1–8 on Movie Deck B (`Option+0` = clip 1) |
+| `Cmd/Ctrl+S` | Save project → asks for a name, then downloads `.imweb` |
+| `Cmd/Ctrl+E` | Export `.imweb` straight away |
+| `Cmd/Ctrl+O` | Open a `.imweb` project |
 | `Cmd/Ctrl+F` | Fullscreen output |
-| `NumPad +/-` | Next / previous Bank |
+| `NumPad +/-` | Next / previous Bank (numpad only) |
 
 ---
 
@@ -314,6 +334,7 @@ Recently shipped:
 - [x] Guided tour — three tracks, parsed live from `docs/ImWeb-Guide.md` (v0.18)
 - [x] Seven slew curves in two declared families, and 0.001 Hz modulation (v0.19)
 - [x] Controller menus reachable by Ctrl+click, on any trackpad (v0.19)
+- [x] iPad soak test of the dual-deck engine on real hardware (closed 2026-08-04)
 
 Next:
 
@@ -324,7 +345,6 @@ Next:
 - [ ] Performance profiling / GPU display
 - [ ] Multi-quad projection mapping (independent sources per quad)
 - [ ] Multi-cam workflow (per-layer camera selector)
-- [ ] iPad soak test of the dual-deck engine and the 8-tab bar on real hardware
 
 See [CHANGELOG.md](CHANGELOG.md) for the full history and
 `docs/imweb-obsidian.md` for per-phase detail.

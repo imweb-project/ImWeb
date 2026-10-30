@@ -15,19 +15,24 @@ findable. Part B is the tour.
 | Key | What it does |
 |---|---|
 | **`?`** | Keyboard shortcut overlay. Everything below is on it. `Esc` closes. |
-| **`/`** | Parameter search. Type any part of a name, `↑`/`↓` to move, `Enter` to jump. `Esc` closes. |
+| **`⌘K`** (Ctrl+K) or **`/`** | Parameter search. Type any part of a name, `↑`/`↓` to move, `Enter` to jump. `Esc` closes. `⌘K` works on every keyboard layout; `/` only where it is a single key (US layout). |
 
-**`/` is the real navigation tool.** Every instruction below of the form
-"Sources ▸ From the Signal ▸ Rutt-Etra ▸ Depth" can also be done as: press `/`,
-type `depth`, and edit the row right there in the results — the search results
+**Search is the real navigation tool.** Every instruction below of the form
+"Sources ▸ Generators ▸ Rutt-Etra ▸ Z Gain" can also be done as: press `⌘K`,
+type `z gain`, and edit the row right there in the results — the search results
 are live parameter rows, not links. Click the **⌖** button on a result to scroll
 the actual panel to it and flash it, which is the fastest way to learn where
 something lives.
 
 ## The panel
 
-Five tabs, left to right in signal order:
-**Sources · Mix · Effects · Output · Project**.
+Six tabs: **Sources · Mix · Effects · Output · Audio · Project**. The first
+four follow the signal; **Audio** is the sound half of the instrument and
+**Project** is saving and loading.
+
+The big editors — **3D Scene**, **Analog TV**, **Draw**, **Shader Code (GLSL)** —
+are *workspaces*. Click **⤢ Open workspace** on their row in Sources and they
+open as an extra tab at the end of the tab bar; its **✕** closes it.
 
 - **Click a section header** to collapse/expand it. Subsection headers too.
 - The **⊟ / ⊞ button** collapses or expands everything at once.
@@ -87,7 +92,7 @@ playable without looking at the panel. Full list on `?`.
 
 | Key | |
 |---|---|
-| **`q` / `a` / `z`** | Cycle the **Foreground / Background / DisplaceSrc** source. This is how you audition the 33 sources fast. |
+| **`q` / `a` / `z`** | Cycle the **Foreground / Background / DisplaceSrc** source. This is how you audition the 36 sources fast. |
 | **`0`–`9`** | Recall Display State 0–9. |
 | **`Shift`+`S`** | Save the current look to the next empty State slot. |
 | **`v` / `m`** | Camera on/off · Movie on/off |
@@ -99,7 +104,7 @@ playable without looking at the panel. Full list on `?`.
 | **`f`** | Fullscreen output. `Esc` exits. |
 | **`i` / `u` / `d`** | Parameter OSD · state bar · debug overlay |
 | **`g`** | Cycle canvas interaction mode: Camera → Pad → Locked |
-| **`⌘/Ctrl`+`S`** | Quick-save to the active preset |
+| **`⌘/Ctrl`+`S`** | Save the whole project as an `.imweb` file |
 
 There is one thing to know about `g`: while the canvas is in **Camera** mode a
 drag on the output orbits the 3D camera rather than drawing. Step 7 below needs
@@ -125,14 +130,15 @@ You should now see yourself. Everything below routes something else into
 Scanlines deflected by luminance, seen through an orbiting camera.
 
 1. Press **`a`** until Background reads `Rutt-Etra`.
-2. **Sources** tab ▸ scroll to **From the Signal** ▸ click **Rutt-Etra**. Four
-   subsections: **Scan · Depth · Camera · Phosphor**.
-3. Drag the **Depth** row right until the picture leaves the plane.
+2. **Sources** tab ▸ **Generators** ▸ click **Rutt-Etra**. Click the
+   **Rutt-Etra** row at the top to switch it on — until then it renders nothing.
+   Four subsections: **Scan · Depth · Camera · Phosphor**.
+3. Drag **Z Gain** (under **Depth**) right until the picture leaves the plane.
 4. Drag the **Camera** rows to orbit. Add the same to a controller if you want
    it to orbit itself: right-click the row → LFO, then Ctrl+click the LFO badge
    and set Freq around 0.05 Hz.
-5. **Scan** is how many lines you are actually looking at. Low counts are the
-   1972 look; high counts turn into a surface.
+5. **Lines** (under **Scan**) is how many lines you are actually looking at. Low
+   counts are the 1972 look; high counts turn into a surface.
 
 The machine lies about depth. That's the point — drive the lie.
 
@@ -141,7 +147,8 @@ The machine lies about depth. That's the point — drive the lie.
 ## 2. SDF field renderer
 
 1. Press **`a`** until Background reads `SDF`.
-2. **Sources ▸ From the Signal ▸ SDF**. Thirteen shapes under **Shape**, then
+2. **Sources ▸ Generators ▸ SDF**. Click the **SDF** row to switch it on. Thirteen
+   shapes under **Shape**, then
    **Space · Camera · Material · Light · Glow · Glass · Video · Quality**.
 3. **Glow** is two-stop — set the inner tight and the outer wide and it stops
    looking like a bloom filter.
@@ -157,7 +164,7 @@ The machine lies about depth. That's the point — drive the lie.
 
 A matte of what moves. Built for the keyer, not for looking at.
 
-1. **Sources ▸ From the Signal ▸ Warp ▸ Motion Extraction**. Set **Motion src**
+1. **Sources ▸ From the Signal ▸ Motion Extraction**. Set **Motion src**
    to `Camera`.
 2. Press **`k`** to switch the keyer on. Then **Mix ▸ Keyer ▸ Key src** →
    `Motion`.
@@ -171,7 +178,7 @@ A matte of what moves. Built for the keyer, not for looking at.
 5. Back in Motion Extraction, four rows worth dragging in order:
    **Sensitivity** (how much movement counts) · **Bg adapt** (long = someone who
    stops moving stays in the matte, 0 = plain frame differencing, they vanish) ·
-   **Trail** (how long movement leaves a wake) · **Smoothness** (kills sensor
+   **Trail (s)** (how long movement leaves a wake) · **Smoothness** (kills sensor
    grain and fills silhouettes solid instead of hollow).
 
 ---
@@ -193,14 +200,15 @@ Red, green and blue each read a different frame of history.
 
 ## 5. Spacetime — every temporal engine gets a source
 
-Previously each of these was hardwired to the composite. Now they share one frame
-history and each picks its own way in. All four live under
-**Sources ▸ From the Signal ▸ Warp**:
+Previously each of these was hardwired to the composite. Now each picks its own
+way in. Each is its own section under **Sources ▸ From the Signal** (so each can
+be collapsed or detached on its own):
 
-| Subsection | What to try |
+| Section | What to try |
 |---|---|
-| **Time Displace** | free source selector, **plus an arbitrary angle and a map source** — the map can be any of the 33 sources |
-| **Tape** (Warp Tape) | its own source; defaults to the camera, because Steina performed to a camera |
+| **Time Displace** | switch it on with the **TimeDisp** row; **Capture src** picks what is recorded, **plus an arbitrary angle and a map source** (**Map src**) — the map can be any of the 36 sources |
+| **Volume** | the recorded history as a 3D block of time (x, y, t): orbit it as an object, or cut one flat plane through it (**Cut**). Has its own source (**Vol src**) |
+| **Tape** (Warp Tape) | its own source (**Tape src**); defaults to the camera, because Steina performed to a camera |
 | **Slit Scan** | its own source |
 | **Video Delay** | its own source, and it is the ring RGB Channel Delay reads |
 
@@ -212,7 +220,7 @@ then bends only where the picture moved.
 ## 6. Three mix buses
 
 1. **Mix** tab ▸ **Mix 1**. **srcA** and **srcB** are free source selectors, not
-   a hardwired deck crossfader — pick any two of the 33 from the dropdowns.
+   a hardwired deck crossfader — pick any two of the 36 from the dropdowns.
 2. Drag the blend mode and amount rows.
 3. Press **`a`** until Background reads `Mix 1`.
 4. Now do the same on **Mix 2**, and set its **srcA** to `Mix 1`. A bus is a real
@@ -242,10 +250,11 @@ those live in code.
 
 ---
 
-## 8. Live GLSL editor
+## 8. Shader Code (GLSL) editor
 
-1. **Effects** tab ▸ **Live GLSL**. CodeMirror, in the app, compiling as you
-   type.
+1. **Effects** tab ▸ **Shader Code (GLSL)** ▸ **⤢ Open workspace**. CodeMirror,
+   in the app. **▶ Apply** (or ⌘/Ctrl+Enter) compiles; tick **Auto** and it
+   compiles as you type.
 2. Break it on purpose — delete a semicolon. The render loop does not drop; it
    holds the last good compile. You can do this mid-performance.
 3. Plain-language shader generation needs a key: **Project ▸ AI**. Stored
@@ -279,7 +288,7 @@ along with the Quick Reference and Full Manual, which open inside the app.
 
 ## Where to go next
 
-**33 routable sources, any of which can drive any other.** The interesting
+**36 routable sources, any of which can drive any other.** The interesting
 patches are the ones where an engine's *output* becomes another engine's
 *displacement*, *key*, or *time map* — not the ones where you look at an engine
 directly. `q`/`a`/`z` and a couple of minutes are the whole method.
