@@ -1103,37 +1103,42 @@ export class ParameterSystem extends EventTarget {
 // Derive from this — do NOT hand-copy it. Six hand-synced copies existed
 // before this consolidation and three had drifted, silently breaking
 // TimeDisplace capture and the AI Narrator for sources 25/26.
+// LABELS follow one rule (2026-10-30): a source's dropdown label is the title
+// of its section in the Sources tab, so the thing a student picks and the
+// panel they then go looking for carry the same name. Labels may change
+// freely — anything that needs to identify a source matches its KEY.
 export const SOURCE_DEFS = [
   { key: "camera",    label: "Camera"    }, //  0
   { key: "movie",     label: "Movie A"   }, //  1
-  { key: "buffer",    label: "Buffer"    }, //  2
+  { key: "buffer",    label: "Stills Buffer" }, //  2
   { key: "color",     label: "Color"     }, //  3
-  { key: "color2",    label: "Color2"    }, //  4
+  { key: "color2",    label: "Color 2"   }, //  4
   { key: "noise",     label: "Noise"     }, //  5
   { key: "scene3d",   label: "3D Scene"  }, //  6
   { key: "draw",      label: "Draw"      }, //  7
-  { key: "output",    label: "Output"    }, //  8  — not in inputs bag
+  // 8 — last frame's output fed back in. "(feedback)" because "Output" alone
+  // is also the name of a tab, and this is the instrument's feedback path.
+  { key: "output",    label: "Output (feedback)" }, //  8  — not in inputs bag
   { key: "bg1",       label: "BG1"       }, //  9
   { key: "bg2",       label: "BG2"       }, // 10
   { key: "text",      label: "Text"      }, // 11
   { key: "sound",     label: "Sound"     }, // 12
-  { key: "delay",     label: "Delay"     }, // 13
-  { key: "scope",     label: "Scope"     }, // 14
-  { key: "slitscan",  label: "SlitScan"  }, // 15
+  { key: "delay",     label: "Video Delay" }, // 13
+  { key: "scope",     label: "Vectorscope" }, // 14
+  { key: "slitscan",  label: "Slit Scan" }, // 15
   { key: "particles", label: "Particles" }, // 16
-  { key: "seq1",      label: "Seq1"      }, // 17
-  { key: "seq2",      label: "Seq2"      }, // 18
-  { key: "seq3",      label: "Seq3"      }, // 19
+  { key: "seq1",      label: "Frame Seq 1" }, // 17
+  { key: "seq2",      label: "Frame Seq 2" }, // 18
+  { key: "seq3",      label: "Frame Seq 3" }, // 19
   { key: "depth3d",   label: "3D Depth"  }, // 20
   { key: "sdf",       label: "SDF"       }, // 21
   // 22 — "Warp Tape", not "Vasulka Warp": the honorific moved to the panel
-  // FAMILY (Sources ▸ From the Signal ▸ Warp), which holds all four engines that
-  // invert time into space. Labels may change freely; indices may not.
-  // Longer than the "Tape" subsection header on purpose — this one has to stand
-  // alone in a flat source dropdown next to Camera, Movie, Noise, SDF.
+  // FAMILY, which holds the engines that invert time into space. The Sources
+  // section is titled "Warp Tape" too (it was "Tape", which also named an
+  // Audio section).
   { key: "vwarp",     label: "Warp Tape" },    // 22
-  { key: "analog",    label: "Analog"    }, // 23
-  { key: "tdisp",     label: "TimeDisp"  }, // 24
+  { key: "analog",    label: "Analog TV" }, // 23
+  { key: "tdisp",     label: "Time Displace" }, // 24
   { key: "movieB",    label: "Movie B"   }, // 25
   { key: "mixbus",    label: "Mix 1"     }, // 26 — not in inputs bag
   { key: "mixbus2",   label: "Mix 2"     }, // 27 — not in inputs bag
@@ -1151,7 +1156,7 @@ export const SOURCE_DEFS = [
   { key: "rgbdelay",  label: "RGB Delay" }, // 31
   // 32 — the motion matte. White where the picture moves, black where it does
   // not; meant for the keyer's key source rather than for looking at directly.
-  { key: "motion",    label: "Motion"    }, // 32
+  { key: "motion",    label: "Motion Extraction" }, // 32
   // 33 — Gray-Scott reaction-diffusion, seeded by a source (Draw by default).
   // Appended at the true end; the indirect capture entries move with it, kept in
   // register by the base stamp in migrateCaptureBase().
@@ -1826,15 +1831,22 @@ export function migrateStatesBlendPercent(states, savedSchema) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Old menu index → OPT_SOURCES index. Old: None Camera Movie Screen Draw Buffer Noise. */
+// By KEY, not label: labels may change freely, and an indexOf on a renamed
+// label returns -1, which "+ 1" turns into 0 = None — a silent re-route of
+// every old file. The assertion below makes a missing key fail at load.
+const _srcByKey = (key) => SOURCE_DEFS.findIndex((s) => s.key === key);
 const HC_TEXSRC_REMAP = [
   0,                                    // None   → None
-  SOURCES.indexOf('Camera')    + 1,     // Camera → Camera
-  SOURCES.indexOf('Movie A')   + 1,     // Movie  → Movie A
-  SOURCES.indexOf('Output')    + 1,     // Screen → Output  (it was pipeline.prev)
-  SOURCES.indexOf('Draw')      + 1,     // Draw   → Draw
-  SOURCES.indexOf('Buffer')    + 1,     // Buffer → Buffer
-  SOURCES.indexOf('Noise')     + 1,     // Noise  → Noise
+  _srcByKey('camera')  + 1,             // Camera → Camera
+  _srcByKey('movie')   + 1,             // Movie  → Movie A
+  _srcByKey('output')  + 1,             // Screen → Output  (it was pipeline.prev)
+  _srcByKey('draw')    + 1,             // Draw   → Draw
+  _srcByKey('buffer')  + 1,             // Buffer → Stills Buffer
+  _srcByKey('noise')   + 1,             // Noise  → Noise
 ];
+if (HC_TEXSRC_REMAP.slice(1).some((v) => v < 1)) {
+  throw new Error("HC_TEXSRC_REMAP names a source key that is not in SOURCE_DEFS");
+}
 
 export const HC_TEXSRC_IDS = [
   'hypercube.faces.texsrc',

@@ -383,7 +383,7 @@ before that, and so on into a tunnel. **Rotate** turns the tunnel into a spiral.
 **Decay** decides how long the trail survives.
 
 This is not an effect with a memory. It is the output routed back in as a
-source: `Output` is number 8 in the same list `q` and `a` cycle through.
+source: `Output (feedback)` is number 8 in the same list `q` and `a` cycle through.
 
 Keep one hand on **Decay**. Feedback is the one part of the instrument that can
 run away from you, and pulling decay down is how you catch it.
@@ -488,7 +488,7 @@ Built to be routed into the keyer, not to be looked at.
 
 Set **Motion src** to `Camera` — it is on the **Sources** tab, under **Motion
 Extraction**. Back on **Mix**, press **`k`** for the keyer, then set **Key src**
-to `Motion`.
+to `Motion Extraction`.
 
 **Now set KeyLevelWhite to 100%** — Ctrl+click the value, type `100`, `Enter`.
 The keyer passes a *band*: it rejects the very bright as well as the very dark,
@@ -547,11 +547,11 @@ each picks its own way in, and Time Displace additionally gets an arbitrary
 angle and a **map source**.
 
 They all live under **Sources ▸ From the Signal**, each in its own section —
-**Time Displace**, **Tape** (Warp Tape), **Slit Scan**, **Video Delay**. Warp Tape defaults to the
+**Time Displace**, **Warp Tape**, **Slit Scan**, **Video Delay**. Warp Tape defaults to the
 camera rather than the composite, which matches the lineage: Steina performed to
 a camera.
 
-One deliberate experiment: set Time Displace's **map source** to `Motion`. Time
+One deliberate experiment: set Time Displace's **map source** to `Motion Extraction`. Time
 then bends only where the picture moved.
 
 ## Three mix buses

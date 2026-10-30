@@ -1263,7 +1263,7 @@ Panel: **Sources ▸ Generators ▸ Rutt-Etra**. It renders nothing until its
 
 A rolling buffer that records the source over time and lets you scrub or smear
 across the recorded axis — a tape head over a time-image.
-Panel: **Sources ▸ From the Signal ▸ Tape**.
+Panel: **Sources ▸ From the Signal ▸ Warp Tape**.
 
 | Parameter | Range | Description |
 |-----------|-------|-------------|
@@ -1307,7 +1307,7 @@ tape is the fast path, the ring is the general case.
 
 ### 4.18 Time Displace
 
-Listed in source menus as **TimeDisp**. Displaces each pixel *in time* rather than in space: a map image selects how far
+Listed in source menus as **Time Displace**. Displaces each pixel *in time* rather than in space: a map image selects how far
 back into a captured frame buffer each pixel reads.
 Panel: **Sources ▸ From the Signal ▸ Time Displace**.
 
@@ -1349,7 +1349,7 @@ Object". It can be viewed two ways:
   the history of its top row. **Cut open** removes the camera's side of the cut
   plane, so the exposed face is exactly the Slice picture (the CT view).
 
-Volume has **its own** 120-frame recording, separate from TimeDisp. **Vol src**
+Volume has **its own** 120-frame recording, separate from Time Displace. **Vol src**
 picks what it records (any source, including the output or Volume itself for
 feedback), **Freeze** holds the history still while the camera, cut and key keep
 working on it, and **Rec speed** records only that fraction of frames: 25% keeps
@@ -1414,7 +1414,7 @@ outline, and a hand wave becomes a fan. **Glow** lets only the keyed parts glow,
 and **Max / Average** count only them. Keyed-out areas are transparent, so with
 the output keyer's *Alpha* mode the sculpture stands on the background layer.
 The key works on the stored frames as they are read, so changing it reshapes
-the whole history at once, and TimeDisp (which shares the frames) is unaffected.
+the whole history at once, and Time Displace (which shares the frames) is unaffected.
 
 > Measured at 820×450 (Vol res Half of a ~1640×900 output) on an Intel UHD 630:
 > Solid box 0.7 ms, Solid Cylinder/Ring ~2–3 ms, keyed Solid ~5 ms, Glow ~6 ms,
@@ -1523,9 +1523,9 @@ groups plus the mix buses (the menu labels, in menu order):
 | Group | Sources |
 |-------|---------|
 | **Live In** | Camera, Sound |
-| **Media** | Movie A, Movie B, Buffer, BG1, BG2 |
-| **Generators** | Color, Color2, Noise, Particles, SDF, SDF Depth, Text, Draw, Growth, 3D Scene, 3D Depth, Analog, Rutt-Etra, Shader Code |
-| **From the Signal** | Output, Delay, RGB Delay, Motion, TimeDisp, Volume, SlitScan, Seq1, Seq2, Seq3, Scope, Warp Tape |
+| **Media** | Movie A, Movie B, Stills Buffer, BG1, BG2 |
+| **Generators** | Color, Color 2, Noise, Particles, SDF, SDF Depth, Text, Draw, Growth, 3D Scene, 3D Depth, Analog TV, Rutt-Etra, Shader Code |
+| **From the Signal** | Output (feedback), Video Delay, RGB Delay, Motion Extraction, Time Displace, Volume, Slit Scan, Frame Seq 1, Frame Seq 2, Frame Seq 3, Vectorscope, Warp Tape |
 | **Mix** | Mix 1, Mix 2, Mix 3 |
 
 The list is append-only: a saved State stores a source as its position in the

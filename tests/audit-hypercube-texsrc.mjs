@@ -38,6 +38,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import {
   SOURCES,
+  SOURCE_DEFS,
   OPT_SOURCES,
   PARAM_SCHEMA,
   HC_TEXSRC_IDS,
@@ -103,23 +104,28 @@ for (const id of HC_TEXSRC_IDS) {
 check('main.js hands the canonical resolver to scene3d.render',
   /resolveSource:\s*_resolveLayerTex/.test(main));
 
-// ── The remap preserves meaning, label for label ─────────────────────────────
+// ── The remap preserves meaning, source for source ───────────────────────────
 // The list as it stood before the change, and what each entry resolved to.
+// Compared by source KEY, not label: labels may change freely (CLAUDE.md), and
+// a check pinned to "Output"/"Buffer" failed the 2026-10-30 rename of correct
+// code. The key is what the migration must preserve.
 const OLD_MENU = ['None', 'Camera', 'Movie', 'Screen', 'Draw', 'Buffer', 'Noise'];
-const OLD_MEANS = {                 // old label -> the SOURCES label it bound to
-  Camera: 'Camera',
-  Movie:  'Movie A',
-  Screen: 'Output',                 // it was pipeline.prev.texture
-  Draw:   'Draw',
-  Buffer: 'Buffer',
-  Noise:  'Noise',
+const OLD_MEANS = {                 // old label -> the SOURCE_DEFS key it bound to
+  Camera: 'camera',
+  Movie:  'movie',
+  Screen: 'output',                 // it was pipeline.prev.texture
+  Draw:   'draw',
+  Buffer: 'buffer',
+  Noise:  'noise',
 };
+/** OPT_SOURCES index (0 = None) → SOURCE_DEFS key. */
+const keyOf = (opt) => (opt > 0 ? SOURCE_DEFS[opt - 1]?.key : null);
 for (let old = 1; old < OLD_MENU.length; old++) {
   const label = OLD_MENU[old];
   const values = {};
   for (const id of HC_TEXSRC_IDS) values[id] = old;
   migrateHypercubeTexSrc(values, null, 2);          // a file written at schema 2
-  const got = OPT_SOURCES[values[HC_TEXSRC_IDS[0]]];
+  const got = keyOf(values[HC_TEXSRC_IDS[0]]);
   check(`old ${old} (${label}) still means ${OLD_MEANS[label]}`,
     got === OLD_MEANS[label], `got ${got}`);
 }
@@ -139,22 +145,22 @@ check('a file already at the current schema is left alone', (() => {
 check('an absent stamp is treated as legacy and migrated', (() => {
   const v = { [HC_TEXSRC_IDS[0]]: 3 };            // old 'Screen'
   migrateHypercubeTexSrc(v, undefined, undefined);
-  return OPT_SOURCES[v[HC_TEXSRC_IDS[0]]] === 'Output';
+  return keyOf(v[HC_TEXSRC_IDS[0]]) === 'output';
 })());
 
 check('controller recall bounds move with the value', (() => {
   const recs = { [HC_TEXSRC_IDS[1]]: { value: 3, ctrlMin: 1, ctrlMax: 6 } };
   migrateHypercubeTexSrc(null, recs, 2);
   const r = recs[HC_TEXSRC_IDS[1]];
-  return OPT_SOURCES[r.value] === 'Output' &&
-         OPT_SOURCES[r.ctrlMin] === 'Camera' &&
-         OPT_SOURCES[r.ctrlMax] === 'Noise';
+  return keyOf(r.value) === 'output' &&
+         keyOf(r.ctrlMin) === 'camera' &&
+         keyOf(r.ctrlMax) === 'noise';
 })());
 
 check('the Display State wrapper migrates each state', (() => {
   const states = [{ values: { [HC_TEXSRC_IDS[0]]: 4 } }, null];
   migrateStatesHypercubeTexSrc(states, 2);
-  return OPT_SOURCES[states[0].values[HC_TEXSRC_IDS[0]]] === 'Draw';
+  return keyOf(states[0].values[HC_TEXSRC_IDS[0]]) === 'draw';
 })());
 
 // ── The gate can fire at all ─────────────────────────────────────────────────

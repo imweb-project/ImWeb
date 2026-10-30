@@ -9,6 +9,17 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Changed
+- **One name per source.** A source's dropdown label is now the title of its
+  section in the Sources tab: Stills Buffer, Color 2, Output (feedback), Video
+  Delay, Vectorscope, Slit Scan, Frame Seq 1–3, Analog TV, Time Displace,
+  Motion Extraction; the "Tape" section is titled Warp Tape. Labels only —
+  every index and key is unchanged, so saved files, banks and MIDI maps load
+  exactly as before. Code that identified a source by its label (the
+  hypercube migration table, the AI Narrator's source details) now uses the
+  source key; the Narrator's Warp Tape detail, dead since that source was
+  renamed, works again.
+- **Long dropdown labels** end in an ellipsis instead of being clipped
+  mid-word, with the full name on the dropdown's tooltip.
 - **The docs viewer is a floating window, not a modal.** Try This First, the
   Quick Start and the manuals say "do this, watch the picture" — so the window
   no longer dims or blocks the instrument. Drag it by the title bar, resize it

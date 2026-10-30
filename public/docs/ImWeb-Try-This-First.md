@@ -167,7 +167,7 @@ A matte of what moves. Built for the keyer, not for looking at.
 1. **Sources ▸ From the Signal ▸ Motion Extraction**. Set **Motion src**
    to `Camera`.
 2. Press **`k`** to switch the keyer on. Then **Mix ▸ Keyer ▸ Key src** →
-   `Motion`.
+   `Motion Extraction`.
 3. **Set KeyLevelWhite to 100%.** Ctrl+click the value, type `100`, `Enter`. At
    the default 80% the keyer rejects the *brightest* part of the matte, which
    reads as the strongest motion being the only thing that fails to show. Cut
@@ -208,11 +208,11 @@ be collapsed or detached on its own):
 |---|---|
 | **Time Displace** | switch it on with the **TimeDisp** row; **Capture src** picks what is recorded, **plus an arbitrary angle and a map source** (**Map src**) — the map can be any of the 36 sources |
 | **Volume** | the recorded history as a 3D block of time (x, y, t): orbit it as an object, or cut one flat plane through it (**Cut**). Has its own source (**Vol src**) |
-| **Tape** (Warp Tape) | its own source (**Tape src**); defaults to the camera, because Steina performed to a camera |
+| **Warp Tape** | its own source (**Tape src**); defaults to the camera, because Steina performed to a camera |
 | **Slit Scan** | its own source |
 | **Video Delay** | its own source, and it is the ring RGB Channel Delay reads |
 
-One deliberate experiment: set Time Displace's **map source** to `Motion`. Time
+One deliberate experiment: set Time Displace's **map source** to `Motion Extraction`. Time
 then bends only where the picture moved.
 
 ---
