@@ -2073,7 +2073,7 @@ async function main() {
 
   // Detach a panel-section into a floating window.
   // `geom` (viewport px) restores a saved window; omitted, the window opens
-  // beside the section it came from, which is what the ⊞ button does.
+  // beside the section it came from, which is what the ↗ button does.
   function _detachSection(section, geom = null) {
     if (!section) return;
     const key = sectionKey(section);
@@ -2208,8 +2208,10 @@ async function main() {
     btns.className = "section-header-btns";
 
     const detachBtn = document.createElement("button");
-    detachBtn.textContent = "⊞";
-    detachBtn.title = "Detach panel";
+    // ↗, not ⊞: the toolbar's collapse-all toggles ⊟/⊞, so one glyph meant
+    // two things. ↗ matches the "↗ … (detached)" placeholder it leaves behind.
+    detachBtn.textContent = "↗";
+    detachBtn.title = "Detach into a floating window";
     detachBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       _detachSection(hdr.closest(".panel-section"));
@@ -2220,7 +2222,7 @@ async function main() {
 
   // Level-3 accordion. A SEPARATE sweep from the one above, not a widened
   // selector: subsections collapse but must not detach, and reusing
-  // .section-header would give each one its own ⊞ and make it a detach target
+  // .section-header would give each one its own ↗ and make it a detach target
   // nested inside its own parent's. They also start expanded, so adding the
   // capability changes nothing until a header is actually clicked.
   document.querySelectorAll(".subsection-header").forEach((hdr) => {
@@ -2743,10 +2745,18 @@ async function main() {
       document.body.appendChild(panel);
 
       // Position near the button (below it, clamped to viewport — the button
-      // sits in the top status bar, so "above" would render off-screen)
+      // sits in the top status bar, so "above" would render off-screen).
+      // The panel is zoomed by --ui-scale, so measure it with gBCR (viewport
+      // px) and write through setViewportPos; offsetWidth + raw style.left
+      // put it in the wrong place at any scale above 1.
       const r = btn.getBoundingClientRect();
-      panel.style.left = Math.max(4, Math.min(r.left - 220, window.innerWidth - panel.offsetWidth - 4)) + "px";
-      panel.style.top = Math.min(r.bottom + 4, window.innerHeight - panel.offsetHeight - 4) + "px";
+      const _place = () => {
+        const p = panel.getBoundingClientRect();
+        setViewportPos(panel,
+          Math.max(4, Math.min(r.left - 220, window.innerWidth - p.width - 4)),
+          Math.max(4, Math.min(r.bottom + 4, window.innerHeight - p.height - 4)));
+      };
+      _place();
 
       panel.querySelector("#cm-close").addEventListener("click", _close);
       panel.querySelector("#cm-clear-all").addEventListener("click", () => {
@@ -2755,9 +2765,7 @@ async function main() {
       });
 
       _render();
-      // Reposition now that height is known
-      panel.style.left = Math.max(4, Math.min(r.left - 220, window.innerWidth - panel.offsetWidth - 4)) + "px";
-      panel.style.top = Math.min(r.bottom + 4, window.innerHeight - panel.offsetHeight - 4) + "px";
+      _place(); // again, now that the list has its height
       _pollId = setInterval(_render, 1000);
       btn.classList.add("active");
     }
@@ -4986,8 +4994,8 @@ async function main() {
   ioBtns.className = "section-header-btns";
 
   const ioDetach = document.createElement("button");
-  ioDetach.textContent = "⊞";
-  ioDetach.title = "Detach panel";
+  ioDetach.textContent = "↗";
+  ioDetach.title = "Detach into a floating window";
   ioDetach.addEventListener("click", (e) => {
     e.stopPropagation();
     _detachSection(ioBlock);
@@ -5713,6 +5721,12 @@ async function main() {
           `<div class="ctx-item ctx-danger" data-action="remove">Remove clip</div>`;
         menu.style.cssText = `position:fixed;left:${e.clientX}px;top:${e.clientY}px;z-index:999`;
         document.body.appendChild(menu);
+        // Racks sit at the panel's right edge — keep the menu on screen.
+        const _mr = menu.getBoundingClientRect();
+        if (_mr.right > window.innerWidth - 4)
+          menu.style.left = `${Math.max(4, window.innerWidth - _mr.width - 4)}px`;
+        if (_mr.bottom > window.innerHeight - 4)
+          menu.style.top = `${Math.max(4, window.innerHeight - _mr.height - 4)}px`;
         menu
           .querySelector('[data-action="midi"]')
           .addEventListener("click", () => {
@@ -9992,8 +10006,7 @@ void main() {
   let _padXhair = null;
   const _ensurePadXhair = () => {
     if (_padXhair) return _padXhair;
-    // #output-panel is the canvas's positioned parent (position:relative);
-    // note there is no #canvas-wrap in the DOM (DebugOverlay's target)
+    // #output-panel is the canvas's positioned parent (position:relative)
     const wrap = document.getElementById("output-panel");
     if (!wrap) return null;
     const box = document.createElement("div");

@@ -9,6 +9,24 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Fixed
+- **State numbers agree everywhere.** Number key 3 recalled the tile labelled
+  "4" while the status bar said "State 3". Tiles, the memory panel, the iPad
+  state pad and default export names now count from 0, like the keys and the
+  status bar. State tiles also explain themselves on hover — a stored tile
+  names its key, an empty one says how to save into it (a click on an empty
+  tile does nothing).
+- **The debug overlay (`d`) shows again.** It was mounted on `#canvas-wrap`,
+  which does not exist, so the key did nothing; it now sits on the output
+  panel. It also read sources from its own 17-name list, which had drifted off
+  by one from Noise onwards — it now uses the canonical source list.
+- **Active Controllers panel (⇌):** its colours used four undefined CSS
+  variables, and it was placed in the wrong spot at UI scale above 100%.
+- **Response-table picker and clip right-click menu stay on screen** near the
+  window's right edge.
+- **Toolbar:** AI Coach had the same glyph as Projection mapping (⬡) — it is
+  now ✦. ⚙ is labelled "AI settings", the signal-path tooltip describes what a
+  click does, and a section's detach button is ↗ instead of ⊞, which the
+  collapse-all button also uses.
 - **Opening a project no longer multiplies its banks** (owner: "after saving
   project and open what i saved, the banks with the project file are multiple
   the same"). Import appended every bank under a new index even when an
