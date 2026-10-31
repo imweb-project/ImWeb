@@ -7146,6 +7146,34 @@ async function main() {
     }
   });
 
+  // ── Teletext → Text ───────────────────────────────────────────────────────
+  // The P150 feed's headlines become the content list, one per line, so
+  // text.contentIdx steps through them (64 max — contentIdx's range). Live
+  // re-pulls once the feed is older than teletext.pollInterval, and rewrites
+  // the box only when the headlines themselves changed, so a hand edit
+  // survives until the feed actually moves.
+  let _ttTextLast = "";
+  const _ttTextPull = async (maxAgeMs, force) => {
+    const r = await teletextSource.getHeadlines(maxAgeMs);
+    if (r.error) { if (force) showToast(`Teletext feed: ${r.error}`, 3000); return; }
+    const text = r.titles.slice(0, 64).join("\n");
+    if (!textContentEl || (!force && text === _ttTextLast)) return;
+    _ttTextLast = text;
+    textContentEl.value = text;
+    textContentEl.dispatchEvent(new Event("input"));
+    if (force) showToast(`${Math.min(64, r.titles.length)} headlines from ${r.feedTitle}`, 2000);
+  };
+  document.getElementById("btn-text-teletext")?.addEventListener("click", () => _ttTextPull(60_000, true));
+  let _ttTextTimer = null;
+  document.getElementById("text-teletext-live")?.addEventListener("change", (e) => {
+    clearInterval(_ttTextTimer);
+    _ttTextTimer = null;
+    if (!e.target.checked) return;
+    const pollMs = () => (ps.get("teletext.pollInterval")?.value ?? 300) * 1000;
+    _ttTextPull(pollMs(), true);
+    _ttTextTimer = setInterval(() => _ttTextPull(pollMs(), false), 30_000);
+  });
+
   document.getElementById("btn-text-advance")?.addEventListener("click", () => {
     ps.trigger("text.advance");
   });

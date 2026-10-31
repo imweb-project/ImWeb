@@ -445,6 +445,27 @@ export class TeletextSource {
     }
   }
 
+  /**
+   * The P150 feed as plain headline strings, for the Text layer. P150 only
+   * fetches while Teletext is being rendered, so this fetches itself when the
+   * cache is missing, failed, or older than maxAgeMs.
+   * Returns { feedTitle, titles, fetchedAt } or { error }.
+   */
+  async getHeadlines(maxAgeMs = Infinity) {
+    const c = this._cachedData.rss;
+    if (!c || c.data?.error || Date.now() - c.fetchedAt > maxAgeMs) {
+      if (!this._fetchInFlight.rss) await this._fetchRSS();
+      // A fetch the render loop already started: wait for it rather than
+      // answering from an empty cache.
+      for (let i = 0; i < 150 && this._fetchInFlight.rss; i++) {
+        await new Promise(r => setTimeout(r, 100));
+      }
+    }
+    const d = this._cachedData.rss?.data;
+    if (!d?.items) return { error: d?.error ?? 'no feed yet' };
+    return { feedTitle: d.feedTitle, titles: d.items.map(i => i.title), fetchedAt: d.fetchedAt };
+  }
+
   fetchRSS(url) {
     localStorage.setItem('imweb-teletext-rssUrl', url);
     delete this._cachedData.rss;

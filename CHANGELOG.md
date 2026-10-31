@@ -9,6 +9,11 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Text: Teletext headlines.** A button in the Text panel fills the text with
+  the Teletext feed's headlines, one per line, so **Content Idx** steps through
+  them (up to 64). **Live** refills it when the feed refreshes (Teletext Poll
+  Interval), and only when the headlines changed, so a hand edit stays until
+  the news moves. Pairs with the NOAA space-weather feed for aurora alerts.
 - **Teletext: northern lights and solar activity feeds.** P150 presets gain
   **Space Weather Alerts (NOAA)** — live geomagnetic storm watches, warnings
   and alerts with their G-scale and where aurora may be visible — and **NASA
