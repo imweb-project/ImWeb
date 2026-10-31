@@ -7065,16 +7065,15 @@ async function main() {
   const textPreviewEl = document.getElementById("text-preview");
   if (textPreviewEl?.parentNode) {
     textPreviewEl.replaceWith(textLayer.canvas);
-    textLayer.canvas.id = "text-preview";
-    textLayer.canvas.style.cssText =
-      "display:block;width:100%;image-rendering:pixelated;border:1px solid var(--border);" +
-      "background:#000;touch-action:none;cursor:move;";
+    textLayer.canvas.id = "text-preview";   // styled by #text-preview in style.css
 
     // Play the text where you can see it. This element IS the live layer
     // canvas (it replaced the placeholder above), so a pointer on it is a
     // pointer on the thing being performed:
     //   drag        → text.x / text.y      Shift+drag → text.rotation
-    //   wheel       → text.size            Alt+wheel  → text.weight
+    //   pinch / Ctrl+wheel → text.size     Alt+wheel  → text.weight
+    // A plain wheel is NOT taken: it scrolls the panel. Taking it trapped the
+    // scroll at the preview and resized the text on the way past.
     // Everything writes through ps.set, so controllers, Display States, MIDI
     // and the numeric rows all see the change — never poke textLayer._x.
     let _txDrag = null;
@@ -7128,12 +7127,69 @@ async function main() {
     textLayer.canvas.addEventListener("pointerup", _txEnd);
     textLayer.canvas.addEventListener("pointercancel", _txEnd);
     textLayer.canvas.addEventListener("wheel", (e) => {
+      if (!e.ctrlKey && !e.altKey) return;
       const id = e.altKey ? "text.weight" : "text.size";
       const p  = ps.get(id);
-      const step = e.altKey ? 10 : 2;
-      ps.set(id, Math.max(p.min, Math.min(p.max, p.value - Math.sign(e.deltaY) * step)));
-      e.preventDefault();
+      // A trackpad pinch arrives as ctrlKey wheel events with small fractional
+      // deltas, many per gesture; a mouse Ctrl+wheel as one large delta per
+      // notch. Proportional and clamped serves both without one racing.
+      const step = e.altKey ? -Math.sign(e.deltaY) * 10
+                            : Math.max(-4, Math.min(4, -e.deltaY * 0.2));
+      ps.set(id, Math.max(p.min, Math.min(p.max, p.value + step)));
+      e.preventDefault();   // also stops Ctrl+wheel zooming the page
     }, { passive: false });
+
+    // Subsection tabs in the sticky head (index.html .text-head): one per
+    // subsection, built from the headers so a renamed or added one needs no
+    // edit here. A tab opens its subsection and folds the others, turning a
+    // ~4000 px section into about a screen. The headers keep their own click,
+    // so several can still be open at once; the tabs only mirror that state.
+    // Which tab was chosen is per-browser UI, never a Display State.
+    const textSec = textLayer.canvas.closest(".panel-section");
+    const textHead = textSec?.querySelector(".text-head");
+    const tabBar = textHead?.querySelector(".text-subtabs");
+    if (textSec && tabBar) {
+      const TAB_KEY = "imweb-text-subtab";
+      const subs = [...textSec.querySelectorAll(":scope > .panel-subsection")];
+      const nameOf = (w) => w.querySelector(".subsection-header")?.textContent.trim() ?? "";
+      const btns = subs.map((w) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = nameOf(w);
+        b.addEventListener("click", () => {
+          showSub(nameOf(w));
+          try { localStorage.setItem(TAB_KEY, nameOf(w)); } catch { /* private mode */ }
+        });
+        tabBar.appendChild(b);
+        return b;
+      });
+      const syncTabs = () => subs.forEach((w, i) =>
+        btns[i].classList.toggle("active", !w.classList.contains("collapsed")));
+      function showSub(name) {
+        for (const w of subs) {
+          const open = nameOf(w) === name;
+          w.classList.toggle("collapsed", !open);
+          w.querySelector(".subsection-header")?.classList.toggle("collapsed", !open);
+        }
+        syncTabs();
+      }
+      // Header clicks and the tour's revealParam() fold/unfold by class, so
+      // watch the class rather than every path that sets it.
+      const mo = new MutationObserver(syncTabs);
+      subs.forEach((w) => mo.observe(w, { attributes: true, attributeFilter: ["class"] }));
+      let saved = null;
+      try { saved = localStorage.getItem(TAB_KEY); } catch { /* private mode */ }
+      showSub(subs.some((w) => nameOf(w) === saved) ? saved : "Content");
+
+      // The section header is sticky too; the head sits just under it. Its
+      // height differs attached and detached, so measure it, don't hard-code.
+      const secHdr = textSec.querySelector(":scope > .section-header");
+      if (secHdr) {
+        const placeHead = () => { textHead.style.top = `${secHdr.offsetHeight}px`; };
+        new ResizeObserver(placeHead).observe(secHdr);
+        placeHead();
+      }
+    }
   }
 
   const textContentEl = document.getElementById("text-content");
@@ -10912,6 +10968,15 @@ void main() {
     // layout divides its x extent by this to keep a circle round on screen.
     // setOutputAspect early-returns unless the value actually changed.
     textLayer.setOutputAspect(pipeline.width / Math.max(1, pipeline.height));
+    // The panel preview takes the output's shape (#text-preview in style.css).
+    // Kept on the element, not a module `let`: this runs from the first frame.
+    {
+      const a = (pipeline.width / Math.max(1, pipeline.height)).toFixed(4);
+      if (textLayer.canvas.dataset.aspect !== a) {
+        textLayer.canvas.dataset.aspect = a;
+        textLayer.canvas.style.setProperty("--text-preview-aspect", a);
+      }
+    }
     // The audio picture for per-glyph reactivity. ctrl.tick() has already run
     // sound.tick() this frame, so freqBuf is current, and it is handed over by
     // REFERENCE — the analyser refills that same buffer every frame, which is

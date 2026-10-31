@@ -711,6 +711,59 @@ button {
 .subsection-hidden {
     display: none !important;
 }
+/* Text section head: live preview + subsection tabs, held in view while the
+   rows below scroll. `top` is set from JS to the height of the (also sticky)
+   section header, which differs attached and detached. The preview is capped
+   in height and shaped like the OUTPUT, not square: the square text canvas is
+   stretched to the output's shape by the compositor, so this box shows it the
+   way the output does. Square and full panel width, it filled the screen once
+   the panel was detached. */
+.text-head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--bg-2);
+    padding: 6px 0 4px;
+    border-bottom: 1px solid var(--border);
+}
+#text-preview {
+    display: block;
+    height: 140px;
+    width: auto;
+    max-width: 100%;
+    aspect-ratio: var(--text-preview-aspect, 16 / 9);
+    margin: 0 auto;
+    image-rendering: pixelated;
+    border: 1px solid var(--border);
+    background: #000;
+    touch-action: none;
+    cursor: move;
+}
+.text-subtabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    margin-top: 6px;
+}
+.text-subtabs button {
+    flex: 1 1 auto;
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 3px 6px;
+    background: var(--bg-4);
+    color: var(--text-2);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    cursor: pointer;
+}
+.text-subtabs button:hover { color: var(--text-1); }
+.text-subtabs button.active {
+    color: var(--bg-1);
+    background: var(--accent, var(--text-1));
+    border-color: var(--accent, var(--text-1));
+}
 /* No rule above the first heading in a section — it would double the
    .panel-section border immediately above it. */
 .panel-subsection:first-of-type > .subsection-header {

@@ -8,6 +8,15 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Changed
+- **Text panel is about one screen instead of four.** A row of tabs (Content ·
+  Type · Colour · Motion · Audio · Path · Transition) opens one subsection and
+  folds the rest; the choice is remembered per browser, and the headers still
+  open several at once. The live preview is small (140 px), shaped like the
+  output instead of square, and stays pinned under the section header while
+  you scroll, attached or detached. A plain wheel over it now scrolls the
+  panel; **pinch or Ctrl+wheel** sets text size (Alt+wheel still sets weight).
+
 ### Added
 - **Text: Teletext headlines.** A button in the Text panel fills the text with
   the Teletext feed's headlines, one per line, so **Content Idx** steps through
