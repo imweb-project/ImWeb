@@ -3,7 +3,7 @@
 ![ImWeb Preview](assets/preview.png)
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/version-v0.28.0-brightgreen)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-v0.29.0-brightgreen)](CHANGELOG.md)
 [![Tests](https://github.com/imweb-project/ImWeb/actions/workflows/test.yml/badge.svg)](https://github.com/imweb-project/ImWeb/actions/workflows/test.yml)
 [![Open Collective](https://img.shields.io/badge/Open%20Collective-support-7FADF2?logo=opencollective&logoColor=white)](https://opencollective.com/imweb)
 [![Live Demo](https://img.shields.io/badge/demo-live-orange)](https://imweb.image-ine.org)
@@ -17,7 +17,7 @@
 
 ## Contents
 
-[What This Is](#what-this-is) · [Quick Start](#quick-start) · [Features](#features-v0280) · [Keyboard Reference](#keyboard-reference) · [Architecture](#architecture) · [Roadmap](#roadmap) · [Contributing](#contributing) · [Credits](#credits) · [License](#license) · [Support](#support)
+[What This Is](#what-this-is) · [Quick Start](#quick-start) · [Features](#features-v0290) · [Keyboard Reference](#keyboard-reference) · [Architecture](#architecture) · [Roadmap](#roadmap) · [Contributing](#contributing) · [Credits](#credits) · [License](#license) · [Support](#support)
 
 ---
 
@@ -64,7 +64,7 @@ Firefox and Safari supported in WebGL mode with minor limitations.
 
 ---
 
-## Features (v0.28.0)
+## Features (v0.29.0)
 
 ### Input Sources
 
@@ -316,6 +316,7 @@ Recently shipped:
 - [x] TimeSpace Object — Volume (video history as a block you slice and orbit), Growth incl. a Neural Cellular Automaton, four animated 3D models, Noise rebuilt as stages, Mesh Curve projection mapping, Hypercube overhaul (v0.26)
 - [x] Nothing Lost — audio recordings survive Audio Off and travel in the project file, Shader Code (GLSL) with Blend Mode and saved in states, a bank switch keeps an unsaved look, AI set up by pasting a key with Claude 5.5 models (v0.27)
 - [x] Shader Source — the Shader Code (GLSL) shader as source 35 (seed Growth with it, show it on a layer while it also runs as an effect), mix buses read only by Growth/Motion/Particles/Volume now render, a movable and closable Draw Loops popup (v0.28)
+- [x] Ways In — a splash with three doors and a tested Start Here bank, an OSD that shows only what you touch, one name per source, a floating ⌘K search, Teletext feeds that load again with weather by city and headlines into the Text layer, and State switches that no longer stall (v0.29)
 - [x] Hands on — OSC and Gamepad Learn, Latch, relative sticks, mapping pages for every physical input, PAD IN (v0.25)
 - [x] AI that can see — canvas vision, streaming shader generation, Refine mode, whole-instrument State Generator, token meter (v0.24)
 - [x] Text layer, playable 3D orbit camera, MIDI mapping pages with soft takeover (v0.23)

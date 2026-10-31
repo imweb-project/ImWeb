@@ -8,6 +8,10 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+---
+
+## [0.29.0] — 2026-10-31 — Ways In
+
 ### Changed
 - **Text panel is about one screen instead of four.** A row of tabs (Content ·
   Type · Colour · Motion · Audio · Path · Transition) opens one subsection and
