@@ -9,7 +9,9 @@ import { setViewportPos } from '../layout/LayoutManager.js';
 
 /**
  * Open a small settings popover for the currently-assigned controller.
- * Supports: random (rate, slew), lfo-* (shape, freq, phase, slew), fixed (value).
+ * Type-specific fields: random (rate), lfo-* (shape, freq, phase), fixed (value),
+ * midi, key, expr, stroke. Latch, Relative, Slew and Table are shared rows
+ * added for EVERY controller type — sound included — at the end of this function.
  * All number fields support drag (up=increase) and double-click to type.
  */
 export function openCtrlPopover(param, anchorEl, ctrl, tables) {
@@ -160,7 +162,7 @@ export function openCtrlPopover(param, anchorEl, ctrl, tables) {
     return span;
   };
 
-  /** Slew row (shared by random and lfo). */
+  /** Slew row — shared by every controller type, not only random and lfo. */
   const addSlewRow = () => {
     popover.appendChild(makeRow('Slew (s)', makeDragNum(
       () => param.slew ?? 0,
@@ -249,7 +251,7 @@ export function openCtrlPopover(param, anchorEl, ctrl, tables) {
     });
   };
 
-  /** Table select row (shared by random and lfo). */
+  /** Table select row — shared by every controller type. */
   const addTableRow = () => {
     const sel = document.createElement('select');
     sel.style.cssText = 'font-size:10px;font-family:var(--mono);background:var(--bg-4);border:1px solid var(--border);color:var(--text-1);padding:1px 2px;border-radius:2px;';

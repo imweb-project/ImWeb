@@ -123,6 +123,7 @@ import { WarpMapEditor } from "./inputs/WarpMapEditor.js";
 import { SceneManager } from "./scene3d/SceneManager.js";
 import { ModelSlots, SLOT_PREFIXES } from "./scene3d/ModelSlots.js";
 import { EASING, PLANE_NAMES, PLANE_PAIRS, PLANE_HELP, PLANE_MENU_ORDER } from "./scene3d/HypercubeGeometry.js";
+import { registerHypercubeParams, HC_SLOT_SPEED } from "./scene3d/HypercubeParams.js";
 import { Pipeline } from "./core/Pipeline.js";
 import { GestureArbitrator } from "./core/GestureArbitrator.js";
 import { MobileStatePad } from "./ui/components/MobileStatePad.js";
@@ -380,62 +381,7 @@ async function main() {
   registerAnalogParams(ps);
   registerTeletextParams(ps);
 
-  // ── Hypercube parameters ───────────────────────────────────────────────────
-  ps.register({ id:'hypercube.dim',           type:'continuous', value:4,    min:4,    max:12,   step:1,     label:'Dimension',    group:'hypercube' });
-  // Options derived from EASING, never retyped: stored as an index, so the key
-  // order there is append-only. Default easeInOut, what the panel always used.
-  ps.register({ id:'hypercube.easing',        type:'select',     options:Object.keys(EASING), value:Object.keys(EASING).indexOf('easeInOut'), label:'Easing', group:'hypercube' });
-  ps.register({ id:'hypercube.morphDuration', type:'continuous', value:2000, min:200,  max:8000, step:100, label:'Morph Time',  group:'hypercube' });
-  ps.register({ id:'hypercube.wDistance',     type:'continuous', value:3.0,  min:1.1,  max:20,   step:0.1, label:'W Distance',  group:'hypercube' });
-  ps.register({ id:'hypercube.scale',         type:'continuous', value:1.0,  min:0.1,  max:5.0,  step:0.05, label:'Scale',  group:'hypercube' });
-  ps.register({ id:'hypercube.edgeOpacity',   type:'continuous', value:1.0,  min:0.0,  max:1.0,  step:0.01, label:'Edge Opacity',  group:'hypercube' });
-  ps.register({ id:'hypercube.pointSize',     type:'continuous', value:3.0,  min:0.5,  max:20,   step:0.5, label:'Point Size',  group:'hypercube' });
-  // ── Plane Bank: 8 slots, each a plane + a speed ────────────────────────────
-  // Any of the 66 planes of the 12-cube can be played; planes in no slot turn
-  // at their default speed. Slots 1–4 KEEP the old rot.xy/xz/yz/xw ids as
-  // their speeds, with planes defaulting to XY/XZ/YZ/XW — so every saved state,
-  // bank and MIDI binding on those rows behaves exactly as before (the mix.
-  // bus-1 rule: renaming ids breaks every save for zero gain). Plane menus are
-  // indices into PLANE_NAMES (append-only), 0 = none.
-  const _PLANE_OPTS = ['—', ...PLANE_NAMES];
-  const _planeOpt = n => _PLANE_OPTS.indexOf(n);
-  const HC_SLOT_SPEED = ['hypercube.rot.xy', 'hypercube.rot.xz', 'hypercube.rot.yz', 'hypercube.rot.xw',
-                         'hypercube.slot5.speed', 'hypercube.slot6.speed', 'hypercube.slot7.speed', 'hypercube.slot8.speed'];
-  const _slotDefaults = [['XY', 0.30], ['XZ', 0.20], ['YZ', 0.15], ['XW', 0.40], ['—', 0], ['—', 0], ['—', 0], ['—', 0]];
-  for (let n = 1; n <= 8; n++) {
-    const [plane, speed] = _slotDefaults[n - 1];
-    ps.register({ id:`hypercube.slot${n}.plane`, type:'select', select:true, options:_PLANE_OPTS, value:_planeOpt(plane), label:`Slot ${n} plane`, group:'hypercube',
-      help: 'Which rotation plane this slot turns. XY, XZ and YZ are ordinary 3D spins; planes with W, V, U … turn the cube through a higher dimension and only move once it has that many. Hover an entry for what it does.',
-      optionHelp: ['— : this slot turns nothing', ...PLANE_HELP], displayOrder: PLANE_MENU_ORDER });
-    ps.register({ id:HC_SLOT_SPEED[n - 1], type:'continuous', value:speed, min:-2.0, max:2.0, step:0.01, label:`Slot ${n} speed`, group:'hypercube',
-      help: 'How fast this slot\'s plane turns — radians per second, negative turns the other way. Two slots on the same plane add. A plane in no slot turns at its default speed.' });
-  }
-  // Depth cue by w: far in the extra dimensions = dimmer and thinner, so a
-  // rotating high-D cube reads as depth rather than a flat tangle.
-  ps.register({ id:'hypercube.depthCue',      type:'continuous', value:0,    min:0,    max:1,    step:0.01,  label:'Depth Cue',    group:'hypercube' });
-  ps.register({ id:'hypercube.edgeWidth',     type:'continuous', value:1.5,  min:0.5,  max:8.0,  step:0.1,   label:'Edge Width',   group:'hypercube' });
-  ps.register({ id:'hypercube.renderMode',    type:'select',     options:['wireframe','points','both','off'], value:3, label:'Draw', group:'hypercube' });
-  ps.register({ id:'hypercube.projMode',      type:'select',     options:['perspective','orthographic'],      value:0, label:'Proj Mode',    group:'hypercube' });
-  ps.register({ id:'hypercube.faces.active',  type:'toggle',     value:0,                                    label:'Faces',        group:'hypercube' });
-  ps.register({ id:'hypercube.faces.opacity', type:'continuous', value:0.5,  min:0.0,  max:1.0,  step:0.01,  label:'Face opacity', group:'hypercube' });
-  ps.register({ id:'hypercube.faces.blend',   type:'select',     options:['Normal','Additive','Multiply','Subtract','Screen','Lighten','Darken','Exclusion'], value:0, label:'Face blend', group:'hypercube' });
-  ps.register({ id:'hypercube.faces.hue',     type:'continuous', value:0,    min:0,    max:360,  step:1,     label:'Face hue',     group:'hypercube' });
-  ps.register({ id:'hypercube.faces.sat',     type:'continuous', value:0,    min:0,    max:100,  step:1,     label:'Face sat',     group:'hypercube' });
-  ps.register({ id:'hypercube.faces.texsrc',  type:'select',     options:OPT_SOURCES, value:0, label:'Face tex',   group:'hypercube' });
-  ps.register({ id:'hypercube.faces.masksrc', type:'select',     options:OPT_SOURCES, value:0, label:'Face mask',  group:'hypercube' });
-  ps.register({ id:'hypercube.faces.maskinv', type:'toggle',     value:0,                                    label:'Mask invert', group:'hypercube' });
-  ps.register({ id:'hypercube.faces.masklvl', type:'continuous', value:1.0,  min:0.0,  max:4.0,  step:0.01,  label:'Mask level',  group:'hypercube' });
-  ps.register({ id:'hypercube.inst.active',   type:'toggle',     value:0,                                    label:'Instancer',    group:'hypercube' });
-  ps.register({ id:'hypercube.inst.geo',      type:'select',     options:['Sphere','Torus','Cube','Plane','Cylinder','Capsule','TorusKnot','Cone','Dodecahedron','Icosahedron','Octahedron','Tetrahedron','Ring','Model'], value:0, label:'Inst Geo', group:'hypercube' });
-  ps.register({ id:'hypercube.inst.scale',    type:'continuous', value:0.08, min:0.01, max:2.0,  step:0.01,  label:'Inst Scale',   group:'hypercube' });
-  ps.register({ id:'hypercube.inst.opacity',  type:'continuous', value:1.0,  min:0.0,  max:1.0,  step:0.01,  label:'Inst Opacity', group:'hypercube' });
-  ps.register({ id:'hypercube.inst.texsrc',   type:'select',     options:OPT_SOURCES, value:0, label:'Inst tex', group:'hypercube' });
-  // Off: the instancer REPLACES the 3D scene's geometry/model (and wears its
-  // Material). On: both are visible — geometry keeps Transform and Material,
-  // the instancer rides the same Transform with its own Inst tex/opacity.
-  // GPU guard: instance count × shape vertices ≤ this many million a frame.
-  ps.register({ id:'hypercube.inst.budget',   type:'continuous', value:9,    min:1,    max:64,   step:0.5,   label:'Inst Budget (M verts)', group:'hypercube' });
-  ps.register({ id:'hypercube.inst.showGeo',  type:'toggle',     value:0,                                    label:'Show geometry', group:'hypercube' });
+  registerHypercubeParams(ps);
 
   // ── 3. Controllers ────────────────────────────────────────────────────────
 
@@ -2383,7 +2329,40 @@ async function main() {
   // The guided tour points at parameter rows, and four of them (Live GLSL, 3D,
   // Analog, Draw) live in workspace panes that no .tab button reaches. The
   // router is a closure in this scope, so it is injected rather than imported.
-  initGuide({ ps, openWorkspace });
+  // Tutorials load a starting point through the same reset as Shift+Esc, so
+  // there is one definition of "clean" and the confirm protects the patch.
+  initGuide({
+    ps, openWorkspace,
+    loadStart: async (values) => {
+      // On a fresh profile the first-launch MasterProject import lands a few
+      // seconds after boot and REPLACES every value — a starting point loaded
+      // before it was silently overwritten (seen headless, 2026-10-01). A
+      // workshop room is all fresh browsers, so wait for it. bootProject is
+      // declared further down this function; by the time anyone can click,
+      // it is initialised.
+      await bootProject;
+      if (!confirm(
+        "Load this tutorial's starting point?\n\nEvery parameter goes back to " +
+        "its default, in a bank called Tutorials. Press Cancel, then Shift+S, " +
+        "if you want to keep the current picture in your own bank first.")) return false;
+      // Tutorials work in their own bank (owner, 2026-10-01): Shift+S then lands
+      // in its low slots, where the number keys reach, and the reader's own
+      // banks are never filled with practice states. Switch BEFORE the reset —
+      // activatePreset recalls the bank's active state and controllers, so
+      // after it, it would undo the starting point.
+      const TUTORIAL_BANK = "Tutorials";
+      let bankIdx = presetMgr.getAll().findIndex((b) => b?.name === TUTORIAL_BANK);
+      if (bankIdx === -1) {
+        bankIdx = await presetMgr.createBank(); // creates and activates
+        await presetMgr.renameBank(bankIdx, TUTORIAL_BANK);
+      } else if (presetMgr.currentIdx !== bankIdx) {
+        await presetMgr.activatePreset(bankIdx, { fade: false });
+      }
+      await _resetAllParams(false);
+      for (const [id, v] of values) ps.set(id, v);
+      return true;
+    },
+  });
 
   // Collapse / expand all sections
   const collapseAllBtn = document.getElementById("btn-collapse-all");
@@ -2416,8 +2395,10 @@ async function main() {
   }
 
   // Reset all params to defaults → clean camera state
-  async function _resetAllParams() {
-    if (!confirm("Reset all parameters to defaults?")) return;
+  // Returns false if the user cancelled. Pass `false` to skip the confirm when
+  // the caller has already asked (the tutorial loader does).
+  async function _resetAllParams(message = "Reset all parameters to defaults?") {
+    if (message !== false && !confirm(message)) return false;
     const _morphParam = ps.get('global.morphspeed');
     const _savedMorph = _morphParam?._value ?? 0;
     if (_morphParam) _morphParam._value = 0; // TODO: migrate to ps.suspendMorph() if added — suppress morph during reset cascade without firing onChange
@@ -2435,10 +2416,11 @@ async function main() {
     closeWorkspace();
     _collapseToDefaultOpen();
     await _ensureCamera();
+    return true;
   }
   document
     .getElementById("btn-reset-all")
-    ?.addEventListener("click", _resetAllParams);
+    ?.addEventListener("click", () => _resetAllParams());
 
   // ── LUT loader ────────────────────────────────────────────────────────────
   const lutNameEl = document.getElementById("lut-name");
@@ -4197,6 +4179,15 @@ async function main() {
   });
   // Reopened from the ? menu ("Welcome screen").
   window.addEventListener("imweb:welcome", () => _onboarding?.classList.remove("hidden"));
+
+  // Solo marker. Driven from the param, not the `s` key, so a state recall or a
+  // MIDI mapping that turns Solo on shows it too. Sync once now: a saved
+  // project can boot with Solo already on.
+  const _soloEl = document.getElementById("status-solo");
+  const _syncSolo = (v) => { if (_soloEl) _soloEl.hidden = !v; };
+  ps.get("output.solo").onChange(_syncSolo);
+  _syncSolo(ps.get("output.solo").value);
+  _soloEl?.addEventListener("click", () => ps.set("output.solo", 0));
 
   // Keyboard lock toggle
   const _keylockBtn = document.getElementById("btn-keylock");

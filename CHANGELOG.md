@@ -8,6 +8,48 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Added
+- **SOLO marker in the status bar** — Solo (`s`) bypasses every effect, so a
+  stray keypress made the kaleidoscope vanish and its controls go dead with no
+  sign why (owner, testing Tutorial 0). A yellow SOLO pill now shows while it
+  is on, from any source — key, state recall, MIDI — and a click turns it off.
+- **Guided tour: a Tutorials track** — for video artists and workshop rooms.
+  Each tutorial makes one thing in about five moves: result, starting point,
+  moves, why it works, "now try". First two: *Tutorial 0 — a picture in sixty
+  seconds* and *Lineage — Violin Power* (Steina's sound-driven raster, rebuilt
+  from camera → Rutt-Etra with Z Gain on Sound Level).
+- **Load starting point** — a tutorial step's `start:` line (`clean`, or
+  `id=value` pairs; selects take their option label) renders a button that runs
+  the Shift+Esc reset, behind a confirm, then applies the assignments. The only
+  place the tour sets anything, and only on that button. Resolved by one
+  function shared with `audit-guide-targets`, so a renamed id or option label
+  fails the audit instead of failing in a workshop.
+- **Tutorials: the Feedback theme** — *the tunnel* (Blend, Feedback Mode,
+  Zoom, Decay), *spiral and colour* (Rotate, Hue, centre, an LFO), *the picture
+  melts into itself* (Output as DisplaceSrc), and *Lineage — the camera and its
+  monitor* (optical feedback through a projector or second screen).
+- **Tutorials: the Audio sculpting theme** — *one sound, one control* (Bass on
+  Displace, range first, then Slew), *a colour organ* (High / Mid / Bass on
+  RGB Shift / Kale.Rot / Kaleidoscope), *a word that listens* (Text audio,
+  one letter per spectrum slice), *seeing the sound* (Scope as a picture, then
+  as a displacement map). *Lineage — Violin Power* moves to close the theme.
+- **Tutorials work in their own bank.** Load starting point switches to a bank
+  named *Tutorials* (created the first time, reused after), so Shift+S lands in
+  its first slots and the reader's own banks are never filled with practice
+  states. A start pressed during first launch now waits for the MasterProject
+  import instead of being overwritten by it.
+- **Tutorials: theme chips** — a step's `theme:` groups the Tutorials track
+  under chips (Start · Feedback · Audio · 3D); Back/Next stay inside a theme.
+- **Tutorials: the 3D world theme** — *a solid made of your picture*, *the
+  picture pushes the surface* (T-Displace), *a field of copies* (Cloner),
+  *depth as a picture* (3D Depth as a displacement map), and *Lineage — the
+  hypercube* (after A. Michael Noll's 1960s Bell Labs films).
+- **Tutorials: the Time theme** — *three moments at once* (RGB Delay), *now
+  minus a moment ago* (camera over its own delay, Difference), *time bends
+  across the picture* (Time Displace: modes, Direction, Angle, Motion as the
+  map), *the slit* (SlitScan), and *Lineage — Image/ine's warp* (Warp Tape, the
+  original ImOs9 tape mechanism).
+
 ---
 
 ## [0.29.0] — 2026-10-31 — Ways In
@@ -441,6 +483,17 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
     unweighted Average and a flipped normal each turn their check red.
 
 ### Changed
+- Renaming the current bank updates the status bar at once (it kept the old
+  name until the next bank switch).
+- **Scrolling over the panel no longer moves parameters by accident.** A row
+  used to adjust on any horizontal scroll, with no modifier; a trackpad or
+  Magic Mouse swipe is never perfectly vertical, so whichever row was under the
+  cursor could jump. Only ⌥+scroll adjusts now (⌥⇧ for ×5, still working on
+  macOS where Shift turns the wheel horizontal). The unmodified sideways swipe
+  is gone.
+- Hypercube parameters are registered from `src/scene3d/HypercubeParams.js`
+  instead of inline in main.js, so Node audits see the same parameter set as
+  the app. Ids, options and defaults are unchanged.
 - **Growth, Neural: roughly half the frame cost** (owner: "will this be able
   to run at 60fps?", at 9 fps). Measured whole frames on the Intel UHD 630:
   the rule is ~85% of the cost (11.5 ms a step at Size 50, ~28 ms at Size
