@@ -64,6 +64,13 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   Teletext is selected, and the Teletext TV State opens on Headlines.
 
 ### Fixed
+- **Switching States dropped the frame rate, sometimes for seconds.** Many
+  FactoryBank States (and four Start Here States) carry a 100,785-character
+  transcript in the Text layer as one line, and every recall redrew all of it
+  — one save/measure/restore per glyph when a stagger or path setting carried
+  over from the previous State. A text unit is now drawn up to 1,000
+  characters, more than any line can show; the full text stays in the State.
+  Headless, the worst switch went from 161 s to 0.36 s.
 - **Teletext headlines loaded nothing, anywhere.** Feeds, articles and the
   calendar went through corsproxy.io, which now refuses keyless requests
   (403 "keyless_legacy_url"), so P150 sat on "FETCHING…" forever. Feeds are
