@@ -18,6 +18,13 @@ import * as THREE from 'three';
 // param. 512 was the historical fixed size and is kept as the floor.
 const SIZE = 512;
 const RES_OPTS = [512, 1024, 2048];
+// Longest unit that is ever drawn. A unit is one line of glyphs on a canvas at
+// most 2048 px wide with an 8 px floor on the font, so nothing past ~1000
+// characters can be on screen — but every character is still measured and
+// drawn, one save/restore each in the per-glyph modes. FactoryBank States
+// carry a 100,785-character transcript in mode All: one unit, one line, and a
+// recall that blocked the page for seconds. Cap the unit, keep the text.
+const MAX_UNIT_CHARS = 1000;
 // APPEND-ONLY, forever. text.font is a SELECT persisted as an integer index
 // into this list by every .imweb, .imbank, .imstate and MIDI mapping — the
 // same rule that governs SOURCE_DEFS. Indices 0–4 are the original five and
@@ -690,6 +697,7 @@ export class TextLayer {
       default: this._units = t ? [t] : [];                  break; // All
     }
     if (!this._units.length) this._units = [' '];
+    this._units = this._units.map(u => u.length > MAX_UNIT_CHARS ? u.slice(0, MAX_UNIT_CHARS) : u);
   }
 
   _easePhase(t) {
