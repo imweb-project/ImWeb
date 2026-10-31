@@ -592,20 +592,19 @@
                         <div class="panel-section">
                             <div class="section-header">Text</div>
                     <!-- Text Layer (merged from former Text tab; wrapper id kept for JS) -->
+                        <!-- Sticky head: a small live preview plus one tab per
+                             subsection. It is a direct child of the section, not
+                             of Content, because position:sticky only holds inside
+                             its own parent — inside Content it would scroll away
+                             with Content. The tabs open one subsection and fold
+                             the rest; main.js builds them from the headers below,
+                             so a renamed or added subsection needs no edit here. -->
+                        <div class="text-head">
+                            <canvas id="text-preview" width="256" height="256"></canvas>
+                            <div class="text-subtabs" role="tablist"></div>
+                        </div>
                         <div class="panel-subsection">
                             <div class="subsection-header">Content</div>
-                            <canvas
-                                id="text-preview"
-                                width="256"
-                                height="256"
-                                style="
-                                    display: block;
-                                    width: 100%;
-                                    image-rendering: pixelated;
-                                    border: 1px solid var(--border);
-                                    background: #000;
-                                "
-                            ></canvas>
                             <textarea
                                 id="text-content"
                                 rows="4"
