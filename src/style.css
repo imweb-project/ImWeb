@@ -1314,6 +1314,41 @@ div.param-select .imw-sel-trigger {
     max-width: 100%;
 }
 
+/* ── REIMAGINE (AI stills) ──────────────────────────────────────────────── */
+
+.reimagine-box {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px 10px;
+}
+#reimagine-prompt,
+#reimagine-model {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--bg-2, #111);
+    color: inherit;
+    border: 1px solid var(--border);
+    font: inherit;
+    font-size: 11px;
+    padding: 4px 6px;
+    resize: vertical;
+}
+.reimagine-model {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-2);
+}
+#reimagine-status {
+    font-size: 11px;
+    color: var(--text-2);
+    min-height: 1.3em;
+}
+#reimagine-status[data-kind="busy"] { color: var(--accent, #cc8); }
+#reimagine-status[data-kind="err"]  { color: var(--red, #e05); }
+
 /* ── 3D PANEL ────────────────────────────────────────────────────────────── */
 
 #geometry-controls {

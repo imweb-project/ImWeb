@@ -2957,6 +2957,74 @@ export function registerCoreParameters(ps) {
     type: PARAM_TYPE.TRIGGER,
   });
 
+  // ── Reimagine (AI stills) ─────────────────────────────────────────────────
+  // The output frame goes to an image-EDIT model and comes back reinterpreted
+  // into a Stills Buffer slot, then crossfades in. Slow AI, fast instrument:
+  // the model works in seconds, the buffer is played at frame rate.
+  //
+  // reimagine.auto is group 'global' ON PURPOSE: every request costs money,
+  // so recalling a Display State must never start a paid loop by itself. It
+  // is appended by id to the Reimagine panel and excluded from global-params.
+  // Everything else is group 'reimagine' and IS captured.
+  ps.register({
+    id: "reimagine.go",
+    label: "Reimagine",
+    group: "reimagine",
+    type: PARAM_TYPE.TRIGGER,
+  });
+  ps.register({
+    id: "reimagine.auto",
+    label: "AutoReimagine",
+    group: "global",
+    type: PARAM_TYPE.TOGGLE,
+    value: 0,
+  });
+  ps.register({
+    id: "reimagine.interval",
+    label: "Every",
+    group: "reimagine",
+    min: 3,
+    max: 120,
+    value: 15,
+    step: 1,
+    unit: "s",
+  });
+  ps.register({
+    id: "reimagine.fade",
+    label: "Fade",
+    group: "reimagine",
+    min: 0,
+    max: 20,
+    value: 3,
+    step: 0.1,
+    unit: "s",
+  });
+  ps.register({
+    id: "reimagine.follow",
+    label: "FollowNew",
+    group: "reimagine",
+    type: PARAM_TYPE.TOGGLE,
+    value: 1,
+  });
+  ps.register({
+    id: "reimagine.slotFrom",
+    label: "FirstSlot",
+    group: "reimagine",
+    min: 0,
+    max: 63,
+    value: 8,
+    step: 1,
+  });
+  ps.register({
+    id: "reimagine.slots",
+    label: "Slots",
+    group: "reimagine",
+    min: 1,
+    max: 16,
+    value: 4,
+    step: 1,
+  });
+
   // ── Movie / clip ──────────────────────────────────────────────────────────
   // Both decks register from one descriptor table so movie.* (Deck A) and
   // movieB.* (Deck B) can never drift. Deck A ids/labels/groups are unchanged.

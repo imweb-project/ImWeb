@@ -377,6 +377,20 @@
                             <div id="buffer-controls"></div>
                             <div id="buffer-params"></div>
                         </div>
+                        <!-- Reimagine: output frame → image-edit model → buffer slot.
+                             Wired in main.js (Reimagine section), params via reimagine-params. -->
+                        <div class="panel-section" id="reimagine-section">
+                            <div class="section-header">Reimagine (AI)</div>
+                            <div class="reimagine-box">
+                                <textarea id="reimagine-prompt" rows="2" spellcheck="false"
+                                    placeholder="as wet ink on rice paper">as wet ink on rice paper</textarea>
+                                <label class="reimagine-model">Model
+                                    <input id="reimagine-model" type="text" spellcheck="false" />
+                                </label>
+                                <div id="reimagine-status">Uses your Google Gemini key · each image is a paid request</div>
+                            </div>
+                            <div id="reimagine-params"></div>
+                        </div>
                     </div>
                         <div class="panel-section">
                             <div class="section-header">BG1</div>

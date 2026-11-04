@@ -9,6 +9,17 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Reimagine (AI) — prototype** — under the Stills Buffer. The output frame
+  goes to a Gemini image-edit model with your prompt ("as wet ink on rice
+  paper"), and the answer lands in a buffer slot (FirstSlot…+Slots, cycling)
+  and crossfades in over Fade (FollowNew: fs1 → fs2 by FrameBlend, then fs1
+  takes the new slot). Route the buffer back into a layer and repeated runs
+  drift — slow AI, fast instrument. One request at a time; Every counts from
+  when an answer lands. Uses the Gemini key from AI settings, sent in a header.
+  AutoReimagine is group 'global' so a recalled state can never start a paid
+  loop, and any failure switches it off. Prompt and model id are per-origin
+  localStorage. Image calls are not in the token usage meter (they bill per
+  image); the status line counts them instead.
 - **SOLO marker in the status bar** — Solo (`s`) bypasses every effect, so a
   stray keypress made the kaleidoscope vanish and its controls go dead with no
   sign why (owner, testing Tutorial 0). A yellow SOLO pill now shows while it

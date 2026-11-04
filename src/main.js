@@ -152,7 +152,10 @@ import {
   getVisionConfig,
   setVisionShader,
   logCoachSuggestion,
+  getReimagineModel,
+  setReimagineModel,
 } from "./ai/AIFeatures.js";
+import { Reimagine } from "./ai/Reimagine.js";
 import {
   initTabs,
   buildParamRow,
@@ -459,6 +462,9 @@ async function main() {
   ctrl._movieInput = movieInput;
 
   const stillsBuffer = new StillsBuffer(renderer, W, H);
+  // Assigned once the AI section has the frame grab (captureOutputFrame);
+  // the render loop ticks it through ?. until then.
+  let reimagine = null;
   const seq1 = new SequenceBuffer(renderer, W, H, 60, "seq1");
   const seq2 = new SequenceBuffer(renderer, W, H, 60, "seq2");
   const seq3 = new SequenceBuffer(renderer, W, H, 60, "seq3");
@@ -10809,6 +10815,10 @@ void main() {
     movieInput.tick(ps, beatPhase, dt, _uploadA);
     movieInputB.tick(ps, beatPhase, dt, _uploadB);
 
+    // Reimagine BEFORE stillsBuffer.tick: a landing fade sets fs1 and drops FrameBlend
+    // to 0 together, so fs1 must be read into readIndex in this same frame —
+    // ticked after, the hand-off would show the OLD still for one frame.
+    reimagine?.tick(dt);
     // Tick stills buffer (reads fs1 → readIndex)
     stillsBuffer.tick(ps, dt);
 
@@ -11922,22 +11932,27 @@ void main() {
   // the frame survives the downscale intact. PNG would be several times larger
   // for no gain on a photographic image.
   const VISION_W = 512;
-  let _visionCanvas = null;
-  function captureVisionFrame() {
+  const _frameCanvases = new Map(); // width → scratch canvas
+  function captureVisionFrame() { return captureOutputFrame(VISION_W, 0.6); }
+  // Reimagine sends a larger, cleaner frame (1024px, q0.85) through the SAME
+  // path — one grab, two callers, so the opaque-draw and taint rules cannot
+  // drift between them.
+  function captureOutputFrame(W, quality) {
     if (!canvas?.width || !canvas?.height) return null;
-    const h = Math.max(1, Math.round(VISION_W * (canvas.height / canvas.width)));
-    // One reused scratch canvas — the narrator fires on a timer, and a fresh
-    // 512px canvas every tick is garbage the GC has to chase mid-performance.
-    if (!_visionCanvas) _visionCanvas = document.createElement("canvas");
-    if (_visionCanvas.width !== VISION_W || _visionCanvas.height !== h) {
-      _visionCanvas.width = VISION_W;
-      _visionCanvas.height = h;
+    const h = Math.max(1, Math.round(W * (canvas.height / canvas.width)));
+    // One reused scratch canvas per width — the narrator fires on a timer, and
+    // a fresh canvas every tick is garbage the GC has to chase mid-performance.
+    let cv = _frameCanvases.get(W);
+    if (!cv) { cv = document.createElement("canvas"); _frameCanvases.set(W, cv); }
+    if (cv.width !== W || cv.height !== h) {
+      cv.width = W;
+      cv.height = h;
     }
-    const ctx = _visionCanvas.getContext("2d");
+    const ctx = cv.getContext("2d");
     if (!ctx) return null;
     try {
-      _drawOutputOpaque(ctx, VISION_W, h);
-      const url = _visionCanvas.toDataURL("image/jpeg", 0.6);
+      _drawOutputOpaque(ctx, W, h);
+      const url = cv.toDataURL("image/jpeg", quality);
       const comma = url.indexOf(",");
       if (comma === -1) return null;
       return { b64: url.slice(comma + 1), mime: "image/jpeg" };
@@ -11946,6 +11961,49 @@ void main() {
       // throws here. Vision degrades to text-only rather than killing the
       // narrator — losing the picture is not worth losing the feature.
       return null;
+    }
+  }
+
+  // ── Reimagine (AI stills) ─────────────────────────────────────────────────
+  // Panel lives under the Stills Buffer (index.html #reimagine-section). The
+  // prompt and model id are per-origin localStorage, not parameters: a text
+  // prompt has no param type, and image model ids drift too fast to index.
+  {
+    const statusEl = document.getElementById("reimagine-status");
+    const promptEl = document.getElementById("reimagine-prompt");
+    const modelEl  = document.getElementById("reimagine-model");
+    const PROMPT_KEY = "imweb.reimagine.prompt";
+    let count = 0;
+    reimagine = new Reimagine({
+      ps,
+      stillsBuffer,
+      captureFrame: captureOutputFrame,
+      aspect: () => (canvas?.width || 16) / (canvas?.height || 9),
+      onStatus: (msg, kind) => {
+        if (kind === "ok") count++;
+        if (!statusEl) return;
+        statusEl.textContent = kind === "ok" ? `${msg} · ${count} this session` : msg;
+        statusEl.dataset.kind = kind ?? "";
+      },
+      onWrote: () => refreshBufferGrid(),
+    });
+    if (promptEl) {
+      try { promptEl.value = localStorage.getItem(PROMPT_KEY) ?? promptEl.value; } catch { /* private mode */ }
+      reimagine.prompt = promptEl.value;
+      promptEl.addEventListener("input", () => {
+        reimagine.prompt = promptEl.value;
+        try { localStorage.setItem(PROMPT_KEY, promptEl.value); } catch { /* quota */ }
+      });
+      // Typing in the prompt must not fire the instrument's key shortcuts.
+      promptEl.addEventListener("keydown", (e) => e.stopPropagation());
+    }
+    if (modelEl) {
+      modelEl.value = getReimagineModel();
+      modelEl.addEventListener("change", () => {
+        setReimagineModel(modelEl.value);
+        modelEl.value = getReimagineModel();
+      });
+      modelEl.addEventListener("keydown", (e) => e.stopPropagation());
     }
   }
 
