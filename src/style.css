@@ -1322,8 +1322,7 @@ div.param-select .imw-sel-trigger {
     gap: 6px;
     padding: 6px 10px;
 }
-#reimagine-prompt,
-#reimagine-model {
+#reimagine-prompt {
     width: 100%;
     box-sizing: border-box;
     background: var(--bg-2, #111);
@@ -1334,6 +1333,8 @@ div.param-select .imw-sel-trigger {
     padding: 4px 6px;
     resize: vertical;
 }
+#reimagine-model { flex: 1; min-width: 0; }
+#reimagine-model .imw-sel { width: 100%; }
 .reimagine-model {
     display: flex;
     align-items: center;

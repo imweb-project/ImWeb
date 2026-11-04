@@ -154,8 +154,11 @@ import {
   logCoachSuggestion,
   getReimagineModel,
   setReimagineModel,
+  listReimagineModels,
+  REIMAGINE_KNOWN_MODELS,
 } from "./ai/AIFeatures.js";
 import { Reimagine } from "./ai/Reimagine.js";
+import { mkSelect } from "./ui/components/Select.js";
 import {
   initTabs,
   buildParamRow,
@@ -11997,14 +12000,23 @@ void main() {
       // Typing in the prompt must not fire the instrument's key shortcuts.
       promptEl.addEventListener("keydown", (e) => e.stopPropagation());
     }
-    if (modelEl) {
-      modelEl.value = getReimagineModel();
-      modelEl.addEventListener("change", () => {
-        setReimagineModel(modelEl.value);
-        modelEl.value = getReimagineModel();
-      });
-      modelEl.addEventListener("keydown", (e) => e.stopPropagation());
-    }
+    // Model dropdown. Rebuilt (not patched) when the live list arrives:
+    // mkSelect fixes its options at build. A saved id that is in neither list
+    // is kept as its own entry rather than silently swapped for another model.
+    const buildModelSelect = (models) => {
+      if (!modelEl) return;
+      const cur = getReimagineModel();
+      if (!models.some((m) => m.id === cur)) models = [...models, { id: cur, label: cur }];
+      const sel = mkSelect(
+        models.map((m) => (m.label === m.id ? m.id : `${m.label} · ${m.id}`)),
+        models.findIndex((m) => m.id === cur),
+        (i) => setReimagineModel(models[i].id),
+        "reimagine-model-select",
+      );
+      modelEl.replaceChildren(sel);
+    };
+    buildModelSelect(REIMAGINE_KNOWN_MODELS.map((m) => ({ ...m })));
+    listReimagineModels().then(buildModelSelect);
   }
 
   /**

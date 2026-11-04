@@ -20,6 +20,8 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   loop, and any failure switches it off. Prompt and model id are per-origin
   localStorage. Image calls are not in the token usage meter (they bill per
   image); the status line counts them instead.
+  Model is a dropdown: the known Nano Banana models (fastest first) plus any
+  image model the key's live model list reports.
 - **SOLO marker in the status bar** — Solo (`s`) bypasses every effect, so a
   stray keypress made the kaleidoscope vanish and its controls go dead with no
   sign why (owner, testing Tutorial 0). A yellow SOLO pill now shows while it

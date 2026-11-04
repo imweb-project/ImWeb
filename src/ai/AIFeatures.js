@@ -1893,6 +1893,34 @@ const REIMAGINE_ASPECTS = [
   ['1:1', 1], ['4:5', 4 / 5], ['3:4', 3 / 4], ['2:3', 2 / 3], ['9:16', 9 / 16],
 ];
 
+// Shown in the Model dropdown even before (or without) a live listing. From
+// Google's image-generation docs, 2026-11-04 — fastest first. The live list
+// from the API is merged in on top, so a new model appears without an edit.
+export const REIMAGINE_KNOWN_MODELS = [
+  { id: 'gemini-3.1-flash-lite-image', label: 'Nano Banana 2 Lite (fastest)' },
+  { id: 'gemini-3.1-flash-image',      label: 'Nano Banana 2' },
+  { id: 'gemini-nano-banana-2.1',      label: 'Nano Banana 2.1' },
+  { id: 'gemini-3-pro-image',          label: 'Nano Banana Pro (best, slow)' },
+  { id: 'gemini-2.5-flash-image',      label: 'Nano Banana (legacy)' },
+];
+
+/**
+ * Known image models plus whatever image models the key can see right now.
+ * The listing is free; a failure (no key, offline) just leaves the known list.
+ * @returns {Promise<{id:string,label:string}[]>}
+ */
+export async function listReimagineModels() {
+  const out = REIMAGINE_KNOWN_MODELS.map(m => ({ ...m }));
+  try {
+    if (_config().providers.gemini?.apiKey) {
+      for (const id of await fetchModels('gemini')) {
+        if (/image/i.test(id) && !out.some(m => m.id === id)) out.push({ id, label: id });
+      }
+    }
+  } catch { /* known list stands */ }
+  return out;
+}
+
 export function getReimagineModel() {
   return _config().reimagine?.model || REIMAGINE_DEFAULT_MODEL;
 }
