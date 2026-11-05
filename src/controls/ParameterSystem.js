@@ -25,6 +25,7 @@ import { isPagedBinding } from './controlInput.js';
 // built from the one list the index itself reads, never retyped beside it.
 import { DESCRIPTOR_LABELS } from '../audio/corpus-index.js';
 import { GROWTH_PATTERNS, GROWTH_MODES, GROWTH_LOOKS, NCA_MODELS } from '../inputs/GrowthPatterns.js';
+import { REIMAGINE_LOOKS } from '../ai/ReimagineLooks.js';
 
 /**
  * How the performer is listening (§8.6). ONE list, read twice: the labels are
@@ -1171,6 +1172,12 @@ export const SOURCE_DEFS = [
   // glsl.srcInput as its uTexture. Appended at the true end; the indirect
   // capture entries move with it, kept in register by migrateCaptureBase().
   { key: "glsl",      label: "Shader Code" }, // 35
+  // 36 — the depth of whatever the Stills Buffer shows, white = near. Made in
+  // the browser for each Reimagine still (src/ai/DepthEstimator.js) and
+  // blended fs1 → fs2 by FrameBlend like the buffer (src/ai/AIDepth.js).
+  // Appended at the true end; the indirect capture entries move with it, kept
+  // in register by migrateCaptureBase().
+  { key: "aidepth",   label: "AI Depth" }, // 36
 ];
 
 /** Source indices of the three mix buses, in evaluation order (1 → 2 → 3). */
@@ -1189,7 +1196,7 @@ export const MIXBUS_IDX = [26, 27, 28];
  */
 export const SOURCE_DISPLAY_ORDER = [
   { header: "Live In" },        0 /* Camera */, 12 /* Sound */,
-  { header: "Media" },          1 /* Movie A */, 25 /* Movie B */, 2 /* Buffer */,
+  { header: "Media" },          1 /* Movie A */, 25 /* Movie B */, 2 /* Buffer */, 36 /* AI Depth */,
                                 9 /* BG1 */, 10 /* BG2 */,
   { header: "Generators" },     3 /* Color */, 4 /* Color2 */, 5 /* Noise */,
                                 16 /* Particles */, 21 /* SDF */, 30 /* SDF Depth */,
@@ -2955,6 +2962,103 @@ export function registerCoreParameters(ps) {
     label: "CaptBuffer",
     group: "buffer",
     type: PARAM_TYPE.TRIGGER,
+  });
+
+  // ── Reimagine (AI stills) ─────────────────────────────────────────────────
+  // The output frame goes to an image-EDIT model and comes back reinterpreted
+  // into a Stills Buffer slot, then crossfades in. Slow AI, fast instrument:
+  // the model works in seconds, the buffer is played at frame rate.
+  //
+  // reimagine.auto is group 'global' ON PURPOSE: every request costs money,
+  // so recalling a Display State must never start a paid loop by itself. It
+  // is appended by id to the Reimagine panel and excluded from global-params.
+  // Everything else is group 'reimagine' and IS captured.
+  // Look: a LOADER (clean reset + a tested patch + prompt), the growth.look
+  // pattern — group 'global' so Display States capture the values it wrote,
+  // not an index that would re-run a reset on recall. APPEND-ONLY:
+  // REIMAGINE_LOOKS in src/ai/ReimagineLooks.js. Index 0 is a no-op heading.
+  ps.register({
+    id: "reimagine.look", label: "Look", group: "global",
+    type: PARAM_TYPE.SELECT, options: REIMAGINE_LOOKS.map((l) => l.name), value: 0,
+    select: true, reselect: true,
+  });
+  ps.register({
+    id: "reimagine.go",
+    label: "Reimagine",
+    group: "reimagine",
+    type: PARAM_TYPE.TRIGGER,
+  });
+  ps.register({
+    id: "reimagine.auto",
+    label: "AutoReimagine",
+    group: "global",
+    type: PARAM_TYPE.TOGGLE,
+    value: 0,
+  });
+  // Send: what the AI SEES, separate from what is shown. Screen is the drift
+  // loop; Camera / Stills Buffer send a FLAT picture, so a 3D Look's turning
+  // plane never gets painted into the next image. APPEND-ONLY (index persists).
+  ps.register({
+    id: "reimagine.send",
+    label: "Send",
+    group: "reimagine",
+    type: PARAM_TYPE.SELECT,
+    options: ["Screen", "Camera", "Buffer"],
+    value: 0,
+  });
+  ps.register({
+    id: "reimagine.interval",
+    label: "Every",
+    group: "reimagine",
+    min: 3,
+    max: 120,
+    value: 15,
+    step: 1,
+    unit: "s",
+  });
+  ps.register({
+    id: "reimagine.fade",
+    label: "Fade",
+    group: "reimagine",
+    min: 0,
+    max: 20,
+    value: 3,
+    step: 0.1,
+    unit: "s",
+  });
+  ps.register({
+    id: "reimagine.follow",
+    label: "FollowNew",
+    group: "reimagine",
+    type: PARAM_TYPE.TOGGLE,
+    value: 1,
+  });
+  ps.register({
+    id: "reimagine.slotFrom",
+    label: "FirstSlot",
+    group: "reimagine",
+    min: 0,
+    max: 63,
+    value: 8,
+    step: 1,
+  });
+  // Depth: make a depth map for each image as it lands (in the browser, free),
+  // readable as the AI Depth source (36). First use downloads the model once.
+  ps.register({
+    id: "reimagine.depth",
+    label: "Depth",
+    group: "reimagine",
+    type: PARAM_TYPE.TOGGLE,
+    value: 1,
+  });
+  ps.register({
+    id: "reimagine.slots",
+    label: "Slots",
+    group: "reimagine",
+    min: 1,
+    max: 16,
+    value: 4,
+    step: 1,
   });
 
   // ── Movie / clip ──────────────────────────────────────────────────────────

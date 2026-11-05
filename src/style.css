@@ -1314,6 +1314,42 @@ div.param-select .imw-sel-trigger {
     max-width: 100%;
 }
 
+/* ── REIMAGINE (AI stills) ──────────────────────────────────────────────── */
+
+.reimagine-box {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px 10px;
+}
+#reimagine-prompt {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--bg-2, #111);
+    color: inherit;
+    border: 1px solid var(--border);
+    font: inherit;
+    font-size: 11px;
+    padding: 4px 6px;
+    resize: vertical;
+}
+#reimagine-model { flex: 1; min-width: 0; }
+#reimagine-model .imw-sel { width: 100%; }
+.reimagine-model {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-2);
+}
+#reimagine-status {
+    font-size: 11px;
+    color: var(--text-2);
+    min-height: 1.3em;
+}
+#reimagine-status[data-kind="busy"] { color: var(--accent, #cc8); }
+#reimagine-status[data-kind="err"]  { color: var(--red, #e05); }
+
 /* ── 3D PANEL ────────────────────────────────────────────────────────────── */
 
 #geometry-controls {
@@ -3225,6 +3261,30 @@ body.sp-floating #signal-path-docked-space {
     border-color: var(--accent-dim);
     background: var(--bg-4);
 }
+/* Theme chips: a second, quieter row under the track chips. Wraps, because
+   the Tutorials track will carry more themes than fit one line. */
+#guide-themes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 6px 12px 0;
+}
+#guide-themes.hidden { display: none; }
+.guide-theme {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-2);
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 2px 9px;
+    cursor: pointer;
+}
+.guide-theme:hover { color: var(--text-0); }
+.guide-theme.active {
+    color: var(--accent);
+    border-color: var(--accent-dim);
+}
 #guide-body {
     overflow-y: auto;
     padding: 10px 14px;
@@ -3244,6 +3304,18 @@ body.sp-floating #signal-path-docked-space {
 }
 #guide-body strong {
     color: var(--text-0);
+}
+/* Controller badges named in the tour text. Same classes as the parameter
+   row's badge, so the colour comes from the one rule that colours the row and
+   cannot drift from it; only the shape is added here, and the LFO pulse is
+   stopped — in running text it reads as a glitch. */
+#guide-body .param-ctrl {
+    display: inline-block;
+    font-size: 11px;
+    padding: 0 4px;
+    border: 1px solid currentColor;
+    border-radius: 3px;
+    animation: none;
 }
 #guide-body code {
     font-family: var(--mono);
@@ -3283,6 +3355,16 @@ body.sp-floating #signal-path-docked-space {
     border-color: var(--red-dim);
     text-decoration: line-through;
 }
+/* Tutorials only. Sits above the text so the starting point is the first
+   thing a workshop reader sees, and reads as an action rather than a chip. */
+#guide-start {
+    display: block;
+    margin: 8px 12px 0;
+    color: var(--accent);
+    border-color: var(--accent-dim);
+}
+#guide-start.hidden { display: none; }
+#guide-start:disabled { opacity: 0.5; cursor: wait; }
 #guide-nav {
     display: flex;
     gap: 6px;
@@ -5810,6 +5892,15 @@ body.midi-map-mode .param-row:hover {
 /* The indicator itself latches on, separately from the .learning flash it
    already wore for a one-shot learn — mode and arm are different states and
    both can be true at once. */
+/* Solo: a mode that silently removes every effect, so it shouts while on. */
+.indicator.solo {
+    cursor: pointer;
+    color: var(--bg-0);
+    background: var(--accent);
+    border-color: var(--accent);
+}
+.indicator.solo[hidden] { display: none; }
+
 .indicator.mapping {
     color: var(--bg-0);
     background: var(--accent);

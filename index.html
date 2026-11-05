@@ -57,6 +57,16 @@
                 hidden
             ></span>
             <span id="status-osc" class="indicator" title="OSC">OSC</span>
+            <!-- Solo bypasses the whole effects chain, so a stray `s` makes
+                 every effect vanish and its controls go dead with no other
+                 sign. Hidden while off; click to turn it off. -->
+            <span
+                id="status-solo"
+                class="indicator solo"
+                title="Solo is on — all effects are bypassed. Click or press s to turn it off."
+                hidden
+                >SOLO</span
+            >
             <!-- Lit while the browser can see a gamepad (only after a button
                  press on it); pulses while Gamepad Learn is armed. -->
             <span id="status-pad" class="indicator" title="Gamepad — press a pad button to connect">PAD</span>
@@ -366,6 +376,20 @@
                             ></canvas>
                             <div id="buffer-controls"></div>
                             <div id="buffer-params"></div>
+                        </div>
+                        <!-- Reimagine: output frame → image-edit model → buffer slot.
+                             Wired in main.js (Reimagine section), params via reimagine-params. -->
+                        <div class="panel-section" id="reimagine-section">
+                            <div class="section-header">Reimagine (AI)</div>
+                            <div class="reimagine-box">
+                                <textarea id="reimagine-prompt" rows="2" spellcheck="false"
+                                    placeholder="as wet ink on rice paper">as wet ink on rice paper</textarea>
+                                <div class="reimagine-model">Model
+                                    <div id="reimagine-model"></div>
+                                </div>
+                                <div id="reimagine-status">Uses your Google Gemini key · each image is a paid request</div>
+                            </div>
+                            <div id="reimagine-params"></div>
                         </div>
                     </div>
                         <div class="panel-section">

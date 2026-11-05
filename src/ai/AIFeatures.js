@@ -1875,3 +1875,114 @@ export class AIFeatures {
   async narrateState()                 { return narrateState(buildStateSnapshot(this.ps), _config().narrator?.length); }
   async coachSuggestion(recentChanges) { return coachSuggestion(buildActivitySnapshot(recentChanges, this.ps)); }
 }
+
+// ── Reimagine: image-EDIT call (output frame in, reinterpreted frame out) ───
+//
+// Always Gemini, whatever the active text provider is: it is the only provider
+// here with an image-output model, and it reuses the Gemini key the AI panel
+// already stores. The model id is config, not a parameter — image model ids
+// drift (four generations in a year), and a SELECT index into a drifting list
+// would recall a different model under a saved state.
+//
+// generateContent, not the newer Interactions endpoint: it is the shape every
+// other Gemini call in this file speaks, and the image models still answer it.
+// If Google retires it, this is the one function to move.
+export const REIMAGINE_DEFAULT_MODEL = 'gemini-3.1-flash-image';
+const REIMAGINE_ASPECTS = [
+  ['21:9', 21 / 9], ['16:9', 16 / 9], ['3:2', 3 / 2], ['4:3', 4 / 3], ['5:4', 5 / 4],
+  ['1:1', 1], ['4:5', 4 / 5], ['3:4', 3 / 4], ['2:3', 2 / 3], ['9:16', 9 / 16],
+];
+
+// Shown in the Model dropdown even before (or without) a live listing. From
+// Google's image-generation docs, 2026-11-04 — fastest first. The live list
+// from the API is merged in on top, so a new model appears without an edit.
+export const REIMAGINE_KNOWN_MODELS = [
+  { id: 'gemini-3.1-flash-lite-image', label: 'Nano Banana 2 Lite (fastest)' },
+  { id: 'gemini-3.1-flash-image',      label: 'Nano Banana 2' },
+  { id: 'gemini-nano-banana-2.1',      label: 'Nano Banana 2.1' },
+  { id: 'gemini-3-pro-image',          label: 'Nano Banana Pro (best, slow)' },
+  { id: 'gemini-2.5-flash-image',      label: 'Nano Banana (legacy)' },
+];
+
+/**
+ * Known image models plus whatever image models the key can see right now.
+ * The listing is free; a failure (no key, offline) just leaves the known list.
+ * @returns {Promise<{id:string,label:string}[]>}
+ */
+export async function listReimagineModels() {
+  const out = REIMAGINE_KNOWN_MODELS.map(m => ({ ...m }));
+  try {
+    if (_config().providers.gemini?.apiKey) {
+      for (const id of await fetchModels('gemini')) {
+        if (/image/i.test(id) && !out.some(m => m.id === id)) out.push({ id, label: id });
+      }
+    }
+  } catch { /* known list stands */ }
+  return out;
+}
+
+export function getReimagineModel() {
+  return _config().reimagine?.model || REIMAGINE_DEFAULT_MODEL;
+}
+export function setReimagineModel(model) {
+  const cfg = _config();
+  cfg.reimagine = { ...(cfg.reimagine ?? {}), model: (model || '').trim() || REIMAGINE_DEFAULT_MODEL };
+  saveConfig(cfg);
+}
+
+/**
+ * @param {{b64:string, mime:string}} image  the frame to reinterpret
+ * @param {string} prompt                    what to turn it into
+ * @param {number} aspect                    width / height of the canvas
+ * @returns {Promise<{b64:string, mime:string}>}
+ * Throws 'no-key' without a Gemini key, and a readable error whenever the
+ * answer carries no image — an empty answer must never reach a buffer slot.
+ */
+export async function reimagineImage(image, prompt, aspect = 16 / 9) {
+  const pcfg = _config().providers.gemini;
+  if (!pcfg?.apiKey) throw new Error('no-key');
+  if (!image?.b64) throw new Error('No frame to send (is the canvas tainted by a cross-origin source?)');
+  const model = getReimagineModel();
+  const aspectRatio = REIMAGINE_ASPECTS.reduce((best, a) =>
+    Math.abs(Math.log(a[1] / aspect)) < Math.abs(Math.log(best[1] / aspect)) ? a : best)[0];
+  const text =
+    `Reinterpret this image: ${prompt.trim() || 'as a painting'}. ` +
+    'Keep the composition, the main shapes and their positions where they are, ' +
+    'so the result can crossfade with the original. Return only the image.';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+  const res = await fetch(url, {
+    method: 'POST',
+    // Header, not ?key= — keeps the key out of URLs, logs and the network list.
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': pcfg.apiKey },
+    body: JSON.stringify({
+      contents: [{
+        role: 'user',
+        parts: [{ inline_data: { mime_type: image.mime, data: image.b64 } }, { text }],
+      }],
+      generationConfig: {
+        responseModalities: ['IMAGE'],
+        imageConfig: { aspectRatio },
+      },
+    }),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error(e.error?.message ?? `Gemini error ${res.status}`);
+  }
+  const data = await res.json();
+  // NOT metered through _recordUsage: that meter has one home (the two text
+  // routers, audit-ai-usage) and prices TOKENS, while image models bill per
+  // IMAGE — routed through it, an image call would read as a few cents of
+  // text or as free. Reimagine counts its own requests instead.
+  const cand = data.candidates?.[0];
+  const parts = cand?.content?.parts ?? [];
+  // Gemini 3 image models think, and a thought part can carry an interim
+  // image — take the last NON-thought image part, which is the answer.
+  const img = parts.filter(p => !p.thought).map(p => p.inlineData ?? p.inline_data).filter(d => d?.data).pop();
+  if (!img) {
+    const said = parts.map(p => p.text ?? '').join(' ').trim();
+    const why  = data.promptFeedback?.blockReason ?? cand?.finishReason ?? 'no image in the answer';
+    throw new Error(said ? `${why}: ${said.slice(0, 160)}` : String(why));
+  }
+  return { b64: img.data, mime: img.mimeType ?? img.mime_type ?? 'image/png' };
+}

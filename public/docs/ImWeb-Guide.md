@@ -18,10 +18,20 @@ Three tracks, chosen with the chips at the top of the panel:
   instrument is built on. Three or four moves each.
 - **Instruments** — the machines: Rutt-Etra, SDF, Motion Extraction, RGB
   Channel Delay, Spacetime, mix buses, warp drawing, live GLSL.
+- **Tutorials** — make one thing, from a known starting point, in about five
+  moves. Written for video artists and workshop rooms.
+
+Tutorials are the one place the panel can set values, and only when you press
+**Load starting point**. That switches to a bank called **Tutorials** (made the
+first time), runs the same full reset as `Shift`+`Esc`, behind a confirm, and
+then sets up the step's `start:` line. Your own banks are left as they were;
+pick one from the bank menu to go back. The moves after it are still yours.
 
 Step grammar, for anyone editing: one `## ` heading per step, optionally
 followed by a `<!-- guide … -->` block naming `track:`, `tab:`, `point:`
-(parameter ids), `show:` (CSS selectors), and `keys:` (keycaps to display).
+(parameter ids), `show:` (CSS selectors), `keys:` (keycaps to display), and,
+for tutorials, `start:` (`clean`, or `id=value` pairs; a select takes its option
+label, e.g. `layer.bg=Rutt-Etra`).
 Everything above the first `## ` — including this preamble — is not part of the
 tour.
 
@@ -183,8 +193,9 @@ ones worth knowing:
   captured and recalled without anything able to nudge it.
 - **None** removes the controller and leaves the value where it was.
 
-One parameter, one controller. The **badge** in the row then shows which — RND,
-LFO, MIDI, KEY — and the row highlights as driven.
+One parameter, one controller. The **badge** in the row then shows which, in
+that controller's colour — <span class="param-ctrl assigned">RND</span> <span class="param-ctrl lfo">LFO~</span> <span class="param-ctrl sound">BAS</span>
+<span class="param-ctrl midi">CC7</span> — and the row highlights as driven.
 
 Under **Options** on the same menu: **Toggle Lock** freezes a parameter against
 everything, **Toggle Invert** flips the controller's direction, and **Assign
@@ -352,7 +363,7 @@ point: displace.amount
 
 **Three moves.** On the **Displace** row: set **min** to 0 and **max** to about
 0.3 by dragging the two small numbers. Right-click the row → **LFO Sine**.
-Right-click the badge and set **Freq** to 0.1 Hz.
+Right-click the <span class="param-ctrl lfo">LFO~</span> badge that appears and set **Freq** to 0.1 Hz.
 
 The displacement now breathes on its own, between the bounds you set, and your
 hands are free for something else.
@@ -666,3 +677,808 @@ look at an engine directly. `q` / `a` / `z` and a couple of minutes is the whole
 method.
 
 `KNOWN-ISSUES.md` is honest about the loose ends.
+
+## Tutorial 0 — a picture in sixty seconds
+<!-- guide
+track: tutorials
+theme: Start
+tab: mix
+start: clean
+point: effect.kaleidoscope, effect.kalerot
+keys: Shift+S
+-->
+
+**What you will make:** your own camera picture folded into a slowly turning
+kaleidoscope, saved so that one key brings it back.
+
+**Starting point:** press **Load starting point** above. You move to a bank
+called **Tutorials**, so what you save here stays out of your own banks.
+Everything goes back to its default and the camera comes on. The browser asks to use the camera the
+first time; say yes. You should see yourself.
+
+1. On the **Effects** tab, find **Kaleidoscope** and drag it to 6. Six
+   segments: the picture folds into a mandala.
+2. Right-click (Control-click on a Mac) **Kale.Rot** and choose **LFO Saw ↑**. A saw climbs and then
+   jumps back to the start, so the rotation keeps going round in one
+   direction. (A sine would rock back and forth instead.) The row gets a
+   green <span class="param-ctrl lfo">LFO⊿</span> badge: that is the controller now driving it.
+3. A box asks for the LFO rate. The default is 0.5, which means two seconds
+   per turn. Type **0.05** for a slow twenty-second turn and press `Enter`.
+4. Press **`Shift`+`S`**. The look now sits in a slot on the state bar along
+   the bottom.
+5. Drag Kaleidoscope back to 0, then click the tile you just saved on the
+   state bar. The mandala comes back, still turning.
+
+**Why it works.** You changed one value by hand and gave a second one a
+controller. Every patch in this instrument is built the same way, with
+more of both.
+
+**Now try:**
+
+- Drag Kaleidoscope through 2, 3 and 12. Odd and even numbers fold differently.
+- Right-click the <span class="param-ctrl lfo">LFO⊿</span> badge on Kale.Rot and drag **Freq** right down,
+  until you only notice the turning when you look away and back.
+- Swap the saw for **LFO Sine**. The mandala now rocks back and forth instead
+  of turning.
+- Press `q` a few times to change the **Foreground** source. The kaleidoscope
+  works on any source, not just the camera. (`q` and not `a`: the Foreground
+  sits on top and covers the Background completely.)
+
+## Feedback 1 — the tunnel
+<!-- guide
+track: tutorials
+theme: Feedback
+tab: effects
+start: clean
+point: blend.active, feedback.mode, feedback.zoom, feedback.decay
+keys: b, Shift+S
+-->
+
+**What you will make:** the picture inside itself, inside itself again,
+falling away into a tunnel.
+
+**Starting point:** press **Load starting point**. Camera on, everything at
+default.
+
+**Works best with black in the picture.** Feedback needs somewhere dark for
+the trails to show. A bright, busy room fills the loop with light, so stand in
+front of a dark wall or black cloth, or turn the room lights down.
+
+1. Press **`b`** to switch **Blend** on. Nothing changes yet. **Feedback** is
+   already on, but it has no way to meet the picture.
+2. Set **Feedback Mode** to `Screen`. Move your hand: it now leaves a trail.
+   The last frame is being laid over this one, and that frame held the one
+   before it.
+3. Drag **FBZoom** up to about 3. Each old frame is now a little larger than
+   the one after it, so the trail streams outwards. That is the tunnel.
+4. Keep one hand on **FBDecay**. At 100 nothing ever fades and the picture
+   fills up with light. Pull it down to around 85 and the tunnel gets a
+   bottom you can see.
+5. Press **`Shift`+`S`**.
+
+**Why it works.** Feedback is not an effect with a memory. The output is
+routed back in as a source (Principle 4), and Zoom, Decay and the mode
+decide what happens to it on each trip around the loop.
+
+**Now try:**
+
+- Make **FBZoom** negative. The tunnel reverses and falls *inwards*.
+- Try **Feedback Mode** `Difference`, then `Add`. Every mode is a different
+  rule for how a frame meets its own past.
+- If it runs away into white: **FBDecay** down. That is always the way out.
+
+## Feedback 2 — spiral and colour
+<!-- guide
+track: tutorials
+theme: Feedback
+tab: effects
+start: blend.active=1, feedback.mode=Screen, feedback.zoom=3, feedback.decay=85
+point: feedback.rotate, feedback.hue, feedback.centerx, feedback.centery
+keys: Shift+S
+-->
+
+**What you will make:** a spiral whose colours rotate through the spectrum
+as they fall away.
+
+**Starting point:** press **Load starting point**. You get the tunnel from
+Feedback 1, ready to go.
+
+1. Drag **FBRotate** to about 2. Each trip around the loop now turns the old
+   frame a little, and the tunnel twists into a spiral.
+2. Drag **FBHue** to about 20. Each generation is shifted 20° round the colour
+   wheel, so the spiral's rings run through the spectrum.
+3. Move **FBCenterX** and **FBCenterY**. That is the vanishing point. Off
+   centre, the spiral swings to one side.
+4. Right-click (Control-click on a Mac) **FBRotate** and choose **LFO Triangle**. In the rate box type
+   **0.05**. The spiral now winds one way, slows, and unwinds the other.
+5. Press **`Shift`+`S`**.
+
+**Why it works.** Small changes compound. Two units of rotation is barely
+visible once, but the loop applies it again every frame, so the deep
+generations have turned a long way. That is the whole craft of feedback:
+small values, many trips.
+
+**Now try:**
+
+- **FBMirror** `Both`. The spiral folds into a symmetrical pattern.
+- **FBBlur** up a little. The old rings soften into smoke while the live
+  picture stays sharp.
+- Put **Sound Bass** on **FBHue**. The colours turn with the music.
+
+## Feedback 3 — the picture melts into itself
+<!-- guide
+track: tutorials
+theme: Feedback
+tab: mix
+start: clean
+point: layer.ds, displace.amount, displace.angle
+keys: z, Shift+S
+-->
+
+**What you will make:** a picture that pushes itself around, flowing like
+liquid.
+
+**Starting point:** press **Load starting point**.
+
+1. Press **`z`** until **DisplaceSrc** reads `Output`, or pick it from that
+   row's dropdown. The output is now the *map* that displaces the picture.
+2. Drag **Displace** up slowly from 0. Stop as soon as the picture starts to
+   flow. A little goes a long way here.
+3. Right-click (Control-click on a Mac) **DisplAngle** and choose **LFO Saw ↑**, with a rate of
+   **0.1**. The <span class="param-ctrl lfo">LFO⊿</span> badge appears on the row, and the direction
+   of the flow now goes round in a circle.
+4. Move in front of the camera. Your movement changes the output, which
+   changes the map, which moves the picture again.
+5. Press **`Shift`+`S`**.
+
+**Why it works.** In Feedback 1 and 2 the output came back as a *picture*.
+Here it comes back as a *control*: its brightness becomes distance (Principle
+2). The loop is the same, but now it decides where things go instead of
+what you see.
+
+**Now try:**
+
+- Add the tunnel on top: **`b`**, **Feedback Mode** `Screen`, a little
+  **FBZoom**. Two loops at once, one through the picture and one through the
+  map.
+- Swap DisplaceSrc to `Noise` and back. Noise flows evenly; the output flows
+  where the picture is bright.
+
+## Lineage — the camera and its monitor
+<!-- guide
+track: tutorials
+theme: Feedback
+tab: output
+start: clean
+point: output.colorshift, effect.kaleidoscope
+show: #btn-second-screen
+keys: f, c
+-->
+
+**What you will make:** the original feedback: a camera filming the screen
+it is shown on.
+
+**Where it comes from.** Early in the 1970s, one of the first things artists
+did with portable video was point the camera at its own monitor. The loop
+makes tunnels, flames and spirals that no one draws. Steina and Woody Vasulka,
+who founded The Kitchen in New York in 1971, made feedback a central material
+of their early work. Everything in Feedback 1–3 is that loop moved inside the
+computer. This recipe puts it back in the room.
+
+**You need:** a projector or a second screen, and a camera you can move, such
+as a USB webcam. A built-in laptop camera cannot see its own screen.
+
+**Starting point:** press **Load starting point**. The camera comes on, and
+ImWeb's own feedback is off: this loop goes through the air.
+
+1. Open the output on the projector or second screen (the **second screen**
+   button in the top bar), or press **`f`** for fullscreen if the screen is
+   mirrored.
+2. Point the camera at the screen until the screen fills the camera's view.
+   Move closer and the tunnel grows; move away and it shrinks.
+3. Tilt the camera a little. The tunnel twists into a spiral, the same
+   spiral FBRotate made in Feedback 2, only now your hand is the rotation.
+4. On **Output**, raise **ColorShift** a little. The shift happens once per
+   trip around the loop, so the colours cycle on their own.
+5. Press **`c`** to keep a still of anything that surprises you.
+
+**Why it works.** It's the same loop as Feedback 1, but the delay, the
+blur and the distortion now come from the lens, the screen and the air. That
+is why optical feedback never looks quite like the digital kind, and why
+artists still do it.
+
+**Now try:**
+
+- Turn the room lights down and up. Light leaking into the loop feeds it.
+- **Kaleidoscope** at 3 inside the optical loop. Every trip folds the
+  picture again.
+- Put your hand between the camera and the screen. Whatever you put in the
+  loop gets repeated.
+
+## Audio 1 — one sound, one control
+<!-- guide
+track: tutorials
+theme: Audio
+tab: mix
+start: layer.ds=Noise
+point: displace.amount
+keys: Shift+S
+-->
+
+**What you will make:** a picture that shudders on every beat.
+
+**Starting point:** press **Load starting point**. The camera is on, and
+Noise is already set up as the displacement map, so only the amount is
+missing.
+
+1. On the **Displace** row, drag the two small numbers to **min 0** and
+   **max 15**. That is how far the sound will be allowed to push. Set the
+   range first, always.
+2. Right-click (Control-click on a Mac) **Displace** and choose **Sound
+   Bass**. The browser asks for the microphone; say yes. The row gets a
+   cyan <span class="param-ctrl sound">BAS</span> badge.
+3. Play something with a beat. Each kick drum pushes the picture through the
+   noise, then lets it go.
+4. Right-click the <span class="param-ctrl sound">BAS</span> badge and set
+   **Slew** to 0.15. The shudder becomes a swell: the picture still moves on
+   the beat, but it rises and falls instead of jumping.
+5. Press **`Shift`+`S`**.
+
+**Why it works.** The sound is a controller like an LFO, but you can't set
+its speed: the music does. Range decides how far it may push, Slew decides
+how fast it gets there.
+
+**Now try:**
+
+- **Sound High** instead of Bass. Now hi-hats and hiss drive it, and the
+  kick does nothing.
+- In the badge's settings, set **Slew curve** to `Elastic`. Every beat now
+  overshoots and springs back.
+- Raise **max** to 40. Same music, a much more violent picture.
+
+## Audio 2 — a colour organ
+<!-- guide
+track: tutorials
+theme: Audio
+tab: effects
+start: effect.kaleidoscope=6
+point: effect.kaleidoscope, effect.kalerot, effect.rgbshift
+keys: Shift+S
+-->
+
+**What you will make:** one picture played by three parts of the music at
+once: bass, middle and treble.
+
+**Starting point:** press **Load starting point**. The camera is folded into
+a six-way kaleidoscope.
+
+1. **Treble.** Set **RGB Shift**'s max to 30, then right-click it → **Sound
+   High**. Cymbals and hiss split the colours apart.
+2. **Middle.** Right-click **Kale.Rot** → **Sound Mid**. Voices and melody
+   turn the mandala.
+3. **Bass.** Set **Kaleidoscope**'s min to 3 and max to 8, then right-click
+   it → **Sound Bass**. Each kick snaps the mandala to more segments.
+4. Play music with all three parts in it. If one band takes over, lower
+   that row's **max** until all three have a share of the picture.
+5. Press **`Shift`+`S`**.
+
+**Why it works.** A sound is not one number. Splitting it into bands and
+giving each band its own job is how one piece of music can play several
+parts of the picture at once. Colour organs have done this with coloured
+lights since long before video.
+
+**Now try:**
+
+- Swap which band drives which control. The same music gives a different
+  piece.
+- Put **Slew** on Kale.Rot only. The middle glides while bass and treble
+  still snap.
+
+## Audio 3 — a word that listens
+<!-- guide
+track: tutorials
+theme: Audio
+tab: sources
+start: layer.fg=Text
+point: text.audioTarget, text.audioBand, text.audioFocus, text.audioAmt
+show: #text-content
+keys: Shift+S
+-->
+
+**What you will make:** a word whose letters move with the sound, each
+letter listening to its own part of the spectrum.
+
+**Starting point:** press **Load starting point**. The Foreground is the
+Text source, showing the word "ImWeb".
+
+1. In the **Text** section, type your own word in the text box, such as
+   your name.
+2. Under **Audio**, set **AudioTarget** to `Rise`. The browser asks for the
+   microphone; say yes. Make a sound and the letters jump.
+3. **AudioBand** is `Spectrum`: each letter listens to its own slice, from
+   low to high. Hum a low note, then whistle a high one, and different
+   letters answer.
+4. Raise **AudioFocus**. Each letter now hears a narrower slice, and only
+   the strongest one moves. A single note becomes a single letter.
+5. Press **`Shift`+`S`**.
+
+**Why it works.** In Audio 1 and 2 a whole band drove one control. Here
+every letter is its own meter, so the word turns into a spectrum display
+you can read.
+
+**Now try:**
+
+- **AudioTarget** `Hue`, then `Scale`. The same listening, a different
+  response.
+- **AudioBand** `Bass`. Every letter now hears the same thing, and the word
+  moves as one.
+- Lower **AudioAmt** if the letters jump off the screen.
+
+## Audio 4 — seeing the sound
+<!-- guide
+track: tutorials
+theme: Audio
+tab: sources
+start: layer.fg=Vectorscope
+point: vectorscope.mode, vectorscope.decay, vectorscope.glow, layer.fg, layer.ds, displace.amount
+show: #sound-params
+keys: q, z, Shift+S
+-->
+
+**What you will make:** the sound drawn as a picture, and then that picture
+used to bend the camera.
+
+**Starting point:** press **Load starting point**. The Foreground is the
+Vectorscope source. It stays dark until it hears something.
+
+1. In **Sources ▸ Sound**, press **▶ Audio**. The browser asks for the
+   microphone; say yes. The Vectorscope now draws the sound in real time.
+2. Try a few **VScope Mode**s: `Waveform`, `Radial FFT`, `Spectrogram`.
+   Each one draws the same sound a different way.
+3. Raise **VScope Trail** and **VScope Glow**. The drawing leaves a trace
+   and starts to look like light on a screen.
+4. Now make it a map. Press **`q`** until **Foreground** reads `Camera`, press
+   **`z`** until **DisplaceSrc** reads `Vectorscope`, and drag **Displace** up a
+   little. The camera now bends along the shape of the sound.
+5. Press **`Shift`+`S`**.
+
+**Why it works.** In Audio 1–3 the sound was a *number* driving a control.
+Here it is a *picture*: the Vectorscope is a source like the camera, so it can be
+looked at, or used as any other picture can (Principle 2).
+
+**Now try:**
+
+- **VScope Mode** `Lissajous` with stereo music. The shape shows how wide
+  the stereo is.
+- Put the Vectorscope in the Background and the camera in the Foreground with
+  **Blend** `Screen`. You get the image and its sound on one screen.
+
+## Lineage — Violin Power
+<!-- guide
+track: tutorials
+theme: Audio
+tab: sources
+start: layer.fg=Rutt-Etra, rutt.active=1
+point: rutt.lines, rutt.zgain, rutt.decay
+keys: Shift+S
+-->
+
+**What you will make:** a scan-line picture of the room whose lines jump with
+the sound, so that playing an instrument (or speaking, clapping, or putting a
+record on) deforms the picture.
+
+**Where it comes from.** In *Violin Power* (1970–78), Steina played the violin
+and let the sound drive the video image. Much of it went through a Rutt/Etra
+scan processor: the signal bent the raster lines, so you could see the sound
+in the picture. Steina later co-created *Image/ine*, the instrument ImWeb
+descends from. This recipe uses ImWeb's parts to get the same idea.
+
+**Starting point:** press **Load starting point** above. The camera comes on
+and runs through the Rutt-Etra scan processor (**Sources ▸ From the Signal ▸
+Rutt-Etra**): you are looking at yourself drawn in scan lines.
+
+1. Drag **Lines** down to about 60. Few lines with gaps between them is the
+   1970s look.
+2. Set **Z Gain**'s **min** to 0 and its **max** to about 1.5 by dragging the
+   two small numbers.
+3. Right-click (Control-click on a Mac) **Z Gain** and choose **Sound Bass**. The browser asks for the
+   microphone; say yes. Now make a sound. The lines lift off the plane on low,
+   loud sounds and lie flat when it's quiet.
+4. The lines twitch with every sound. Right-click the <span class="param-ctrl sound">BAS</span> badge on
+   Z Gain and set **Slew** to about 0.3. Now the lines breathe with the sound
+   instead of jumping. (Rise and Fall further down do something else: they
+   smooth the *camera picture*, not the sound.)
+5. Turn **Persist** up a little so that each sound leaves a trace on the
+   phosphor, and press **`Shift`+`S`**. Then play, speak or clap for a minute.
+   This is the piece.
+
+**Why it works.** Sound is a controller like any other. It does here exactly
+what the LFO did in Tutorial 0, only you play it instead of letting it run. It
+is Principle 3 with the room as the second pair of hands.
+
+**Now try:**
+
+- Swap **Sound Bass** for **Sound Level**. Now every sound moves the lines,
+  including a violin's upper register, which Bass ignores.
+- Turn the response upside down. In **Project ▸ Response Curves**, make a
+  curve from the **Invert** preset, then right-click **Z Gain** →
+  **Assign Table…** and pick it. Silence now lifts the picture and sound
+  flattens it.
+- Leave the camera out entirely. Set Rutt-Etra's **Source** to `Noise` and let
+  the sound play an abstract surface.
+
+## 3D 1 — a solid made of your picture
+<!-- guide
+track: tutorials
+theme: 3D
+start: layer.fg=3D Scene
+point: scene3d.geo, scene3d.mat.texsrc, scene3d.spin.y, scene3d.cam.orbit
+keys: Shift+S
+-->
+
+**What you will make:** your camera picture wrapped around a turning 3D
+knot.
+
+**Starting point:** press **Load starting point**. The Foreground is the
+**3D Scene**, a plain sphere for now. The 3D controls open in their own
+workspace; the chips below take you straight to them.
+
+1. Set **Geometry** to `Complex: TorusKnot`.
+2. Set **Texture Source** to `Camera`. The picture is now painted onto the
+   surface, and it bends wherever the knot bends.
+3. Drag **Spin Y** to about 20. The knot turns by itself, and the picture
+   goes round with it.
+4. Drag **Orbit** to move the viewpoint around the knot instead of turning
+   the knot. Same scene, a different place to stand.
+5. Press **`Shift`+`S`**.
+
+**Why it works.** A 3D object here is one more place to put a source. The
+texture slot takes the same list as the layers, so anything the
+instrument makes can be worn by a solid.
+
+**Now try:**
+
+- **Material Shader** `Toon`. The picture flattens into bands of colour.
+- **Texture Source** `Noise`, or `Screen` (the output itself, so the knot
+  wears its own picture).
+- **Wireframe** on. Only the surface's skeleton is left.
+
+## 3D 2 — the picture pushes the surface
+<!-- guide
+track: tutorials
+theme: 3D
+start: layer.fg=3D Scene, scene3d.mat.texsrc=Camera
+point: scene3d.mat.tDisplace, scene3d.spin.y, scene3d.geo, scene3d.mat.dispsrc
+keys: Shift+S
+-->
+
+**What you will make:** a sphere whose surface rises where the picture is
+bright, so your face becomes a relief.
+
+**Starting point:** press **Load starting point**. The camera is already
+painted onto a sphere.
+
+1. Drag **T-Displace** up to about 0.15. Bright parts of the picture push the
+   surface outwards and dark parts stay put.
+2. Drag **Spin Y** to about 15. Seen from the side, the relief stands out
+   against the background.
+3. Set **Geometry** to `Basic: Plane`, then turn **Spin Y** back to 0 and
+   **Orbit** a little. Your face is now a landscape.
+4. Set **T-Disp Source** to `Noise`. The surface now moves to the noise
+   while it still shows the camera. Shape and skin come from two different
+   sources.
+5. Press **`Shift`+`S`**.
+
+**Why it works.** This is displacement (Principle 2) in three dimensions:
+brightness becomes height instead of sideways distance. It is also the idea
+behind the Rutt-Etra (see *Violin Power*), done on a surface instead of on
+scan lines.
+
+**Now try:**
+
+- Raise **T-Displace** towards 0.5. The relief turns into spikes.
+- Put **Sound Bass** on **T-Displace**. The face swells with the music.
+
+## 3D 3 — a field of copies
+<!-- guide
+track: tutorials
+theme: 3D
+start: layer.fg=3D Scene, scene3d.geo=Platonic: Icosahedron, scene3d.mat.texsrc=Camera
+point: scene3d.clone.mode, scene3d.clone.count, scene3d.clone.twist, scene3d.clone.wave, scene3d.clone.waveamp
+keys: Shift+S
+-->
+
+**What you will make:** one object multiplied into a grid, then a ring, then
+a wave of copies.
+
+**Starting point:** press **Load starting point**. A single icosahedron
+wearing the camera picture.
+
+1. Set **Cloner** to `Grid`. The object becomes nine copies. Raise
+   **CloneN** for more.
+2. Set **Cloner** to `Ring`, and drag **Twist**. Each copy turns a little
+   more than the one before it.
+3. Drag **WaveAmp** up and set **Wave** to about 1. A wave now runs through
+   the copies, moving them in turn.
+4. Right-click (Control-click on a Mac) **WaveAmp** and choose **Sound
+   Bass**. The wave now rises with the music (see the Audio theme).
+5. Press **`Shift`+`S`**.
+
+**Why it works.** The copies share one set of controls, so every change
+reaches all of them at once. Twist and Wave are what make them differ:
+each copy gets the same move, offset a little further along.
+
+**Now try:**
+
+- **Cloner** `Line`, with a high **CloneN**. A procession.
+- **Scatter** up. The tidy grid breaks into a swarm.
+
+## 3D 4 — depth as a picture
+<!-- guide
+track: tutorials
+theme: 3D
+start: layer.ds=3D Depth, scene3d.geo=Complex: TorusKnot, scene3d.spin.y=20
+point: layer.fg, layer.ds, displace.amount, scene3d.depth.mode
+keys: q, Shift+S
+-->
+
+**What you will make:** the camera picture bent around a 3D object you
+never actually see.
+
+**Starting point:** press **Load starting point**. A turning knot is set up
+in the 3D scene, but only its *depth* is used, as the displacement map. The
+picture still shows the camera.
+
+1. Press **`q`** until **Foreground** reads `3D Depth`. This is what the
+   map looks like: near is bright, far is dark. Press **`q`** until it reads
+   `Camera` again.
+2. Drag **Displace** up. The camera picture now bulges around the turning
+   knot, which you can see only through what it does to the picture.
+3. Set **DepthMode** to `Normals`. The map now records which way each part
+   of the surface faces, rather than how far away it is. The bending becomes
+   sharper and more sculpted.
+4. Change **Geometry** while you watch. Each shape bends the picture in its
+   own way.
+5. Press **`Shift`+`S`**.
+
+**Why it works.** The 3D scene is not only something to look at. It is
+also a source of *maps*: depth and surface direction, which can drive
+displacement, keying or anything else that takes a source.
+
+**Now try:**
+
+- Use **3D Depth** as the key in the keyer: the camera shows only where the
+  knot is.
+- Put the 3D Depth map through **Feedback**. The invisible knot leaves
+  trails.
+
+## Lineage — the hypercube
+<!-- guide
+track: tutorials
+theme: 3D
+start: layer.fg=3D Scene, hypercube.renderMode=wireframe, scene3d.mat.opacity=0
+point: hypercube.rot.xw, hypercube.dim, hypercube.depthCue, hypercube.faces.active, hypercube.faces.texsrc
+keys: Shift+S
+-->
+
+**What you will make:** a four-dimensional cube turning in front of you,
+and then cubes of five, six or more dimensions.
+
+**Where it comes from.** In the 1960s, A. Michael Noll at Bell Labs made
+some of the first computer-animated films, among them projections of a
+four-dimensional hypercube turning. Nobody can see four dimensions, but a
+computer can rotate the object in four and draw its shadow in two. This
+recipe does the same, in real time.
+
+**Starting point:** press **Load starting point**. The hypercube is drawn as
+a wireframe and the 3D scene's own sphere is hidden. It already turns.
+
+1. Watch for a while. Some of the turning looks like an ordinary 3D spin.
+   The rest, where the cube seems to turn itself inside out, is rotation
+   through the fourth dimension.
+2. Find **Slot 4 speed** (the XW plane). Set it to 0 and the inside-out
+   motion stops; raise it to 1.5 and it takes over.
+3. Raise **Dimension** to 5, then 6. The cube grows into a higher-dimensional
+   one, morphing over **Morph Time**.
+4. Raise **Depth Cue**. Parts further away in the extra dimensions get
+   dimmer and thinner, which makes the tangle easier to read.
+5. Switch **Faces** on and set **Face tex** to `Camera`. The camera is now
+   painted onto the cube's faces. Press **`Shift`+`S`**.
+
+**Why it works.** A rotation always happens *in a plane*. In 3D there are
+three planes; in 4D there are six, and three of them involve the fourth
+axis. The Plane Bank lets you choose which planes turn and how fast.
+
+**Now try:**
+
+- In an empty slot, pick a plane with **V** or **U** in its name. It only
+  starts to move once **Dimension** is high enough to have that axis.
+- **Draw** `points` instead of `wireframe`. The cube becomes a cloud of
+  stars.
+
+## Time 1 — three moments at once
+<!-- guide
+track: tutorials
+theme: Time
+start: layer.fg=RGB Delay, delay.source=Camera
+point: rgbdelay.r, rgbdelay.g, rgbdelay.b, delay.size
+keys: Shift+S
+-->
+
+**What you will make:** a picture in which red, green and blue each show a
+different moment, so anything that moves splits into coloured ghosts.
+
+**Starting point:** press **Load starting point**. The Foreground is the
+**RGB Delay** source, reading the camera.
+
+1. Wave a hand. It leaves a red, a green and a blue copy of itself, a few
+   frames apart. Anything that stays still looks normal.
+2. Pull the three delays apart: **Red delay** 1, **Green delay** 12, **Blue
+   delay** 24. The ghosts separate.
+3. Set all three to the same number. The colours come back together into
+   one picture, just a little late. That is an ordinary video delay.
+4. Spread them again, wider. Above 30 frames, first raise **Ring depth**:
+   the delay can only reach back as far as the ring holds.
+5. Press **`Shift`+`S`**.
+
+**Why it works.** Time is an axis you can point at (Principle 5). Here
+each colour channel points at a different moment of the same history.
+
+**Now try:**
+
+- Put an **LFO Triangle** on **Green delay**. The green ghost swims back and
+  forth in time.
+- Stand still and move only one hand. The colours show exactly what moved.
+
+## Time 2 — now minus a moment ago
+<!-- guide
+track: tutorials
+theme: Time
+start: layer.bg=Video Delay, delay.source=Camera, delay.frames=15, layer.fg.blend=Difference
+point: layer.fg.blend, delay.frames, layer.fg.blendAmount
+keys: Shift+S
+-->
+
+**What you will make:** a picture that is black wherever nothing changes,
+and glows wherever something moves.
+
+**Starting point:** press **Load starting point**. The Foreground is the
+camera now; the Background is the same camera 15 frames ago; **Blend** is
+`Difference`.
+
+1. Stand still. The picture goes almost black: now and a moment ago are the
+   same, so their difference is nothing.
+2. Move. Only the moving edges light up.
+3. Drag **Delay** (the frame count) down to 2: thin, sharp outlines. Then
+   up to 30: thick, smeared ones.
+4. Set **Blend** to `Screen` instead. Now the past is added rather than
+   subtracted, and you get an echo instead of an outline.
+5. Set it back to `Difference` and press **`Shift`+`S`**.
+
+**Why it works.** Two layers (Principle 1), but both are the camera, at two
+moments. Comparing the picture with its own past is how motion is found.
+The **Motion Extraction** source does the same thing, built for the keyer.
+
+**Now try:**
+
+- Turn on **Feedback** (`b`, Feedback Mode `Screen`). The outlines leave
+  trails.
+- Raise **Ring depth** and set Delay to 120. The comparison spans two
+  seconds, and slow movements show too.
+
+## Time 3 — time bends across the picture
+<!-- guide
+track: tutorials
+theme: Time
+start: layer.fg=Time Displace, td.enabled=1
+point: td.mode, td.direction, td.angle, td.mapSource, td.mapAmount
+keys: Shift+S
+-->
+
+**What you will make:** a picture in which one side is now and the other
+side is two seconds ago, so you can be stretched across time.
+
+**Starting point:** press **Load starting point**. The Foreground is
+**Time Displace**, recording the camera.
+
+1. **Mode** is `Shear X`: each column of the picture shows a different
+   moment. Walk slowly across the frame and your body bends.
+2. Set **Mode** to `Radial`. Now the centre is one moment and the edges
+   another, in rings.
+3. Set **Direction** to `Backward`. The two ends swap: what was now becomes
+   the past.
+4. Back in `Shear X`, drag **Angle**. The direction time runs through the
+   picture turns with it, so time can run diagonally.
+5. Set **Map src** to `Motion Extraction` and **Map amt** to 1. Time now bends only
+   where something moved. Press **`Shift`+`S`**.
+
+**Why it works.** The instrument keeps the last couple of seconds as a stack
+of frames. Every Time tool reads that stack; Time Displace reads a
+*different depth for every pixel*, and the mode, angle and map choose which.
+
+**Now try:**
+
+- Put an **LFO Saw ↑** on **Angle**. The direction of time turns round and
+  round.
+- **Map src** `Noise`: time ripples through the picture like water.
+
+## Time 4 — the slit
+<!-- guide
+track: tutorials
+theme: Time
+start: layer.fg=Slit Scan, slitscan.active=1, slitscan.source=Camera
+point: slitscan.axis, slitscan.speed, slitscan.width, slitscan.clear
+keys: Shift+S
+-->
+
+**What you will make:** a picture painted one thin line at a time, so that
+a moving body is smeared, folded or stretched across the screen.
+
+**Starting point:** press **Load starting point**. The Foreground is
+**Slit Scan**: one narrow slit of the camera, painted across the screen
+over time.
+
+1. Stand still and watch. The picture fills with stripes, all copies of the
+   same slit.
+2. Move through the slit. Your body is drawn as it passes, stretched or
+   squeezed by how fast you move.
+3. Set **SlitAxis** to `Horizontal`. The slit lies down and the painting
+   runs from top to bottom.
+4. Lower **SlitSpeed**. Each pass across the screen now takes longer, so it
+   holds more time. Press **SlitClear** to start the painting again.
+5. Press **`Shift`+`S`**.
+
+**Why it works.** A normal picture is many places at one moment. A slit
+scan is one place at many moments, laid out side by side. Photo-finish
+cameras at racetracks work this way.
+
+**Now try:**
+
+- **SlitAxis** `Center-V`. The painting runs outwards from the middle in
+  both directions.
+- Turn the camera slowly while it paints. The room unrolls into a panorama.
+
+## Lineage — Image/ine's warp
+<!-- guide
+track: tutorials
+theme: Time
+start: layer.fg=Warp Tape, vwarp.active=1
+point: vwarp.speed, vwarp.bufsize, vwarp.axis, vwarp.flip, vwarp.mix
+keys: Shift+S
+-->
+
+**What you will make:** the time warp from Image/ine, the instrument ImWeb
+descends from: a picture whose left-to-right axis is time.
+
+**Where it comes from.** Image/ine (Tom Demeyer and Steina Vasulka, STEIM,
+1997) had a warp built like a tape. Each frame, one column of video is
+written at a moving head, and the whole tape is read as the picture. Steina
+performed with it in front of a camera. **Warp Tape** is that mechanism,
+rebuilt faithfully. Woody and Steina had already described video as a
+"Time/Energy Object" in the 1970s: a block of time you can cut through at
+any angle. Everything in this theme is a cut through that block.
+
+**Starting point:** press **Load starting point**. The Foreground is the
+**Warp Tape**, recording the camera.
+
+1. Stand still. The picture looks almost normal: every column holds the same
+   still moment.
+2. Move. You shear sideways, because each column is a different moment.
+   Slow movement leans; fast movement tears.
+3. Raise **Speed**. The write head moves faster, so the picture holds less
+   time from edge to edge and movement leans less. **Buf Size** sets how much time fits in
+   total: 8, 16 or 32 seconds.
+4. Set **Warp axis** to `Picture (Y)` and try **Flip**. The same tape, read
+   the other way through.
+5. Lower **Mix** to blend the live camera back in over the warp. Press
+   **`Shift`+`S`**.
+
+**Why it works.** It is the same block of time as Time 1–4, cut along
+another plane. Here the tape is cheap enough to hold half a minute at full
+resolution, because it stores one column per moment, not a whole frame.
+
+**Now try:**
+
+- Move like a dancer, slowly, in one direction. Steina's warp rewards
+  deliberate movement.
+- Put **Sound Level** on **Speed**. Loud passages tighten the tape.

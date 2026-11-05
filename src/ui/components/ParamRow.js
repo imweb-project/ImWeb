@@ -217,10 +217,17 @@ export function buildParamRow(param, contextMenu) {
       updateDisplay();
     });
 
-    // Alt+wheel or horizontal scroll to adjust value; plain vertical scroll scrolls the panel
+    // ⌥+wheel adjusts the value; every other wheel/trackpad scroll scrolls the
+    // panel. Horizontal scroll used to adjust too, with no modifier — but a
+    // trackpad or Magic Mouse swipe is never perfectly vertical, so any event
+    // that happened to lean sideways moved whichever row was under the cursor
+    // (owner, 2026-10-01: "by accident an unwanted parameter moves"). The axis
+    // is still read from whichever delta dominates, because macOS turns a
+    // vertical wheel into a horizontal one while Shift is held — ⌥⇧+scroll
+    // (the ×5 coarse adjust) arrives as deltaX.
     row.addEventListener('wheel', e => {
+      if (!e.altKey) return; // let every unmodified scroll pass through
       const horiz = Math.abs(e.deltaX) > Math.abs(e.deltaY);
-      if (!e.altKey && !horiz) return; // let vertical scroll pass through
       e.preventDefault();
       if (param.locked) return;
       const delta = horiz ? e.deltaX : e.deltaY;

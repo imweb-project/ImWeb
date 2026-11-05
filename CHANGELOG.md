@@ -8,6 +8,101 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Added
+- **Reimagine (AI) — prototype** — under the Stills Buffer. The output frame
+  goes to a Gemini image-edit model with your prompt ("as wet ink on rice
+  paper"), and the answer lands in a buffer slot (FirstSlot…+Slots, cycling)
+  and crossfades in over Fade (FollowNew: fs1 → fs2 by FrameBlend, then fs1
+  takes the new slot). Route the buffer back into a layer and repeated runs
+  drift — slow AI, fast instrument. One request at a time; Every counts from
+  when an answer lands. Uses the Gemini key from AI settings, sent in a header.
+  AutoReimagine is group 'global' so a recalled state can never start a paid
+  loop, and any failure switches it off. Prompt and model id are per-origin
+  localStorage. Image calls are not in the token usage meter (they bill per
+  image); the status line counts them instead.
+  Model is a dropdown: the known Nano Banana models (fastest first) plus any
+  image model the key's live model list reports.
+- **Reimagine Looks** — a Look menu at the top of the Reimagine panel:
+  *Live in the painting*, *Breathing painting*, *Woodcut shadow*, *Drift*.
+  Each asks first, runs the Shift+Esc reset (so no leftover keyer or colour
+  shift spoils it), then sets layers, blend, displacement, Every/Fade and the
+  prompt. Buffer-only Looks seed FirstSlot from the camera, after waiting for
+  the restarted camera's first real frame. Auto stays off. Guarded by
+  `tests/audit-reimagine-looks.mjs` (every value resolves; buffer-only Looks
+  seed).
+- **Your own Reimagine Looks are Display States** — a saved State now carries
+  the Reimagine prompt (`extra.reimaginePrompt`) alongside the layers, blends,
+  Every/Fade and slots it already held, so Shift+S keeps a whole setup and a
+  recall brings the words back. States saved earlier leave the prompt alone.
+  After a recall the Look menu returns to its heading.
+- **AI Depth (source 36) — depth for every Reimagine still** — each image
+  Reimagine brings back (and a Look's camera seed) gets a depth map made IN
+  THE BROWSER: Depth Anything V2 Small via transformers.js 4.3.1 (pinned),
+  WebGPU with a WASM fallback, loaded lazily in its own chunk — nothing is
+  fetched until the first depth map, then the ~50 MB model is cached. Measured
+  headless on WebGPU: ~0.3–0.4 s per image after a one-time load. Maps are
+  kept per slot and blended fs1 → fs2 by FrameBlend like the buffer, so the
+  relief crossfades with the picture. Route it to Rutt-Etra, 3D T-Disp Source,
+  DisplaceSrc or a key; new Look **Relief (3D)** turns each image into a slowly
+  turning displaced plane. Depth toggle in the Reimagine panel (on).
+- **Reimagine Send — what the AI sees** — Screen (the drift loop, as before),
+  Camera, or Buffer (the Stills Buffer slot on show). The last two send a FLAT
+  picture, so a 3D Look's turning plane is no longer painted into the next
+  image and the tilts stop piling up. Relief (3D) now sends Camera.
+- **Reimagine status counts slots like the grid** — "→ slot 9" named the cell
+  the Stills Buffer grid labels 8 (status was 1-based, grid and FirstSlot are
+  0-based). Status now uses the grid's number.
+- **Stills Buffer fades reach the 3D scene** — FrameBlend (fs1 → fs2) was
+  applied only inside the 2D layer chain; the 3D material, the sequencers and
+  anything else reading the Buffer got the raw fs1 slot, so in Relief (3D) the
+  depth crossfaded while the picture jumped at the end. StillsBuffer now
+  renders ONE blended view (`renderView` / `viewTexture`) that every reader
+  takes, and Pipeline only pans/scales it — which also stops Pan/Scale being
+  dropped for the length of a fade.
+- **Reimagine skips the slot on show** — a Look's camera seed sits in
+  FirstSlot, so the first image after a Look overwrote the picture being shown
+  and could only cut. With two or more Slots, the slot on show is now skipped.
+- **SOLO marker in the status bar** — Solo (`s`) bypasses every effect, so a
+  stray keypress made the kaleidoscope vanish and its controls go dead with no
+  sign why (owner, testing Tutorial 0). A yellow SOLO pill now shows while it
+  is on, from any source — key, state recall, MIDI — and a click turns it off.
+- **Guided tour: a Tutorials track** — for video artists and workshop rooms.
+  Each tutorial makes one thing in about five moves: result, starting point,
+  moves, why it works, "now try". First two: *Tutorial 0 — a picture in sixty
+  seconds* and *Lineage — Violin Power* (Steina's sound-driven raster, rebuilt
+  from camera → Rutt-Etra with Z Gain on Sound Level).
+- **Load starting point** — a tutorial step's `start:` line (`clean`, or
+  `id=value` pairs; selects take their option label) renders a button that runs
+  the Shift+Esc reset, behind a confirm, then applies the assignments. The only
+  place the tour sets anything, and only on that button. Resolved by one
+  function shared with `audit-guide-targets`, so a renamed id or option label
+  fails the audit instead of failing in a workshop.
+- **Tutorials: the Feedback theme** — *the tunnel* (Blend, Feedback Mode,
+  Zoom, Decay), *spiral and colour* (Rotate, Hue, centre, an LFO), *the picture
+  melts into itself* (Output as DisplaceSrc), and *Lineage — the camera and its
+  monitor* (optical feedback through a projector or second screen).
+- **Tutorials: the Audio sculpting theme** — *one sound, one control* (Bass on
+  Displace, range first, then Slew), *a colour organ* (High / Mid / Bass on
+  RGB Shift / Kale.Rot / Kaleidoscope), *a word that listens* (Text audio,
+  one letter per spectrum slice), *seeing the sound* (Scope as a picture, then
+  as a displacement map). *Lineage — Violin Power* moves to close the theme.
+- **Tutorials work in their own bank.** Load starting point switches to a bank
+  named *Tutorials* (created the first time, reused after), so Shift+S lands in
+  its first slots and the reader's own banks are never filled with practice
+  states. A start pressed during first launch now waits for the MasterProject
+  import instead of being overwritten by it.
+- **Tutorials: theme chips** — a step's `theme:` groups the Tutorials track
+  under chips (Start · Feedback · Audio · 3D); Back/Next stay inside a theme.
+- **Tutorials: the 3D world theme** — *a solid made of your picture*, *the
+  picture pushes the surface* (T-Displace), *a field of copies* (Cloner),
+  *depth as a picture* (3D Depth as a displacement map), and *Lineage — the
+  hypercube* (after A. Michael Noll's 1960s Bell Labs films).
+- **Tutorials: the Time theme** — *three moments at once* (RGB Delay), *now
+  minus a moment ago* (camera over its own delay, Difference), *time bends
+  across the picture* (Time Displace: modes, Direction, Angle, Motion as the
+  map), *the slit* (SlitScan), and *Lineage — Image/ine's warp* (Warp Tape, the
+  original ImOs9 tape mechanism).
+
 ---
 
 ## [0.29.0] — 2026-10-31 — Ways In
@@ -441,6 +536,17 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
     unweighted Average and a flipped normal each turn their check red.
 
 ### Changed
+- Renaming the current bank updates the status bar at once (it kept the old
+  name until the next bank switch).
+- **Scrolling over the panel no longer moves parameters by accident.** A row
+  used to adjust on any horizontal scroll, with no modifier; a trackpad or
+  Magic Mouse swipe is never perfectly vertical, so whichever row was under the
+  cursor could jump. Only ⌥+scroll adjusts now (⌥⇧ for ×5, still working on
+  macOS where Shift turns the wheel horizontal). The unmodified sideways swipe
+  is gone.
+- Hypercube parameters are registered from `src/scene3d/HypercubeParams.js`
+  instead of inline in main.js, so Node audits see the same parameter set as
+  the app. Ids, options and defaults are unchanged.
 - **Growth, Neural: roughly half the frame cost** (owner: "will this be able
   to run at 60fps?", at 9 fps). Measured whole frames on the Intel UHD 630:
   the rule is ~85% of the cost (11.5 ms a step at Size 50, ~28 ms at Size

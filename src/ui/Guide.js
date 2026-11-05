@@ -9,6 +9,14 @@
  * not theirs. If you are tempted to add `ps.set()` here, add a sentence to the
  * step text instead.
  *
+ * ONE EXCEPTION, and it is a button: a Tutorials step may carry `start:`, which
+ * renders "Load starting point". Pressing it resets the whole instrument (the
+ * same reset as Shift+Esc, behind the same confirm) and then applies the
+ * step's assignments. This module still writes nothing — it hands the resolved
+ * list to the injected `loadStart`, which lives in main.js beside the reset.
+ * A tutorial needs a known starting point because a workshop room is twenty
+ * different leftover patches; the moves themselves are still the reader's.
+ *
  * CONTENT LIVES IN ONE PLACE: docs/ImWeb-Guide.md (served from public/docs, see
  * the sync-docs npm script). It is ordinary markdown — readable on GitHub,
  * sendable as an email — carrying one `<!-- guide ... -->` block per step that
@@ -31,6 +39,13 @@
  * All fields are optional. `point:` takes parameter ids, `show:` takes CSS
  * selectors for things that are not parameters (a whole section, a button),
  * `tab:` activates a tab on step entry, `keys:` renders keycaps for reference.
+ * `theme:` groups a track's steps under chips (Tutorials: Feedback, Audio…).
+ * Chips appear only for a track whose steps carry it, in file order, and Back /
+ * Next stay inside the chosen theme. In a themed track EVERY step needs one —
+ * the audit enforces it, since an unthemed step would be unreachable.
+ * `start:` is `clean` or a list of `id=value` assignments applied after a full
+ * reset; a SELECT takes its option label (`layer.bg=Rutt-Etra`), never an
+ * index, so the line reads as what it does.
  *
  * `track:` sorts the step into one of three tracks, because the three are
  * different kinds of not-knowing and mixing them serves neither: someone who
@@ -52,14 +67,17 @@ export const TRACKS = [
   ['basics',      'Basics'],
   ['principles',  'Principles'],
   ['instruments', 'Instruments'],
+  ['tutorials',   'Tutorials'],   // may carry start: — see the module header
 ];
 
 let _steps = null;      // ALL parsed steps, in file order
 let _track = TRACKS[0][0];
-let _idx = 0;           // index within the current track, not into _steps
+let _idx = 0;           // index within the current track (and theme), not into _steps
+let _theme = null;      // current theme within a themed track; null when unthemed
 let _panel = null;
 let _ps = null;
 let _openWorkspace = null; // injected: workspace panes are not plain tabs
+let _loadStart = null;     // injected: reset + apply, see the module header
 let _loadPromise = null;
 
 // ── Reveal ───────────────────────────────────────────────────────────────────
@@ -160,13 +178,14 @@ export function parseGuide(md) {
     const title = (nl === -1 ? part : part.slice(0, nl)).trim();
     let body = nl === -1 ? '' : part.slice(nl + 1);
 
-    const meta = { track: TRACKS[0][0], tab: null, point: [], show: [], keys: [] };
+    const meta = { track: TRACKS[0][0], theme: null, tab: null, point: [], show: [], keys: [], start: null };
     body = body.replace(/<!--\s*guide\b([\s\S]*?)-->/, (_, block) => {
       for (const line of block.split('\n')) {
-        const m = line.match(/^\s*(track|tab|point|show|keys)\s*:\s*(.+?)\s*$/);
+        const m = line.match(/^\s*(track|theme|tab|point|show|keys|start)\s*:\s*(.+?)\s*$/);
         if (!m) continue;
         const [, k, v] = m;
-        if (k === 'track' || k === 'tab') meta[k] = v.trim();
+        if (k === 'track' || k === 'theme' || k === 'tab') meta[k] = v.trim();
+        else if (k === 'start') meta.start = parseStart(v);
         else meta[k] = v.split(',').map(s => s.trim()).filter(Boolean);
       }
       return '';
@@ -175,6 +194,44 @@ export function parseGuide(md) {
     steps.push({ title, body: body.trim(), ...meta });
   }
   return steps;
+}
+
+/**
+ * `clean` → [] (reset only). Otherwise `id=value, id=value` → [[id, raw], …].
+ * Raw values stay strings here; resolveStart() turns them into param values,
+ * so the audit and the app resolve them through the same code.
+ */
+function parseStart(v) {
+  if (v.trim() === 'clean') return [];
+  return v.split(',').map(s => s.trim()).filter(Boolean).map(a => {
+    const eq = a.indexOf('=');
+    return eq === -1 ? [a, ''] : [a.slice(0, eq).trim(), a.slice(eq + 1).trim()];
+  });
+}
+
+/**
+ * Resolve a step's `start:` assignments against the parameter system.
+ * Returns { values: [[id, value], …], errors: [string, …] }. A SELECT takes its
+ * option label; a TOGGLE takes 0/1; anything else a number. An assignment that
+ * does not resolve is an error, never a silent skip — a starting point with a
+ * missing value is a different starting point from the one the text describes.
+ */
+export function resolveStart(ps, assigns) {
+  const values = [], errors = [];
+  for (const [id, raw] of assigns ?? []) {
+    const p = ps?.get?.(id);
+    if (!p) { errors.push(`start: no such parameter "${id}"`); continue; }
+    let v;
+    if (Array.isArray(p.options) && p.options.length) {
+      v = p.options.indexOf(raw);
+      if (v === -1) { errors.push(`start: "${raw}" is not an option of ${id}`); continue; }
+    } else {
+      v = Number(raw);
+      if (raw === '' || !Number.isFinite(v)) { errors.push(`start: ${id} needs a number, got "${raw}"`); continue; }
+    }
+    values.push([id, v]);
+  }
+  return { values, errors };
 }
 
 async function loadSteps() {
@@ -203,6 +260,9 @@ function buildPanel() {
     </div>
     <div id="guide-tracks">${TRACKS.map(([k, label]) =>
       `<button class="guide-track" data-track="${k}">${label}</button>`).join('')}</div>
+    <div id="guide-themes" class="hidden"></div>
+    <button id="guide-start" class="guide-point hidden"
+      title="Reset the instrument and set up this tutorial's starting point">↺ Load starting point</button>
     <div id="guide-body"></div>
     <div id="guide-points"></div>
     <div id="guide-nav">
@@ -212,11 +272,34 @@ function buildPanel() {
   document.body.appendChild(el);
 
   el.querySelector('#guide-close').addEventListener('click', closeGuide);
+  el.querySelector('#guide-start').addEventListener('click', async () => {
+    const step = trackSteps()[_idx];
+    if (!step?.start || !_loadStart) return;
+    const { values, errors } = resolveStart(_ps, step.start);
+    // Content bug, same treatment as a missing chip: refuse visibly rather
+    // than load a starting point the text does not describe.
+    if (errors.length) { console.warn('[Guide]', errors); return; }
+    // Disabled while in flight: the loader may first wait for the first-launch
+    // project, and a second click in that gap would queue a second reset.
+    const btn = el.querySelector('#guide-start');
+    btn.disabled = true;
+    try {
+      // The reset closes workspaces and lands on the default tab; render again
+      // so the step's own tab and first target come back.
+      if (await _loadStart(values)) render();
+    } finally {
+      btn.disabled = false;
+    }
+  });
   el.querySelector('#guide-prev').addEventListener('click', () => go(_idx - 1));
   el.querySelector('#guide-next').addEventListener('click', () => go(_idx + 1));
   el.querySelector('#guide-tracks').addEventListener('click', e => {
     const btn = e.target.closest('.guide-track');
     if (btn) goTrack(btn.dataset.track);
+  });
+  el.querySelector('#guide-themes').addEventListener('click', e => {
+    const btn = e.target.closest('.guide-theme');
+    if (btn) goTheme(btn.dataset.theme);
   });
 
   // Arrow keys drive the tour while it is open. Deliberately NOT bound to the
@@ -248,9 +331,22 @@ function showLabel(sel) {
   return hdr?.childNodes[0]?.textContent?.trim() || sel;
 }
 
-/** The steps of the current track, in file order. */
+/** Themes used by a track, in file order of first appearance. [] if unthemed. */
+export function trackThemes(steps, track) {
+  return [...new Set(steps.filter(s => s.track === track && s.theme).map(s => s.theme))];
+}
+
+/**
+ * The steps of the current track — and, in a themed track, the current theme —
+ * in file order. Falls back to the track's first theme when the remembered one
+ * no longer exists (renamed in the markdown), so the panel never goes blank.
+ */
 function trackSteps() {
-  return _steps.filter(s => s.track === _track);
+  const inTrack = _steps.filter(s => s.track === _track);
+  const themes = trackThemes(_steps, _track);
+  if (!themes.length) { _theme = null; return inTrack; }
+  if (!themes.includes(_theme)) _theme = themes[0];
+  return inTrack.filter(s => s.theme === _theme);
 }
 
 function render() {
@@ -262,7 +358,19 @@ function render() {
   _panel.querySelector('#guide-count').textContent = `${_idx + 1} / ${steps.length}`;
   _panel.querySelectorAll('.guide-track').forEach(b =>
     b.classList.toggle('active', b.dataset.track === _track));
+  const themes = trackThemes(_steps, _track);
+  const themesEl = _panel.querySelector('#guide-themes');
+  themesEl.classList.toggle('hidden', !themes.length);
+  themesEl.innerHTML = '';
+  for (const t of themes) {
+    const b = document.createElement('button');
+    b.className = 'guide-theme' + (t === _theme ? ' active' : '');
+    b.dataset.theme = t;
+    b.textContent = t;
+    themesEl.appendChild(b);
+  }
   _panel.querySelector('#guide-body').innerHTML = marked.parse(step.body);
+  _panel.querySelector('#guide-start').classList.toggle('hidden', !step.start || !_loadStart);
 
   const pts = _panel.querySelector('#guide-points');
   pts.innerHTML = '';
@@ -310,6 +418,15 @@ function go(i) {
   render();
 }
 
+/** Switch theme within the current track, landing on its first step. */
+function goTheme(theme) {
+  if (!trackThemes(_steps, _track).includes(theme)) return;
+  _theme = theme;
+  _idx = 0;
+  _save();
+  render();
+}
+
 /** Switch track, landing on its first step. */
 function goTrack(key) {
   if (!TRACKS.some(([k]) => k === key)) return;
@@ -321,7 +438,7 @@ function goTrack(key) {
 
 function _save() {
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify({ track: _track, idx: _idx }));
+    localStorage.setItem(STORE_KEY, JSON.stringify({ track: _track, theme: _theme, idx: _idx }));
   } catch { /* private mode */ }
 }
 
@@ -337,6 +454,7 @@ function _restore() {
   try { saved = JSON.parse(raw); } catch { return; } // legacy bare number parses fine
   if (typeof saved !== 'object' || saved === null) return;
   if (TRACKS.some(([k]) => k === saved.track)) _track = saved.track;
+  if (typeof saved.theme === 'string') _theme = saved.theme;
   const n = trackSteps().length;
   _idx = Number.isInteger(saved.idx) && saved.idx < n ? saved.idx : 0;
 }
@@ -348,9 +466,10 @@ function _restore() {
  * workspace router is a closure inside main()'s scope — passing it keeps this
  * module free of a reach-back into main.js.
  */
-export function initGuide({ ps, openWorkspace } = {}) {
+export function initGuide({ ps, openWorkspace, loadStart } = {}) {
   _ps = ps ?? null;
   _openWorkspace = openWorkspace ?? null;
+  _loadStart = loadStart ?? null;
 }
 
 /**

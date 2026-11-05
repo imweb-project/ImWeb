@@ -730,22 +730,10 @@ export class Pipeline {
       processedInputs = this._pInputs;
     }
 
-    // Frame blend (mix fs1 and fs2)
-    const frameBlendAmt = p.get('buffer.frameblend').value / 100;
-    if (frameBlendAmt > 0 && inputs.buffer2) {
-      const blended = this._pass(this.m.blend, {
-        uCurrent: inputs.buffer ?? this._getFallbackTexture(),
-        uPrev:    inputs.buffer2,
-        uActive:  1,
-        uAmount:  frameBlendAmt,
-      });
-      if (processedInputs === inputs) {
-        // bufferTransform branch did not run — populate _pInputs now
-        Object.assign(this._pInputs, inputs);
-        processedInputs = this._pInputs;
-      }
-      this._pInputs.buffer = blended;
-    }
+    // Frame blend (fs1 → fs2) is NOT done here: inputs.buffer arrives already
+    // blended (StillsBuffer.renderView), so the 3D material and the sequencers
+    // see the same fade as the layers. Blending here too would apply it twice;
+    // blending only here dropped Pan/Scale mid-fade and left 3D un-faded.
 
     // ── Movie deck clip crossfade ────────────────────────────────────────────
     // Runs BEFORE the mix buses and before layer resolution, and substitutes
@@ -1649,6 +1637,7 @@ export class Pipeline {
     if (key === 'growth'    && inputs.growth)    return inputs.growth;
     if (key === 'volume'    && inputs.volume)    return inputs.volume;
     if (key === 'glsl')                          return this.customSourceTexture;
+    if (key === 'aidepth'   && inputs.aidepth)   return inputs.aidepth;
     return inputs.color ?? this._getFallbackTexture();
   }
 

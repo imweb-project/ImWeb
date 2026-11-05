@@ -123,6 +123,7 @@ import { WarpMapEditor } from "./inputs/WarpMapEditor.js";
 import { SceneManager } from "./scene3d/SceneManager.js";
 import { ModelSlots, SLOT_PREFIXES } from "./scene3d/ModelSlots.js";
 import { EASING, PLANE_NAMES, PLANE_PAIRS, PLANE_HELP, PLANE_MENU_ORDER } from "./scene3d/HypercubeGeometry.js";
+import { registerHypercubeParams, HC_SLOT_SPEED } from "./scene3d/HypercubeParams.js";
 import { Pipeline } from "./core/Pipeline.js";
 import { GestureArbitrator } from "./core/GestureArbitrator.js";
 import { MobileStatePad } from "./ui/components/MobileStatePad.js";
@@ -151,7 +152,16 @@ import {
   getVisionConfig,
   setVisionShader,
   logCoachSuggestion,
+  getReimagineModel,
+  setReimagineModel,
+  listReimagineModels,
+  REIMAGINE_KNOWN_MODELS,
 } from "./ai/AIFeatures.js";
+import { Reimagine } from "./ai/Reimagine.js";
+import { REIMAGINE_LOOKS } from "./ai/ReimagineLooks.js";
+import { AIDepth } from "./ai/AIDepth.js";
+import { estimateDepth } from "./ai/DepthEstimator.js";
+import { mkSelect } from "./ui/components/Select.js";
 import {
   initTabs,
   buildParamRow,
@@ -184,6 +194,7 @@ import {
   openGuide,
   toggleGuide,
   revealParam as _revealParam,
+  resolveStart,
 } from "./ui/Guide.js";
 import { LONG_PRESS_MS } from "./ui/touch.js";
 import { perfFrame } from "./perf-logger.js";
@@ -380,62 +391,7 @@ async function main() {
   registerAnalogParams(ps);
   registerTeletextParams(ps);
 
-  // ── Hypercube parameters ───────────────────────────────────────────────────
-  ps.register({ id:'hypercube.dim',           type:'continuous', value:4,    min:4,    max:12,   step:1,     label:'Dimension',    group:'hypercube' });
-  // Options derived from EASING, never retyped: stored as an index, so the key
-  // order there is append-only. Default easeInOut, what the panel always used.
-  ps.register({ id:'hypercube.easing',        type:'select',     options:Object.keys(EASING), value:Object.keys(EASING).indexOf('easeInOut'), label:'Easing', group:'hypercube' });
-  ps.register({ id:'hypercube.morphDuration', type:'continuous', value:2000, min:200,  max:8000, step:100, label:'Morph Time',  group:'hypercube' });
-  ps.register({ id:'hypercube.wDistance',     type:'continuous', value:3.0,  min:1.1,  max:20,   step:0.1, label:'W Distance',  group:'hypercube' });
-  ps.register({ id:'hypercube.scale',         type:'continuous', value:1.0,  min:0.1,  max:5.0,  step:0.05, label:'Scale',  group:'hypercube' });
-  ps.register({ id:'hypercube.edgeOpacity',   type:'continuous', value:1.0,  min:0.0,  max:1.0,  step:0.01, label:'Edge Opacity',  group:'hypercube' });
-  ps.register({ id:'hypercube.pointSize',     type:'continuous', value:3.0,  min:0.5,  max:20,   step:0.5, label:'Point Size',  group:'hypercube' });
-  // ── Plane Bank: 8 slots, each a plane + a speed ────────────────────────────
-  // Any of the 66 planes of the 12-cube can be played; planes in no slot turn
-  // at their default speed. Slots 1–4 KEEP the old rot.xy/xz/yz/xw ids as
-  // their speeds, with planes defaulting to XY/XZ/YZ/XW — so every saved state,
-  // bank and MIDI binding on those rows behaves exactly as before (the mix.
-  // bus-1 rule: renaming ids breaks every save for zero gain). Plane menus are
-  // indices into PLANE_NAMES (append-only), 0 = none.
-  const _PLANE_OPTS = ['—', ...PLANE_NAMES];
-  const _planeOpt = n => _PLANE_OPTS.indexOf(n);
-  const HC_SLOT_SPEED = ['hypercube.rot.xy', 'hypercube.rot.xz', 'hypercube.rot.yz', 'hypercube.rot.xw',
-                         'hypercube.slot5.speed', 'hypercube.slot6.speed', 'hypercube.slot7.speed', 'hypercube.slot8.speed'];
-  const _slotDefaults = [['XY', 0.30], ['XZ', 0.20], ['YZ', 0.15], ['XW', 0.40], ['—', 0], ['—', 0], ['—', 0], ['—', 0]];
-  for (let n = 1; n <= 8; n++) {
-    const [plane, speed] = _slotDefaults[n - 1];
-    ps.register({ id:`hypercube.slot${n}.plane`, type:'select', select:true, options:_PLANE_OPTS, value:_planeOpt(plane), label:`Slot ${n} plane`, group:'hypercube',
-      help: 'Which rotation plane this slot turns. XY, XZ and YZ are ordinary 3D spins; planes with W, V, U … turn the cube through a higher dimension and only move once it has that many. Hover an entry for what it does.',
-      optionHelp: ['— : this slot turns nothing', ...PLANE_HELP], displayOrder: PLANE_MENU_ORDER });
-    ps.register({ id:HC_SLOT_SPEED[n - 1], type:'continuous', value:speed, min:-2.0, max:2.0, step:0.01, label:`Slot ${n} speed`, group:'hypercube',
-      help: 'How fast this slot\'s plane turns — radians per second, negative turns the other way. Two slots on the same plane add. A plane in no slot turns at its default speed.' });
-  }
-  // Depth cue by w: far in the extra dimensions = dimmer and thinner, so a
-  // rotating high-D cube reads as depth rather than a flat tangle.
-  ps.register({ id:'hypercube.depthCue',      type:'continuous', value:0,    min:0,    max:1,    step:0.01,  label:'Depth Cue',    group:'hypercube' });
-  ps.register({ id:'hypercube.edgeWidth',     type:'continuous', value:1.5,  min:0.5,  max:8.0,  step:0.1,   label:'Edge Width',   group:'hypercube' });
-  ps.register({ id:'hypercube.renderMode',    type:'select',     options:['wireframe','points','both','off'], value:3, label:'Draw', group:'hypercube' });
-  ps.register({ id:'hypercube.projMode',      type:'select',     options:['perspective','orthographic'],      value:0, label:'Proj Mode',    group:'hypercube' });
-  ps.register({ id:'hypercube.faces.active',  type:'toggle',     value:0,                                    label:'Faces',        group:'hypercube' });
-  ps.register({ id:'hypercube.faces.opacity', type:'continuous', value:0.5,  min:0.0,  max:1.0,  step:0.01,  label:'Face opacity', group:'hypercube' });
-  ps.register({ id:'hypercube.faces.blend',   type:'select',     options:['Normal','Additive','Multiply','Subtract','Screen','Lighten','Darken','Exclusion'], value:0, label:'Face blend', group:'hypercube' });
-  ps.register({ id:'hypercube.faces.hue',     type:'continuous', value:0,    min:0,    max:360,  step:1,     label:'Face hue',     group:'hypercube' });
-  ps.register({ id:'hypercube.faces.sat',     type:'continuous', value:0,    min:0,    max:100,  step:1,     label:'Face sat',     group:'hypercube' });
-  ps.register({ id:'hypercube.faces.texsrc',  type:'select',     options:OPT_SOURCES, value:0, label:'Face tex',   group:'hypercube' });
-  ps.register({ id:'hypercube.faces.masksrc', type:'select',     options:OPT_SOURCES, value:0, label:'Face mask',  group:'hypercube' });
-  ps.register({ id:'hypercube.faces.maskinv', type:'toggle',     value:0,                                    label:'Mask invert', group:'hypercube' });
-  ps.register({ id:'hypercube.faces.masklvl', type:'continuous', value:1.0,  min:0.0,  max:4.0,  step:0.01,  label:'Mask level',  group:'hypercube' });
-  ps.register({ id:'hypercube.inst.active',   type:'toggle',     value:0,                                    label:'Instancer',    group:'hypercube' });
-  ps.register({ id:'hypercube.inst.geo',      type:'select',     options:['Sphere','Torus','Cube','Plane','Cylinder','Capsule','TorusKnot','Cone','Dodecahedron','Icosahedron','Octahedron','Tetrahedron','Ring','Model'], value:0, label:'Inst Geo', group:'hypercube' });
-  ps.register({ id:'hypercube.inst.scale',    type:'continuous', value:0.08, min:0.01, max:2.0,  step:0.01,  label:'Inst Scale',   group:'hypercube' });
-  ps.register({ id:'hypercube.inst.opacity',  type:'continuous', value:1.0,  min:0.0,  max:1.0,  step:0.01,  label:'Inst Opacity', group:'hypercube' });
-  ps.register({ id:'hypercube.inst.texsrc',   type:'select',     options:OPT_SOURCES, value:0, label:'Inst tex', group:'hypercube' });
-  // Off: the instancer REPLACES the 3D scene's geometry/model (and wears its
-  // Material). On: both are visible — geometry keeps Transform and Material,
-  // the instancer rides the same Transform with its own Inst tex/opacity.
-  // GPU guard: instance count × shape vertices ≤ this many million a frame.
-  ps.register({ id:'hypercube.inst.budget',   type:'continuous', value:9,    min:1,    max:64,   step:0.5,   label:'Inst Budget (M verts)', group:'hypercube' });
-  ps.register({ id:'hypercube.inst.showGeo',  type:'toggle',     value:0,                                    label:'Show geometry', group:'hypercube' });
+  registerHypercubeParams(ps);
 
   // ── 3. Controllers ────────────────────────────────────────────────────────
 
@@ -513,6 +469,12 @@ async function main() {
   ctrl._movieInput = movieInput;
 
   const stillsBuffer = new StillsBuffer(renderer, W, H);
+  // AI Depth (source 36): per-slot depth maps for Reimagine stills.
+  const aiDepth = new AIDepth(renderer, W, H);
+  const AIDEPTH_IDX = SOURCE_KEYS.indexOf("aidepth");
+  // Assigned once the AI section has the frame grab (captureOutputFrame);
+  // the render loop ticks it through ?. until then.
+  let reimagine = null;
   const seq1 = new SequenceBuffer(renderer, W, H, 60, "seq1");
   const seq2 = new SequenceBuffer(renderer, W, H, 60, "seq2");
   const seq3 = new SequenceBuffer(renderer, W, H, 60, "seq3");
@@ -1195,6 +1157,10 @@ async function main() {
     modelSlots:       modelSlots.names(),
     // The picture each model wears when its Texture is Image (null = none).
     modelImages:      scene3d.imageNames(),
+    // The Reimagine prompt — text, so no param can hold it. Restored in the
+    // Reimagine block (stateRecalled); a state saved before this has no key
+    // and leaves the current prompt alone.
+    reimaginePrompt:  reimagine ? reimagine.prompt : null,
   }));
 
   // Populated by the hypercube panel build block (below). Calling it clears and
@@ -2383,7 +2349,40 @@ async function main() {
   // The guided tour points at parameter rows, and four of them (Live GLSL, 3D,
   // Analog, Draw) live in workspace panes that no .tab button reaches. The
   // router is a closure in this scope, so it is injected rather than imported.
-  initGuide({ ps, openWorkspace });
+  // Tutorials load a starting point through the same reset as Shift+Esc, so
+  // there is one definition of "clean" and the confirm protects the patch.
+  initGuide({
+    ps, openWorkspace,
+    loadStart: async (values) => {
+      // On a fresh profile the first-launch MasterProject import lands a few
+      // seconds after boot and REPLACES every value — a starting point loaded
+      // before it was silently overwritten (seen headless, 2026-10-01). A
+      // workshop room is all fresh browsers, so wait for it. bootProject is
+      // declared further down this function; by the time anyone can click,
+      // it is initialised.
+      await bootProject;
+      if (!confirm(
+        "Load this tutorial's starting point?\n\nEvery parameter goes back to " +
+        "its default, in a bank called Tutorials. Press Cancel, then Shift+S, " +
+        "if you want to keep the current picture in your own bank first.")) return false;
+      // Tutorials work in their own bank (owner, 2026-10-01): Shift+S then lands
+      // in its low slots, where the number keys reach, and the reader's own
+      // banks are never filled with practice states. Switch BEFORE the reset —
+      // activatePreset recalls the bank's active state and controllers, so
+      // after it, it would undo the starting point.
+      const TUTORIAL_BANK = "Tutorials";
+      let bankIdx = presetMgr.getAll().findIndex((b) => b?.name === TUTORIAL_BANK);
+      if (bankIdx === -1) {
+        bankIdx = await presetMgr.createBank(); // creates and activates
+        await presetMgr.renameBank(bankIdx, TUTORIAL_BANK);
+      } else if (presetMgr.currentIdx !== bankIdx) {
+        await presetMgr.activatePreset(bankIdx, { fade: false });
+      }
+      await _resetAllParams(false);
+      for (const [id, v] of values) ps.set(id, v);
+      return true;
+    },
+  });
 
   // Collapse / expand all sections
   const collapseAllBtn = document.getElementById("btn-collapse-all");
@@ -2416,8 +2415,10 @@ async function main() {
   }
 
   // Reset all params to defaults → clean camera state
-  async function _resetAllParams() {
-    if (!confirm("Reset all parameters to defaults?")) return;
+  // Returns false if the user cancelled. Pass `false` to skip the confirm when
+  // the caller has already asked (the tutorial loader does).
+  async function _resetAllParams(message = "Reset all parameters to defaults?") {
+    if (message !== false && !confirm(message)) return false;
     const _morphParam = ps.get('global.morphspeed');
     const _savedMorph = _morphParam?._value ?? 0;
     if (_morphParam) _morphParam._value = 0; // TODO: migrate to ps.suspendMorph() if added — suppress morph during reset cascade without firing onChange
@@ -2435,10 +2436,11 @@ async function main() {
     closeWorkspace();
     _collapseToDefaultOpen();
     await _ensureCamera();
+    return true;
   }
   document
     .getElementById("btn-reset-all")
-    ?.addEventListener("click", _resetAllParams);
+    ?.addEventListener("click", () => _resetAllParams());
 
   // ── LUT loader ────────────────────────────────────────────────────────────
   const lutNameEl = document.getElementById("lut-name");
@@ -4197,6 +4199,15 @@ async function main() {
   });
   // Reopened from the ? menu ("Welcome screen").
   window.addEventListener("imweb:welcome", () => _onboarding?.classList.remove("hidden"));
+
+  // Solo marker. Driven from the param, not the `s` key, so a state recall or a
+  // MIDI mapping that turns Solo on shows it too. Sync once now: a saved
+  // project can boot with Solo already on.
+  const _soloEl = document.getElementById("status-solo");
+  const _syncSolo = (v) => { if (_soloEl) _soloEl.hidden = !v; };
+  ps.get("output.solo").onChange(_syncSolo);
+  _syncSolo(ps.get("output.solo").value);
+  _soloEl?.addEventListener("click", () => ps.set("output.solo", 0));
 
   // Keyboard lock toggle
   const _keylockBtn = document.getElementById("btn-keylock");
@@ -6370,7 +6381,7 @@ async function main() {
     if (key === "depth3d") return scene3d.depthTexture;
     if (key === "draw") return drawLayer.texture;
     if (key === "text") return textLayer.texture;
-    if (key === "buffer") return stillsBuffer.texture;
+    if (key === "buffer") return stillsBuffer.viewTexture;
     if (key === "bg1") return stillsBuffer.bgTexture(0);
     if (key === "bg2") return stillsBuffer.bgTexture(1);
     if (key === "color") return colorTexture;
@@ -6404,6 +6415,7 @@ async function main() {
     // Front buffer: last frame's render to anything that reads it before
     // pipeline.render (Growth's seed), black while the shader is off.
     if (key === "glsl") return pipeline.customSourceTexture;
+    if (key === "aidepth") return aiDepth.texture;
     if (key === "mixbus") return pipeline.mixTextureAt(0);
     if (key === "mixbus2") return pipeline.mixTextureAt(1);
     if (key === "mixbus3") return pipeline.mixTextureAt(2);
@@ -10018,6 +10030,7 @@ void main() {
     pipeline.resize(rW, rH);
     scene3d.resize(rW, rH);
     stillsBuffer.resize(rW, rH);
+    aiDepth.resize(rW, rH);
     videoDelay.resize(rW, rH);
     tdEngine.resize(rW, rH);
     slitScan.resize(rW, rH);
@@ -10818,8 +10831,17 @@ void main() {
     movieInput.tick(ps, beatPhase, dt, _uploadA);
     movieInputB.tick(ps, beatPhase, dt, _uploadB);
 
+    // Reimagine BEFORE stillsBuffer.tick: a landing fade sets fs1 and drops FrameBlend
+    // to 0 together, so fs1 must be read into readIndex in this same frame —
+    // ticked after, the hand-off would show the OLD still for one frame.
+    reimagine?.tick(dt);
     // Tick stills buffer (reads fs1 → readIndex)
     stillsBuffer.tick(ps, dt);
+    // AI Depth follows the buffer's resolved read slots, so render it after
+    // stillsBuffer.tick — and only while something consumes source 36.
+    // One blended Buffer picture for every reader (2D layers, 3D, sequencers).
+    stillsBuffer.renderView(ps.get("buffer.frameblend").value / 100);
+    if (_srcUsed(AIDEPTH_IDX)) aiDepth.render(stillsBuffer, ps.get("buffer.frameblend").value / 100);
 
     // Tick and capture sequence buffers
     const _seqSrcTex = (idx) =>
@@ -10829,7 +10851,7 @@ void main() {
         movieInput.currentTexture, // 2 Movie
         _resolveLayerTex(ps.get("layer.fg").value), // 3 FG
         _resolveLayerTex(ps.get("layer.bg").value), // 4 BG
-        stillsBuffer.texture, // 5 Buffer
+        stillsBuffer.viewTexture, // 5 Buffer
         drawLayer.texture, // 6 Draw
       ][idx] ?? pipeline.prev.texture;
 
@@ -11280,7 +11302,7 @@ void main() {
         movie: movieInput.active ? movieInput.currentTexture : null,
         screen: pipeline.prev.texture,
         draw: drawLayer.texture,
-        buffer: stillsBuffer.texture,
+        buffer: stillsBuffer.viewTexture,
         noise: noiseTexture,
         warpMaps,
         beatPhase,              // the beat counter, for the models' Beats lock
@@ -11305,8 +11327,8 @@ void main() {
       movieFadeAmt:   movieInput.active ? movieInput.fadeAmount : 0,
       movieBFadeFrom: movieInputB.active ? movieInputB.fadeFromTexture : null,
       movieBFadeAmt:  movieInputB.active ? movieInputB.fadeAmount : 0,
-      buffer: stillsBuffer.texture,
-      buffer2: stillsBuffer.texture2,
+      // Already fs1→fs2 blended (StillsBuffer.renderView) — Pipeline only pans/scales it.
+      buffer: stillsBuffer.viewTexture,
       bg1: stillsBuffer.bgTexture(0),
       bg2: stillsBuffer.bgTexture(1),
       scene3d: scene3dNeeded ? scene3d.texture : null,
@@ -11335,6 +11357,7 @@ void main() {
       analog: analogTV.texture,
       tdisp: tdEngine.texture,
       volume: volumeTexture(),
+      aidepth: _srcUsed(AIDEPTH_IDX) ? aiDepth.texture : null,
       seq1: seq1.texture,
       seq2: seq2.texture,
       seq3: seq3.texture,
@@ -11931,22 +11954,27 @@ void main() {
   // the frame survives the downscale intact. PNG would be several times larger
   // for no gain on a photographic image.
   const VISION_W = 512;
-  let _visionCanvas = null;
-  function captureVisionFrame() {
+  const _frameCanvases = new Map(); // width → scratch canvas
+  function captureVisionFrame() { return captureOutputFrame(VISION_W, 0.6); }
+  // Reimagine sends a larger, cleaner frame (1024px, q0.85) through the SAME
+  // path — one grab, two callers, so the opaque-draw and taint rules cannot
+  // drift between them.
+  function captureOutputFrame(W, quality) {
     if (!canvas?.width || !canvas?.height) return null;
-    const h = Math.max(1, Math.round(VISION_W * (canvas.height / canvas.width)));
-    // One reused scratch canvas — the narrator fires on a timer, and a fresh
-    // 512px canvas every tick is garbage the GC has to chase mid-performance.
-    if (!_visionCanvas) _visionCanvas = document.createElement("canvas");
-    if (_visionCanvas.width !== VISION_W || _visionCanvas.height !== h) {
-      _visionCanvas.width = VISION_W;
-      _visionCanvas.height = h;
+    const h = Math.max(1, Math.round(W * (canvas.height / canvas.width)));
+    // One reused scratch canvas per width — the narrator fires on a timer, and
+    // a fresh canvas every tick is garbage the GC has to chase mid-performance.
+    let cv = _frameCanvases.get(W);
+    if (!cv) { cv = document.createElement("canvas"); _frameCanvases.set(W, cv); }
+    if (cv.width !== W || cv.height !== h) {
+      cv.width = W;
+      cv.height = h;
     }
-    const ctx = _visionCanvas.getContext("2d");
+    const ctx = cv.getContext("2d");
     if (!ctx) return null;
     try {
-      _drawOutputOpaque(ctx, VISION_W, h);
-      const url = _visionCanvas.toDataURL("image/jpeg", 0.6);
+      _drawOutputOpaque(ctx, W, h);
+      const url = cv.toDataURL("image/jpeg", quality);
       const comma = url.indexOf(",");
       if (comma === -1) return null;
       return { b64: url.slice(comma + 1), mime: "image/jpeg" };
@@ -11956,6 +11984,186 @@ void main() {
       // narrator — losing the picture is not worth losing the feature.
       return null;
     }
+  }
+
+  // ── Reimagine (AI stills) ─────────────────────────────────────────────────
+  // Panel lives under the Stills Buffer (index.html #reimagine-section). The
+  // prompt and model id are per-origin localStorage, not parameters: a text
+  // prompt has no param type, and image model ids drift too fast to index.
+  {
+    const statusEl = document.getElementById("reimagine-status");
+    const promptEl = document.getElementById("reimagine-prompt");
+    const modelEl  = document.getElementById("reimagine-model");
+    const PROMPT_KEY = "imweb.reimagine.prompt";
+    let count = 0;
+    // reimagine.send picks what the AI sees: 0 Screen (the drift loop), 1 Camera,
+    // 2 the Stills Buffer slot on show — both flat, so a 3D Look's turning plane
+    // is never painted into the next image. A missing source throws a readable
+    // error (Reimagine.run shows it and stops Auto) rather than sending black.
+    const captureReimagineFrame = (W, quality) => {
+      const send = Math.round(ps.get("reimagine.send").value);
+      if (send === 0) return captureOutputFrame(W, quality);
+      let tex = null;
+      if (send === 1) {
+        tex = camera3d.video?.videoWidth ? texForSource("camera") : null;
+        if (!tex) throw new Error("Send is Camera, but the camera is off");
+      } else {
+        const i = stillsBuffer.readIndex;
+        tex = stillsBuffer._hasFrame[i] ? stillsBuffer.frames[i]?.texture : null;
+        if (!tex) throw new Error("Send is Buffer, but the Stills Buffer slot on show is empty");
+      }
+      const url = stillsBuffer.exportTexture(tex, W, quality);
+      const comma = url ? url.indexOf(",") : -1;
+      return comma === -1 ? null : { b64: url.slice(comma + 1), mime: "image/jpeg" };
+    };
+    reimagine = new Reimagine({
+      ps,
+      stillsBuffer,
+      captureFrame: captureReimagineFrame,
+      aspect: () => (canvas?.width || 16) / (canvas?.height || 9),
+      onStatus: (msg, kind) => {
+        if (kind === "ok") count++;
+        if (!statusEl) return;
+        statusEl.textContent = kind === "ok" ? `${msg} · ${count} this session` : msg;
+        statusEl.dataset.kind = kind ?? "";
+      },
+      onWrote: () => refreshBufferGrid(),
+      // Depth per still: runs AFTER the image is in its slot and the fade has
+      // begun — never inside the request, so a slow first model download can
+      // not hold up the picture. The slot's old depth is dropped first, so a
+      // failed estimate shows flat rather than the previous image's relief.
+      onLanded: (slot, url) => {
+        aiDepth.forget(slot);
+        if (!ps.get("reimagine.depth").value) return;
+        // Appended to the line as it reads WHEN depth finishes — onLanded runs
+        // before the "→ slot …" status is written, so text captured here would
+        // be the stale "Reimagining…". While the model downloads, its progress
+        // shows in the line's own tag so the next status write replaces it.
+        const tag = (t) => {
+          if (!statusEl || statusEl.dataset.kind === "busy") return;
+          const line = statusEl.textContent.replace(/( · )?(✗ depth|depth \d|Loading depth model).*$/, "");
+          statusEl.textContent = line ? `${line} · ${t}` : t;
+        };
+        estimateDepth(url, (m) => tag(m))
+          .then(({ canvas: dc, ms, device }) => {
+            aiDepth.set(slot, dc);
+            tag(`depth ${Math.round(ms)} ms (${device})`);
+          })
+          .catch((err) => {
+            console.warn("[depth]", err);
+            tag(`✗ depth: ${err.message ?? err}`);
+          });
+      },
+    });
+    if (promptEl) {
+      try { promptEl.value = localStorage.getItem(PROMPT_KEY) ?? promptEl.value; } catch { /* private mode */ }
+      reimagine.prompt = promptEl.value;
+      promptEl.addEventListener("input", () => {
+        reimagine.prompt = promptEl.value;
+        try { localStorage.setItem(PROMPT_KEY, promptEl.value); } catch { /* quota */ }
+      });
+      // Typing in the prompt must not fire the instrument's key shortcuts.
+      promptEl.addEventListener("keydown", (e) => e.stopPropagation());
+    }
+    // Model dropdown. Rebuilt (not patched) when the live list arrives:
+    // mkSelect fixes its options at build. A saved id that is in neither list
+    // is kept as its own entry rather than silently swapped for another model.
+    const buildModelSelect = (models) => {
+      if (!modelEl) return;
+      const cur = getReimagineModel();
+      if (!models.some((m) => m.id === cur)) models = [...models, { id: cur, label: cur }];
+      const sel = mkSelect(
+        models.map((m) => (m.label === m.id ? m.id : `${m.label} · ${m.id}`)),
+        models.findIndex((m) => m.id === cur),
+        (i) => setReimagineModel(models[i].id),
+        "reimagine-model-select",
+      );
+      modelEl.replaceChildren(sel);
+    };
+    buildModelSelect(REIMAGINE_KNOWN_MODELS.map((m) => ({ ...m })));
+    listReimagineModels().then(buildModelSelect);
+
+    // Looks: confirm → the Shift+Esc reset → the Look's values → its prompt.
+    // The reset is the point: a Look must not inherit a keyer or a colour
+    // shift from whatever patch was up, or it will not look like its name.
+    // Stills Buffer PIXELS survive it (the reset touches parameters only).
+    const setPrompt = (text) => {
+      reimagine.prompt = text;
+      if (promptEl) promptEl.value = text;
+      try { localStorage.setItem(PROMPT_KEY, text); } catch { /* quota */ }
+    };
+    let _lookShowing = false; // true only while the menu is re-labelled after a load
+    const applyReimagineLook = async (i) => {
+      if (_lookShowing) return;
+      const look = REIMAGINE_LOOKS[Math.round(i)];
+      if (!look?.set) return;
+      await bootProject; // the first-launch import would overwrite it (see loadStart)
+      if (!confirm(`Load the Reimagine Look "${look.name}"?\n\n${look.about}\n\n` +
+        "Every parameter goes back to its default first. Press Cancel, then " +
+        "Shift+S, if you want to keep the current picture as a State.")) {
+        ps.set("reimagine.look", 0);
+        return;
+      }
+      const { values, errors } = resolveStart(ps, look.set);
+      if (errors.length) console.warn("[reimagine] look:", errors);
+      await _resetAllParams(false);
+      for (const [id, v] of values) ps.set(id, v);
+      if (look.prompt) setPrompt(look.prompt);
+      if (look.seed) {
+        // Give a buffer-only Look a picture to start from: the camera, into
+        // FirstSlot, shown at once. Without it the first request is a black frame.
+        // The reset STOPS the camera (camera.active resets) and _ensureCamera
+        // restarts it, so right now the stream has no picture yet — capturing
+        // at once seeded a black slot (measured: the first request was the same
+        // 3.8 KB as an empty frame). Wait for a decoded frame, then let a few
+        // render frames upload it. Timeouts, not rAF: a hidden tab never fires it.
+        const slot = Math.min(Math.round(ps.get("reimagine.slotFrom").value), stillsBuffer.frameCount - 1);
+        for (let n = 0; n < 50; n++) {
+          const v = camera3d.video;
+          if (v && v.readyState >= v.HAVE_CURRENT_DATA && v.videoWidth) break;
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        await new Promise((r) => setTimeout(r, 250));
+        const cam = camera3d.video?.videoWidth ? texForSource("camera") : null;
+        if (cam) {
+          stillsBuffer.captureToSlot(cam, slot);
+          ps.set("buffer.fs1", slot);
+          refreshBufferGrid();
+          // The seed gets depth too, so a relief Look has shape before its
+          // first paid image — same path as a landed image.
+          const url = stillsBuffer.exportFrame(slot, 1024, 0.9);
+          if (url) reimagine.onLanded(slot, url); else aiDepth.forget(slot);
+        }
+        else if (statusEl) {
+          statusEl.textContent = `${look.name} loaded, but no camera picture to start from — capture a still into slot ${slot + 1} first`;
+          statusEl.dataset.kind = "err";
+        }
+        if (!cam) { _lookShowing = true; try { ps.set("reimagine.look", Math.round(i)); } finally { _lookShowing = false; } return; }
+      }
+      // The reset set the menu back to 0; show the Look that is now loaded,
+      // WITHOUT applying it again (that would confirm and reset a second time).
+      _lookShowing = true;
+      try { ps.set("reimagine.look", Math.round(i)); } finally { _lookShowing = false; }
+      if (statusEl) {
+        statusEl.textContent = `${look.name} loaded — press Reimagine, or turn on AutoReimagine`;
+        statusEl.dataset.kind = "";
+      }
+    };
+    ps.get("reimagine.look").onChange(applyReimagineLook);
+    ps.get("reimagine.look").onReselect(applyReimagineLook);
+
+    // A saved State carries the prompt (extra.reimaginePrompt) — so a State is
+    // a custom Look: Shift+S saves layers, blends, Every/Fade AND the words.
+    // After any recall the Look menu goes back to its heading: the patch is
+    // now the State's, and naming a built-in Look over it would be a lie.
+    presetMgr.addEventListener("stateRecalled", (e) => {
+      const text = e.detail?.state?.extra?.reimaginePrompt;
+      if (typeof text === "string") setPrompt(text);
+      if (ps.get("reimagine.look").value !== 0) {
+        _lookShowing = true;
+        try { ps.set("reimagine.look", 0); } finally { _lookShowing = false; }
+      }
+    });
   }
 
   /**

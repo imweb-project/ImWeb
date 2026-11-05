@@ -235,6 +235,10 @@ export function buildMappingPanels(ps, contextMenu) {
     // noise-params-top and noise-params are built by buildNoisePanel()
     'output-params':   ps.getGroup('output').filter(p => p.id !== 'output.resolution' && p.id !== 'output.interp'),
     'buffer-controls': ps.getGroup('buffer'),
+    // reimagine.auto is group 'global' (a recalled state must never start a
+    // paid loop) — appended here by id, excluded from global-params below.
+    'reimagine-params': [ps.get('reimagine.look'), ps.get('reimagine.go'), ps.get('reimagine.auto'),
+      ...ps.getGroup('reimagine').filter(p => p.id !== 'reimagine.go')].filter(Boolean),
     // ...plus each deck's cueSlot/cueStore, appended by id for the same stated
     // reason as displace.warpSlot: they are group 'global' only so Display
     // States cannot capture them (see MovieCues.js), but they belong to the
@@ -369,6 +373,7 @@ export function buildMappingPanels(ps, contextMenu) {
                                .map(id => ps.get(id)).filter(Boolean)),
     'global-params':       ps.getGroup('global').filter(p =>
       p.id !== 'glsl.preset' && p.id !== 'displace.warpSlot' && p.id !== 'growth.look' &&
+      p.id !== 'reimagine.auto' && p.id !== 'reimagine.look' &&
       // Segment rows live in each model's animation block (buildSegmentRow).
       !/^(scene3d\.anim\.segment|model[234]\.animSegment)$/.test(p.id) &&
       p.id !== 'noise.recipe' &&

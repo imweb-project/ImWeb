@@ -23,7 +23,10 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { ParameterSystem, registerCoreParameters } from '../src/controls/ParameterSystem.js';
-import { parseGuide, TRACKS } from '../src/ui/Guide.js';
+import { parseGuide, resolveStart, TRACKS } from '../src/ui/Guide.js';
+import { registerAnalogParams } from '../src/inputs/AnalogParams.js';
+import { registerTeletextParams } from '../src/inputs/TeletextParams.js';
+import { registerHypercubeParams } from '../src/scene3d/HypercubeParams.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const md = readFileSync(resolve(root, 'docs/ImWeb-Guide.md'), 'utf8');
@@ -38,8 +41,13 @@ if (steps.length < 5) {
   process.exit(1);
 }
 
+// The same registrations main.js makes, in the same order — a tour step may
+// point at any parameter the app has, not only the core set.
 const ps = new ParameterSystem();
 registerCoreParameters(ps);
+registerAnalogParams(ps);
+registerTeletextParams(ps);
+registerHypercubeParams(ps);
 
 // The served copy is what the app actually fetches; docs/ is what people edit.
 // They drift the moment someone edits one and forgets `npm run sync-docs`.
@@ -113,6 +121,17 @@ for (const [k, n] of perTrack) {
   }
 }
 
+// A themed track filters its steps by theme, so an unthemed step in one is
+// unreachable from every chip.
+for (const [k] of TRACKS) {
+  const inTrack = steps.filter(s => s.track === k);
+  if (!inTrack.some(s => s.theme)) continue;
+  for (const s of inTrack.filter(s => !s.theme)) {
+    console.error(`FAIL — step "${s.title}" has no theme: in track "${k}", which is themed, it can never be reached.`);
+    failures++;
+  }
+}
+
 console.log(`${steps.length} steps parsed — ` +
   [...perTrack].map(([k, n]) => `${k}: ${n}`).join(', '));
 
@@ -135,6 +154,10 @@ for (const step of steps) {
       problems.push(`show: no element with id "${m[1]}" in index.html`);
     }
   }
+
+  // Same resolver the button uses, so a renamed id or option label fails here
+  // instead of refusing silently in a workshop.
+  if (step.start) problems.push(...resolveStart(ps, step.start).errors);
 
   if (step.tab && !tabs.has(step.tab)) {
     problems.push(`tab: "${step.tab}" is not a data-tab in index.html`);
