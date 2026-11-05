@@ -1838,6 +1838,44 @@ export const BLEND = /* glsl */ `
   }
 `;
 
+// Depth morph — the Stills Buffer fade fs1 → fs2 moving through depth
+// (white = near). Each pixel runs its own fade, delayed by how FAR it is, so
+// near things cross first and the background follows; meanwhile each picture
+// swells outward by its own depth (the outgoing one as it leaves, the incoming
+// one settling in). Both terms vanish at amount 0 and 1, so the ends are
+// exactly fs1 and fs2 and the hand-off at the end of a fade has no jump.
+// uMorph 0 or no depth maps → exactly the BLEND crossfade.
+export const DEPTH_MORPH = /* glsl */ `
+  uniform sampler2D uCurrent;   // fs1 (outgoing)
+  uniform sampler2D uPrev;      // fs2 (incoming)
+  uniform sampler2D uDepthA;
+  uniform sampler2D uDepthB;
+  uniform float     uAmount;
+  uniform float     uMorph;     // 0..1
+  uniform int       uHasDepth;
+
+  varying vec2 vUv;
+
+  void main() {
+    float t = uAmount;
+    if (uHasDepth == 0 || uMorph <= 0.0) {
+      gl_FragColor = mix(texture2D(uCurrent, vUv), texture2D(uPrev, vUv), t);
+      return;
+    }
+    float dA = texture2D(uDepthA, vUv).r;
+    float dB = texture2D(uDepthB, vUv).r;
+    float near = max(dA, dB);
+    float spread = 0.7 * uMorph;
+    float delay = (1.0 - near) * spread;
+    float local = smoothstep(0.0, 1.0, clamp((t - delay) / (1.0 - spread), 0.0, 1.0));
+    vec2 c = vUv - 0.5;
+    float w = 0.08 * uMorph;
+    vec4 a = texture2D(uCurrent, vUv - c * dA * w * local);
+    vec4 b = texture2D(uPrev,    vUv + c * dB * w * (1.0 - local));
+    gl_FragColor = mix(a, b, local);
+  }
+`;
+
 // Clip crossfade — the outgoing and incoming clips of ONE movie deck during a
 // ClipFade. Deliberately not the mixbus shader: this has no modes, no mask and
 // no displacement, because a deck switching clips is a dissolve and nothing

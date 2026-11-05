@@ -23,6 +23,7 @@ import { reimagineImage, directReimagine } from './AIFeatures.js';
 
 const SEND_W = 1024;   // what the model sees; edit models work around 1K anyway
 const SEND_Q = 0.85;
+const MORPH_WAIT_MS = 4000;  // longest a Morph fade waits for its depth map
 
 export class Reimagine {
   /**
@@ -33,7 +34,8 @@ export class Reimagine {
    * @param {() => number} o.aspect            canvas width / height
    * @param {(msg:string, kind?:'busy'|'ok'|'err') => void} o.onStatus
    * @param {() => void} o.onWrote             a slot changed (refresh the grid)
-   * @param {(slot:number, url:string) => void} [o.onLanded]  an image landed in `slot`
+   * @param {(slot:number, url:string) => (Promise|void)} [o.onLanded]  an image landed in `slot`;
+   *        may return the depth estimate's promise (a Morph fade waits for it)
    * @param {(prompt:string|null) => void} [o.onDirected]  the director wrote a prompt
    */
   constructor({ ps, stillsBuffer, captureFrame, aspect, onStatus, onWrote, onLanded, onDirected }) {
@@ -144,9 +146,19 @@ export class Reimagine {
       const ok = await this.sb.importFrame(slot, url);
       if (!ok) throw new Error('the image came back but could not be decoded');
       this.onWrote();
-      this.onLanded(slot, url);
-      if (this.ps.get('reimagine.follow').value) this._startFade(slot);
+      const depth = this.onLanded(slot, url);
+      // Written before any Morph wait: the depth line tags onto an 'ok' status
+      // and is dropped while the line still reads busy.
       this.onStatus(`→ slot ${slot} · ${((performance.now() - t0) / 1000).toFixed(1)} s${note}`, 'ok');
+      if (this.ps.get('reimagine.follow').value) {
+        // Morph times each pixel by depth, so its fade waits (briefly) for the
+        // new image's depth map; a map landing mid-fade would make it jump.
+        // Capped, so a first-use model download only costs one plain start.
+        if (depth?.then && this.ps.get('reimagine.morph').value > 0) {
+          await Promise.race([depth, new Promise(r => setTimeout(r, MORPH_WAIT_MS))]);
+        }
+        this._startFade(slot);
+      }
     } catch (err) {
       this.onStatus(err.message === 'no-key'
         ? '⚠ Needs a Google Gemini key — add it in AI settings (⚙).'

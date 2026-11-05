@@ -1563,6 +1563,13 @@ one prompt. **Every** counts from when a request is sent; **InFlight 2** lets
 two requests be out at once for a model slower than Every (up to twice the
 cost).
 
+**Morph** (0–100 %, default 50) makes a fade between two images that both have
+a depth map move through depth: near things change first, the background
+follows, and the surface swells a little in between. It is free and runs in
+the browser. A Morph fade waits up to 4 s for the new image's depth map before
+it starts. 0 gives the plain crossfade, and so does a slot with no depth map.
+It applies to any Stills Buffer fade, by hand (FrameBlend) or by Reimagine.
+
 #### Mirroring
 
 | Parameter | Type | Description |

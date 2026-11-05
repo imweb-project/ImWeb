@@ -3057,6 +3057,20 @@ export function registerCoreParameters(ps) {
     step: 0.1,
     unit: "s",
   });
+  // Morph: a fade between two images that both have a depth map moves
+  // through depth — near things go first, the background follows, and the
+  // surface swells a little in between. 0 = the plain crossfade. Applies to
+  // every Stills Buffer fade (FrameBlend), Reimagine's or by hand.
+  ps.register({
+    id: "reimagine.morph",
+    label: "Morph",
+    group: "reimagine",
+    min: 0,
+    max: 100,
+    value: 50,
+    step: 1,
+    unit: "%",
+  });
   ps.register({
     id: "reimagine.follow",
     label: "FollowNew",

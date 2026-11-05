@@ -12,7 +12,7 @@
  */
 
 import * as THREE from 'three';
-import { VERT, PASSTHROUGH, BLEND } from '../shaders/index.js';
+import { VERT, PASSTHROUGH, DEPTH_MORPH } from '../shaders/index.js';
 
 const THUMB_W = 80;
 const THUMB_H = 45;
@@ -196,23 +196,35 @@ export class StillsBuffer {
     return this._viewOn ? this._viewTarget.texture : this.texture;
   }
 
-  /** Call once per frame after tick(). No pass (and no VRAM) while not blending. */
-  renderView(amount01) {
+  /**
+   * Call once per frame after tick(). No pass (and no VRAM) while not blending.
+   * depthA/depthB: the depth maps of fs1/fs2 (or null). With either present and
+   * morph01 > 0 the fade moves through depth (DEPTH_MORPH); otherwise it is the
+   * plain crossfade.
+   */
+  renderView(amount01, morph01 = 0, depthA = null, depthB = null) {
     const a = this.texture, b = this.texture2;
     this._viewOn = amount01 > 0 && !!a && !!b;
     if (!this._viewOn) return;
     if (!this._viewTarget) {
       this._viewTarget = this._makeTarget(this.width, this.height);
+      this._flat = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1, THREE.RGBAFormat);
+      this._flat.needsUpdate = true;
       this._viewMat = new THREE.ShaderMaterial({
         uniforms: { uCurrent: { value: null }, uPrev: { value: null },
-                    uActive: { value: 1 }, uAmount: { value: 0 } },
-        vertexShader: VERT, fragmentShader: BLEND, depthTest: false, depthWrite: false,
+                    uDepthA: { value: this._flat }, uDepthB: { value: this._flat },
+                    uAmount: { value: 0 }, uMorph: { value: 0 }, uHasDepth: { value: 0 } },
+        vertexShader: VERT, fragmentShader: DEPTH_MORPH, depthTest: false, depthWrite: false,
       });
       this._viewScene = new THREE.Scene();
       this._viewScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this._viewMat));
     }
     const u = this._viewMat.uniforms;
     u.uCurrent.value = a; u.uPrev.value = b; u.uAmount.value = amount01;
+    u.uMorph.value = morph01;
+    u.uHasDepth.value = (depthA || depthB) ? 1 : 0;
+    u.uDepthA.value = depthA ?? this._flat;
+    u.uDepthB.value = depthB ?? this._flat;
     const prev = this.renderer.getRenderTarget();
     this.renderer.setRenderTarget(this._viewTarget);
     this.renderer.render(this._viewScene, this._camera);

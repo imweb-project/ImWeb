@@ -10840,7 +10840,11 @@ void main() {
     // AI Depth follows the buffer's resolved read slots, so render it after
     // stillsBuffer.tick — and only while something consumes source 36.
     // One blended Buffer picture for every reader (2D layers, 3D, sequencers).
-    stillsBuffer.renderView(ps.get("buffer.frameblend").value / 100);
+    // With depth maps on both sides (Reimagine's), the fade moves through
+    // depth — reimagine.morph; the same read slots AI Depth uses.
+    stillsBuffer.renderView(ps.get("buffer.frameblend").value / 100,
+      ps.get("reimagine.morph").value / 100,
+      aiDepth.map(stillsBuffer.readIndex), aiDepth.map(stillsBuffer.read2Index));
     if (_srcUsed(AIDEPTH_IDX)) aiDepth.render(stillsBuffer, ps.get("buffer.frameblend").value / 100);
 
     // Tick and capture sequence buffers
@@ -12051,7 +12055,9 @@ void main() {
           const line = statusEl.textContent.replace(/( · )?(✗ depth|depth \d|Loading depth model).*$/, "");
           statusEl.textContent = line ? `${line} · ${t}` : t;
         };
-        estimateDepth(url, (m) => tag(m))
+        // Returned so Reimagine can hold a Morph fade until this depth exists
+        // (a map arriving mid-fade would jump the morph's per-pixel timing).
+        return estimateDepth(url, (m) => tag(m))
           .then(({ canvas: dc, ms, device }) => {
             aiDepth.set(slot, dc);
             tag(`depth ${Math.round(ms)} ms (${device})`);

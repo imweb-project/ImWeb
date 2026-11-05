@@ -56,6 +56,9 @@ export class AIDepth {
     this._maps.set(i, tex);
   }
 
+  /** Slot `i`'s depth map, or null (the Stills Buffer's depth morph). */
+  map(i) { return this._maps.get(i) ?? null; }
+
   forget(i) { this._maps.get(i)?.dispose(); this._maps.delete(i); }
 
   /** Render the blended depth. Call only while something consumes source 36. */

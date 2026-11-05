@@ -9,6 +9,11 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Reimagine Morph** — a Stills Buffer fade between two images with depth
+  maps now moves through depth (near first, background last, a slight swell in
+  between) instead of a flat crossfade. `reimagine.morph` 0–100 % (default 50;
+  0 = the plain fade). Exact at both ends, so the hand-off has no jump. A Morph
+  fade waits up to 4 s for the new image's depth map. Free, in the browser.
 - **Reimagine (AI) — prototype** — under the Stills Buffer. The output frame
   goes to a Gemini image-edit model with your prompt ("as wet ink on rice
   paper"), and the answer lands in a buffer slot (FirstSlot…+Slots, cycling)
