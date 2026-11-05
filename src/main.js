@@ -1152,6 +1152,10 @@ async function main() {
     modelSlots:       modelSlots.names(),
     // The picture each model wears when its Texture is Image (null = none).
     modelImages:      scene3d.imageNames(),
+    // The Reimagine prompt — text, so no param can hold it. Restored in the
+    // Reimagine block (stateRecalled); a state saved before this has no key
+    // and leaves the current prompt alone.
+    reimaginePrompt:  reimagine ? reimagine.prompt : null,
   }));
 
   // Populated by the hypercube panel build block (below). Calling it clears and
@@ -12080,6 +12084,19 @@ void main() {
     };
     ps.get("reimagine.look").onChange(applyReimagineLook);
     ps.get("reimagine.look").onReselect(applyReimagineLook);
+
+    // A saved State carries the prompt (extra.reimaginePrompt) — so a State is
+    // a custom Look: Shift+S saves layers, blends, Every/Fade AND the words.
+    // After any recall the Look menu goes back to its heading: the patch is
+    // now the State's, and naming a built-in Look over it would be a lie.
+    presetMgr.addEventListener("stateRecalled", (e) => {
+      const text = e.detail?.state?.extra?.reimaginePrompt;
+      if (typeof text === "string") setPrompt(text);
+      if (ps.get("reimagine.look").value !== 0) {
+        _lookShowing = true;
+        try { ps.set("reimagine.look", 0); } finally { _lookShowing = false; }
+      }
+    });
   }
 
   /**

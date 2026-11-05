@@ -30,6 +30,11 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   the restarted camera's first real frame. Auto stays off. Guarded by
   `tests/audit-reimagine-looks.mjs` (every value resolves; buffer-only Looks
   seed).
+- **Your own Reimagine Looks are Display States** — a saved State now carries
+  the Reimagine prompt (`extra.reimaginePrompt`) alongside the layers, blends,
+  Every/Fade and slots it already held, so Shift+S keeps a whole setup and a
+  recall brings the words back. States saved earlier leave the prompt alone.
+  After a recall the Look menu returns to its heading.
 - **SOLO marker in the status bar** — Solo (`s`) bypasses every effect, so a
   stray keypress made the kaleidoscope vanish and its controls go dead with no
   sign why (owner, testing Tutorial 0). A yellow SOLO pill now shows while it
