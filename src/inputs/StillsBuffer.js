@@ -305,7 +305,12 @@ export class StillsBuffer {
    */
   exportFrame(idx, maxW = 1280, quality = 0.85) {
     if (!this._hasFrame[idx] || !this.frames[idx]) return null;
+    return this.exportTexture(this.frames[idx].texture, maxW, quality);
+  }
 
+  /** Any texture → JPEG data URL at the buffer's aspect (same row order as exportFrame). */
+  exportTexture(tex, maxW = 1280, quality = 0.85) {
+    if (!tex) return null;
     const aspect = this.height / this.width;
     const w = Math.min(maxW, this.width);
     const h = Math.max(1, Math.round(w * aspect));
@@ -316,7 +321,7 @@ export class StillsBuffer {
     }
 
     const prev = this.renderer.getRenderTarget();
-    this._mat.uniforms.uTexture.value = this.frames[idx].texture;
+    this._mat.uniforms.uTexture.value = tex;
     this.renderer.setRenderTarget(this._exportTarget);
     this.renderer.render(this._scene, this._camera);
 

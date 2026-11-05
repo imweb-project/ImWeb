@@ -2995,6 +2995,17 @@ export function registerCoreParameters(ps) {
     type: PARAM_TYPE.TOGGLE,
     value: 0,
   });
+  // Send: what the AI SEES, separate from what is shown. Screen is the drift
+  // loop; Camera / Stills Buffer send a FLAT picture, so a 3D Look's turning
+  // plane never gets painted into the next image. APPEND-ONLY (index persists).
+  ps.register({
+    id: "reimagine.send",
+    label: "Send",
+    group: "reimagine",
+    type: PARAM_TYPE.SELECT,
+    options: ["Screen", "Camera", "Buffer"],
+    value: 0,
+  });
   ps.register({
     id: "reimagine.interval",
     label: "Every",

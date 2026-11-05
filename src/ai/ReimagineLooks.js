@@ -76,6 +76,8 @@ export const REIMAGINE_LOOKS = [
       ['scene3d.geo', 'Basic: Plane'],
       ['scene3d.mat.texsrc', 'Buffer'], ['scene3d.mat.dispsrc', 'AI Depth'],
       ['scene3d.mat.tDisplace', '0.3'], ['scene3d.spin.y', '6'],
+      // The AI sees the flat camera, not the turning plane on screen.
+      ['reimagine.send', 'Camera'],
       ['reimagine.interval', '15'], ['reimagine.fade', '8'],
     ],
   },

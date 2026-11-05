@@ -11994,10 +11994,30 @@ void main() {
     const modelEl  = document.getElementById("reimagine-model");
     const PROMPT_KEY = "imweb.reimagine.prompt";
     let count = 0;
+    // reimagine.send picks what the AI sees: 0 Screen (the drift loop), 1 Camera,
+    // 2 the Stills Buffer slot on show — both flat, so a 3D Look's turning plane
+    // is never painted into the next image. A missing source throws a readable
+    // error (Reimagine.run shows it and stops Auto) rather than sending black.
+    const captureReimagineFrame = (W, quality) => {
+      const send = Math.round(ps.get("reimagine.send").value);
+      if (send === 0) return captureOutputFrame(W, quality);
+      let tex = null;
+      if (send === 1) {
+        tex = camera3d.video?.videoWidth ? texForSource("camera") : null;
+        if (!tex) throw new Error("Send is Camera, but the camera is off");
+      } else {
+        const i = stillsBuffer.readIndex;
+        tex = stillsBuffer._hasFrame[i] ? stillsBuffer.frames[i]?.texture : null;
+        if (!tex) throw new Error("Send is Buffer, but the Stills Buffer slot on show is empty");
+      }
+      const url = stillsBuffer.exportTexture(tex, W, quality);
+      const comma = url ? url.indexOf(",") : -1;
+      return comma === -1 ? null : { b64: url.slice(comma + 1), mime: "image/jpeg" };
+    };
     reimagine = new Reimagine({
       ps,
       stillsBuffer,
-      captureFrame: captureOutputFrame,
+      captureFrame: captureReimagineFrame,
       aspect: () => (canvas?.width || 16) / (canvas?.height || 9),
       onStatus: (msg, kind) => {
         if (kind === "ok") count++;

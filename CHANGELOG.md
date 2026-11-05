@@ -45,6 +45,10 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   relief crossfades with the picture. Route it to Rutt-Etra, 3D T-Disp Source,
   DisplaceSrc or a key; new Look **Relief (3D)** turns each image into a slowly
   turning displaced plane. Depth toggle in the Reimagine panel (on).
+- **Reimagine Send — what the AI sees** — Screen (the drift loop, as before),
+  Camera, or Buffer (the Stills Buffer slot on show). The last two send a FLAT
+  picture, so a 3D Look's turning plane is no longer painted into the next
+  image and the tilts stop piling up. Relief (3D) now sends Camera.
 - **SOLO marker in the status bar** — Solo (`s`) bypasses every effect, so a
   stray keypress made the kaleidoscope vanish and its controls go dead with no
   sign why (owner, testing Tutorial 0). A yellow SOLO pill now shows while it

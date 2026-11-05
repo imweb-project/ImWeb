@@ -1551,6 +1551,11 @@ buffer, so it always matches the picture. Use it as Rutt-Etra's source, as the
 **Relief (3D)** Look sets up the 3D version for you. A slot with no depth map
 reads black (flat). Turn **Depth** off in the Reimagine panel to skip it.
 
+**Send** in the Reimagine panel picks what the AI sees: **Screen** (the whole
+output, so each image builds on the last), **Camera**, or **Buffer** (the Stills Buffer
+image on show). Camera and Buffer send a flat picture, which keeps a
+3D Look's turning plane out of the next image — Relief (3D) uses Camera.
+
 #### Mirroring
 
 | Parameter | Type | Description |
