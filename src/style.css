@@ -1349,6 +1349,14 @@ div.param-select .imw-sel-trigger {
 }
 #reimagine-status[data-kind="busy"] { color: var(--accent, #cc8); }
 #reimagine-status[data-kind="err"]  { color: var(--red, #e05); }
+/* The director's current prompt — under the theme it was written from. */
+#reimagine-directed {
+    font-size: 11px;
+    font-style: italic;
+    color: var(--accent, #cc8);
+    line-height: 1.35;
+}
+#reimagine-directed::before { content: "Director: "; font-style: normal; color: var(--text-2); }
 
 /* ── 3D PANEL ────────────────────────────────────────────────────────────── */
 

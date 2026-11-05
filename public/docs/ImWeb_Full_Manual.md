@@ -1556,6 +1556,13 @@ output, so each image builds on the last), **Camera**, or **Buffer** (the Stills
 image on show). Camera and Buffer send a flat picture, which keeps a
 3D Look's turning plane out of the next image — Relief (3D) uses Camera.
 
+**Director** turns your prompt into a theme: the text AI chosen in AI settings
+(⚙) writes each next prompt, one step further along a journey inside it, and
+shows it under the prompt box. **NewPromptEvery** sets how many images share
+one prompt. **Every** counts from when a request is sent; **InFlight 2** lets
+two requests be out at once for a model slower than Every (up to twice the
+cost).
+
 #### Mirroring
 
 | Parameter | Type | Description |

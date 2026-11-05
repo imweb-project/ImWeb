@@ -10,11 +10,16 @@
  * frame sent already contains the last answer, so repeated runs DRIFT. That
  * drift is the instrument, not a bug.
  *
- * One request at a time. The interval counts from when an answer lands, not
- * from when it was asked — a slow model can never stack up paid calls.
+ * Every counts from when a request is SENT, and at most InFlight (1–2) run at
+ * once — so a slow model can never stack up paid calls beyond that cap. An
+ * image that lands while a fade runs waits for it (no jump back mid-fade).
+ *
+ * Director (optional): the prompt box becomes a THEME and the active text AI
+ * writes each next prompt (directReimagine). A failed director call falls back
+ * to the last prompt and the loop carries on — only the image call can stop it.
  */
 
-import { reimagineImage } from './AIFeatures.js';
+import { reimagineImage, directReimagine } from './AIFeatures.js';
 
 const SEND_W = 1024;   // what the model sees; edit models work around 1K anyway
 const SEND_Q = 0.85;
@@ -29,8 +34,9 @@ export class Reimagine {
    * @param {(msg:string, kind?:'busy'|'ok'|'err') => void} o.onStatus
    * @param {() => void} o.onWrote             a slot changed (refresh the grid)
    * @param {(slot:number, url:string) => void} [o.onLanded]  an image landed in `slot`
+   * @param {(prompt:string|null) => void} [o.onDirected]  the director wrote a prompt
    */
-  constructor({ ps, stillsBuffer, captureFrame, aspect, onStatus, onWrote, onLanded }) {
+  constructor({ ps, stillsBuffer, captureFrame, aspect, onStatus, onWrote, onLanded, onDirected }) {
     this.ps = ps;
     this.sb = stillsBuffer;
     this.captureFrame = captureFrame;
@@ -38,23 +44,37 @@ export class Reimagine {
     this.onStatus = onStatus ?? (() => {});
     this.onWrote = onWrote ?? (() => {});
     this.onLanded = onLanded ?? (() => {});
-    this.prompt = '';
-    this.busy = false;
-    this._wait = 0;        // seconds since the last answer landed (auto mode)
+    this.onDirected = onDirected ?? (() => {});
+    this.prompt = '';      // the owner's prompt (the THEME when Director is on)
+    this.directed = null;  // the director's current prompt, or null
+    this._inFlight = 0;
+    this._wait = 0;        // seconds since the last request was SENT (auto mode)
     this._cursor = 0;      // offset inside [slotFrom, slotFrom + slots)
     this._fade = null;     // { to, t, dur } while a crossfade runs
+    this._queued = null;   // a slot that landed mid-fade, shown when it ends
+    this._sent = 0;        // requests sent (the director's NewPromptEvery count)
+    this._recent = [];     // prompts used, newest last (director context)
+    this._dirChain = Promise.resolve();  // one director call at a time
 
     ps.get('reimagine.go').onTrigger(() => this.run());
     // Turning Auto on fires at once — waiting a full interval to see whether
     // anything happens reads as broken.
     ps.get('reimagine.auto').onChange((v) => { if (v) { this._wait = 0; this.run(); } });
+    // Director off: back to the owner's prompt at once (and hide its line).
+    ps.get('reimagine.director').onChange((v) => {
+      if (!v && this.directed !== null) { this.directed = null; this.onDirected(null); }
+    });
   }
+
+  get busy() { return this._inFlight > 0; }
+  _maxInFlight() { return Math.max(1, Math.round(this.ps.get('reimagine.inflight').value)); }
 
   /** Called every frame from the render loop. */
   tick(dt) {
     if (this._fade) this._stepFade(dt);
-    if (!this.ps.get('reimagine.auto').value || this.busy) return;
+    if (!this.ps.get('reimagine.auto').value) return;
     this._wait += dt;
+    if (this._inFlight >= this._maxInFlight()) return;
     if (this._wait >= this.ps.get('reimagine.interval').value) this.run();
   }
 
@@ -65,25 +85,59 @@ export class Reimagine {
     // Never overwrite the slot on show when there is another to use: a fade
     // FROM the slot being written is a cut (a Look's camera seed sits in
     // FirstSlot, so the first image after a Look always cut in).
-    const shown = Math.round(this.ps.get('buffer.fs1').value);
+    // With two in flight the same holds for a slot being faded TO or waiting.
+    const avoid = new Set([Math.round(this.ps.get('buffer.fs1').value)]);
+    if (this._fade) avoid.add(this._fade.to);
+    if (this._queued !== null) avoid.add(this._queued);
     let slot = from + (this._cursor % span);
-    this._cursor = (this._cursor + 1) % span;
-    if (span > 1 && slot === shown) {
+    for (let k = 0; k < span; k++) {
       slot = from + (this._cursor % span);
       this._cursor = (this._cursor + 1) % span;
+      if (!avoid.has(slot)) break;
     }
     return slot;
   }
 
+  /** The prompt for this request: the owner's, or the director's next step. */
+  async _promptFor(frame, n) {
+    if (!this.ps.get('reimagine.director').value) {
+      if (this.directed !== null) { this.directed = null; this.onDirected(null); }
+      return { prompt: this.prompt, note: '' };
+    }
+    const every = Math.max(1, Math.round(this.ps.get('reimagine.directEvery').value));
+    const fresh = this.directed === null || n % every === 0;
+    if (fresh) {
+      // Chained so two in flight never ask the director twice for one step.
+      const step = this._dirChain.then(async () => {
+        try {
+          this.directed = await directReimagine(this.prompt, this._recent.slice(-6), frame);
+          this.onDirected(this.directed);
+          return '';
+        } catch (err) {
+          console.warn('[reimagine] director failed:', err);
+          return err.message === 'no-key' ? ' · director needs a text AI key (⚙)' : ' · director ✗';
+        }
+      });
+      this._dirChain = step;
+      const note = await step;
+      return { prompt: this.directed ?? this.prompt, note };
+    }
+    return { prompt: this.directed, note: '' };
+  }
+
   async run() {
-    if (this.busy) return;
-    this.busy = true;
+    if (this._inFlight >= this._maxInFlight()) return;
+    this._inFlight++;
     this._wait = 0;
+    const n = this._sent++;
     const t0 = performance.now();
-    this.onStatus('Reimagining…', 'busy');
+    this.onStatus(this._inFlight > 1 ? `Reimagining… (${this._inFlight} in flight)` : 'Reimagining…', 'busy');
     try {
       const frame = this.captureFrame(SEND_W, SEND_Q);
-      const out = await reimagineImage(frame, this.prompt, this.aspect());
+      const { prompt, note } = await this._promptFor(frame, n);
+      this._recent.push(prompt);
+      if (this._recent.length > 12) this._recent.shift();
+      const out = await reimagineImage(frame, prompt, this.aspect());
       const slot = this._nextSlot();
       if (this.sb.isProtected?.(slot)) throw new Error(`slot ${slot} is protected`);
       const url = `data:${out.mime};base64,${out.b64}`;
@@ -92,7 +146,7 @@ export class Reimagine {
       this.onWrote();
       this.onLanded(slot, url);
       if (this.ps.get('reimagine.follow').value) this._startFade(slot);
-      this.onStatus(`→ slot ${slot} · ${((performance.now() - t0) / 1000).toFixed(1)} s`, 'ok');
+      this.onStatus(`→ slot ${slot} · ${((performance.now() - t0) / 1000).toFixed(1)} s${note}`, 'ok');
     } catch (err) {
       this.onStatus(err.message === 'no-key'
         ? '⚠ Needs a Google Gemini key — add it in AI settings (⚙).'
@@ -100,12 +154,13 @@ export class Reimagine {
       // A failing loop must not keep paying for the same failure.
       if (this.ps.get('reimagine.auto').value) this.ps.set('reimagine.auto', 0);
     } finally {
-      this.busy = false;
-      this._wait = 0;
+      this._inFlight--;
     }
   }
 
   _startFade(to) {
+    // Mid-fade: wait for it to land rather than jumping back to fs1.
+    if (this._fade) { this._queued = to; return; }
     const dur = this.ps.get('reimagine.fade').value;
     if (dur <= 0 || !this._hasShown()) { this._land(to); return; }
     this.ps.set('buffer.fs2', to);
@@ -125,6 +180,7 @@ export class Reimagine {
     this._fade = null;
     this.ps.set('buffer.fs1', to);
     this.ps.set('buffer.frameblend', 0);
+    if (this._queued !== null) { const q = this._queued; this._queued = null; this._startFade(q); }
   }
 
   /** Is fs1 showing a real frame? If not, cut straight to the new one. */

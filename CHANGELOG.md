@@ -62,6 +62,18 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 - **Reimagine skips the slot on show** — a Look's camera seed sits in
   FirstSlot, so the first image after a Look overwrote the picture being shown
   and could only cut. With two or more Slots, the slot on show is now skipped.
+- **Reimagine Director** — turn on **Director** and the prompt box becomes a
+  THEME: the text AI you chose in AI settings writes each next prompt as one
+  step of a journey inside it (it sees the picture and the last six prompts).
+  The prompt it wrote shows under the box. **NewPromptEvery** (1–10 images)
+  sets how often it moves on. A failed director call keeps the last prompt and
+  the loop carries on; text calls are metered like the Narrator's.
+- **Reimagine InFlight (1–2) and Every-from-send** — Every now counts from when
+  a request is SENT, not when it lands, so a 5 s model on Every 20 s gives an
+  image every 20 s rather than every 25 s. InFlight 2 lets a second request
+  start while the first is still out, for models slower than Every (twice the
+  spend at most). An image landing mid-fade waits for that fade to finish, and
+  the slot picker skips any slot being shown, faded to or waiting.
 - **SOLO marker in the status bar** — Solo (`s`) bypasses every effect, so a
   stray keypress made the kaleidoscope vanish and its controls go dead with no
   sign why (owner, testing Tutorial 0). A yellow SOLO pill now shows while it

@@ -12028,6 +12028,13 @@ void main() {
         statusEl.dataset.kind = kind ?? "";
       },
       onWrote: () => refreshBufferGrid(),
+      // The director's prompt shows under the theme box (hidden while off).
+      onDirected: (p) => {
+        const el = document.getElementById("reimagine-directed");
+        if (!el) return;
+        el.hidden = !p;
+        el.textContent = p ?? "";
+      },
       // Depth per still: runs AFTER the image is in its slot and the fade has
       // begun — never inside the request, so a slow first model download can
       // not hold up the picture. The slot's old depth is dropped first, so a

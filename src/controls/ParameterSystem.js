@@ -3006,6 +3006,37 @@ export function registerCoreParameters(ps) {
     options: ["Screen", "Camera", "Buffer"],
     value: 0,
   });
+  // Director: your prompt becomes a THEME and the text AI (AI settings) writes
+  // each next prompt as a step of a journey inside it. Group 'reimagine' — a
+  // recalled state may turn it on, but only Auto/Go ever spend anything.
+  ps.register({
+    id: "reimagine.director",
+    label: "Director",
+    group: "reimagine",
+    type: PARAM_TYPE.TOGGLE,
+    value: 0,
+  });
+  ps.register({
+    id: "reimagine.directEvery",
+    label: "NewPromptEvery",
+    group: "reimagine",
+    min: 1,
+    max: 10,
+    value: 1,
+    step: 1,
+    unit: "img",
+  });
+  // In flight: how many image requests may run at once. 2 doubles the flow
+  // (and the spend) for a model slower than Every.
+  ps.register({
+    id: "reimagine.inflight",
+    label: "InFlight",
+    group: "reimagine",
+    min: 1,
+    max: 2,
+    value: 1,
+    step: 1,
+  });
   ps.register({
     id: "reimagine.interval",
     label: "Every",

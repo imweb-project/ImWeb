@@ -1986,3 +1986,38 @@ export async function reimagineImage(image, prompt, aspect = 16 / 9) {
   }
   return { b64: img.data, mime: img.mimeType ?? img.mime_type ?? 'image/png' };
 }
+
+// ── Reimagine Director ────────────────────────────────────────────────────────
+// The owner's prompt becomes a THEME; the director writes the next image-edit
+// prompt as one step of a journey inside it. Text-only provider call through
+// _call (the active provider, metered there like the Narrator) — the image
+// itself still goes to Gemini through reimagineImage.
+const DIRECTOR_SYSTEM =
+  'You direct a live video-art performance. An image model repaints the live ' +
+  'picture every few seconds from a short prompt you write. Given the THEME and ' +
+  'the prompts already used, write the NEXT prompt: one step further along a ' +
+  'journey inside the theme — a new medium, material, light, era or mood — that ' +
+  'is clearly different from the recent ones but could crossfade with them. ' +
+  'Describe how the picture should LOOK, not a new scene: the composition stays. ' +
+  'One line, at most 20 words, no quotes, no explanation. Output only the prompt.';
+
+/**
+ * @param {string}   theme    the owner's prompt
+ * @param {string[]} recent   prompts already used, oldest first
+ * @param {{b64:string,mime:string}|null} [image]  the frame about to be sent
+ * @returns {Promise<string>} the next prompt (never empty — throws instead)
+ */
+export async function directReimagine(theme, recent, image = null) {
+  const user =
+    `THEME: ${theme.trim() || 'a painting'}\n` +
+    (recent.length ? `RECENT PROMPTS (oldest first):\n${recent.map((p) => `- ${p}`).join('\n')}\n` : '') +
+    (image ? 'The attached image is the picture about to be repainted.\n' : '') +
+    'Next prompt:';
+  const raw = await _call(DIRECTOR_SYSTEM, user, 120, image);
+  // Empty-response abort, as for shaders: a blank prompt must never reach the
+  // image call (it would quietly fall back to "as a painting").
+  const line = String(raw ?? '').split('\n').map((s) => s.trim()).find(Boolean) ?? '';
+  const out = line.replace(/^(next prompt:|prompt:)\s*/i, '').replace(/^["'“”]+|["'“”]+$/g, '').trim();
+  if (!out) throw new Error('the director returned an empty prompt');
+  return out.slice(0, 300);
+}
