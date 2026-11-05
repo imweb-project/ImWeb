@@ -6381,7 +6381,7 @@ async function main() {
     if (key === "depth3d") return scene3d.depthTexture;
     if (key === "draw") return drawLayer.texture;
     if (key === "text") return textLayer.texture;
-    if (key === "buffer") return stillsBuffer.texture;
+    if (key === "buffer") return stillsBuffer.viewTexture;
     if (key === "bg1") return stillsBuffer.bgTexture(0);
     if (key === "bg2") return stillsBuffer.bgTexture(1);
     if (key === "color") return colorTexture;
@@ -10839,6 +10839,8 @@ void main() {
     stillsBuffer.tick(ps, dt);
     // AI Depth follows the buffer's resolved read slots, so render it after
     // stillsBuffer.tick — and only while something consumes source 36.
+    // One blended Buffer picture for every reader (2D layers, 3D, sequencers).
+    stillsBuffer.renderView(ps.get("buffer.frameblend").value / 100);
     if (_srcUsed(AIDEPTH_IDX)) aiDepth.render(stillsBuffer, ps.get("buffer.frameblend").value / 100);
 
     // Tick and capture sequence buffers
@@ -10849,7 +10851,7 @@ void main() {
         movieInput.currentTexture, // 2 Movie
         _resolveLayerTex(ps.get("layer.fg").value), // 3 FG
         _resolveLayerTex(ps.get("layer.bg").value), // 4 BG
-        stillsBuffer.texture, // 5 Buffer
+        stillsBuffer.viewTexture, // 5 Buffer
         drawLayer.texture, // 6 Draw
       ][idx] ?? pipeline.prev.texture;
 
@@ -11300,7 +11302,7 @@ void main() {
         movie: movieInput.active ? movieInput.currentTexture : null,
         screen: pipeline.prev.texture,
         draw: drawLayer.texture,
-        buffer: stillsBuffer.texture,
+        buffer: stillsBuffer.viewTexture,
         noise: noiseTexture,
         warpMaps,
         beatPhase,              // the beat counter, for the models' Beats lock
@@ -11325,8 +11327,8 @@ void main() {
       movieFadeAmt:   movieInput.active ? movieInput.fadeAmount : 0,
       movieBFadeFrom: movieInputB.active ? movieInputB.fadeFromTexture : null,
       movieBFadeAmt:  movieInputB.active ? movieInputB.fadeAmount : 0,
-      buffer: stillsBuffer.texture,
-      buffer2: stillsBuffer.texture2,
+      // Already fs1→fs2 blended (StillsBuffer.renderView) — Pipeline only pans/scales it.
+      buffer: stillsBuffer.viewTexture,
       bg1: stillsBuffer.bgTexture(0),
       bg2: stillsBuffer.bgTexture(1),
       scene3d: scene3dNeeded ? scene3d.texture : null,

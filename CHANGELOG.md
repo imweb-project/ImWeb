@@ -52,6 +52,13 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 - **Reimagine status counts slots like the grid** — "→ slot 9" named the cell
   the Stills Buffer grid labels 8 (status was 1-based, grid and FirstSlot are
   0-based). Status now uses the grid's number.
+- **Stills Buffer fades reach the 3D scene** — FrameBlend (fs1 → fs2) was
+  applied only inside the 2D layer chain; the 3D material, the sequencers and
+  anything else reading the Buffer got the raw fs1 slot, so in Relief (3D) the
+  depth crossfaded while the picture jumped at the end. StillsBuffer now
+  renders ONE blended view (`renderView` / `viewTexture`) that every reader
+  takes, and Pipeline only pans/scales it — which also stops Pan/Scale being
+  dropped for the length of a fade.
 - **SOLO marker in the status bar** — Solo (`s`) bypasses every effect, so a
   stray keypress made the kaleidoscope vanish and its controls go dead with no
   sign why (owner, testing Tutorial 0). A yellow SOLO pill now shows while it

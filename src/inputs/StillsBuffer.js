@@ -12,7 +12,7 @@
  */
 
 import * as THREE from 'three';
-import { VERT, PASSTHROUGH } from '../shaders/index.js';
+import { VERT, PASSTHROUGH, BLEND } from '../shaders/index.js';
 
 const THUMB_W = 80;
 const THUMB_H = 45;
@@ -185,6 +185,40 @@ export class StillsBuffer {
     return this._hasFrame[last] ? this.frames[last].texture : null;
   }
 
+  /**
+   * THE picture the buffer shows: fs1 → fs2 by FrameBlend, rendered once per
+   * frame by renderView(). Every reader of the Buffer source — the 2D layers
+   * (via Pipeline), the 3D material, the sequencers — takes this, so a fade
+   * looks the same everywhere. Before this, only the 2D chain blended and the
+   * 3D texture jumped at the end of every Reimagine crossfade.
+   */
+  get viewTexture() {
+    return this._viewOn ? this._viewTarget.texture : this.texture;
+  }
+
+  /** Call once per frame after tick(). No pass (and no VRAM) while not blending. */
+  renderView(amount01) {
+    const a = this.texture, b = this.texture2;
+    this._viewOn = amount01 > 0 && !!a && !!b;
+    if (!this._viewOn) return;
+    if (!this._viewTarget) {
+      this._viewTarget = this._makeTarget(this.width, this.height);
+      this._viewMat = new THREE.ShaderMaterial({
+        uniforms: { uCurrent: { value: null }, uPrev: { value: null },
+                    uActive: { value: 1 }, uAmount: { value: 0 } },
+        vertexShader: VERT, fragmentShader: BLEND, depthTest: false, depthWrite: false,
+      });
+      this._viewScene = new THREE.Scene();
+      this._viewScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this._viewMat));
+    }
+    const u = this._viewMat.uniforms;
+    u.uCurrent.value = a; u.uPrev.value = b; u.uAmount.value = amount01;
+    const prev = this.renderer.getRenderTarget();
+    this.renderer.setRenderTarget(this._viewTarget);
+    this.renderer.render(this._viewScene, this._camera);
+    this.renderer.setRenderTarget(prev);
+  }
+
   /** The second frame texture (for blending fs1→fs2). */
   get texture2() {
     if (this._hasFrame[this.read2Index]) {
@@ -262,6 +296,7 @@ export class StillsBuffer {
     this.height = h;
     this.frames.forEach(f => f.setSize(w, h));
     this._bgSlots.forEach(f => f.setSize(w, h));
+    this._viewTarget?.setSize(w, h);
     // Thumbnails become stale but remain visible until re-captured
   }
 
