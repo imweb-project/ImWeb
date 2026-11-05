@@ -62,8 +62,16 @@ export class Reimagine {
     const n = this.sb.frameCount;
     const from = Math.min(Math.round(this.ps.get('reimagine.slotFrom').value), n - 1);
     const span = Math.max(1, Math.min(Math.round(this.ps.get('reimagine.slots').value), n - from));
-    const slot = from + (this._cursor % span);
+    // Never overwrite the slot on show when there is another to use: a fade
+    // FROM the slot being written is a cut (a Look's camera seed sits in
+    // FirstSlot, so the first image after a Look always cut in).
+    const shown = Math.round(this.ps.get('buffer.fs1').value);
+    let slot = from + (this._cursor % span);
     this._cursor = (this._cursor + 1) % span;
+    if (span > 1 && slot === shown) {
+      slot = from + (this._cursor % span);
+      this._cursor = (this._cursor + 1) % span;
+    }
     return slot;
   }
 

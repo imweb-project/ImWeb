@@ -59,6 +59,9 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   renders ONE blended view (`renderView` / `viewTexture`) that every reader
   takes, and Pipeline only pans/scales it — which also stops Pan/Scale being
   dropped for the length of a fade.
+- **Reimagine skips the slot on show** — a Look's camera seed sits in
+  FirstSlot, so the first image after a Look overwrote the picture being shown
+  and could only cut. With two or more Slots, the slot on show is now skipped.
 - **SOLO marker in the status bar** — Solo (`s`) bypasses every effect, so a
   stray keypress made the kaleidoscope vanish and its controls go dead with no
   sign why (owner, testing Tutorial 0). A yellow SOLO pill now shows while it
