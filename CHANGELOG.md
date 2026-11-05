@@ -49,6 +49,9 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   Camera, or Buffer (the Stills Buffer slot on show). The last two send a FLAT
   picture, so a 3D Look's turning plane is no longer painted into the next
   image and the tilts stop piling up. Relief (3D) now sends Camera.
+- **Reimagine status counts slots like the grid** — "→ slot 9" named the cell
+  the Stills Buffer grid labels 8 (status was 1-based, grid and FirstSlot are
+  0-based). Status now uses the grid's number.
 - **SOLO marker in the status bar** — Solo (`s`) bypasses every effect, so a
   stray keypress made the kaleidoscope vanish and its controls go dead with no
   sign why (owner, testing Tutorial 0). A yellow SOLO pill now shows while it

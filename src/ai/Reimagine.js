@@ -77,14 +77,14 @@ export class Reimagine {
       const frame = this.captureFrame(SEND_W, SEND_Q);
       const out = await reimagineImage(frame, this.prompt, this.aspect());
       const slot = this._nextSlot();
-      if (this.sb.isProtected?.(slot)) throw new Error(`slot ${slot + 1} is protected`);
+      if (this.sb.isProtected?.(slot)) throw new Error(`slot ${slot} is protected`);
       const url = `data:${out.mime};base64,${out.b64}`;
       const ok = await this.sb.importFrame(slot, url);
       if (!ok) throw new Error('the image came back but could not be decoded');
       this.onWrote();
       this.onLanded(slot, url);
       if (this.ps.get('reimagine.follow').value) this._startFade(slot);
-      this.onStatus(`→ slot ${slot + 1} · ${((performance.now() - t0) / 1000).toFixed(1)} s`, 'ok');
+      this.onStatus(`→ slot ${slot} · ${((performance.now() - t0) / 1000).toFixed(1)} s`, 'ok');
     } catch (err) {
       this.onStatus(err.message === 'no-key'
         ? '⚠ Needs a Google Gemini key — add it in AI settings (⚙).'
