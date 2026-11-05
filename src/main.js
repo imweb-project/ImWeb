@@ -158,6 +158,7 @@ import {
   REIMAGINE_KNOWN_MODELS,
 } from "./ai/AIFeatures.js";
 import { Reimagine } from "./ai/Reimagine.js";
+import { REIMAGINE_LOOKS } from "./ai/ReimagineLooks.js";
 import { mkSelect } from "./ui/components/Select.js";
 import {
   initTabs,
@@ -191,6 +192,7 @@ import {
   openGuide,
   toggleGuide,
   revealParam as _revealParam,
+  resolveStart,
 } from "./ui/Guide.js";
 import { LONG_PRESS_MS } from "./ui/touch.js";
 import { perfFrame } from "./perf-logger.js";
@@ -12017,6 +12019,67 @@ void main() {
     };
     buildModelSelect(REIMAGINE_KNOWN_MODELS.map((m) => ({ ...m })));
     listReimagineModels().then(buildModelSelect);
+
+    // Looks: confirm → the Shift+Esc reset → the Look's values → its prompt.
+    // The reset is the point: a Look must not inherit a keyer or a colour
+    // shift from whatever patch was up, or it will not look like its name.
+    // Stills Buffer PIXELS survive it (the reset touches parameters only).
+    const setPrompt = (text) => {
+      reimagine.prompt = text;
+      if (promptEl) promptEl.value = text;
+      try { localStorage.setItem(PROMPT_KEY, text); } catch { /* quota */ }
+    };
+    let _lookShowing = false; // true only while the menu is re-labelled after a load
+    const applyReimagineLook = async (i) => {
+      if (_lookShowing) return;
+      const look = REIMAGINE_LOOKS[Math.round(i)];
+      if (!look?.set) return;
+      await bootProject; // the first-launch import would overwrite it (see loadStart)
+      if (!confirm(`Load the Reimagine Look "${look.name}"?\n\n${look.about}\n\n` +
+        "Every parameter goes back to its default first. Press Cancel, then " +
+        "Shift+S, if you want to keep the current picture as a State.")) {
+        ps.set("reimagine.look", 0);
+        return;
+      }
+      const { values, errors } = resolveStart(ps, look.set);
+      if (errors.length) console.warn("[reimagine] look:", errors);
+      await _resetAllParams(false);
+      for (const [id, v] of values) ps.set(id, v);
+      if (look.prompt) setPrompt(look.prompt);
+      if (look.seed) {
+        // Give a buffer-only Look a picture to start from: the camera, into
+        // FirstSlot, shown at once. Without it the first request is a black frame.
+        // The reset STOPS the camera (camera.active resets) and _ensureCamera
+        // restarts it, so right now the stream has no picture yet — capturing
+        // at once seeded a black slot (measured: the first request was the same
+        // 3.8 KB as an empty frame). Wait for a decoded frame, then let a few
+        // render frames upload it. Timeouts, not rAF: a hidden tab never fires it.
+        const slot = Math.min(Math.round(ps.get("reimagine.slotFrom").value), stillsBuffer.frameCount - 1);
+        for (let n = 0; n < 50; n++) {
+          const v = camera3d.video;
+          if (v && v.readyState >= v.HAVE_CURRENT_DATA && v.videoWidth) break;
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        await new Promise((r) => setTimeout(r, 250));
+        const cam = camera3d.video?.videoWidth ? texForSource("camera") : null;
+        if (cam) { stillsBuffer.captureToSlot(cam, slot); ps.set("buffer.fs1", slot); refreshBufferGrid(); }
+        else if (statusEl) {
+          statusEl.textContent = `${look.name} loaded, but no camera picture to start from — capture a still into slot ${slot + 1} first`;
+          statusEl.dataset.kind = "err";
+        }
+        if (!cam) { _lookShowing = true; try { ps.set("reimagine.look", Math.round(i)); } finally { _lookShowing = false; } return; }
+      }
+      // The reset set the menu back to 0; show the Look that is now loaded,
+      // WITHOUT applying it again (that would confirm and reset a second time).
+      _lookShowing = true;
+      try { ps.set("reimagine.look", Math.round(i)); } finally { _lookShowing = false; }
+      if (statusEl) {
+        statusEl.textContent = `${look.name} loaded — press Reimagine, or turn on AutoReimagine`;
+        statusEl.dataset.kind = "";
+      }
+    };
+    ps.get("reimagine.look").onChange(applyReimagineLook);
+    ps.get("reimagine.look").onReselect(applyReimagineLook);
   }
 
   /**

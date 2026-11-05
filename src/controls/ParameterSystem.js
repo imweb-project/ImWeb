@@ -25,6 +25,7 @@ import { isPagedBinding } from './controlInput.js';
 // built from the one list the index itself reads, never retyped beside it.
 import { DESCRIPTOR_LABELS } from '../audio/corpus-index.js';
 import { GROWTH_PATTERNS, GROWTH_MODES, GROWTH_LOOKS, NCA_MODELS } from '../inputs/GrowthPatterns.js';
+import { REIMAGINE_LOOKS } from '../ai/ReimagineLooks.js';
 
 /**
  * How the performer is listening (§8.6). ONE list, read twice: the labels are
@@ -2966,6 +2967,15 @@ export function registerCoreParameters(ps) {
   // so recalling a Display State must never start a paid loop by itself. It
   // is appended by id to the Reimagine panel and excluded from global-params.
   // Everything else is group 'reimagine' and IS captured.
+  // Look: a LOADER (clean reset + a tested patch + prompt), the growth.look
+  // pattern — group 'global' so Display States capture the values it wrote,
+  // not an index that would re-run a reset on recall. APPEND-ONLY:
+  // REIMAGINE_LOOKS in src/ai/ReimagineLooks.js. Index 0 is a no-op heading.
+  ps.register({
+    id: "reimagine.look", label: "Look", group: "global",
+    type: PARAM_TYPE.SELECT, options: REIMAGINE_LOOKS.map((l) => l.name), value: 0,
+    select: true, reselect: true,
+  });
   ps.register({
     id: "reimagine.go",
     label: "Reimagine",

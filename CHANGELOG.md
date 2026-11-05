@@ -22,6 +22,14 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   image); the status line counts them instead.
   Model is a dropdown: the known Nano Banana models (fastest first) plus any
   image model the key's live model list reports.
+- **Reimagine Looks** — a Look menu at the top of the Reimagine panel:
+  *Live in the painting*, *Breathing painting*, *Woodcut shadow*, *Drift*.
+  Each asks first, runs the Shift+Esc reset (so no leftover keyer or colour
+  shift spoils it), then sets layers, blend, displacement, Every/Fade and the
+  prompt. Buffer-only Looks seed FirstSlot from the camera, after waiting for
+  the restarted camera's first real frame. Auto stays off. Guarded by
+  `tests/audit-reimagine-looks.mjs` (every value resolves; buffer-only Looks
+  seed).
 - **SOLO marker in the status bar** — Solo (`s`) bypasses every effect, so a
   stray keypress made the kaleidoscope vanish and its controls go dead with no
   sign why (owner, testing Tutorial 0). A yellow SOLO pill now shows while it
