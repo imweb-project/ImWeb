@@ -35,6 +35,16 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   Every/Fade and slots it already held, so Shift+S keeps a whole setup and a
   recall brings the words back. States saved earlier leave the prompt alone.
   After a recall the Look menu returns to its heading.
+- **AI Depth (source 36) — depth for every Reimagine still** — each image
+  Reimagine brings back (and a Look's camera seed) gets a depth map made IN
+  THE BROWSER: Depth Anything V2 Small via transformers.js 4.3.1 (pinned),
+  WebGPU with a WASM fallback, loaded lazily in its own chunk — nothing is
+  fetched until the first depth map, then the ~50 MB model is cached. Measured
+  headless on WebGPU: ~0.3–0.4 s per image after a one-time load. Maps are
+  kept per slot and blended fs1 → fs2 by FrameBlend like the buffer, so the
+  relief crossfades with the picture. Route it to Rutt-Etra, 3D T-Disp Source,
+  DisplaceSrc or a key; new Look **Relief (3D)** turns each image into a slowly
+  turning displaced plane. Depth toggle in the Reimagine panel (on).
 - **SOLO marker in the status bar** — Solo (`s`) bypasses every effect, so a
   stray keypress made the kaleidoscope vanish and its controls go dead with no
   sign why (owner, testing Tutorial 0). A yellow SOLO pill now shows while it

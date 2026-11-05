@@ -28,14 +28,16 @@ export class Reimagine {
    * @param {() => number} o.aspect            canvas width / height
    * @param {(msg:string, kind?:'busy'|'ok'|'err') => void} o.onStatus
    * @param {() => void} o.onWrote             a slot changed (refresh the grid)
+   * @param {(slot:number, url:string) => void} [o.onLanded]  an image landed in `slot`
    */
-  constructor({ ps, stillsBuffer, captureFrame, aspect, onStatus, onWrote }) {
+  constructor({ ps, stillsBuffer, captureFrame, aspect, onStatus, onWrote, onLanded }) {
     this.ps = ps;
     this.sb = stillsBuffer;
     this.captureFrame = captureFrame;
     this.aspect = aspect;
     this.onStatus = onStatus ?? (() => {});
     this.onWrote = onWrote ?? (() => {});
+    this.onLanded = onLanded ?? (() => {});
     this.prompt = '';
     this.busy = false;
     this._wait = 0;        // seconds since the last answer landed (auto mode)
@@ -76,9 +78,11 @@ export class Reimagine {
       const out = await reimagineImage(frame, this.prompt, this.aspect());
       const slot = this._nextSlot();
       if (this.sb.isProtected?.(slot)) throw new Error(`slot ${slot + 1} is protected`);
-      const ok = await this.sb.importFrame(slot, `data:${out.mime};base64,${out.b64}`);
+      const url = `data:${out.mime};base64,${out.b64}`;
+      const ok = await this.sb.importFrame(slot, url);
       if (!ok) throw new Error('the image came back but could not be decoded');
       this.onWrote();
+      this.onLanded(slot, url);
       if (this.ps.get('reimagine.follow').value) this._startFade(slot);
       this.onStatus(`→ slot ${slot + 1} · ${((performance.now() - t0) / 1000).toFixed(1)} s`, 'ok');
     } catch (err) {

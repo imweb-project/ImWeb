@@ -159,6 +159,8 @@ import {
 } from "./ai/AIFeatures.js";
 import { Reimagine } from "./ai/Reimagine.js";
 import { REIMAGINE_LOOKS } from "./ai/ReimagineLooks.js";
+import { AIDepth } from "./ai/AIDepth.js";
+import { estimateDepth } from "./ai/DepthEstimator.js";
 import { mkSelect } from "./ui/components/Select.js";
 import {
   initTabs,
@@ -467,6 +469,9 @@ async function main() {
   ctrl._movieInput = movieInput;
 
   const stillsBuffer = new StillsBuffer(renderer, W, H);
+  // AI Depth (source 36): per-slot depth maps for Reimagine stills.
+  const aiDepth = new AIDepth(renderer, W, H);
+  const AIDEPTH_IDX = SOURCE_KEYS.indexOf("aidepth");
   // Assigned once the AI section has the frame grab (captureOutputFrame);
   // the render loop ticks it through ?. until then.
   let reimagine = null;
@@ -6410,6 +6415,7 @@ async function main() {
     // Front buffer: last frame's render to anything that reads it before
     // pipeline.render (Growth's seed), black while the shader is off.
     if (key === "glsl") return pipeline.customSourceTexture;
+    if (key === "aidepth") return aiDepth.texture;
     if (key === "mixbus") return pipeline.mixTextureAt(0);
     if (key === "mixbus2") return pipeline.mixTextureAt(1);
     if (key === "mixbus3") return pipeline.mixTextureAt(2);
@@ -10024,6 +10030,7 @@ void main() {
     pipeline.resize(rW, rH);
     scene3d.resize(rW, rH);
     stillsBuffer.resize(rW, rH);
+    aiDepth.resize(rW, rH);
     videoDelay.resize(rW, rH);
     tdEngine.resize(rW, rH);
     slitScan.resize(rW, rH);
@@ -10830,6 +10837,9 @@ void main() {
     reimagine?.tick(dt);
     // Tick stills buffer (reads fs1 → readIndex)
     stillsBuffer.tick(ps, dt);
+    // AI Depth follows the buffer's resolved read slots, so render it after
+    // stillsBuffer.tick — and only while something consumes source 36.
+    if (_srcUsed(AIDEPTH_IDX)) aiDepth.render(stillsBuffer, ps.get("buffer.frameblend").value / 100);
 
     // Tick and capture sequence buffers
     const _seqSrcTex = (idx) =>
@@ -11345,6 +11355,7 @@ void main() {
       analog: analogTV.texture,
       tdisp: tdEngine.texture,
       volume: volumeTexture(),
+      aidepth: _srcUsed(AIDEPTH_IDX) ? aiDepth.texture : null,
       seq1: seq1.texture,
       seq2: seq2.texture,
       seq3: seq3.texture,
@@ -11995,6 +12006,32 @@ void main() {
         statusEl.dataset.kind = kind ?? "";
       },
       onWrote: () => refreshBufferGrid(),
+      // Depth per still: runs AFTER the image is in its slot and the fade has
+      // begun — never inside the request, so a slow first model download can
+      // not hold up the picture. The slot's old depth is dropped first, so a
+      // failed estimate shows flat rather than the previous image's relief.
+      onLanded: (slot, url) => {
+        aiDepth.forget(slot);
+        if (!ps.get("reimagine.depth").value) return;
+        // Appended to the line as it reads WHEN depth finishes — onLanded runs
+        // before the "→ slot …" status is written, so text captured here would
+        // be the stale "Reimagining…". While the model downloads, its progress
+        // shows in the line's own tag so the next status write replaces it.
+        const tag = (t) => {
+          if (!statusEl || statusEl.dataset.kind === "busy") return;
+          const line = statusEl.textContent.replace(/( · )?(✗ depth|depth \d|Loading depth model).*$/, "");
+          statusEl.textContent = line ? `${line} · ${t}` : t;
+        };
+        estimateDepth(url, (m) => tag(m))
+          .then(({ canvas: dc, ms, device }) => {
+            aiDepth.set(slot, dc);
+            tag(`depth ${Math.round(ms)} ms (${device})`);
+          })
+          .catch((err) => {
+            console.warn("[depth]", err);
+            tag(`✗ depth: ${err.message ?? err}`);
+          });
+      },
     });
     if (promptEl) {
       try { promptEl.value = localStorage.getItem(PROMPT_KEY) ?? promptEl.value; } catch { /* private mode */ }
@@ -12066,7 +12103,15 @@ void main() {
         }
         await new Promise((r) => setTimeout(r, 250));
         const cam = camera3d.video?.videoWidth ? texForSource("camera") : null;
-        if (cam) { stillsBuffer.captureToSlot(cam, slot); ps.set("buffer.fs1", slot); refreshBufferGrid(); }
+        if (cam) {
+          stillsBuffer.captureToSlot(cam, slot);
+          ps.set("buffer.fs1", slot);
+          refreshBufferGrid();
+          // The seed gets depth too, so a relief Look has shape before its
+          // first paid image — same path as a landed image.
+          const url = stillsBuffer.exportFrame(slot, 1024, 0.9);
+          if (url) reimagine.onLanded(slot, url); else aiDepth.forget(slot);
+        }
         else if (statusEl) {
           statusEl.textContent = `${look.name} loaded, but no camera picture to start from — capture a still into slot ${slot + 1} first`;
           statusEl.dataset.kind = "err";

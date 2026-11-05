@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@codemirror/lang-cpp": "^6.0.3",
+    "@huggingface/transformers": "4.3.1",
     "codemirror": "^6.0.2",
     "cors": "^2.8.6",
     "express": "^5.2.1",

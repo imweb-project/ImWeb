@@ -63,4 +63,20 @@ export const REIMAGINE_LOOKS = [
       ['reimagine.interval', '10'], ['reimagine.fade', '12'],
     ],
   },
+  {
+    // The AI image as a surface in 3D: texture = the buffer, height = its
+    // depth (AI Depth, made in the browser for each image). Turns slowly so
+    // the relief reads. Needs reimagine.depth on, which the reset leaves on.
+    name: 'Relief (3D)',
+    about: 'Each AI image becomes a turning 3D relief, pushed out by its own depth.',
+    prompt: 'as a carved and painted wooden altarpiece, deep relief',
+    seed: true,
+    set: [
+      ['layer.fg', '3D Scene'], ['scene3d.active', '1'],
+      ['scene3d.geo', 'Basic: Plane'],
+      ['scene3d.mat.texsrc', 'Buffer'], ['scene3d.mat.dispsrc', 'AI Depth'],
+      ['scene3d.mat.tDisplace', '0.3'], ['scene3d.spin.y', '6'],
+      ['reimagine.interval', '15'], ['reimagine.fade', '8'],
+    ],
+  },
 ];

@@ -1649,6 +1649,7 @@ export class Pipeline {
     if (key === 'growth'    && inputs.growth)    return inputs.growth;
     if (key === 'volume'    && inputs.volume)    return inputs.volume;
     if (key === 'glsl')                          return this.customSourceTexture;
+    if (key === 'aidepth'   && inputs.aidepth)   return inputs.aidepth;
     return inputs.color ?? this._getFallbackTexture();
   }
 

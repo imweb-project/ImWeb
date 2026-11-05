@@ -1172,6 +1172,12 @@ export const SOURCE_DEFS = [
   // glsl.srcInput as its uTexture. Appended at the true end; the indirect
   // capture entries move with it, kept in register by migrateCaptureBase().
   { key: "glsl",      label: "Shader Code" }, // 35
+  // 36 — the depth of whatever the Stills Buffer shows, white = near. Made in
+  // the browser for each Reimagine still (src/ai/DepthEstimator.js) and
+  // blended fs1 → fs2 by FrameBlend like the buffer (src/ai/AIDepth.js).
+  // Appended at the true end; the indirect capture entries move with it, kept
+  // in register by migrateCaptureBase().
+  { key: "aidepth",   label: "AI Depth" }, // 36
 ];
 
 /** Source indices of the three mix buses, in evaluation order (1 → 2 → 3). */
@@ -1190,7 +1196,7 @@ export const MIXBUS_IDX = [26, 27, 28];
  */
 export const SOURCE_DISPLAY_ORDER = [
   { header: "Live In" },        0 /* Camera */, 12 /* Sound */,
-  { header: "Media" },          1 /* Movie A */, 25 /* Movie B */, 2 /* Buffer */,
+  { header: "Media" },          1 /* Movie A */, 25 /* Movie B */, 2 /* Buffer */, 36 /* AI Depth */,
                                 9 /* BG1 */, 10 /* BG2 */,
   { header: "Generators" },     3 /* Color */, 4 /* Color2 */, 5 /* Noise */,
                                 16 /* Particles */, 21 /* SDF */, 30 /* SDF Depth */,
@@ -3024,6 +3030,15 @@ export function registerCoreParameters(ps) {
     max: 63,
     value: 8,
     step: 1,
+  });
+  // Depth: make a depth map for each image as it lands (in the browser, free),
+  // readable as the AI Depth source (36). First use downloads the model once.
+  ps.register({
+    id: "reimagine.depth",
+    label: "Depth",
+    group: "reimagine",
+    type: PARAM_TYPE.TOGGLE,
+    value: 1,
   });
   ps.register({
     id: "reimagine.slots",

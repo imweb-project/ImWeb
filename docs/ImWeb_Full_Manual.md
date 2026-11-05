@@ -1527,20 +1527,29 @@ Three routing layers feed the pipeline:
 | **BG** | `layer.bg` | Background source |
 | **DS** | `layer.ds` | Displacement source (grayscale) |
 
-Each layer can take any of the **36 sources**, listed in the dropdown in four
+Each layer can take any of the **37 sources**, listed in the dropdown in four
 groups plus the mix buses (the menu labels, in menu order):
 
 | Group | Sources |
 |-------|---------|
 | **Live In** | Camera, Sound |
-| **Media** | Movie A, Movie B, Stills Buffer, BG1, BG2 |
+| **Media** | Movie A, Movie B, Stills Buffer, AI Depth, BG1, BG2 |
 | **Generators** | Color, Color 2, Noise, Particles, SDF, SDF Depth, Text, Draw, Growth, 3D Scene, 3D Depth, Analog TV, Rutt-Etra, Shader Code |
 | **From the Signal** | Output (feedback), Video Delay, RGB Delay, Motion Extraction, Time Displace, Volume, Slit Scan, Frame Seq 1, Frame Seq 2, Frame Seq 3, Vectorscope, Warp Tape |
 | **Mix** | Mix 1, Mix 2, Mix 3 |
 
 The list is append-only: a saved State stores a source as its position in the
 internal list, so new sources are always added at the end (Growth = 33,
-Volume = 34, Shader Code = 35) and never re-number older ones.
+Volume = 34, Shader Code = 35, AI Depth = 36) and never re-number older ones.
+
+**AI Depth** is the depth of whatever the Stills Buffer is showing — white is
+near, black is far. **Reimagine (AI)** (under the Stills Buffer) makes one for
+each image it brings back, in the browser and free (Depth Anything V2 Small;
+the first use downloads the model once, about 50 MB). It crossfades with the
+buffer, so it always matches the picture. Use it as Rutt-Etra's source, as the
+3D material's **T-Disp Source**, as **DisplaceSrc**, or as a key. The
+**Relief (3D)** Look sets up the 3D version for you. A slot with no depth map
+reads black (flat). Turn **Depth** off in the Reimagine panel to skip it.
 
 #### Mirroring
 
