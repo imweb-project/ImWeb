@@ -23,7 +23,9 @@ import { reimagineImage, directReimagine } from './AIFeatures.js';
 
 const SEND_W = 1024;   // what the model sees; edit models work around 1K anyway
 const SEND_Q = 0.85;
-const MORPH_WAIT_MS = 4000;  // longest a Morph fade waits for its depth map
+// Longest a Morph fade waits for its depth map: a GPU map takes ~2 s, a CPU
+// one ~10 s (reimagine.depthOn). Past this the fade starts without it.
+const MORPH_WAIT_MS = { gpu: 4000, cpu: 15000 };
 
 export class Reimagine {
   /**
@@ -155,7 +157,8 @@ export class Reimagine {
         // new image's depth map; a map landing mid-fade would make it jump.
         // Capped, so a first-use model download only costs one plain start.
         if (depth?.then && this.ps.get('reimagine.morph').value > 0) {
-          await Promise.race([depth, new Promise(r => setTimeout(r, MORPH_WAIT_MS))]);
+          const cap = this.ps.get('reimagine.depthOn').value ? MORPH_WAIT_MS.cpu : MORPH_WAIT_MS.gpu;
+          await Promise.race([depth, new Promise(r => setTimeout(r, cap))]);
         }
         this._startFade(slot);
       }

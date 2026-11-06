@@ -3101,6 +3101,17 @@ export function registerCoreParameters(ps) {
     type: PARAM_TYPE.TOGGLE,
     value: 1,
   });
+  // Where the depth model runs. GPU: ~2 s per map, but the picture stalls
+  // ~1 s while it runs (the model and the render share the chip). CPU: ~10 s,
+  // frames stay smooth. Either way it is in a worker, off the main thread.
+  ps.register({
+    id: "reimagine.depthOn",
+    label: "DepthOn",
+    group: "reimagine",
+    type: PARAM_TYPE.SELECT,
+    options: ["GPU", "CPU"],
+    value: 1,
+  });
   ps.register({
     id: "reimagine.slots",
     label: "Slots",
@@ -3119,6 +3130,17 @@ export function registerCoreParameters(ps) {
     min: 0, max: 30, value: 8, step: 0.5, unit: "°" });
   ps.register({ id: "splat.speed", label: "DriftSpeed", group: "splat",
     min: 0, max: 0.5, value: 0.05, step: 0.01, unit: "Hz" });
+  // Camera, on top of the automatic Sway: Orbit/Tilt turn around the middle
+  // of the world (180° = from behind), Dolly moves in up to that middle, Fly
+  // travels on through the world and back out at DriftSpeed.
+  ps.register({ id: "splat.orbit", label: "Orbit", group: "splat",
+    min: -180, max: 180, value: 0, step: 1, unit: "°" });
+  ps.register({ id: "splat.tilt", label: "Tilt", group: "splat",
+    min: -80, max: 80, value: 0, step: 1, unit: "°" });
+  ps.register({ id: "splat.dolly", label: "Dolly", group: "splat",
+    min: -100, max: 100, value: 0, step: 1, unit: "%" });
+  ps.register({ id: "splat.fly", label: "Fly", group: "splat",
+    min: 0, max: 100, value: 0, step: 1, unit: "%" });
   ps.register({ id: "splat.size", label: "PointSize", group: "splat",
     min: 25, max: 300, value: 100, step: 1, unit: "%" });
   ps.register({ id: "splat.density", label: "Density", group: "splat",

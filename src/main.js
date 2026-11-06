@@ -12072,7 +12072,7 @@ void main() {
         };
         // Returned so Reimagine can hold a Morph fade until this depth exists
         // (a map arriving mid-fade would jump the morph's per-pixel timing).
-        return estimateDepth(url, (m) => tag(m))
+        return estimateDepth(url, (m) => tag(m), ps.get("reimagine.depthOn").value ? "cpu" : "gpu")
           .then(({ canvas: dc, ms, device }) => {
             aiDepth.set(slot, dc);
             tag(`depth ${Math.round(ms)} ms (${device})`);

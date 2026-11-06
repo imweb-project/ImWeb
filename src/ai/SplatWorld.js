@@ -162,23 +162,33 @@ export class SplatWorld {
     u.uPxPerUnit.value = this.height / (2 * u.uTanHalf.value);
     u.uSize.value = ps.get('splat.size').value / 100;
 
-    // Drift: orbit a pivot in the middle of the world, so the parallax is
-    // around the subject rather than the lens.
+    // Camera: it orbits a PIVOT in the middle of the world, so the parallax is
+    // around the subject rather than the lens. Orbit/Tilt are the owner's
+    // angle, Sway the automatic swing on top. Distance from the pivot: rest is
+    // pivotD (camera at the lens, picture exact); Dolly moves in up to the
+    // pivot, Fly travels on in and back out through the world. The camera's
+    // ORIENTATION comes from the angles alone, never lookAt(pivot) — lookAt
+    // flips the view the moment the camera passes through the pivot.
     this._t += dt * ps.get('splat.speed').value;
-    const sway = THREE.MathUtils.degToRad(ps.get('splat.sway').value);
     const ph = this._t * Math.PI * 2;
-    const yaw = sway * Math.sin(ph);
-    const pitch = sway * 0.4 * Math.sin(ph * 0.63 + 1.1);
+    const D2R = Math.PI / 180;
+    const sway = ps.get('splat.sway').value * D2R;
+    const yaw = ps.get('splat.orbit').value * D2R + sway * Math.sin(ph);
+    const pitch = ps.get('splat.tilt').value * D2R + sway * 0.4 * Math.sin(ph * 0.63 + 1.1);
     const pivotD = 1 / ((1 / u.uFar.value + 1 / NEAR_D) / 2);
+    const dolly = ps.get('splat.dolly').value / 100;
+    const fly = ps.get('splat.fly').value / 100;
+    const r = pivotD * (1 - dolly)
+      - fly * 0.9 * u.uFar.value * (0.5 - 0.5 * Math.cos(ph * 0.5));
     const cam = this._camera;
     cam.aspect = this.width / this.height;
     cam.updateProjectionMatrix();
     cam.position.set(
-      pivotD * Math.sin(yaw) * Math.cos(pitch),
-      pivotD * Math.sin(pitch),
-      -pivotD + pivotD * Math.cos(yaw) * Math.cos(pitch),
+      r * Math.sin(yaw) * Math.cos(pitch),
+      r * Math.sin(pitch),
+      -pivotD + r * Math.cos(yaw) * Math.cos(pitch),
     );
-    cam.lookAt(0, 0, -pivotD);
+    cam.rotation.set(-pitch, yaw, 0, 'YXZ');
 
     const prev = this.renderer.getRenderTarget();
     const prevClear = this.renderer.getClearColor(new THREE.Color());

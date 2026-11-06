@@ -1571,6 +1571,12 @@ the browser. A Morph fade waits up to 4 s for the new image's depth map before
 it starts. 0 gives the plain crossfade, and so does a slot with no depth map.
 It applies to any Stills Buffer fade, by hand (FrameBlend) or by Reimagine.
 
+**DepthOn** picks where the depth model runs. **CPU** (the default) takes about
+10 s per image, but the picture stays smooth. **GPU** takes about 2 s, but the
+picture stalls for about a second while it works, because the model and the
+picture share the graphics chip. A Morph fade waits for the depth map (up to
+15 s on CPU, 4 s on GPU).
+
 **Splat World** (source 37) turns the Stills Buffer image on show into a 3D
 world: every pixel becomes a soft point, pushed out to the distance its AI
 Depth map gives, and a camera drifts slowly through it. At rest the points
@@ -1586,6 +1592,10 @@ Reimagine panel:
 | `splat.relief` | CONTINUOUS 0–100 % | How deep the world is (0 = flat) |
 | `splat.sway` | CONTINUOUS 0–30° | How far the camera swings around the middle of the world |
 | `splat.speed` | CONTINUOUS 0–0.5 Hz | **DriftSpeed** — how fast it swings |
+| `splat.orbit` | CONTINUOUS −180–180° | Turn around the middle of the world (180° = from behind) |
+| `splat.tilt` | CONTINUOUS −80–80° | Look from above or below |
+| `splat.dolly` | CONTINUOUS −100–100 % | Move in (100 % = in the middle of the world) or back out |
+| `splat.fly` | CONTINUOUS 0–100 % | Fly into the world and back out, at DriftSpeed |
 | `splat.size` | CONTINUOUS 25–300 % | **PointSize** — larger closes holes, smaller looks grainier |
 | `splat.density` | SELECT Low/Mid/High | Number of points (Low if the frame rate drops) |
 

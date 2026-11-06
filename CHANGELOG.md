@@ -9,6 +9,13 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Splat World camera** — Orbit (to 180°, from behind), Tilt, Dolly (into the
+  middle of the world) and Fly (in and back out at DriftSpeed), on top of Sway.
+- **Depth off the main thread; DepthOn GPU/CPU** — the depth model now runs in
+  a worker. Measured: on the main thread one estimate froze the app for
+  1.7 s; in the worker on the GPU it still stalls ~1 s (the model shares the
+  chip with the picture); on the CPU (the new default) it takes ~10 s with no
+  frame over 17 ms. A Morph fade waits up to 15 s for a CPU depth map.
 - **Splat World (source 37)** — the Stills Buffer image as a 3D world of
   points pushed out by its AI Depth map, with a drifting camera; a Reimagine
   fade moves each point from the old world to the new one (near first, by
