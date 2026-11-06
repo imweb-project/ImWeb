@@ -1112,6 +1112,10 @@ export class SceneManager {
       ? s * n * this._importedBaseScale
       : s;
     this.mesh.scale.setScalar(S);
+    // The plane takes the picture's shape: same width, height by the aspect.
+    if (this._geoKey === 'Plane' && p.get('scene3d.planeShape')?.value === 1) {
+      this.mesh.scale.y = S * this.height / this.width;
+    }
     // Mirror: left↔right about the model's own centre (scale is applied
     // before rotation, so it is the model's own x, not the screen's).
     if (p.get('scene3d.mirror')?.value) this.mesh.scale.x = -S;

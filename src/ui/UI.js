@@ -1200,6 +1200,13 @@ export function buildGeometryButtons(ps, sceneManager, contextMenu) {
 
   const geoParam = ps.get('scene3d.geo');
   el.appendChild(buildParamRow(geoParam, contextMenu));
+  // Size and plane shape sit with the shape itself: Transform lives inside
+  // Import Model ▸ M1, where nobody looks for a basic plane's size.
+  // Scale is a second view of the same param as Transform's row.
+  for (const id of ['scene3d.planeShape', 'scene3d.scale']) {
+    const p = ps.get(id);
+    if (p) el.appendChild(buildParamRow(p, contextMenu));
+  }
 
   // ── Transform section ────────────────────────────────────────────────────
   const transformEl = document.getElementById('transform-params');

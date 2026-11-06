@@ -4185,6 +4185,10 @@ export function registerCoreParameters(ps) {
   ps.register({ id: "scene3d.anchor", label: "Anchor", group: "scene3d", type: PARAM_TYPE.SELECT, options: ["Load centre", "Follow body"], value: 0 });
   // Mirror left↔right, as the slots' mirror (see there).
   ps.register({ id: "scene3d.mirror", label: "Mirror", group: "scene3d", type: PARAM_TYPE.TOGGLE, value: 0 });
+  // Plane shape: Image gives Basic: Plane the picture's proportions (every
+  // source renders at the output size, so its aspect IS the image's); Square
+  // is the old 2 x 2. Applied as mesh scale, so Scale/Mirror stay as they are.
+  ps.register({ id: "scene3d.planeShape", label: "PlaneShape", group: "scene3d", type: PARAM_TYPE.SELECT, options: ["Square", "Image"], value: 1 });
   ps.register({
     id: "scene3d.clone.mode",
     label: "Cloner",
