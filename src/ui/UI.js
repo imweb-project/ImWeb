@@ -237,6 +237,7 @@ export function buildMappingPanels(ps, contextMenu) {
     'buffer-controls': ps.getGroup('buffer'),
     // reimagine.auto is group 'global' (a recalled state must never start a
     // paid loop) — appended here by id, excluded from global-params below.
+    'splat-params': ps.getGroup('splat'),
     'reimagine-params': [ps.get('reimagine.look'), ps.get('reimagine.go'), ps.get('reimagine.auto'),
       ...ps.getGroup('reimagine').filter(p => p.id !== 'reimagine.go')].filter(Boolean),
     // ...plus each deck's cueSlot/cueStore, appended by id for the same stated

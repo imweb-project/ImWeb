@@ -160,6 +160,7 @@ import {
 import { Reimagine } from "./ai/Reimagine.js";
 import { REIMAGINE_LOOKS } from "./ai/ReimagineLooks.js";
 import { AIDepth } from "./ai/AIDepth.js";
+import { SplatWorld } from "./ai/SplatWorld.js";
 import { estimateDepth } from "./ai/DepthEstimator.js";
 import { mkSelect } from "./ui/components/Select.js";
 import {
@@ -472,6 +473,9 @@ async function main() {
   // AI Depth (source 36): per-slot depth maps for Reimagine stills.
   const aiDepth = new AIDepth(renderer, W, H);
   const AIDEPTH_IDX = SOURCE_KEYS.indexOf("aidepth");
+  // Splat World (source 37): the buffer image as points pushed out by depth.
+  const splatWorld = new SplatWorld(renderer, W, H);
+  const SPLAT_IDX = SOURCE_KEYS.indexOf("splat");
   // Assigned once the AI section has the frame grab (captureOutputFrame);
   // the render loop ticks it through ?. until then.
   let reimagine = null;
@@ -6421,6 +6425,7 @@ async function main() {
     // pipeline.render (Growth's seed), black while the shader is off.
     if (key === "glsl") return pipeline.customSourceTexture;
     if (key === "aidepth") return aiDepth.texture;
+    if (key === "splat") return splatWorld.texture;
     if (key === "mixbus") return pipeline.mixTextureAt(0);
     if (key === "mixbus2") return pipeline.mixTextureAt(1);
     if (key === "mixbus3") return pipeline.mixTextureAt(2);
@@ -10036,6 +10041,7 @@ void main() {
     scene3d.resize(rW, rH);
     stillsBuffer.resize(rW, rH);
     aiDepth.resize(rW, rH);
+    splatWorld.resize(rW, rH);
     videoDelay.resize(rW, rH);
     tdEngine.resize(rW, rH);
     slitScan.resize(rW, rH);
@@ -10851,6 +10857,7 @@ void main() {
       ps.get("reimagine.morph").value / 100,
       aiDepth.map(stillsBuffer.readIndex), aiDepth.map(stillsBuffer.read2Index));
     if (_srcUsed(AIDEPTH_IDX)) aiDepth.render(stillsBuffer, ps.get("buffer.frameblend").value / 100);
+    if (_srcUsed(SPLAT_IDX)) splatWorld.render(ps, stillsBuffer, aiDepth, dt);
 
     // Tick and capture sequence buffers
     const _seqSrcTex = (idx) =>
@@ -11367,6 +11374,7 @@ void main() {
       tdisp: tdEngine.texture,
       volume: volumeTexture(),
       aidepth: _srcUsed(AIDEPTH_IDX) ? aiDepth.texture : null,
+      splat: _srcUsed(SPLAT_IDX) ? splatWorld.texture : null,
       seq1: seq1.texture,
       seq2: seq2.texture,
       seq3: seq3.texture,

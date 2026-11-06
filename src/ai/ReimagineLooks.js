@@ -81,4 +81,19 @@ export const REIMAGINE_LOOKS = [
       ['reimagine.interval', '15'], ['reimagine.fade', '8'],
     ],
   },
+  {
+    // Each image as a world of points pushed out by its own depth, the camera
+    // drifting through it; a new image flows in point by point (Morph).
+    // Camera as Send, so the AI never sees the points from an odd angle.
+    name: 'Splat world',
+    about: 'Each AI image becomes a 3D world of points you drift through; the next one flows in.',
+    prompt: 'as a vast painted landscape with deep perspective',
+    seed: true,
+    set: [
+      ['layer.fg', 'Splat World'],
+      ['reimagine.send', 'Camera'], ['reimagine.morph', '80'],
+      ['splat.relief', '60'], ['splat.sway', '10'],
+      ['reimagine.interval', '15'], ['reimagine.fade', '10'],
+    ],
+  },
 ];

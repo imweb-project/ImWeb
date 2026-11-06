@@ -1540,7 +1540,8 @@ groups plus the mix buses (the menu labels, in menu order):
 
 The list is append-only: a saved State stores a source as its position in the
 internal list, so new sources are always added at the end (Growth = 33,
-Volume = 34, Shader Code = 35, AI Depth = 36) and never re-number older ones.
+Volume = 34, Shader Code = 35, AI Depth = 36, Splat World = 37) and never
+re-number older ones.
 
 **AI Depth** is the depth of whatever the Stills Buffer is showing — white is
 near, black is far. **Reimagine (AI)** (under the Stills Buffer) makes one for
@@ -1569,6 +1570,24 @@ follows, and the surface swells a little in between. It is free and runs in
 the browser. A Morph fade waits up to 4 s for the new image's depth map before
 it starts. 0 gives the plain crossfade, and so does a slot with no depth map.
 It applies to any Stills Buffer fade, by hand (FrameBlend) or by Reimagine.
+
+**Splat World** (source 37) turns the Stills Buffer image on show into a 3D
+world: every pixel becomes a soft point, pushed out to the distance its AI
+Depth map gives, and a camera drifts slowly through it. At rest the points
+line up exactly with the flat picture; as the camera moves, near things slide
+against the background, and holes open behind them (one image cannot show
+what is hidden). During a fade each point flows from its place in the old
+world to its place in the new one, near points first by **Morph**. The
+**Splat world** Look sets it up. Its controls, under *Splat World* in the
+Reimagine panel:
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `splat.relief` | CONTINUOUS 0–100 % | How deep the world is (0 = flat) |
+| `splat.sway` | CONTINUOUS 0–30° | How far the camera swings around the middle of the world |
+| `splat.speed` | CONTINUOUS 0–0.5 Hz | **DriftSpeed** — how fast it swings |
+| `splat.size` | CONTINUOUS 25–300 % | **PointSize** — larger closes holes, smaller looks grainier |
+| `splat.density` | SELECT Low/Mid/High | Number of points (Low if the frame rate drops) |
 
 #### Mirroring
 

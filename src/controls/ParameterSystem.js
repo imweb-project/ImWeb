@@ -1178,6 +1178,11 @@ export const SOURCE_DEFS = [
   // Appended at the true end; the indirect capture entries move with it, kept
   // in register by migrateCaptureBase().
   { key: "aidepth",   label: "AI Depth" }, // 36
+  // 37 — the Stills Buffer image as a 3D world of points pushed out by its AI
+  // Depth map, seen by a drifting camera (src/ai/SplatWorld.js). Appended at
+  // the true end; the indirect capture entries move with it, kept in register
+  // by migrateCaptureBase().
+  { key: "splat",     label: "Splat World" }, // 37
 ];
 
 /** Source indices of the three mix buses, in evaluation order (1 → 2 → 3). */
@@ -1196,7 +1201,7 @@ export const MIXBUS_IDX = [26, 27, 28];
  */
 export const SOURCE_DISPLAY_ORDER = [
   { header: "Live In" },        0 /* Camera */, 12 /* Sound */,
-  { header: "Media" },          1 /* Movie A */, 25 /* Movie B */, 2 /* Buffer */, 36 /* AI Depth */,
+  { header: "Media" },          1 /* Movie A */, 25 /* Movie B */, 2 /* Buffer */, 36 /* AI Depth */, 37 /* Splat World */,
                                 9 /* BG1 */, 10 /* BG2 */,
   { header: "Generators" },     3 /* Color */, 4 /* Color2 */, 5 /* Noise */,
                                 16 /* Particles */, 21 /* SDF */, 30 /* SDF Depth */,
@@ -3105,6 +3110,19 @@ export function registerCoreParameters(ps) {
     value: 4,
     step: 1,
   });
+
+  // ── Splat World (source 37) ────────────────────────────────────────────────
+  // Few on purpose: the picture comes from Reimagine, the fade from its Morph.
+  ps.register({ id: "splat.relief", label: "Relief", group: "splat",
+    min: 0, max: 100, value: 50, step: 1, unit: "%" });
+  ps.register({ id: "splat.sway", label: "Sway", group: "splat",
+    min: 0, max: 30, value: 8, step: 0.5, unit: "°" });
+  ps.register({ id: "splat.speed", label: "DriftSpeed", group: "splat",
+    min: 0, max: 0.5, value: 0.05, step: 0.01, unit: "Hz" });
+  ps.register({ id: "splat.size", label: "PointSize", group: "splat",
+    min: 25, max: 300, value: 100, step: 1, unit: "%" });
+  ps.register({ id: "splat.density", label: "Density", group: "splat",
+    type: PARAM_TYPE.SELECT, options: ["Low", "Mid", "High"], value: 1 });
 
   // ── Movie / clip ──────────────────────────────────────────────────────────
   // Both decks register from one descriptor table so movie.* (Deck A) and

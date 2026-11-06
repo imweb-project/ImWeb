@@ -9,6 +9,11 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Splat World (source 37)** — the Stills Buffer image as a 3D world of
+  points pushed out by its AI Depth map, with a drifting camera; a Reimagine
+  fade moves each point from the old world to the new one (near first, by
+  Morph). Controls: Relief, Sway, DriftSpeed, PointSize, Density. New Look
+  **Splat world**. Free, in the browser, on the current three.js.
 - **AI settings window scrolls, and its sections detach** — the window now
   fits the screen and scrolls instead of running off the bottom. Each section
   (Settings, AI Provider, Tokens Used, AI Performance, Coach Suggestions, Video
