@@ -5467,6 +5467,27 @@ export function buildAISettingsPanel(ai, panelEl) {
 
   // Initial render
   refreshProviderUI(cfg.activeProvider);
+
+  // ── Sections ─────────────────────────────────────────────────────────────
+  // Each header and what follows it becomes a .panel-section, so main.js can
+  // give it the app's own collapse and ↗ detach (one mechanism, not a second
+  // one here). Regrouped AFTER the build: the builders above insert relative
+  // to each other (AI PROVIDER goes in before testBtn), and moving finished
+  // nodes keeps every reference the handlers hold. Ids, not titles, key the
+  // saved window layout — titles must stay unique across the whole app.
+  const kids = [...panelEl.children];
+  let sec = null;
+  for (const el of kids) {
+    if (el.classList.contains('ai-settings-hdr')) {
+      sec = document.createElement('div');
+      sec.className = 'panel-section ai-settings-section';
+      sec.id = 'ai-settings-' + el.textContent.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      el.classList.add('section-header');
+      el.style.marginTop = '';
+      panelEl.insertBefore(sec, el);
+    }
+    if (sec) sec.appendChild(el);
+  }
 }
 
 // ── Movie Library UI ───────────────────────────────────────────────────────────

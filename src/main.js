@@ -2178,7 +2178,11 @@ async function main() {
   }
 
   let _allCollapsed = false;
-  document.querySelectorAll(".section-header").forEach((hdr) => {
+  // One wiring for every level-2 header — also called for panels built later
+  // (the AI settings window), so they get the same collapse + ↗ detach.
+  function _wireSectionHeader(hdr) {
+    if (hdr.dataset.sectionWired) return;
+    hdr.dataset.sectionWired = "1";
     // Collapse on click (but not if a button inside was clicked)
     hdr.addEventListener("click", (e) => {
       if (e.target.tagName === "BUTTON") return;
@@ -2201,7 +2205,8 @@ async function main() {
     });
     btns.appendChild(detachBtn);
     hdr.appendChild(btns);
-  });
+  }
+  document.querySelectorAll(".section-header").forEach(_wireSectionHeader);
 
   // Level-3 accordion. A SEPARATE sweep from the one above, not a widened
   // selector: subsections collapse but must not detach, and reusing
@@ -11850,6 +11855,8 @@ void main() {
 
     import("./ui/UI.js").then((UI) => {
       UI.buildAISettingsPanel(aiFeatures, panel);
+      // Its sections are ordinary .panel-sections: collapse and ↗ detach.
+      panel.querySelectorAll(".section-header").forEach(_wireSectionHeader);
     });
 
     document

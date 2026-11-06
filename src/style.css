@@ -3812,6 +3812,26 @@ body.fullscreen-output #app {
     font-family: var(--mono);
     font-size: 11px;
 }
+/* Scrolls inside the window instead of running off the bottom of the screen.
+   The panel is zoomed (--ui-scale), and lengths inside a zoomed element are
+   multiplied by the zoom — --vh is the viewport unit already divided by it. */
+.ai-settings-panel {
+    max-height: calc(100 * var(--vh) - var(--status-h) - 16px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+/* Its sections use .section-header for the shared collapse/detach wiring but
+   keep the settings look; sticky, so a section's title stays in view. */
+.ai-settings-panel .section-header.ai-settings-hdr,
+.detached-panel .section-header.ai-settings-hdr {
+    background: var(--bg-2);
+    padding: 6px 0 6px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.ai-settings-section + .ai-settings-section { margin-top: 10px; }
+.detached-panel .ai-settings-section { padding: 0 10px 10px; font-family: var(--mono); font-size: 11px; }
 .ai-settings-panel.hidden {
     display: none;
 }

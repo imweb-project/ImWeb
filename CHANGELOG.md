@@ -9,6 +9,11 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **AI settings window scrolls, and its sections detach** — the window now
+  fits the screen and scrolls instead of running off the bottom. Each section
+  (Settings, AI Provider, Tokens Used, AI Performance, Coach Suggestions, Video
+  Prep) collapses on a click and has the app's ↗ detach button, the same
+  floating windows the other panels use.
 - **Reimagine Morph** — a Stills Buffer fade between two images with depth
   maps now moves through depth (near first, background last, a slight swell in
   between) instead of a flat crossfade. `reimagine.morph` 0–100 % (default 50;
