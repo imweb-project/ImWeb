@@ -2020,58 +2020,39 @@ export const BLEND_PHOTO_FNS = /* glsl */ `
     return vec3(softlightF(a.r,b.r), softlightF(a.g,b.g), softlightF(a.b,b.b));
   }
 
-  // ── HSL helpers (for hue/sat/luma blend modes) ───────────────────────────────
-  vec3 rgb2hsl(vec3 c) {
-    float cmax = max(c.r, max(c.g, c.b));
-    float cmin = min(c.r, min(c.g, c.b));
-    float d = cmax - cmin;
-    float l = (cmax + cmin) * 0.5;
-    float s = d < 0.0001 ? 0.0 : d / (1.0 - abs(2.0*l - 1.0));
-    float h = 0.0;
-    if (d > 0.0001) {
-      if      (cmax == c.r) h = mod((c.g - c.b) / d, 6.0) / 6.0;
-      else if (cmax == c.g) h = ((c.b - c.r) / d + 2.0) / 6.0;
-      else                  h = ((c.r - c.g) / d + 4.0) / 6.0;
-    }
-    return vec3(h, s, l);
+  // ── Non-separable colour modes (Hue / Saturation / Color / Luminosity) ─────
+  // The W3C compositing / Photoshop definitions. Luma is perceptual
+  // (0.3/0.59/0.11) and "saturation" is the channel SPREAD max-min, so a faint
+  // tint stays faint at any brightness. The earlier HSL version carried
+  // RELATIVE saturation, which turned near-white tints (ink on rice paper)
+  // into neon blue and red wherever the luma source was darker.
+  float nsLum(vec3 c) { return dot(c, vec3(0.3, 0.59, 0.11)); }
+  vec3 nsClip(vec3 c) {
+    float l = nsLum(c);
+    float n = min(c.r, min(c.g, c.b));
+    float x = max(c.r, max(c.g, c.b));
+    if (n < 0.0) c = l + (c - l) * (l / max(l - n, 1e-5));
+    if (x > 1.0) c = l + (c - l) * ((1.0 - l) / max(x - l, 1e-5));
+    return c;
   }
-
-  vec3 hsl2rgb(vec3 hsl) {
-    float h = hsl.x, s = hsl.y, l = hsl.z;
-    float c = (1.0 - abs(2.0*l - 1.0)) * s;
-    float x = c * (1.0 - abs(mod(h * 6.0, 2.0) - 1.0));
-    float m = l - c * 0.5;
-    vec3 rgb;
-    int hi = int(h * 6.0);
-    if      (hi == 0) rgb = vec3(c, x, 0);
-    else if (hi == 1) rgb = vec3(x, c, 0);
-    else if (hi == 2) rgb = vec3(0, c, x);
-    else if (hi == 3) rgb = vec3(0, x, c);
-    else if (hi == 4) rgb = vec3(x, 0, c);
-    else              rgb = vec3(c, 0, x);
-    return rgb + m;
+  vec3 nsSetLum(vec3 c, float l) { return nsClip(c + (l - nsLum(c))); }
+  float nsSat(vec3 c) { return max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)); }
+  vec3 nsSetSat(vec3 c, float s) {
+    float n = min(c.r, min(c.g, c.b));
+    float d = max(c.r, max(c.g, c.b)) - n;
+    return d > 1e-5 ? (c - n) * (s / d) : vec3(0.0);
   }
-
-  // ── HSY (hue/sat from FG, luma from BG or vice-versa) ───────────────────────
   vec3 blendHue(vec3 a, vec3 b) {          // FG hue, BG sat+luma
-    vec3 ha = rgb2hsl(a);
-    vec3 hb = rgb2hsl(b);
-    return hsl2rgb(vec3(ha.x, hb.y, hb.z));
+    return nsSetLum(nsSetSat(a, nsSat(b)), nsLum(b));
   }
   vec3 blendSaturation(vec3 a, vec3 b) {   // FG sat, BG hue+luma
-    vec3 ha = rgb2hsl(a);
-    vec3 hb = rgb2hsl(b);
-    return hsl2rgb(vec3(hb.x, ha.y, hb.z));
+    return nsSetLum(nsSetSat(b, nsSat(a)), nsLum(b));
   }
   vec3 blendColor(vec3 a, vec3 b) {        // FG hue+sat, BG luma
-    vec3 ha = rgb2hsl(a);
-    vec3 hb = rgb2hsl(b);
-    return hsl2rgb(vec3(ha.x, ha.y, hb.z));
+    return nsSetLum(a, nsLum(b));
   }
   vec3 blendLuminosity(vec3 a, vec3 b) {   // FG luma, BG hue+sat
-    vec3 ha = rgb2hsl(a);
-    vec3 hb = rgb2hsl(b);
-    return hsl2rgb(vec3(hb.x, hb.y, ha.z));
+    return nsSetLum(b, nsLum(a));
   }
   vec3 blendSubtract(vec3 a, vec3 b)    { return max(a - b, 0.0); }
   vec3 blendDivide(vec3 a, vec3 b)      { return min(a / max(b, 0.001), 1.0); }

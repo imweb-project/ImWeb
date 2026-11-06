@@ -8,6 +8,19 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Changed
+- **The 3D plane takes the picture's shape** — new **PlaneShape** (Square /
+  Image, default Image): Basic: Plane keeps its width and takes the output's
+  aspect, so a texture is no longer squashed onto a square (Relief (3D)).
+  PlaneShape and Scale now sit under Geometry; the Transform section lives in
+  Import Model ▸ M1, where a basic shape's size was hard to find.
+- **Hue, Saturation, Color and Luminosity blends follow Photoshop / W3C** —
+  luma is perceptual (0.3 / 0.59 / 0.11) and saturation is the channel
+  spread, replacing an HSL model that carried *relative* saturation. Faint
+  tints (ink on rice paper) no longer go neon blue and red under a darker
+  luma source. Saved states using these four modes look calmer than before.
+  GPU-checked against the spec formulas: 256 colour pairs within 1/255.
+
 ### Added
 - **Smoother Reimagine landings and LFO moves** — a landed image is decoded
   off the main thread (createImageBitmap); measured, the 50–100 ms frame at

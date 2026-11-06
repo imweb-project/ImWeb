@@ -678,7 +678,8 @@ come back after a reload.
 | `scene3d.spin.x/y/z` | 0–360°/sec | Auto-rotation speed |
 | `scene3d.pos.x/y/z` | −5 – 5 | Position offset |
 | `scene3d.pos.screenspace` | TOGGLE | **Screen XY** — reinterpret X/Y as normalised screen coordinates, ±1 being the edge of frame. Position converts through the camera FOV and distance, so the object lands where you point it regardless of how the camera is set |
-| `scene3d.scale` | 0.1–10 | Scale |
+| `scene3d.scale` | 0.1–10 | Scale — also shown under Geometry |
+| `scene3d.planeShape` | Square / Image | **PlaneShape** — Basic: Plane as a 2 × 2 square, or in the picture's proportions (the output's aspect, which every source shares). Default Image. Under Geometry |
 | `scene3d.wireframe` | TOGGLE | Wireframe render |
 
 #### Parameters — Camera
@@ -1647,7 +1648,10 @@ that give the instrument its Image/ine character.
 **PinLight** · **VividLight** — contrast blends.
 
 **Hue** · **Saturation** · **Color** · **Luminosity** — component blends, which
-take one attribute from FG and the rest from BG.
+take one attribute from FG and the rest from BG. They follow the Photoshop /
+W3C definitions: brightness is perceptual luma, and colour strength is carried
+as it is, so a faint tint stays faint — Luminosity puts a live camera into a
+pale painting without the paper's tints turning neon.
 
 `layer.bg.blend` is worth singling out: it is a *self-process*, so it operates on
 the Background layer alone. It is how you get a layer to chew on itself without
