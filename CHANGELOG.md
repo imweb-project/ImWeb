@@ -9,6 +9,12 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Smoother Reimagine landings and LFO moves** — a landed image is decoded
+  off the main thread (createImageBitmap); measured, the 50–100 ms frame at
+  each landing is gone (no frame over 25 ms in a full cycle). Splat World's
+  Orbit, Tilt, Dolly, Fly, Relief, Sway and PointSize now step by 0.5: a step
+  of 1 also rounded LFO/controller moves to whole units, so a slow LFO on
+  Orbit moved in visible 1° jumps.
 - **Splat World camera** — Orbit (to 180°, from behind), Tilt, Dolly (into the
   middle of the world) and Fly (in and back out at DriftSpeed), on top of Sway.
 - **Depth off the main thread; DepthOn GPU/CPU** — the depth model now runs in

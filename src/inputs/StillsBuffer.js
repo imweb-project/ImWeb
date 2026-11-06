@@ -394,9 +394,48 @@ export class StillsBuffer {
    * a broken frame must leave _hasFrame[idx] FALSE rather than claim a still
    * that is not there, which is the bug this whole pair exists to fix.
    */
-  importFrame(idx, dataURL) {
+  async importFrame(idx, dataURL) {
+    if (idx >= this.frameCount || !dataURL || !this.frames[idx]) return false;
+    // Decode OFF the main thread first. An <img> decodes lazily inside the
+    // texture upload, on the main thread — measured as a 50–100 ms frame each
+    // time a Reimagine PNG (~1344×768) landed. createImageBitmap decodes in the
+    // background; its 'flipY' does what tex.flipY does for an <img> (WebGL
+    // ignores flipY for an ImageBitmap), so the export flip is still undone.
+    if (typeof createImageBitmap === 'function') {
+      try {
+        const blob = await (await fetch(dataURL)).blob();
+        const bmp = await createImageBitmap(blob, { imageOrientation: 'flipY' });
+        if (idx >= this.frameCount || !this.frames[idx]) { bmp.close(); return false; }
+        const tex = new THREE.Texture(bmp);
+        tex.flipY = false;
+        tex.needsUpdate = true;
+        this._writeImported(idx, tex);
+        bmp.close();
+        return true;
+      } catch { /* fall through to the <img> path */ }
+    }
+    return this._importViaImage(idx, dataURL);
+  }
+
+  /** Render an uploaded texture into slot idx (+ thumbnail). Disposes tex. */
+  _writeImported(idx, tex) {
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.generateMipmaps = false;
+    const prev = this.renderer.getRenderTarget();
+    this._mat.uniforms.uTexture.value = tex;
+    this.renderer.setRenderTarget(this.frames[idx]);
+    this.renderer.render(this._scene, this._camera);
+    this._hasFrame[idx] = true;
+    this.revision++;
+    this._updateThumbnail(idx);      // reads _mat, still bound to tex
+    this.renderer.setRenderTarget(prev);
+    tex.dispose();
+  }
+
+  /** The original path, for a browser without createImageBitmap. */
+  _importViaImage(idx, dataURL) {
     return new Promise(resolve => {
-      if (idx >= this.frameCount || !dataURL || !this.frames[idx]) return resolve(false);
       const image = new Image();
       image.onload = () => {
         try {

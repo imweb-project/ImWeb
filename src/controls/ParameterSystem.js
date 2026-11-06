@@ -3124,8 +3124,10 @@ export function registerCoreParameters(ps) {
 
   // ── Splat World (source 37) ────────────────────────────────────────────────
   // Few on purpose: the picture comes from Reimagine, the fade from its Morph.
+  // Steps are 0.5, not 1: a step of 1 or more also rounds CONTROLLER writes
+  // (Parameter._modStep), so an LFO on Orbit moved in whole-degree jumps.
   ps.register({ id: "splat.relief", label: "Relief", group: "splat",
-    min: 0, max: 100, value: 50, step: 1, unit: "%" });
+    min: 0, max: 100, value: 50, step: 0.5, unit: "%" });
   ps.register({ id: "splat.sway", label: "Sway", group: "splat",
     min: 0, max: 30, value: 8, step: 0.5, unit: "°" });
   ps.register({ id: "splat.speed", label: "DriftSpeed", group: "splat",
@@ -3134,15 +3136,15 @@ export function registerCoreParameters(ps) {
   // of the world (180° = from behind), Dolly moves in up to that middle, Fly
   // travels on through the world and back out at DriftSpeed.
   ps.register({ id: "splat.orbit", label: "Orbit", group: "splat",
-    min: -180, max: 180, value: 0, step: 1, unit: "°" });
+    min: -180, max: 180, value: 0, step: 0.5, unit: "°" });
   ps.register({ id: "splat.tilt", label: "Tilt", group: "splat",
-    min: -80, max: 80, value: 0, step: 1, unit: "°" });
+    min: -80, max: 80, value: 0, step: 0.5, unit: "°" });
   ps.register({ id: "splat.dolly", label: "Dolly", group: "splat",
-    min: -100, max: 100, value: 0, step: 1, unit: "%" });
+    min: -100, max: 100, value: 0, step: 0.5, unit: "%" });
   ps.register({ id: "splat.fly", label: "Fly", group: "splat",
-    min: 0, max: 100, value: 0, step: 1, unit: "%" });
+    min: 0, max: 100, value: 0, step: 0.5, unit: "%" });
   ps.register({ id: "splat.size", label: "PointSize", group: "splat",
-    min: 25, max: 300, value: 100, step: 1, unit: "%" });
+    min: 25, max: 300, value: 100, step: 0.5, unit: "%" });
   ps.register({ id: "splat.density", label: "Density", group: "splat",
     type: PARAM_TYPE.SELECT, options: ["Low", "Mid", "High"], value: 1 });
 
