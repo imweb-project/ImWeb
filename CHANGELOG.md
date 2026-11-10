@@ -8,6 +8,10 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Added
+- **PMaskSrc reaches every source** — Particles can now use Growth, Volume,
+  Shader Code, AI Depth and Splat World as a mask, which the menu had left out.
+
 ### Changed
 - **The 3D plane takes the picture's shape** — new **PlaneShape** (Square /
   Image, default Image): Basic: Plane keeps its width and takes the output's

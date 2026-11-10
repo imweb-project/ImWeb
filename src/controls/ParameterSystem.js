@@ -1441,6 +1441,8 @@ export const PARTICLE_MASK_SRC = [
   // ── appended, SOURCE_DISPLAY_ORDER sequence ──
   12, 25, 9, 10, 3, 4, 21, 30, 11, 6, 20, 23, 29,
   13, 31, 32, 24, 15, 17, 18, 19, 22, 26, 27, 28,
+  // Sources added since. This list has to be extended by hand for each new one.
+  33, 34, 35, 36, 37,          // Growth, Volume, Shader Code, AI Depth, Splat World
 ];
 
 // Same shape as the SOURCE_DISPLAY_ORDER assertion: fail at load rather than
@@ -1452,6 +1454,11 @@ export const PARTICLE_MASK_SRC = [
     real.some((v) => v < 0 || v >= CAPTURE_SOURCES.length)
   ) {
     throw new Error("PARTICLE_MASK_SRC must hold unique, in-range capture indices");
+  }
+  // Every source but Particles itself, so a new source can't be left out unnoticed.
+  const missing = SOURCES.map((_, i) => i).filter((i) => i !== 16 && !real.includes(i));
+  if (missing.length) {
+    throw new Error(`PARTICLE_MASK_SRC is missing source(s) ${missing.join(", ")} — append them`);
   }
 }
 
