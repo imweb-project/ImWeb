@@ -96,4 +96,18 @@ export const REIMAGINE_LOOKS = [
       ['reimagine.interval', '15'], ['reimagine.fade', '10'],
     ],
   },
+  {
+    // Splat World's camera on one closed skin: no gaps, and the image at full
+    // resolution. Density High, because the grid is what carries the relief.
+    name: 'Surface world',
+    about: 'Each AI image becomes a smooth, solid 3D surface with a drifting camera; the next one flows in.',
+    prompt: 'as a carved and painted wooden altarpiece, deep relief',
+    seed: true,
+    set: [
+      ['layer.fg', 'Splat World'], ['splat.draw', 'Surface'], ['splat.density', 'High'],
+      ['reimagine.send', 'Camera'], ['reimagine.morph', '80'],
+      ['splat.relief', '40'], ['splat.sway', '10'],
+      ['reimagine.interval', '15'], ['reimagine.fade', '10'],
+    ],
+  },
 ];

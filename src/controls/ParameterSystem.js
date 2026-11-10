@@ -3154,6 +3154,11 @@ export function registerCoreParameters(ps) {
     min: 25, max: 300, value: 100, step: 0.5, unit: "%" });
   ps.register({ id: "splat.density", label: "Density", group: "splat",
     type: PARAM_TYPE.SELECT, options: ["Low", "Mid", "High"], value: 1 });
+  // Points: soft splats, holes behind near things. Surface: the same world as
+  // one closed skin with the image at full resolution, stretching over the
+  // holes. Group 'splat', so Display States capture it: the options are fixed.
+  ps.register({ id: "splat.draw", label: "Draw", group: "splat",
+    type: PARAM_TYPE.SELECT, options: ["Points", "Surface"], value: 0 });
 
   // ── Movie / clip ──────────────────────────────────────────────────────────
   // Both decks register from one descriptor table so movie.* (Deck A) and

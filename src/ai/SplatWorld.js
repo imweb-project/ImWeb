@@ -39,7 +39,12 @@ const VERT = /* glsl */ `
   uniform float uPxPerUnit;  // target height px / (2 tan(fov/2))
   uniform float uSize;
   attribute vec2 aUv;
+  #ifdef SURFACE
+  varying vec2 vUv;
+  varying float vK;
+  #else
   varying vec3 vCol;
+  #endif
 
   vec3 unproject(vec2 uv, float d) {
     float dist = 1.0 / mix(1.0 / uFar, 1.0 / ${NEAR_D.toFixed(1)}, clamp(d, 0.0, 1.0));
@@ -55,13 +60,30 @@ const VERT = /* glsl */ `
     float k = clamp((uT - delay) / (1.0 - spread), 0.0, 1.0);
     k = mix(k, smoothstep(0.0, 1.0, k), uMorph);
     vec3 p = mix(unproject(aUv, dA), unproject(aUv, dB), k);
-    vCol = mix(texture2D(uColA, aUv).rgb, texture2D(uColB, aUv).rgb, k);
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
     gl_Position = projectionMatrix * mv;
+    #ifdef SURFACE
+    vUv = aUv;
+    vK = k;
+    #else
+    vCol = mix(texture2D(uColA, aUv).rgb, texture2D(uColB, aUv).rgb, k);
     // A point covers its own pixel's footprint at ITS distance, seen from
     // where the camera now is — so the world stays closed at rest.
     float foot = -p.z * uFoot * uSize;
     gl_PointSize = clamp(foot * uPxPerUnit / max(-mv.z, 0.05), 1.0, 64.0);
+    #endif
+  }
+`;
+
+// Surface: colour is read per PIXEL here, not per vertex, so the picture keeps
+// its full resolution however coarse the grid that carries it.
+const FRAG_SURFACE = /* glsl */ `
+  uniform sampler2D uColA;
+  uniform sampler2D uColB;
+  varying vec2 vUv;
+  varying float vK;
+  void main() {
+    gl_FragColor = vec4(mix(texture2D(uColA, vUv).rgb, texture2D(uColB, vUv).rgb, vK), 1.0);
   }
 `;
 
@@ -100,6 +122,14 @@ export class SplatWorld {
       vertexShader: VERT, fragmentShader: FRAG,
       depthTest: true, depthWrite: true,
     });
+    // The same uniforms object, so render() fills one set for both materials.
+    // Two-sided: Orbit reaches 180°, and the skin must not vanish from behind.
+    this._matSurface = new THREE.ShaderMaterial({
+      uniforms: this._mat.uniforms,
+      defines: { SURFACE: 1 },
+      vertexShader: VERT, fragmentShader: FRAG_SURFACE,
+      depthTest: true, depthWrite: true, side: THREE.DoubleSide,
+    });
     this._scene = new THREE.Scene();
     this._camera = new THREE.PerspectiveCamera(FOV, width / height, 0.05, 50);
     this._points = null;
@@ -109,18 +139,20 @@ export class SplatWorld {
 
   get texture() { return this.target.texture; }
 
-  _ensureGrid(rows) {
+  _ensureGrid(rows, surface) {
     const cols = Math.max(2, Math.round(rows * this.width / this.height));
-    const key = `${rows}x${cols}`;
+    const key = `${rows}x${cols}${surface ? 's' : 'p'}`;
     if (key === this._grid) return;
     if (this._points) { this._scene.remove(this._points); this._points.geometry.dispose(); }
     const n = rows * cols;
     const uv = new Float32Array(n * 2);
     for (let j = 0, i = 0; j < rows; j++) {
       for (let c = 0; c < cols; c++, i++) {
-        // Texel centres, as the warp map is authored (CLAUDE.md, Phase 24).
-        uv[i * 2] = (c + 0.5) / cols;
-        uv[i * 2 + 1] = (j + 0.5) / rows;
+        // Points sit at texel centres, as the warp map is authored (CLAUDE.md,
+        // Phase 24). A surface's vertices run edge to edge, or the skin would
+        // stop half a cell short of the picture's border.
+        uv[i * 2] = surface ? c / (cols - 1) : (c + 0.5) / cols;
+        uv[i * 2 + 1] = surface ? j / (rows - 1) : (j + 0.5) / rows;
       }
     }
     const g = new THREE.BufferGeometry();
@@ -128,7 +160,21 @@ export class SplatWorld {
     // Position is computed in the shader; three still wants an attribute
     // named position for its draw-count and bounds.
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
-    this._points = new THREE.Points(g, this._mat);
+    if (surface) {
+      const idx = new Uint32Array((rows - 1) * (cols - 1) * 6);
+      let k = 0;
+      for (let j = 0; j < rows - 1; j++) {
+        for (let c = 0; c < cols - 1; c++) {
+          const a = j * cols + c, b = a + 1, d = a + cols, e = d + 1;
+          idx[k++] = a; idx[k++] = b; idx[k++] = e;
+          idx[k++] = a; idx[k++] = e; idx[k++] = d;
+        }
+      }
+      g.setIndex(new THREE.BufferAttribute(idx, 1));
+      this._points = new THREE.Mesh(g, this._matSurface);
+    } else {
+      this._points = new THREE.Points(g, this._mat);
+    }
     this._points.frustumCulled = false;
     this._scene.add(this._points);
     this._grid = key;
@@ -141,7 +187,7 @@ export class SplatWorld {
    */
   render(ps, sb, depth, dt) {
     const rows = DENSITY_ROWS[Math.round(ps.get('splat.density').value)] ?? DENSITY_ROWS[1];
-    this._ensureGrid(rows);
+    this._ensureGrid(rows, Math.round(ps.get('splat.draw').value) === 1);
     const a = sb.readIndex, b = sb.read2Index;
     const fb = ps.get('buffer.frameblend').value / 100;
     const u = this._mat.uniforms;

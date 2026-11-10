@@ -14,6 +14,10 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 - **Depth recovers after a failed run** — one failed estimate used to stop depth
   until the page was reloaded; the depth worker now restarts and tries again.
   Loading a Reimagine Look also keeps your DepthOn setting instead of resetting it.
+- **Splat World can draw a solid surface** — new **Draw** (Points / Surface).
+  Surface is the same world and camera (Sway, Orbit, Tilt, Dolly, Fly, Morph)
+  as one closed skin with the image at full resolution, stretching over the
+  holes Points leaves behind near things. New Look: **Surface world**.
 
 ### Changed
 - **The 3D plane takes the picture's shape** — new **PlaneShape** (Square /
