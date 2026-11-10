@@ -26,6 +26,7 @@ import { isPagedBinding } from './controlInput.js';
 import { DESCRIPTOR_LABELS } from '../audio/corpus-index.js';
 import { GROWTH_PATTERNS, GROWTH_MODES, GROWTH_LOOKS, NCA_MODELS } from '../inputs/GrowthPatterns.js';
 import { REIMAGINE_LOOKS } from '../ai/ReimagineLooks.js';
+import { SPLAT_ATTRACTORS } from '../ai/SplatAttractors.js';
 
 /**
  * How the performer is listening (§8.6). ONE list, read twice: the labels are
@@ -3159,6 +3160,18 @@ export function registerCoreParameters(ps) {
   // holes. Group 'splat', so Display States capture it: the options are fixed.
   ps.register({ id: "splat.draw", label: "Draw", group: "splat",
     type: PARAM_TYPE.SELECT, options: ["Points", "Surface"], value: 0 });
+  // Scatter: the points leave the picture and flow into a strange attractor;
+  // back at 0 they come home, to whichever image the fade has reached by then.
+  // In between, the flow and the pull home balance and the picture breathes.
+  // Shape's options ARE SPLAT_ATTRACTORS (append-only), so group 'splat' and
+  // captured by Display States, as splat.draw is. While points are out the
+  // world draws as Points whatever Draw says.
+  ps.register({ id: "splat.scatter", label: "Scatter", group: "splat",
+    min: 0, max: 100, value: 0, step: 0.5, unit: "%" });
+  ps.register({ id: "splat.shape", label: "Shape", group: "splat",
+    type: PARAM_TYPE.SELECT, options: SPLAT_ATTRACTORS.map((a) => a.name), value: 0 });
+  ps.register({ id: "splat.flow", label: "Flow", group: "splat",
+    min: 0, max: 200, value: 100, step: 0.5, unit: "%" });
 
   // ── Movie / clip ──────────────────────────────────────────────────────────
   // Both decks register from one descriptor table so movie.* (Deck A) and

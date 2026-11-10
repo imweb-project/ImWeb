@@ -18,6 +18,14 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   Surface is the same world and camera (Sway, Orbit, Tilt, Dolly, Fly, Morph)
   as one closed skin with the image at full resolution, stretching over the
   holes Points leaves behind near things. New Look: **Surface world**.
+- **Splat World can come apart** — new **Scatter**, **Shape** and **Flow**.
+  Scatter releases the points into a strange attractor (Shape: Thomas, a braided
+  knot, or Aizawa, a shell with a column through it) at the speed Flow sets; in
+  between, the picture bends and breathes along the flow. Back at 0 the points
+  come home — to the *next* image if a fade ran while they were out, so one
+  picture dissolves and another assembles. The form sits where the camera
+  orbits, so Orbit, Dolly and Fly go around and through it. While points are
+  out the world is drawn as Points, whatever Draw says.
 
 ### Changed
 - **The 3D plane takes the picture's shape** — new **PlaneShape** (Square /
