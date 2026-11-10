@@ -12134,7 +12134,11 @@ void main() {
       }
       const { values, errors } = resolveStart(ps, look.set);
       if (errors.length) console.warn("[reimagine] look:", errors);
+      // DepthOn says what suits this machine, not what suits a Look. Without
+      // this, a Look quietly moved a GPU setting back to the 10 s CPU path.
+      const depthOn = ps.get("reimagine.depthOn").value;
       await _resetAllParams(false);
+      ps.set("reimagine.depthOn", depthOn);
       for (const [id, v] of values) ps.set(id, v);
       if (look.prompt) setPrompt(look.prompt);
       if (look.seed) {

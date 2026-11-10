@@ -11,6 +11,9 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ### Added
 - **PMaskSrc reaches every source** — Particles can now use Growth, Volume,
   Shader Code, AI Depth and Splat World as a mask, which the menu had left out.
+- **Depth recovers after a failed run** — one failed estimate used to stop depth
+  until the page was reloaded; the depth worker now restarts and tries again.
+  Loading a Reimagine Look also keeps your DepthOn setting instead of resetting it.
 
 ### Changed
 - **The 3D plane takes the picture's shape** — new **PlaneShape** (Square /
