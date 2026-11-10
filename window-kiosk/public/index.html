@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d0d10">
+<title>ImWeb Window</title>
+<!-- ImWeb's own type: Plex Sans for text, Plex Mono for the wordmark.
+     TODO before going public: self-host these (a Google Fonts request sends the visitor's IP to Google). -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  /* Colours from ImWeb's style.css tokens (--bg-1, --bg-2, --text-0/2, --accent). */
+  :root {
+    --bg: #111114; --fg: #e8e8f0; --dim: #a6a6c0; --line: #26262e;
+    --field: #18181c; --accent: #e8c840; --err: #ff6b5e;
+    --sans: "IBM Plex Sans", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", "Courier New", monospace;
+  }
+  .wordmark {
+    font-family: var(--mono); font-weight: 500; font-size: 15px;
+    letter-spacing: 0.15em; text-transform: uppercase; color: var(--accent);
+    margin: 4px 0 14px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); }
+  body {
+    font: 17px/1.45 var(--sans);
+    padding: max(20px, env(safe-area-inset-top)) 16px max(28px, env(safe-area-inset-bottom));
+    max-width: 520px; margin: 0 auto;
+  }
+  h1 { font-size: 30px; font-weight: 600; line-height: 1.12; margin: 0 0 8px; letter-spacing: -0.01em; color: var(--accent); }
+  p.lede { color: var(--dim); margin: 0 0 22px; }
+  label { display: block; font-weight: 600; margin: 18px 0 6px; }
+  label small { font-weight: 400; color: var(--dim); }
+  input[type=text], textarea {
+    width: 100%; font: inherit; color: var(--fg); background: var(--field);
+    border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px;
+  }
+  textarea { resize: vertical; min-height: 64px; }
+  .say { position: relative; }
+  .say textarea { padding-right: 60px; }
+  button.mic {
+    position: absolute; right: 6px; top: 6px; width: 48px; height: 48px; padding: 0;
+    font-size: 22px; line-height: 48px; border-radius: 50%;
+    background: #26262e; color: var(--fg); font-weight: 400;
+  }
+  button.mic.on { background: var(--err); animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { transform: scale(1.08); } }
+  select.ideas {
+    display: block; width: 100%; margin-top: 8px; padding: 11px 14px; font: inherit; font-size: 16px;
+    color: var(--dim); background: var(--field); border: 1px solid var(--line); border-radius: 12px;
+  }
+  select:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
+  input:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
+  .consent { display: flex; gap: 12px; align-items: flex-start; margin: 22px 0; color: var(--dim); font-size: 15px; }
+  .consent input { width: 22px; height: 22px; margin: 1px 0 0; accent-color: var(--accent); flex: none; }
+  button {
+    width: 100%; font: inherit; font-weight: 700; font-size: 18px;
+    background: var(--accent); color: #111; border: 0; border-radius: 14px; padding: 16px;
+  }
+  button:disabled { opacity: .5; }
+  .err { color: var(--err); min-height: 1.4em; margin: 10px 0 0; }
+  .hint { color: var(--dim); font-size: 14px; margin-top: 6px; }
+  #status[hidden], #form[hidden] { display: none; }
+  .badge {
+    display: flex; align-items: center; gap: 14px; padding: 18px; border-radius: 16px;
+    background: var(--field); border: 1px solid var(--line); margin: 6px 0 18px;
+  }
+  .dot { width: 46px; height: 46px; border-radius: 50%; flex: none; }
+  .badge b { font-size: 24px; display: block; line-height: 1.1; }
+  .badge span { color: var(--dim); font-size: 15px; }
+  #msg { font-size: 20px; margin: 0 0 18px; }
+  .shot { margin: 0 0 18px; }
+  .shot .cap { color: var(--dim); font-size: 14px; margin: 0 0 6px; }
+  .shot img { width: 100%; border-radius: 12px; display: block; background: var(--field); }
+  .shot .wait {
+    aspect-ratio: 4 / 3; border-radius: 12px; background: var(--field);
+    border: 1px dashed var(--line); display: grid; place-items: center; color: var(--dim); font-size: 15px;
+  }
+  .shot button.save { margin-top: 8px; padding: 11px; font-size: 16px; font-weight: 600; background: #26262e; color: var(--fg); }
+  #saveAll { margin: 0 0 18px; }
+  #saveAll[hidden] { display: none; }
+  a.again { color: var(--accent); display: inline-block; margin-top: 8px; }
+</style>
+</head>
+<body>
+
+<div class="wordmark">ImWeb</div>
+
+<section id="form">
+  <h1>What do you imagine right now?</h1>
+  <p class="lede">Say it, write it or pick an idea, three times. The window takes your picture and reimagines you once for each, and the pictures come back to this phone.</p>
+
+  <form id="visit" novalidate>
+    <label for="name">First name <small>(optional; shown on the window)</small></label>
+    <input type="text" id="name" maxlength="16" autocomplete="given-name" enterkeyhint="next">
+
+    <label for="p0">1</label>
+    <div class="say"><textarea id="p0" maxlength="300" placeholder="as a Viking carved in driftwood"></textarea><button type="button" class="mic" data-for="p0" aria-label="Speak instead of typing">🎤</button></div>
+    <label for="p1">2</label>
+    <div class="say"><textarea id="p1" maxlength="300" placeholder="painted by the northern lights"></textarea><button type="button" class="mic" data-for="p1" aria-label="Speak instead of typing">🎤</button></div>
+    <label for="p2">3</label>
+    <div class="say"><textarea id="p2" maxlength="300" placeholder="made of lava and moss"></textarea><button type="button" class="mic" data-for="p2" aria-label="Speak instead of typing">🎤</button></div>
+    <p class="hint" id="micHint">Tap 🎤 and speak, type, or pick an idea and change it as you like.</p>
+
+    <div class="consent">
+      <input type="checkbox" id="consent">
+      <label for="consent" style="margin:0;font-weight:400">I agree to be photographed by the camera in the window. My picture and the three new ones are sent to Google's image AI, shown on the window, and deleted after 24 hours.</label>
+    </div>
+
+    <button type="submit" id="go">Join the line</button>
+    <p class="err" id="err"></p>
+  </form>
+</section>
+
+<section id="status" hidden>
+  <div class="badge">
+    <div class="dot" id="dot"></div>
+    <div><b id="who"></b><span>Watch the window for this colour</span></div>
+  </div>
+  <p id="msg"></p>
+  <button type="button" id="saveAll" hidden>Save all pictures</button>
+  <div id="shots"></div>
+  <a class="again" id="again" href="./" hidden>Start again</a>
+</section>
+
+<script src="ideas.js"></script>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const KEY = "imweb.window.visit";
+  let pollTimer = null;
+  let shown = [false, false, false];
+  let files = [];   // the pictures, kept ready: Save must not wait on the network
+
+  const save = (id) => { try { localStorage.setItem(KEY, id); } catch {} };
+  const load = () => { try { return localStorage.getItem(KEY); } catch { return null; } };
+  const forget = () => { try { localStorage.removeItem(KEY); } catch {} };
+
+  $("visit").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    $("err").textContent = "";
+    const prompts = [0, 1, 2].map((i) => $("p" + i).value.trim());
+    if (prompts.some((p) => !p)) { $("err").textContent = "Write all three instructions."; return; }
+    if (!$("consent").checked) { $("err").textContent = "Tick the box to agree to the photo."; return; }
+    $("go").disabled = true;
+    try {
+      const r = await fetch("/api/visit", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: $("name").value.trim(), prompts, consent: true }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || "Something went wrong. Try again.");
+      save(j.id);
+      follow(j.id);
+    } catch (err) {
+      $("err").textContent = err.message;
+      $("go").disabled = false;
+    }
+  });
+
+  function follow(id) {
+    $("form").hidden = true;
+    $("status").hidden = false;
+    window.scrollTo(0, 0); // the form was scrolled to its button
+    shown = [false, false, false];
+    files = [];
+    $("saveAll").hidden = true;
+    $("shots").replaceChildren();
+    poll(id);
+  }
+
+  async function poll(id) {
+    clearTimeout(pollTimer);
+    let v;
+    try {
+      const r = await fetch("/api/visit/" + id, { cache: "no-store" });
+      if (r.status === 404) { forget(); location.reload(); return; }
+      v = await r.json();
+    } catch {
+      $("msg").textContent = "Connection lost, retrying…";
+      pollTimer = setTimeout(() => poll(id), 3000);
+      return;
+    }
+    render(id, v);
+    if (v.state !== "done" && v.state !== "error") pollTimer = setTimeout(() => poll(id), 2000);
+  }
+
+  function render(id, v) {
+    $("dot").style.background = v.colour[1];
+    $("who").textContent = v.name ? `${v.colour[0]} · ${v.name}` : v.colour[0];
+    const msg = {
+      queued: !v.windowOnline
+        ? "The window is resting right now. You keep your place in line."
+        : v.ahead === 0 ? "You're next. Walk up to the window."
+        : `${v.ahead} ${v.ahead === 1 ? "person" : "people"} ahead of you.`,
+      up: "Your turn! Stand on the mark in front of the window.",
+      countdown: "Look at the window. Smile!",
+      working: "Got you. Now reimagining…",
+      done: "Done! Save your pictures to keep them. They are deleted after 24 hours.",
+      error: "The window had a problem: " + (v.error || "unknown") + ".",
+    }[v.state] ?? "";
+    $("msg").textContent = msg;
+    $("again").hidden = !(v.state === "done" || v.state === "error");
+
+    if (v.state === "queued") return;
+    if (!$("shots").children.length) {
+      v.prompts.forEach((p, i) => {
+        const d = document.createElement("div");
+        d.className = "shot";
+        d.innerHTML = '<p class="cap"></p><div class="wait">waiting</div>';
+        d.querySelector(".cap").textContent = `${i + 1}. ${p}`;
+        $("shots").append(d);
+      });
+    }
+    v.results.forEach((ok, i) => {
+      const slot = $("shots").children[i];
+      if (ok && !shown[i]) {
+        shown[i] = true;
+        const img = new Image();
+        img.alt = v.prompts[i];
+        img.src = `/api/visit/${id}/img/${i}`;
+        slot.querySelector(".wait").replaceWith(img);
+        keep(img.src, i, slot);
+      } else if (!ok && v.state === "working") {
+        const w = slot.querySelector(".wait");
+        if (w) w.textContent = v.results.slice(0, i).every(Boolean) ? "reimagining…" : "waiting";
+      }
+    });
+  }
+
+  // Fetched as each picture lands, so a tap can save straight away: iOS only
+  // allows the share sheet right after a tap, not after a download finishes.
+  async function keep(url, i, slot) {
+    let blob;
+    try { blob = await (await fetch(url)).blob(); } catch { return; }
+    const file = new File([blob], `imweb-window-${i + 1}.jpg`, { type: "image/jpeg" });
+    files[i] = file;
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "save";
+    b.textContent = "Save this picture";
+    b.addEventListener("click", () => saveFiles([file]));
+    slot.append(b);
+    $("saveAll").hidden = files.filter(Boolean).length < 2;
+  }
+
+  // Phones: the share sheet, whose "Save Image" puts pictures in the photo
+  // library (needs https). Elsewhere: ordinary downloads, one after another.
+  async function saveFiles(list) {
+    if (navigator.canShare?.({ files: list })) {
+      try { await navigator.share({ files: list }); return; }
+      catch (err) { if (err.name === "AbortError") return; }
+    }
+    list.forEach((file, i) => setTimeout(() => {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(file);
+      a.download = file.name;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    }, i * 400));
+  }
+  $("saveAll").addEventListener("click", () => saveFiles(files.filter(Boolean)));
+
+  // 🎤 — the browser's own speech recognition where it has one (Chrome,
+  // Safari; needs https, so it works on the real window but not on a plain
+  // http:// test address). Without it the button opens the field so the
+  // keyboard's own dictation key is one tap away, and the hint says so.
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec = null, recBtn = null;
+  const stopRec = () => { try { rec?.stop(); } catch {} };
+  document.querySelectorAll("button.mic").forEach((btn) => {
+    const field = $(btn.dataset.for);
+    btn.addEventListener("click", () => {
+      if (!SR || !window.isSecureContext) {
+        field.focus();
+        $("micHint").textContent = "Tap the 🎤 on your keyboard to speak.";
+        return;
+      }
+      if (recBtn === btn) { stopRec(); return; }
+      stopRec();
+      rec = new SR();
+      rec.lang = navigator.language || "en-US";
+      rec.interimResults = true;
+      const before = field.value.trim();
+      rec.onresult = (e) => {
+        const said = [...e.results].map((r) => r[0].transcript).join("");
+        field.value = (before ? before + " " : "") + said.trim();
+      };
+      rec.onerror = (e) => {
+        if (e.error === "not-allowed") {
+          $("micHint").textContent = "Microphone not allowed. Tap the 🎤 on your keyboard instead.";
+          field.focus();
+        }
+      };
+      rec.onend = () => { btn.classList.remove("on"); if (recBtn === btn) { recBtn = null; rec = null; } };
+      recBtn = btn;
+      btn.classList.add("on");
+      try { rec.start(); } catch { btn.classList.remove("on"); recBtn = null; field.focus(); }
+    });
+  });
+
+  // Idea menus: each field's menu shows a random handful from IDEAS, never one
+  // already in a field or on another menu, and deals a new handful after every
+  // pick. A pick fills the field, where it can still be edited or spoken over.
+  const IDEAS = window.IDEAS || [];
+  const menus = [0, 1, 2].map((i) => {
+    const field = $("p" + i);
+    const menu = document.createElement("select");
+    menu.className = "ideas";
+    menu.setAttribute("aria-label", `Ideas for number ${i + 1}`);
+    field.parentElement.after(menu);
+    menu.addEventListener("change", () => {
+      if (!menu.value) return;
+      stopRec();
+      field.value = menu.value;
+      deal(menu);
+    });
+    return menu;
+  });
+  function deal(menu) {
+    const taken = new Set([0, 1, 2].map((i) => $("p" + i).value));
+    for (const m of menus) if (m && m !== menu) for (const o of m.options) taken.add(o.value);
+    const free = IDEAS.filter((t) => !taken.has(t));
+    const hand = [];
+    while (hand.length < 6 && free.length) hand.push(free.splice(Math.floor(Math.random() * free.length), 1)[0]);
+    menu.replaceChildren(new Option("Or pick an idea…", ""), ...hand.map((t) => new Option(t, t)));
+  }
+  menus.forEach(deal);
+
+  $("again").addEventListener("click", forget);
+  const prior = load();
+  if (prior) follow(prior);
+})();
+</script>
+</body>
+</html>

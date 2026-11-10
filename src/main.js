@@ -158,6 +158,7 @@ import {
   REIMAGINE_KNOWN_MODELS,
 } from "./ai/AIFeatures.js";
 import { Reimagine } from "./ai/Reimagine.js";
+import { WindowVisitor } from "./ai/WindowVisitor.js";
 import { REIMAGINE_LOOKS } from "./ai/ReimagineLooks.js";
 import { AIDepth } from "./ai/AIDepth.js";
 import { SplatWorld } from "./ai/SplatWorld.js";
@@ -12019,8 +12020,10 @@ void main() {
     // 2 the Stills Buffer slot on show — both flat, so a 3D Look's turning plane
     // is never painted into the next image. A missing source throws a readable
     // error (Reimagine.run shows it and stops Auto) rather than sending black.
-    const captureReimagineFrame = (W, quality) => {
-      const send = Math.round(ps.get("reimagine.send").value);
+    // sendOverride: the Window visitor mode always photographs the camera,
+    // whatever Send is set to for the attract loop between visitors.
+    const captureReimagineFrame = (W, quality, sendOverride) => {
+      const send = sendOverride ?? Math.round(ps.get("reimagine.send").value);
       if (send === 0) return captureOutputFrame(W, quality);
       let tex = null;
       if (send === 1) {
@@ -12110,6 +12113,40 @@ void main() {
     };
     buildModelSelect(REIMAGINE_KNOWN_MODELS.map((m) => ({ ...m })));
     listReimagineModels().then(buildModelSelect);
+
+    // Window visitors: passers-by queue from their phones (window-kiosk/
+    // server); this page photographs each one and reimagines them with their
+    // three instructions. The server URL (with its key) is per-origin
+    // localStorage; the On box is deliberately NOT remembered, so a reload
+    // never starts serving strangers unasked.
+    {
+      const urlEl = document.getElementById("window-url");
+      const onEl = document.getElementById("window-on");
+      const stEl = document.getElementById("window-status");
+      const URL_KEY = "imweb.window.url";
+      const visitor = new WindowVisitor({
+        reimagine,
+        ps,
+        outputDoc: () => (_outWin && !_outWin.closed ? _outWin.document : null),
+        onStatus: (msg, kind) => {
+          if (!stEl) return;
+          stEl.textContent = msg;
+          stEl.dataset.kind = kind ?? "";
+        },
+      });
+      if (urlEl && onEl) {
+        try { urlEl.value = localStorage.getItem(URL_KEY) ?? urlEl.value; } catch { /* private mode */ }
+        urlEl.addEventListener("keydown", (e) => e.stopPropagation());
+        urlEl.addEventListener("change", () => {
+          try { localStorage.setItem(URL_KEY, urlEl.value.trim()); } catch { /* quota */ }
+          if (onEl.checked) visitor.connect(urlEl.value.trim());
+        });
+        onEl.addEventListener("change", () => {
+          if (onEl.checked) visitor.connect(urlEl.value.trim());
+          else visitor.disconnect();
+        });
+      }
+    }
 
     // Looks: confirm → the Shift+Esc reset → the Look's values → its prompt.
     // The reset is the point: a Look must not inherit a keyer or a colour

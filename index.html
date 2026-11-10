@@ -391,6 +391,18 @@
                                 <div id="reimagine-status">Uses your Google Gemini key · each image is a paid request</div>
                             </div>
                             <div id="reimagine-params"></div>
+                            <!-- Window visitors: serve the window-kiosk queue (passers-by
+                                 send three instructions from their phones). -->
+                            <div class="panel-subsection">
+                                <div class="subsection-header">Window Visitors</div>
+                                <div class="window-box">
+                                    <input type="text" id="window-url" spellcheck="false"
+                                        value="ws://localhost:8787/api/kiosk?key=dev-window-key"
+                                        title="The window-kiosk server, with ?key= its KIOSK_KEY">
+                                    <label class="window-on"><input type="checkbox" id="window-on"> Serve visitors (camera)</label>
+                                    <div id="window-status">Off</div>
+                                </div>
+                            </div>
                             <!-- Splat World (source 37): the image on show as a 3D world of
                                  points pushed out by its AI Depth map. Route it like any source. -->
                             <div class="panel-subsection">

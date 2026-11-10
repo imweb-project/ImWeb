@@ -1,0 +1,14 @@
+// ImWeb Window — the visitor queue between passers-by's phones and the ImWeb
+// running in the shop window. Prototype: no payment yet.
+//   local:  npx wrangler dev          (http://localhost:8787)
+//   secret: KIOSK_KEY — .dev.vars locally, `wrangler secret put KIOSK_KEY` deployed
+{
+  "name": "imweb-window",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-10-01",
+  "assets": { "directory": "./public" },
+  "durable_objects": {
+    "bindings": [{ "name": "WINDOW", "class_name": "Window" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Window"] }]
+}

@@ -129,16 +129,26 @@ export class Reimagine {
     return { prompt: this.directed, note: '' };
   }
 
-  async run() {
-    if (this._inFlight >= this._maxInFlight()) return;
+  /**
+   * One request. With no options this is the instrument's own run (Go, Auto).
+   * A caller (the Window visitor mode) may pass a frame it already captured
+   * and a prompt of its own, which bypass the capture and the director.
+   * Resolves to the landed image's data URL, or null (this.lastError says why).
+   * @param {{frame?:{b64:string,mime:string}, prompt?:string}} [opts]
+   */
+  async run(opts = {}) {
+    if (this._inFlight >= this._maxInFlight()) { this.lastError = 'busy'; return null; }
+    this.lastError = null;
     this._inFlight++;
     this._wait = 0;
     const n = this._sent++;
     const t0 = performance.now();
     this.onStatus(this._inFlight > 1 ? `Reimagining… (${this._inFlight} in flight)` : 'Reimagining…', 'busy');
     try {
-      const frame = this.captureFrame(SEND_W, SEND_Q);
-      const { prompt, note } = await this._promptFor(frame, n);
+      const frame = opts.frame ?? this.captureFrame(SEND_W, SEND_Q);
+      const { prompt, note } = opts.prompt != null
+        ? { prompt: opts.prompt, note: '' }
+        : await this._promptFor(frame, n);
       this._recent.push(prompt);
       if (this._recent.length > 12) this._recent.shift();
       const out = await reimagineImage(frame, prompt, this.aspect());
@@ -162,12 +172,15 @@ export class Reimagine {
         }
         this._startFade(slot);
       }
+      return url;
     } catch (err) {
+      this.lastError = err.message === 'no-key' ? 'the window has no AI key' : err.message;
       this.onStatus(err.message === 'no-key'
         ? '⚠ Needs a Google Gemini key — add it in AI settings (⚙).'
         : `✗ ${err.message}`, 'err');
       // A failing loop must not keep paying for the same failure.
       if (this.ps.get('reimagine.auto').value) this.ps.set('reimagine.auto', 0);
+      return null;
     } finally {
       this._inFlight--;
     }

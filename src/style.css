@@ -1349,6 +1349,17 @@ div.param-select .imw-sel-trigger {
 }
 #reimagine-status[data-kind="busy"] { color: var(--accent, #cc8); }
 #reimagine-status[data-kind="err"]  { color: var(--red, #e05); }
+/* Window Visitors — server URL, On box, status line. */
+.window-box { display: flex; flex-direction: column; gap: 6px; padding: 6px 10px; font-size: 11px; }
+#window-url {
+    width: 100%; box-sizing: border-box; background: var(--bg-2, #111); color: inherit;
+    border: 1px solid var(--border); font: inherit; font-size: 11px; padding: 4px 6px;
+}
+.window-on { display: flex; align-items: center; gap: 6px; color: var(--text-2); }
+#window-status { color: var(--text-2); min-height: 1.3em; }
+#window-status[data-kind="busy"] { color: var(--accent, #cc8); }
+#window-status[data-kind="ok"]   { color: var(--green, #6c6); }
+#window-status[data-kind="err"]  { color: var(--red, #e05); }
 /* The director's current prompt — under the theme it was written from. */
 #reimagine-directed {
     font-size: 11px;

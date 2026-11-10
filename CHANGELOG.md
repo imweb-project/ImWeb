@@ -9,6 +9,16 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Window Visitors (prototype)**: a shop-window mode for Reimagine.
+  Passers-by scan a QR code, write, dictate or pick three instructions on their
+  phone and join a line. ImWeb calls each visitor by colour, counts down,
+  takes one camera picture and reimagines it three times, then sends the
+  pictures back to the phone. The queue server is `window-kiosk/` (Cloudflare
+  Worker + Durable Object); the switch is under Reimagine ▸ Window Visitors.
+  There is no payment yet, and the Gemini call still runs in the window's browser.
+- **Window phone page: ideas and saving** — each instruction has a menu of
+  random ideas from a list of 146 (`window-kiosk/public/ideas.js`), dealt afresh
+  after each pick. Finished pictures have Save buttons, one each and one for all.
 - **PMaskSrc reaches every source** — Particles can now use Growth, Volume,
   Shader Code, AI Depth and Splat World as a mask, which the menu had left out.
 - **Depth recovers after a failed run** — one failed estimate used to stop depth
