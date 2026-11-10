@@ -1,12 +1,16 @@
 // ImWeb Window — the visitor queue between passers-by's phones and the ImWeb
 // running in the shop window. Prototype: no payment yet.
 //   local:  npx wrangler dev          (http://localhost:8787)
-//   secret: KIOSK_KEY — .dev.vars locally, `wrangler secret put KIOSK_KEY` deployed
+//   secrets: KIOSK_KEY and GEMINI_API_KEY — .dev.vars locally,
+//            `wrangler secret put <NAME>` deployed
 {
   "name": "imweb-window",
   "main": "src/worker.js",
   "compatibility_date": "2026-10-01",
   "assets": { "directory": "./public" },
+  // DAILY_IMAGE_CAP: the most AI pictures the window makes in one day (UTC).
+  // 150 is 50 visitors. GEMINI_MODEL: the image model visitors' pictures use.
+  "vars": { "DAILY_IMAGE_CAP": "150", "GEMINI_MODEL": "gemini-3.1-flash-image" },
   "durable_objects": {
     "bindings": [{ "name": "WINDOW", "class_name": "Window" }]
   },

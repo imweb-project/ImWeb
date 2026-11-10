@@ -15,7 +15,17 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   takes one camera picture and reimagines it three times, then sends the
   pictures back to the phone. The queue server is `window-kiosk/` (Cloudflare
   Worker + Durable Object); the switch is under Reimagine ▸ Window Visitors.
-  There is no payment yet, and the Gemini call still runs in the window's browser.
+  There is no payment yet.
+- **Window Visitors: the server makes the pictures** — visitors' images are now
+  made by the `window-kiosk` server with its own Gemini key (`GEMINI_API_KEY`),
+  not in the window's browser. The server holds three pictures per visit and a
+  daily cap (`DAILY_IMAGE_CAP`, 150), and turns people away at the phone once
+  the day's pictures are spoken for. ImWeb's own key and Model menu now apply
+  only to the attract loop between visitors.
+- **Window Visitors: one failed picture no longer ends the visit** — when the AI
+  answers without a picture the server asks once more; if it still has none,
+  the window says so, carries on with the other instructions and delivers the
+  pictures that worked. Only a visit with no picture at all is an error.
 - **Window phone page: ideas and saving** — each instruction has a menu of
   random ideas from a list of 146 (`window-kiosk/public/ideas.js`), dealt afresh
   after each pick. Finished pictures have Save buttons, one each and one for all.

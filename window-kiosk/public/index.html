@@ -200,7 +200,8 @@
       up: "Your turn! Stand on the mark in front of the window.",
       countdown: "Look at the window. Smile!",
       working: "Got you. Now reimagining…",
-      done: "Done! Save your pictures to keep them. They are deleted after 24 hours.",
+      done: (v.results.every(Boolean) ? "Done! " : "Done. The AI would not make every picture. ")
+        + "Save your pictures to keep them. They are deleted after 24 hours.",
       error: "The window had a problem: " + (v.error || "unknown") + ".",
     }[v.state] ?? "";
     $("msg").textContent = msg;
@@ -226,8 +227,13 @@
         slot.querySelector(".wait").replaceWith(img);
         keep(img.src, i, slot);
       } else if (!ok && v.state === "working") {
+        // The window works through them in order and may skip one it cannot make.
         const w = slot.querySelector(".wait");
-        if (w) w.textContent = v.results.slice(0, i).every(Boolean) ? "reimagining…" : "waiting";
+        const last = v.results.lastIndexOf(true);
+        if (w) w.textContent = i < last ? "could not be made" : i === last + 1 ? "reimagining…" : "waiting";
+      } else if (!ok && (v.state === "done" || v.state === "error")) {
+        const w = slot.querySelector(".wait");
+        if (w) w.textContent = "could not be made";
       }
     });
   }

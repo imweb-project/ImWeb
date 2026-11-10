@@ -8,6 +8,12 @@
  *   frame → three Reimagine runs, one per visitor instruction, each fading in
  *   on the window as usual → each picture sent back (JPEG ≤1024 px) → thanks.
  *
+ * The three images are made by the SERVER (POST /api/kiosk/reimagine), with
+ * its own AI key, not by this browser's: the server is where "three pictures
+ * per visit" and the daily cap can be held. This page sends the camera frame
+ * and says which of the three it wants; the server uses the instruction the
+ * visitor stored. The Model menu in the panel does not apply to visitors.
+ *
  * One capture for all three: the visitor can step away after the countdown.
  * Reimagine's own Auto loop is paused for the visit and restored after, so
  * between visitors the window can keep drifting as its attract mode.
@@ -122,6 +128,29 @@ export class WindowVisitor {
     };
   }
 
+  /** One image from the server, in the shape Reimagine.run()'s generate wants. */
+  async _generate(id, n, frame, aspect) {
+    const u = new URL(this.url);
+    const key = u.searchParams.get('key') ?? '';
+    u.protocol = u.protocol === 'wss:' ? 'https:' : 'http:';
+    u.pathname = u.pathname.replace(/\/$/, '') + '/reimagine';
+    u.search = '';
+    let res;
+    try {
+      res = await fetch(u, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ key, id, n, frame, aspect }),
+      });
+    } catch {
+      throw new Error('the window lost its server');
+    }
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(j.error || `server error ${res.status}`);
+    if (!j.b64) throw new Error('the AI gave no picture');
+    return j;
+  }
+
   _send(obj) {
     if (this.ws?.readyState === 1) { this.ws.send(JSON.stringify(obj)); return true; }
     return false;
@@ -159,16 +188,36 @@ export class WindowVisitor {
       this._flash();
       this._send({ type: 'state', id: job.id, state: 'working' });
 
+      // One picture the AI will not make does not end the visit: the others
+      // are still made and delivered. Only a visit with NO picture is an error.
+      let got = 0;
+      let firstFail = null;
       for (let i = 0; i < 3; i++) {
+        // After a dropped connection the job comes round again: pictures
+        // already on the phone are not made (or paid for) a second time.
+        if (job.results?.[i]) { got++; continue; }
         this._show(hex, label, `${i + 1} / 3 · “${job.prompts[i]}”`, false, true);
-        const url = await this.r.run({ frame, prompt: job.prompts[i] });
-        if (!url) throw new Error(this.r.lastError || 'the AI gave no picture');
+        const url = await this.r.run({
+          frame, prompt: job.prompts[i],
+          generate: (f, _prompt, aspect) => this._generate(job.id, i, f, aspect),
+        });
+        if (!url) {
+          const why = this.r.lastError || 'the AI gave no picture';
+          console.warn(`[window] picture ${i + 1} failed:`, why);
+          firstFail ??= why;
+          this._show(hex, label, `Picture ${i + 1} could not be made`, false, true);
+          await wait(2500);
+          continue;
+        }
         const b64 = await toJpegB64(url);
         if (!this._send({ type: 'result', id: job.id, n: i, b64 })) {
           throw new Error('lost the connection while sending a picture');
         }
+        got++;
       }
-      this._show(hex, `Thank you, ${job.name || job.colour[0]}`, 'Your pictures are on your phone', false, true);
+      if (!got) throw new Error(firstFail);
+      this._show(hex, `Thank you, ${job.name || job.colour[0]}`,
+        got === 3 ? 'Your pictures are on your phone' : `${got} of 3 pictures are on your phone`, false, true);
       await wait(5000);
     } catch (err) {
       error = err.message || String(err);

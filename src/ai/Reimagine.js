@@ -132,9 +132,12 @@ export class Reimagine {
   /**
    * One request. With no options this is the instrument's own run (Go, Auto).
    * A caller (the Window visitor mode) may pass a frame it already captured
-   * and a prompt of its own, which bypass the capture and the director.
+   * and a prompt of its own, which bypass the capture and the director, and a
+   * generate() of its own, which makes the image somewhere other than this
+   * browser's Gemini key (the window-kiosk server makes its visitors' images).
    * Resolves to the landed image's data URL, or null (this.lastError says why).
-   * @param {{frame?:{b64:string,mime:string}, prompt?:string}} [opts]
+   * @param {{frame?:{b64:string,mime:string}, prompt?:string,
+   *   generate?:(frame:{b64:string,mime:string}, prompt:string, aspect:number) => Promise<{b64:string,mime:string}>}} [opts]
    */
   async run(opts = {}) {
     if (this._inFlight >= this._maxInFlight()) { this.lastError = 'busy'; return null; }
@@ -151,7 +154,7 @@ export class Reimagine {
         : await this._promptFor(frame, n);
       this._recent.push(prompt);
       if (this._recent.length > 12) this._recent.shift();
-      const out = await reimagineImage(frame, prompt, this.aspect());
+      const out = await (opts.generate ?? reimagineImage)(frame, prompt, this.aspect());
       const slot = this._nextSlot();
       if (this.sb.isProtected?.(slot)) throw new Error(`slot ${slot} is protected`);
       const url = `data:${out.mime};base64,${out.b64}`;
