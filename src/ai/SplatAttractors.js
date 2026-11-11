@@ -39,11 +39,13 @@ export const SPLAT_ATTRACTORS = [
   },
   {
     // Aizawa: a hollow shell with a tight column through its axis. Its own
-    // axis is z; `axes` stands it upright in the world.
+    // axis is z; `axes` stands it upright in the world. The spin term is 1.5,
+    // not the textbook 3.5: the same shell, turning at less than half the speed
+    // (the owner found 3.5 too fast), without slowing how quickly it forms.
     name: 'Aizawa',
     d: [
-      '(z - 0.7) * x - 3.5 * y',
-      '3.5 * x + (z - 0.7) * y',
+      '(z - 0.7) * x - 1.5 * y',
+      '1.5 * x + (z - 0.7) * y',
       '0.6 + 0.95 * z - z * z * z / 3.0 - (x * x + y * y) * (1.0 + 0.25 * z) + 0.1 * z * x * x * x',
     ],
     extent: 1.6, centre: [0.0, 0.0, 0.6], axes: 'xzy', rate: 0.6, hold: 2.5,
