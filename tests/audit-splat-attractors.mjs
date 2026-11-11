@@ -32,6 +32,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { ParameterSystem, registerCoreParameters } from '../src/controls/ParameterSystem.js';
 import { SPLAT_ATTRACTORS, HOLD_PULL, attractorGLSL } from '../src/ai/SplatAttractors.js';
+import { fadeEnvelope } from '../src/ai/SplatWorld.js';
 
 const fails = [];
 let checks = 0;
@@ -71,6 +72,24 @@ const SHIPPED = ['Thomas', 'Aizawa'];
 check(`the shipped shapes keep their indices (${SHIPPED.join(', ')} first, in that order)`,
   SHIPPED.every((n, i) => SPLAT_ATTRACTORS[i]?.name === n));
 check('splat.scatter rests at 0 (a fresh patch shows the picture)', ps.get('splat.scatter')?.value === 0);
+
+// FadeScatter: the fade's own scatter. It must leave a fade's two ENDS alone —
+// a fade that starts or lands on a half-dissolved picture is the failure — and
+// it must actually reach full in the middle, or the control is inert.
+const fs = ps.get('splat.fadeScatter');
+check('splat.fadeScatter exists, group splat, rests at 0', fs?.group === 'splat' && fs?.value === 0);
+check('fade envelope is 0 at the start of a fade', fadeEnvelope(0) === 0);
+check('fade envelope is 0 at the end of a fade', Math.abs(fadeEnvelope(1)) < 1e-9);
+check('fade envelope is full through the middle', [0.3, 0.5, 0.7].every(t => fadeEnvelope(t) === 1));
+let envOk = true, envUp = true;
+for (let i = 0; i <= 100; i++) {
+  const e = fadeEnvelope(i / 100);
+  if (!(e >= 0 && e <= 1)) envOk = false;
+  if (i > 0 && i <= 50 && e < fadeEnvelope((i - 1) / 100)) envUp = false;
+}
+check('fade envelope stays within 0..1', envOk);
+check('fade envelope only rises through the first half', envUp);
+check('fade envelope clamps a position outside 0..1', fadeEnvelope(-1) === 0 && Math.abs(fadeEnvelope(2)) < 1e-9);
 
 const INVOLUTIONS = ['xyz', 'xzy', 'yxz', 'zyx'];   // swizzles that undo themselves
 const glsl = attractorGLSL();

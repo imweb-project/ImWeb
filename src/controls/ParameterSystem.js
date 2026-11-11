@@ -3172,6 +3172,12 @@ export function registerCoreParameters(ps) {
     type: PARAM_TYPE.SELECT, options: SPLAT_ATTRACTORS.map((a) => a.name), value: 0 });
   ps.register({ id: "splat.flow", label: "Flow", group: "splat",
     min: 0, max: 200, value: 100, step: 0.5, unit: "%" });
+  // FadeScatter: the fade itself scatters — out as one image leaves, home as
+  // the next arrives — so a Look can dissolve and assemble with no hand on
+  // Scatter. It follows FrameBlend, so a FrameBlend held part-way holds the
+  // points out too.
+  ps.register({ id: "splat.fadeScatter", label: "FadeScatter", group: "splat",
+    min: 0, max: 100, value: 0, step: 0.5, unit: "%" });
 
   // ── Movie / clip ──────────────────────────────────────────────────────────
   // Both decks register from one descriptor table so movie.* (Deck A) and

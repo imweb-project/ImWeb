@@ -110,4 +110,20 @@ export const REIMAGINE_LOOKS = [
       ['reimagine.interval', '15'], ['reimagine.fade', '10'],
     ],
   },
+  {
+    // Splat World with FadeScatter: each fade sends the points into the Thomas
+    // attractor and calls them home to the next image. A longer fade than the
+    // other worlds, because the form needs a few seconds to appear.
+    name: 'Dissolving world',
+    about: 'Each AI image comes apart into a knot of its own points; the next one assembles out of it.',
+    prompt: 'as a stained glass window, saturated colour, bold shapes',
+    seed: true,
+    set: [
+      ['layer.fg', 'Splat World'],
+      ['reimagine.send', 'Camera'], ['reimagine.morph', '80'],
+      ['splat.relief', '60'], ['splat.sway', '10'],
+      ['splat.fadeScatter', '100'],
+      ['reimagine.interval', '20'], ['reimagine.fade', '14'],
+    ],
+  },
 ];

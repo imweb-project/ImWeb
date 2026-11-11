@@ -26,6 +26,10 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   picture dissolves and another assembles. The form sits where the camera
   orbits, so Orbit, Dolly and Fly go around and through it. While points are
   out the world is drawn as Points, whatever Draw says.
+- **Splat World can dissolve on its own** — new **FadeScatter**: the fade itself
+  scatters the points, out as one image leaves and home as the next arrives, with
+  no hand on Scatter. It follows FrameBlend, so a FrameBlend held part-way holds
+  the points out. New Look: **Dissolving world**.
 
 ### Changed
 - **The 3D plane takes the picture's shape** — new **PlaneShape** (Square /

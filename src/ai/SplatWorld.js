@@ -42,6 +42,16 @@ const OFF_EPS = 1.0e-4;                 // … and one shorter than this is home
 const SETTLE_S = Math.log(OFF_MAX / OFF_EPS) / PULL;
 const MAX_DT = 1 / 30;                  // a stalled tab must not become one giant step
 
+/**
+ * How far out FadeScatter sends the points, 0..1, at fade position `t` (0..1).
+ * Zero at both ends, so a fade starts and lands on a whole picture; a plateau
+ * in the middle rather than a single peak, so the form has time to appear —
+ * fully out from about a quarter of the way in to three quarters.
+ */
+export function fadeEnvelope(t) {
+  return Math.min(1, 1.5 * Math.sin(Math.PI * Math.min(Math.max(t, 0), 1)));
+}
+
 // Where a point LIVES: its pixel unprojected through the pinhole, on its way
 // from world A to world B. One definition, used by the vertex shader that
 // draws the point and by the sim that moves it away from here and back.
@@ -343,16 +353,6 @@ export class SplatWorld {
    */
   render(ps, sb, depth, dt) {
     const rows = DENSITY_ROWS[Math.round(ps.get('splat.density').value)] ?? DENSITY_ROWS[1];
-    // Scatter above 0 (re)starts the settle clock; at 0 it runs down, below,
-    // by the time the sim actually steps. While it is running, points may be out.
-    const scatter = ps.get('splat.scatter').value / 100;
-    const simDt = Math.min(Math.max(dt, 0), MAX_DT);
-    const wasOut = this._settle > 0;
-    if (scatter > 0) this._settle = SETTLE_S;
-    const out = this._settle > 0;
-    // A skin of scattered vertices is a screenful of giant triangles, so while
-    // points are out the world is drawn as Points whatever Draw says.
-    this._ensureGrid(rows, !out && Math.round(ps.get('splat.draw').value) === 1);
     const a = sb.readIndex, b = sb.read2Index;
     const fb = ps.get('buffer.frameblend').value / 100;
     const u = this._mat.uniforms;
@@ -360,6 +360,21 @@ export class SplatWorld {
     const colB = sb._hasFrame[b] ? sb.frames[b].texture : null;
     // Not fading (or nothing to fade to): show world A whole.
     const fading = fb > 0 && colB;
+    // Scatter is the hand's, or the fade's own (FadeScatter), whichever asks
+    // for more. Above 0 it (re)starts the settle clock; at 0 the clock runs
+    // down, below, by the time the sim actually steps. While it is running,
+    // points may be out.
+    const scatter = Math.max(
+      ps.get('splat.scatter').value / 100,
+      fading ? (ps.get('splat.fadeScatter').value / 100) * fadeEnvelope(fb) : 0,
+    );
+    const simDt = Math.min(Math.max(dt, 0), MAX_DT);
+    const wasOut = this._settle > 0;
+    if (scatter > 0) this._settle = SETTLE_S;
+    const out = this._settle > 0;
+    // A skin of scattered vertices is a screenful of giant triangles, so while
+    // points are out the world is drawn as Points whatever Draw says.
+    this._ensureGrid(rows, !out && Math.round(ps.get('splat.draw').value) === 1);
     u.uColA.value = colA ?? this._black;
     u.uColB.value = fading ? colB : u.uColA.value;
     u.uDepA.value = depth.map(a) ?? this._black;
