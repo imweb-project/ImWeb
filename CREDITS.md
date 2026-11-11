@@ -9,7 +9,7 @@ real-time manipulation of uncompressed video. It set a standard for
 what artist-made tools could be — built for video people, not
 musicians, not programmers.
 
-ImWeb rebuilds that spirit from scratch for the browser age:
+ImWeb continues that spirit for the browser age:
 Three.js, WebGL, no installation, no cost, no gatekeeping.
 
 ## Typefaces
@@ -29,6 +29,24 @@ offline, on a venue's wifi, and in the PWA cache.
 To **Tom Demeyer** — for Image/ine and ImX, and for keeping them free.
 To **Steina Vasulka** — for proving that the machine can be played
 like an instrument, and that artists own their tools.
+
+This software is dedicated to Tom Demeyer, designer of Image/ine at STEIM
+Amsterdam, and to Steina Vasulka, whose video art practice opened the door
+for all of us. May ImWeb remain free for every artist on this planet, forever.
+
+## License
+
+Copyright (C) 2024–2026 Haraldur Karlsson · haraldur.net · imweb.image-ine.org
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option) any
+later version. It is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE. See the full text in [LICENSE](LICENSE) or
+<https://www.gnu.org/licenses/>.
 
 ## Built by
 
