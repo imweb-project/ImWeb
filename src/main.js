@@ -1781,6 +1781,20 @@ async function main() {
       }
     },
     imageInfo: (i) => ({ name: scene3d.imageNames()[i], missing: _imageMissing[i] }),
+    // Photo puppet for M2–M4 (index 0–2). file null takes it away. Not saved
+    // with a project or state: a visitor's photo is for the session.
+    onPuppet: async (i, file, onStatus) => {
+      if (!file) { modelSlots.setPuppet(i, null); return; }
+      const [{ snapPerson }, { PhotoPuppet }] = await Promise.all([
+        import('./ai/PersonCutout.js'), import('./scene3d/PhotoPuppet.js')]);
+      const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+      let snap;
+      try { snap = await snapPerson(bmp, onStatus); } finally { bmp.close?.(); }
+      onStatus?.('Jointing…');
+      modelSlots.setPuppet(i, new PhotoPuppet(snap));
+      ps.set(`${SLOT_PREFIXES[i]}.visible`, 1);
+      ps.set("scene3d.active", 1);
+    },
   });
 
   // ── Hypercube panel — appended as a section inside #tab-scene3d ───────────

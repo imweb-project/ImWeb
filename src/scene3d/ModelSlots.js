@@ -414,6 +414,22 @@ export class ModelSlots {
     // Name a recalled state asked for but this browser does not hold — shown
     // in the panel so an empty slot explains itself.
     this.missing = SLOT_PREFIXES.map(() => null);
+    // Photo puppet per slot (PhotoPuppet) or null. Kept when the slot's model
+    // changes: the puppet follows whichever figure the slot holds.
+    this.puppets = SLOT_PREFIXES.map(() => null);
+  }
+
+  /**
+   * Give slot i a photo puppet (null takes it away and the figure comes
+   * back). The puppet replaces the figure on screen and moves with it.
+   * Throws when the slot's figure has no skeleton the puppet can follow —
+   * the puppet is then kept, and binds to the next figure loaded there.
+   */
+  setPuppet(i, puppet) {
+    const old = this.puppets[i];
+    if (old && old !== puppet) old.dispose();
+    this.puppets[i] = puppet;
+    if (puppet && this.slots[i]) puppet.bind(this.slots[i].pivot);
   }
 
   /** Model name per slot (null = empty) — what a state records. */
@@ -458,6 +474,10 @@ export class ModelSlots {
     this.slots[i] = slot;
     this.missing[i] = null;
     this._lastRot[i] = null;
+    if (this.puppets[i]) {
+      try { this.puppets[i].bind(pivot); }
+      catch (err) { console.warn(`[3D] Photo puppet cannot follow Model ${i + 2}:`, err.message); }
+    }
     return true;
   }
 
@@ -470,6 +490,8 @@ export class ModelSlots {
   _remove(i) {
     const s = this.slots[i];
     if (!s) return;
+    // The puppet's mesh is not the model's: take it out before disposing.
+    if (this.puppets[i]?.boundTo === s.pivot) this.puppets[i].unbind();
     this.sm.scene.remove(s.pivot);
     s.mixer?.stopAllAction();
     // Geometry and the model's own textures belong to this slot alone; the
@@ -589,7 +611,7 @@ export class ModelSlots {
       // (with its own shader hook) — not one to clone; stay shared until then.
       const want = src > 0 && !this.sm._adoptedMesh ? this._ownMaterial(s, src - 1, i) : this.sm.material;
       if (s.mat !== want) {
-        p.traverse(c => { if (c.isMesh) c.material = want; });
+        p.traverse(c => { if (c.isMesh && !c.userData.puppet) c.material = want; });
         s.mat = want;
       }
 
@@ -632,6 +654,8 @@ export class ModelSlots {
         }
       }
       applyAnchor(p, v('anchor') === 1, s.actions[s.cur]?.getClip() ?? s.clips[0]);
+      // After the clip and the anchor have placed the skeleton.
+      if (this.puppets[i]?.boundTo === p) this.puppets[i].update();
     });
   }
 
