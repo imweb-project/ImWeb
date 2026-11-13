@@ -1260,6 +1260,16 @@ export function buildGeometryButtons(ps, sceneManager, contextMenu) {
     });
   }
 
+  // ── Shatter section ──────────────────────────────────────────────────────
+  const shatterEl = document.getElementById('shatter-params');
+  if (shatterEl) {
+    ['scene3d.shatter', 'scene3d.shatter.shape', 'scene3d.shatter.flow',
+    ].forEach(id => {
+      const p = ps.get(id);
+      if (p) shatterEl.appendChild(buildParamRow(p, contextMenu));
+    });
+  }
+
   // Model import buttons
   const importEl = document.getElementById('model-import');
   if (!importEl) return;

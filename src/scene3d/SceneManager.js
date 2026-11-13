@@ -23,6 +23,7 @@ import { TEXSRC_TO_SOURCE } from '../controls/ParameterSystem.js';
 import { GeometryFactory, GEOMETRY_NAMES } from './GeometryFactory.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { TRIPLANAR_GLSL, TRI_MAP_FRAGMENT, TRI_EMISSIVEMAP_FRAGMENT } from './Triplanar.js';
+import { ShardScatter } from './ShardScatter.js';
 
 // scene3d.mat.texsrc index of Image (the model's own picture).
 const IMAGE_SRC = 7;
@@ -144,6 +145,9 @@ export class SceneManager {
 
     // Lights
     this._setupLights();
+
+    // Shatter: the main object as flying shards. Builds nothing until used.
+    this._shards = new ShardScatter(this);
 
     // Build default geometry
     this.setGeometry('Sphere');
@@ -337,6 +341,9 @@ export class SceneManager {
       shader.uniforms.uDispSmooth = { value: 0.3 };
       shader.uniforms.uRimAmount  = { value: 0 };
       shader.uniforms.uRimColor   = { value: new THREE.Color(0xffffff) };
+      // Shatter's twins only (ShardScatter): the offsets texture, as the one
+      // uniform object ShardScatter keeps pointed at the current target.
+      if (mat._shardUniform) shader.uniforms.uShardOff = mat._shardUniform;
       mat._shader = shader;
 
       shader.vertexShader = `
@@ -355,6 +362,10 @@ export class SceneManager {
         uniform float uDispTexProj;
         uniform float uTriplanarDisp;
         uniform float uDispSmooth;
+        #ifdef USE_SHARDS
+        uniform highp sampler2D uShardOff;
+        attribute vec2 aShard;
+        #endif
         varying vec3 vObjPos;
         varying vec3 vObjNormal;
         ${TRIPLANAR_GLSL}
@@ -492,6 +503,21 @@ export class SceneManager {
       );
 
       // Rim / Fresnel — fragment shader injection
+      // Shatter: a twin's triangle is moved as one piece, in WORLD space, after
+      // the object's own transform — so shards fly free of the model's pose.
+      // Without USE_SHARDS this is three's chunk, untouched.
+      shader.vertexShader = shader.vertexShader.replace(
+        '#include <project_vertex>',
+        `#ifdef USE_SHARDS
+          vec4 mvPosition = modelMatrix * vec4(transformed, 1.0);
+          mvPosition.xyz += texture2D(uShardOff, aShard).xyz;
+          mvPosition = viewMatrix * mvPosition;
+          gl_Position = projectionMatrix * mvPosition;
+        #else
+          #include <project_vertex>
+        #endif`
+      );
+
       shader.fragmentShader = `
         uniform float uRimAmount;
         uniform vec3  uRimColor;
@@ -521,7 +547,7 @@ export class SceneManager {
       );
     };
     mat.customProgramCacheKey = () =>
-      'warpblobrimdispvtfv6' + (mat.defines?.USE_TRIPLANAR ? '_tri' : '');
+      'warpblobrimdispvtfv6' + (mat.defines?.USE_TRIPLANAR ? '_tri' : '') + (mat.defines?.USE_SHARDS ? '_shard' : '');
   }
 
   /**
@@ -1553,6 +1579,7 @@ export class SceneManager {
   render(params, dt = 0, inputs = {}) {
     this.update(dt * 1000);
     this.applyParams(params, dt, inputs);
+    this._shards.update(params, dt);
     // Face texture — any source, through the one canonical resolver.
     const faceTex = this._resolveOptSource(params, 'hypercube.faces.texsrc', inputs);
 
@@ -1806,6 +1833,7 @@ export class SceneManager {
   }
 
   dispose() {
+    this._shards.dispose();
     this.target.dispose();
     this.depthTarget.dispose();
     this._depthMat.dispose();

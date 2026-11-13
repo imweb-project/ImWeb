@@ -25,7 +25,7 @@
  * Rendered only while something consumes source 37 (_srcUsed in main.js).
  */
 import * as THREE from 'three';
-import { attractorGLSL } from './SplatAttractors.js';
+import { scatterStepGLSL, SettleClock, MAX_DT } from './SplatAttractors.js';
 
 const DENSITY_ROWS = [180, 288, 432];   // splat.density Low / Mid / High
 const FOV = 50;                         // degrees, vertical
@@ -33,15 +33,6 @@ const NEAR_D = 1.0;                     // distance of the nearest point
 const MAX_FAR = 6.0;                    // far distance at Relief 100 %
 
 const FIT = 0.8;                        // an attractor fills this much of the frame height
-const PULL = 3.0;                       // 1/s: how hard Scatter 0 calls a point home
-const OFF_MAX = 100.0;                  // the sim never stores an offset longer than this
-const OFF_EPS = 1.0e-4;                 // … and one shorter than this is home (far below a pixel)
-// At Scatter 0 an offset only decays, by exp(-PULL·dt) a step — so after this
-// many simulated seconds every one of them is below OFF_EPS. A bound computed
-// from the two limits above, not a guess at when things look settled.
-const SETTLE_S = Math.log(OFF_MAX / OFF_EPS) / PULL;
-const MAX_DT = 1 / 30;                  // a stalled tab must not become one giant step
-
 /**
  * How far out FadeScatter sends the points, 0..1, at fade position `t` (0..1).
  * Zero at both ends, so a fade starts and lands on a whole picture; a plateau
@@ -143,20 +134,13 @@ const SIM_FRAG = /* glsl */ `
   uniform float uFrame;      // world units per frame unit at the pivot
   varying vec2 vUv;
   ${HOME}
-  ${attractorGLSL()}
+  ${scatterStepGLSL()}
 
   void main() {
     float k;
     vec3 h = home(vUv, k);
-    vec3 pivot = vec3(0.0, 0.0, -uPivotD);
-    vec3 w = (h + texture2D(uOff, vUv).xyz - pivot) / uFrame;
-    float hs = uScatter * uFlow * uDt;
-    vec3 mid = w + flow(w, uShape) * hs * 0.5;
-    w += flow(mid, uShape) * hs;
-    vec3 off = (pivot + w * uFrame - h) * exp(-${PULL.toFixed(1)} * (1.0 - uScatter) * uDt);
-    // NaN or a runaway would live in the ping-pong for good: send it home.
-    // Written as !(a < b) so that NaN, which fails every comparison, is caught.
-    if (!(dot(off, off) < ${(OFF_MAX * OFF_MAX).toFixed(1)})) off = vec3(0.0);
+    vec3 off = scatterStep(h, texture2D(uOff, vUv).xyz, vec3(0.0, 0.0, -uPivotD), uFrame,
+                           uScatter, uFlow, uShape, uDt);
     gl_FragColor = vec4(off, 1.0);
   }
 `;
@@ -246,11 +230,11 @@ export class SplatWorld {
     this._off = null;    // [target, target], ping-pong
     this._offKey = '';   // "rows x cols" they were built for
     this._offCur = 0;
-    this._settle = 0;    // simulated seconds until every offset is home
+    this._clock = new SettleClock();
   }
 
   /** True while any point may be away from home. */
-  get scattered() { return this._settle > 0; }
+  get scattered() { return this._clock.out; }
 
   // Both targets at `rows x cols`, both zero: every point at home.
   _ensureOff(rows, cols) {
@@ -369,9 +353,7 @@ export class SplatWorld {
       fading ? (ps.get('splat.fadeScatter').value / 100) * fadeEnvelope(fb) : 0,
     );
     const simDt = Math.min(Math.max(dt, 0), MAX_DT);
-    const wasOut = this._settle > 0;
-    if (scatter > 0) this._settle = SETTLE_S;
-    const out = this._settle > 0;
+    const { out, woke } = this._clock.tick(scatter);
     // A skin of scattered vertices is a screenful of giant triangles, so while
     // points are out the world is drawn as Points whatever Draw says.
     this._ensureGrid(rows, !out && Math.round(ps.get('splat.draw').value) === 1);
@@ -394,9 +376,9 @@ export class SplatWorld {
       this._ensureOff(this._rows, this._cols);
       // Coming back from rest: what the targets hold is below OFF_EPS, not
       // zero. Start clean, so rest always means exactly the picture.
-      if (!wasOut) this._zeroOff();
+      if (woke) this._zeroOff();
       u.uOff.value = this._stepScatter(ps, scatter, simDt, pivotD);
-      if (scatter <= 0) this._settle -= simDt;
+      this._clock.ran(scatter, simDt);
     } else {
       u.uOff.value = this._black;
     }

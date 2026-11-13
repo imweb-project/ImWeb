@@ -31,7 +31,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { ParameterSystem, registerCoreParameters } from '../src/controls/ParameterSystem.js';
-import { SPLAT_ATTRACTORS, HOLD_PULL, attractorGLSL } from '../src/ai/SplatAttractors.js';
+import { SPLAT_ATTRACTORS, HOLD_PULL, attractorGLSL, PULL, OFF_MAX, OFF_EPS, SETTLE_S, MAX_DT } from '../src/ai/SplatAttractors.js';
 import { fadeEnvelope } from '../src/ai/SplatWorld.js';
 
 const fails = [];
@@ -48,12 +48,9 @@ const num = (name) => {
   // eslint-disable-next-line no-new-func
   return m ? Function(`"use strict"; return (${m[1]});`)() : NaN;
 };
-const FIT = num('FIT'), PULL = num('PULL'), OFF_MAX = num('OFF_MAX'), OFF_EPS = num('OFF_EPS');
-const MAX_DT = num('MAX_DT'), NEAR_D = num('NEAR_D'), MAX_FAR = num('MAX_FAR'), FOV = num('FOV');
-const SETTLE_S = Math.log(OFF_MAX / OFF_EPS) / PULL;
+const FIT = num('FIT'), NEAR_D = num('NEAR_D'), MAX_FAR = num('MAX_FAR'), FOV = num('FOV');
 check('constants are finite', [FIT, PULL, OFF_MAX, OFF_EPS, MAX_DT, NEAR_D, MAX_FAR, FOV].every(Number.isFinite));
-check('SETTLE_S in SplatWorld.js is derived from OFF_MAX, OFF_EPS and PULL',
-  /const SETTLE_S = Math\.log\(OFF_MAX \/ OFF_EPS\) \/ PULL;/.test(src));
+check('SETTLE_S is derived from OFF_MAX, OFF_EPS and PULL', SETTLE_S === Math.log(OFF_MAX / OFF_EPS) / PULL);
 
 // ── 1. The table, and the menu made from it ──────────────────────────────────
 const ps = new ParameterSystem();
@@ -72,6 +69,12 @@ const SHIPPED = ['Thomas', 'Aizawa'];
 check(`the shipped shapes keep their indices (${SHIPPED.join(', ')} first, in that order)`,
   SHIPPED.every((n, i) => SPLAT_ATTRACTORS[i]?.name === n));
 check('splat.scatter rests at 0 (a fresh patch shows the picture)', ps.get('splat.scatter')?.value === 0);
+// The 3D scene's Shatter is the second consumer of the same table.
+const shMenu = ps.get('scene3d.shatter.shape');
+check('scene3d.shatter.shape menu is SPLAT_ATTRACTORS, in order',
+  JSON.stringify(shMenu?.options) === JSON.stringify(SPLAT_ATTRACTORS.map(a => a.name)));
+check('scene3d.shatter rests at 0 (a fresh scene is whole)', ps.get('scene3d.shatter')?.value === 0);
+check('scene3d.shatter.flow exists', !!ps.get('scene3d.shatter.flow'));
 
 // FadeScatter: the fade's own scatter. It must leave a fade's two ENDS alone —
 // a fade that starts or lands on a half-dissolved picture is the failure — and

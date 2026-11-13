@@ -4351,6 +4351,18 @@ export function registerCoreParameters(ps) {
     unit: "Hz",
   });
 
+  // Shatter: the main 3D object comes apart into its own triangles, which
+  // flow into a strange attractor and come home (ShardScatter.js). The same
+  // shapes and step as Splat World's Scatter. Shape's options ARE
+  // SPLAT_ATTRACTORS (append-only), so it is captured like any other.
+  // Does nothing while the Cloner is on or a Hypercube has adopted the mesh.
+  ps.register({ id: "scene3d.shatter", label: "Shatter", group: "scene3d",
+    min: 0, max: 100, value: 0, step: 0.5, unit: "%" });
+  ps.register({ id: "scene3d.shatter.shape", label: "ShatterShape", group: "scene3d",
+    type: PARAM_TYPE.SELECT, options: SPLAT_ATTRACTORS.map((a) => a.name), value: 0 });
+  ps.register({ id: "scene3d.shatter.flow", label: "ShatterFlow", group: "scene3d",
+    min: 0, max: 200, value: 100, step: 0.5, unit: "%" });
+
   // ── SDF Generator ────────────────────────────────────────────────────────
   ps.register({
     id: "sdf.active",

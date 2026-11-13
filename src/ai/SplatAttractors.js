@@ -84,3 +84,57 @@ function chain(i) {
     ? `flow${i}(w)`
     : `(shape < ${i + 0.5} ? flow${i}(w) : ${chain(i + 1)})`;
 }
+
+// ── The scatter step: shared by everything that scatters ─────────────────────
+// A scattered thing — a Splat World point, a shard of a 3D model — keeps an
+// OFFSET from its home, so at offset zero it is exactly home and home is free
+// to move underneath it.
+export const PULL = 3.0;        // 1/s: how hard Scatter 0 calls a thing home
+export const OFF_MAX = 100.0;   // the step never stores an offset longer than this
+export const OFF_EPS = 1.0e-4;  // … and one shorter than this is home
+// At Scatter 0 an offset only decays, by exp(-PULL·dt) a step — so after this
+// many simulated seconds every one of them is below OFF_EPS. A bound computed
+// from the limits above, not a guess at when things look settled.
+export const SETTLE_S = Math.log(OFF_MAX / OFF_EPS) / PULL;
+export const MAX_DT = 1 / 30;   // a stalled tab must not become one giant step
+
+/**
+ * GLSL for flow() plus
+ *   vec3 scatterStep(vec3 h, vec3 off, vec3 pivot, float frame,
+ *                    float s, float flowAmt, float shape, float dt)
+ * — one step for a thing with home `h` and offset `off`: flow along the
+ * attractor centred on `pivot` (midpoint rule; `frame` world units per frame
+ * unit), then decay toward home by how far Scatter `s` is from 1. Returns the
+ * new offset. tests/audit-splat-attractors.mjs mirrors this function in JS.
+ */
+export function scatterStepGLSL() {
+  return `${attractorGLSL()}
+    vec3 scatterStep(vec3 h, vec3 off, vec3 pivot, float frame, float s, float flowAmt, float shape, float dt) {
+      vec3 w = (h + off - pivot) / frame;
+      float hs = s * flowAmt * dt;
+      vec3 mid = w + flow(w, shape) * hs * 0.5;
+      w += flow(mid, shape) * hs;
+      vec3 o = (pivot + w * frame - h) * exp(-${f(PULL)} * (1.0 - s) * dt);
+      // NaN or a runaway would live in the ping-pong for good: send it home.
+      // Written as !(a < b) so that NaN, which fails every comparison, is caught.
+      if (!(dot(o, o) < ${f(OFF_MAX * OFF_MAX)})) o = vec3(0.0);
+      return o;
+    }`;
+}
+
+/**
+ * The settle clock every scatterer runs: call once a frame with the scatter
+ * amount (0..1), BEFORE stepping; it says whether anything may be out. After
+ * a step at scatter 0, call ran(dt) with the dt the step used.
+ */
+export class SettleClock {
+  constructor() { this.left = 0; }
+  get out() { return this.left > 0; }
+  /** @returns {{ out: boolean, woke: boolean }} woke: out now, and was not before */
+  tick(scatter) {
+    const was = this.left > 0;
+    if (scatter > 0) this.left = SETTLE_S;
+    return { out: this.left > 0, woke: this.left > 0 && !was };
+  }
+  ran(scatter, dt) { if (scatter <= 0) this.left -= dt; }
+}

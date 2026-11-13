@@ -30,6 +30,13 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   scatters the points, out as one image leaves and home as the next arrives, with
   no hand on Scatter. It follows FrameBlend, so a FrameBlend held part-way holds
   the points out. New Look: **Dissolving world**.
+- **The 3D object can shatter** — new **Shatter**, **ShatterShape** and
+  **ShatterFlow** (3D ▸ Shatter). The main object comes apart into its own
+  triangles, each flying as a whole shard with its lighting and texture, into
+  the same attractors as Splat World (Thomas, Aizawa), and assembles again at 0.
+  Shards follow the object while it moves or plays an animation. It does nothing
+  while the Cloner is on or a Hypercube has adopted the mesh, and models in
+  slots 2–4 are not shattered. The depth output shows the object whole.
 
 ### Changed
 - **The 3D plane takes the picture's shape** — new **PlaneShape** (Square /
