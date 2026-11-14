@@ -26,7 +26,7 @@ if (/\.glb$/i.test(file)) {            // another character (tools/figure-slim/r
   if (Array.isArray(tk)) { clip.takes = []; for (let i = 0; i + 1 < tk.length; i += 2) clip.takes.push([tk[i], tk[i + 1]]); }
   root.traverse(o => { if (o.isSkinnedMesh) { o.frustumCulled = false; mesh ??= o; } });
   const alias = { chest: 'spine4', lHand: 'l_hand', rHand: 'r_hand' };
-  bone = b => root.getObjectByName(alias[b] ?? b);
+  bone = b => root.getObjectByName(b) ?? root.getObjectByName(alias[b]);
 } else {
   const text = await (await fetch('/assets/' + file)).text();
   const warn = console.warn; console.warn = () => {};

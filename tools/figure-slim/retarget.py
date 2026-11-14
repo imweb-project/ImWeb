@@ -4,6 +4,7 @@
 #
 # <motion.txt> is what tools/figure-slim/export-motion.html returns (first line, JSON).
 # Written for Daz Genesis 9 (assets/Laura.fbx); another skeleton needs its own MAP below.
+# An .obj of rigid pieces with Poser part names (assets/skeletHa_9.obj) is rigged by rigid_rig.py.
 #
 # The motion is carried over as each joint's turn AWAY FROM ITS BIND POSE, in world space, so
 # the two skeletons need not share joint axes, joint counts or a rest pose: Haraldur6 binds in a
@@ -19,8 +20,14 @@ MAXF = int(opt.get('--frames', 0)); TEX = int(opt.get('--tex', 1024))
 
 # ── the character ───────────────────────────────────────────────────────────
 bpy.ops.wm.read_factory_settings(use_empty=True)
-bpy.ops.import_scene.fbx(filepath=SRC)
-arm = next(o for o in bpy.data.objects if o.type == 'ARMATURE')
+import os; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+POSER = SRC.lower().endswith('.obj')      # a figure of rigid pieces with Poser part names: rigid_rig.py gives it Haraldur6's joints
+if POSER:
+    import rigid_rig
+    arm = rigid_rig.build(SRC)
+else:
+    bpy.ops.import_scene.fbx(filepath=SRC)
+    arm = next(o for o in bpy.data.objects if o.type == 'ARMATURE')
 if '--creature' in argv:
     # The character's body is not kept at all: its skeleton and proportions carry a creature
     # grown by creature.py, weighted to the same joints.
@@ -105,6 +112,7 @@ for S, s in (('l', 'l_'), ('r', 'r_')):
         AIM[f'{S}{f}1'] = f'{S}{f}2'; AIM[f'{S}{f}2'] = f'{S}{f}3'
     AIM.update({S + 'Collar': S + 'Shldr', S + 'Shldr': S + 'ForeArm', S + 'ForeArm': S + 'Hand', S + 'Hand': S + 'Mid1',
                 S + 'Thigh': S + 'Shin', S + 'Shin': S + 'Foot', S + 'Foot': S + 'Toe'})
+if POSER: MAP, BLEND = {n: n for n in names}, {}
 MAP = {a: b for a, b in MAP.items() if a in si and b in B}
 print('mapped', len(MAP), 'of', NB, 'source joints; not mapped:', [n for n in names if n not in MAP])
 t_q = {b.name: b.matrix_local.to_quaternion() for b in B}
@@ -117,12 +125,14 @@ def s_parent(n):
     chain = {'Shldr': 'Collar', 'ForeArm': 'Shldr', 'Hand': 'ForeArm', 'Shin': 'Thigh', 'Foot': 'Shin', 'Toe': 'Foot'}
     side, rest = n[0], n[1:]
     if rest in chain: return side + chain[rest]
+    if rest == 'Collar' and 'chest' in ALIGN: return 'chest'      # only when the trunk itself was turned (below)
+    if rest == 'Thigh' and 'hip' in ALIGN: return 'hip'
     if rest[-1] in '23' and rest[:-1] in ('Thumb', 'Index', 'Mid', 'Ring', 'Pinky'): return side + rest[:-1] + str(int(rest[-1]) - 1)
     if rest[-1] == '1' and rest[:-1] in ('Thumb', 'Index', 'Mid', 'Ring', 'Pinky'): return side + 'Hand'
     return None
 def align(n):
     if n in ALIGN: return ALIGN[n]
-    p = s_parent(n) if n[0] in 'lr' and n[1:2].isupper() else None
+    p = s_parent(n) if n[0] in 'lr' and n[1:2].isupper() and n in MAP else None
     A = align(p).copy() if p else Quaternion()
     if n in AIM and AIM[n] in MAP:
         ds = (s_rest_p[AIM[n]] - s_rest_p[n]).normalized(); dt = A @ (t_p[MAP[AIM[n]]] - t_p[MAP[n]]).normalized()
@@ -132,13 +142,26 @@ def align(n):
             ks = (ks - ks.dot(ds) * ds).normalized(); kt = (kt - kt.dot(ds) * ds).normalized()
             A = kt.rotation_difference(ks) @ A
     ALIGN[n] = A; return A
+if POSER:
+    # The figure stands in a pose of its own (mid-stride), so the trunk is turned too: pelvis by
+    # the line between the hip joints, ribcage by the line between the shoulders, head by the neck.
+    def frame(lv, uv):
+        x = lv.normalized(); y = (uv - uv.dot(x) * x).normalized(); z = x.cross(y)
+        return Matrix((x, y, z)).transposed().to_quaternion()
+    two = lambda P, l, r, a, b, m=(lambda n: n): frame(P[m(l)] - P[m(r)], P[m(b)] - P[m(a)])
+    ALIGN['hip'] = two(s_rest_p, 'lThigh', 'rThigh', 'hip', 'abdomen') @ two(t_p, 'lThigh', 'rThigh', 'hip', 'abdomen').inverted()
+    ALIGN['chest'] = two(s_rest_p, 'lShldr', 'rShldr', 'chest', 'neck') @ two(t_p, 'lShldr', 'rShldr', 'chest', 'neck').inverted()
+    ALIGN['abdomen'] = ALIGN['hip'].slerp(ALIGN['chest'], 0.5)
+    dsn = (s_rest_p['head'] - s_rest_p['neck']).normalized(); dtn = ALIGN['chest'] @ (t_p['head'] - t_p['neck']).normalized()
+    ALIGN['neck'] = dtn.rotation_difference(dsn) @ ALIGN['chest']; ALIGN['head'] = ALIGN['neck'].copy()
+    print('trunk turned: hip', round(math.degrees(ALIGN['hip'].angle)), 'chest', round(math.degrees(ALIGN['chest'].angle)), 'head', round(math.degrees(ALIGN['head'].angle)), 'deg')
 for n in MAP: align(n)
 for n in ('lShldr', 'lForeArm', 'lHand', 'lThigh', 'lIndex1'):
     if n in ALIGN: print('align', n, round(math.degrees(ALIGN[n].angle)), 'deg')
 print('left is left:', s_rest_p['lHand'].dot(t_p[MAP['lHand']] - t_p['hip']) > 0, '| src hip rest', tuple(round(x, 3) for x in mo['rest'][si['hip']][:3]), 'frame 0', tuple(round(float(x), 3) for x in hip[0]))
 
 leg = lambda P, a, b, c: (P[b] - P[a]).length + (P[c] - P[b]).length
-SCALE = leg(t_p, 'l_thigh', 'l_shin', 'l_foot') / leg(s_rest_p, 'lThigh', 'lShin', 'lFoot')
+SCALE = leg(t_p, MAP['lThigh'], MAP['lShin'], MAP['lFoot']) / leg(s_rest_p, 'lThigh', 'lShin', 'lFoot')
 print('size ratio', round(SCALE, 2))
 
 tgt_of = {b: a for a, b in MAP.items()}
@@ -154,6 +177,13 @@ loc = np.zeros((N, 3), dtype=np.float32)
 # bound 13 cm lower than it stands, which would lift the character off the floor.
 hip_rest = C @ Vector([float(x) for x in hip[0]]); Mhip_i = t_q['hip'].inverted()
 rest_inv = {n: s_rest_q[n].inverted() for n in MAP}
+# A figure posed mid-stride has its hip lower than it would stand: lift it to where Haraldur6's
+# hip stands at frame 0, measured from the lowest point of the figure (its floor).
+UPV = C @ Vector((0, 1, 0)); STAND = Vector()
+if POSER:
+    floor = min((arm.matrix_world.inverted() @ (o.matrix_world @ v.co)).dot(UPV) for o in bpy.data.objects if o.type == 'MESH' for v in o.data.vertices)
+    STAND = UPV * (floor + float(hip[0][1]) * SCALE - t_p['hip'].dot(UPV))
+    print('hip lifted', round(STAND.length, 3), 'to stand')
 for k in range(N):
     D = {n: qsrc(rot[k, si[n]]) @ rest_inv[n] for n in MAP}
     P = {}
@@ -167,7 +197,7 @@ for k in range(N):
         o = out[bn]
         if k and (o[k - 1, 0] * q.w + o[k - 1, 1] * q.x + o[k - 1, 2] * q.y + o[k - 1, 3] * q.z) < 0: q.negate()
         o[k] = (q.w, q.x, q.y, q.z)
-    loc[k] = Mhip_i @ ((C @ Vector([float(x) for x in hip[k]]) - hip_rest) * SCALE)
+    loc[k] = Mhip_i @ ((C @ Vector([float(x) for x in hip[k]]) - hip_rest) * SCALE + STAND)
     if k % 2000 == 0: print('frame', k, flush=True)
 
 act = bpy.data.actions.new('Loops')
@@ -200,7 +230,7 @@ if '--faces' in opt and mo.get('takes') and 'lowerjaw' in B:
         'Shanta':    dict(jaw=0, corner=(0.7, 1.4), lidUp=12, gaze=(0, 8)),
     }
     GAIN = float(opt.get('--face-gain', 1.0)); u = 0.26 * GAIN          # one rasa unit is 2.6 mm on the figure
-    X = Vector((1, 0, 0)); Yv = Vector((0, 1, 0))
+    X = (t_p[MAP['lShldr']] - t_p[MAP['rShldr']]).normalized(); Yv = (C @ Vector((0, 1, 0))).normalized()      # the figure's left and up, in the armature's space
     def face_pose(r):                                                    # joint → ('loc', Vector cm) or ('rot', Quaternion)
         m = {}; g = lambda k, d=0: r.get(k, d)
         m['lowerjaw'] = ('rot', Quaternion(X, math.radians(g('jaw') * GAIN)))            # + about x swings the chin down
@@ -231,7 +261,8 @@ if '--faces' in opt and mo.get('takes') and 'lowerjaw' in B:
         path = f'pose.bones["{b}"].' + ('location' if kind == 'loc' else 'rotation_quaternion')
         for i in range(3 if kind == 'loc' else 4):
             fc = act.fcurves.new(data_path=path, index=i, action_group=b); fc.keyframe_points.add(len(ks))
-            co = np.empty(len(ks) * 2, dtype=np.float32); co[0::2] = [k[0] for k in ks]; co[1::2] = [k[1][i] for k in ks]
+            loc_q = (lambda q: t_q[b].inverted() @ q @ t_q[b]) if kind == 'rot' else (lambda v: v)                 # into the joint's own axes
+            co = np.empty(len(ks) * 2, dtype=np.float32); co[0::2] = [k[0] for k in ks]; co[1::2] = [loc_q(k[1])[i] for k in ks]
             fc.keyframe_points.foreach_set('co', co); fc.keyframe_points.foreach_set('interpolation', np.full(len(ks), 1, dtype=np.int32)); fc.update()
     print('faces on', len(keys), 'joints, gain', GAIN)
 # Hand the action over only now: one made empty and assigned at once is left without a slot in
