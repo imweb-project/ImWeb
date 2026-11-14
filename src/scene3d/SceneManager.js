@@ -570,17 +570,17 @@ export class SceneManager {
   }
 
   /**
-   * Keep model i's image oriented for the model it is on NOW: glTF expects
-   * images unflipped, COLLADA / OBJ / STL flipped. Called every frame, so the
-   * order a state restores model and image in does not matter — an image
-   * that arrived before its model is re-oriented once the model is there.
-   * Re-uploads only when the answer changes.
+   * Keep model i's image the right way up. Called every frame, so the order a
+   * state restores model and image in does not matter. Re-uploads only when
+   * the answer changes.
    */
   syncImageFlip(i, modelName) {
     const img = this._images[i];
     if (!img || !modelName) return;
-    const want = !/\.gl(b|tf)$/i.test(modelName);
-    if (img.tex.flipY !== want) { img.tex.flipY = want; img.tex.needsUpdate = true; }
+    // Every format wants the image flipped now: a GLB's UVs are turned to the common
+    // convention when it loads (_prepareGLTFScene). This still repairs an image that was
+    // loaded unflipped.
+    if (!img.tex.flipY) { img.tex.flipY = true; img.tex.needsUpdate = true; }
   }
 
   /** The image name per model (null = none) — what a state records. */
@@ -768,8 +768,19 @@ export class SceneManager {
       sm.parent.add(plainMesh);
       sm.parent.remove(sm);
     }
+    // glTF counts a texture's rows from the TOP, every other format ImWeb loads from the bottom
+    // — and so do the pictures ImWeb puts on a model (movies, cameras, layers). Turn the model's
+    // UVs to the common convention here, once per geometry, so a GLB figure wears the same
+    // picture the same way up as a DAE one beside it.
+    const turned = new Set();
     model.traverse(child => {
       if (child.isMesh) {
+        const uv = child.geometry.attributes.uv;
+        if (uv && !turned.has(child.geometry)) {
+          turned.add(child.geometry);
+          for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - uv.getY(i));
+          uv.needsUpdate = true;
+        }
         child.material = this.material;
         const idx = child.geometry.index;
         if (idx && idx.array instanceof Uint16Array &&
