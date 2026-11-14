@@ -8,6 +8,16 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Added
+- **A figure file can name its own takes** — a COLLADA file may now list where
+  each small animation starts and ends, and the Segment menu uses that list
+  instead of hunting for cuts. Two animations that begin from the same pose
+  used to be joined into one; files without the list behave as before.
+  A GLB file can carry the same list.
+- **Animated GLB figures move** — a rigged GLB with animation used to load as a
+  still shape lying in its bind pose; it now keeps its skeleton and plays, as a
+  DAE figure does.
+
 ### Changed
 - **The 3D plane takes the picture's shape** — new **PlaneShape** (Square /
   Image, default Image): Basic: Plane keeps its width and takes the output's

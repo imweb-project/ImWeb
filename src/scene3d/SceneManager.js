@@ -27,6 +27,16 @@ import { TRIPLANAR_GLSL, TRI_MAP_FRAGMENT, TRI_EMISSIVEMAP_FRAGMENT } from './Tr
 // scene3d.mat.texsrc index of Image (the model's own picture).
 const IMAGE_SRC = 7;
 
+// A GLB may declare its own takes, as a DAE does in <imweb_takes> (ColladaChannels.js): scene
+// extras "imweb_takes": [start, end, start, end, …] in seconds, written by
+// tools/figure-slim/retarget.py. Only meaningful for a file with ONE long clip.
+function declareTakes(clips, scene) {
+  const v = scene?.userData?.imweb_takes;
+  if (!Array.isArray(v) || v.length < 4 || clips?.length !== 1) return;
+  clips[0].takes = [];
+  for (let i = 0; i + 1 < v.length; i += 2) clips[0].takes.push([+v[i], +v[i + 1]]);
+}
+
 export class SceneManager {
   constructor(renderer, width, height) {
     this.renderer = renderer;
@@ -718,7 +728,8 @@ export class SceneManager {
     return new Promise((resolve, reject) => {
       this.gltfLoader.load(url, gltf => this._withOwnMesh(() => {
         const model = gltf.scene;
-        this._prepareGLTFScene(model);
+        declareTakes(gltf.animations, model);
+        this._prepareGLTFScene(model, gltf.animations?.length > 0);
         this._setupAnimations(model, gltf.animations, params);
         const pivot = this._wrapInPivot(model);
         if (this.mesh) this.scene.remove(this.mesh);
@@ -736,10 +747,15 @@ export class SceneManager {
    * GLTF clean-up shared by the main slot and the extra model slots.
    * Must run before _wrapInPivot (it measures the final hierarchy).
    */
-  _prepareGLTFScene(model) {
+  _prepareGLTFScene(model, animated = false) {
     // Collect SkinnedMesh nodes first (modifying hierarchy during traverse is unsafe)
     const skinnedMeshes = [];
-    model.traverse(child => { if (child.isSkinnedMesh) skinnedMeshes.push(child); });
+    // A file that brings animation keeps its skin: without it the figure cannot move at all,
+    // and lies in its bind pose in the mesh's own axes (a Blender export: face down). Rigged
+    // DAE figures have always kept theirs through this same material, so the swap below is
+    // for the still model only.
+    if (!animated) model.traverse(child => { if (child.isSkinnedMesh) skinnedMeshes.push(child); });
+    else model.traverse(child => { if (child.isSkinnedMesh) child.frustumCulled = false; });
     // Replace each SkinnedMesh with a plain Mesh to prevent USE_SKINNING being
     // defined in the shader — ANGLE/Metal incorrectly reads the bone texture via
     // texelFetch() in the vertex stage, producing geometric distortion in Chrome.
@@ -982,7 +998,8 @@ export class SceneManager {
         const gltf = await load(l);
         model = gltf.scene;
         clips = gltf.animations ?? [];
-        this._prepareGLTFScene(model);
+        declareTakes(clips, model);
+        this._prepareGLTFScene(model, clips.length > 0);
       } else if (ext === 'obj') {
         model = await load(new OBJLoader(manager));
       } else if (ext === 'stl') {

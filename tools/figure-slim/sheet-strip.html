@@ -1,0 +1,73 @@
+<!doctype html><meta charset="utf-8">
+<!-- Film strip of chosen loops: n frames across each, seen from the front and from the side.
+     For judging one movement closely (an arm through a leg, a join that hitches).
+     ?file=Haraldur6-mudra.dae&loops=33,53&n=10   loops by number, as ImWeb's Segment menu
+     ?file=Haraldur6-slim.dae&spans=46.83-50.56   or stretches in seconds, for a file without takes
+     Serve the repo root and load through tools/nca/cdp-run.mjs. -->
+<script type="importmap">{"imports":{"three":"/node_modules/three/build/three.module.js","three/addons/":"/node_modules/three/examples/jsm/"}}</script>
+<canvas id="c" width="250" height="330"></canvas>
+<script type="module">
+import * as THREE from 'three';
+import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
+import { buildComponentClip } from '/src/scene3d/ColladaChannels.js';
+import { clipSegments } from '/src/scene3d/ClipSegments.js';
+try {
+const q = new URLSearchParams(location.search), n = +(q.get('n') ?? 10), W = +(q.get('w') ?? 250), H = +(q.get('h') ?? 330);   // &w=&h= for a large portrait
+document.getElementById('c').width = W; document.getElementById('c').height = H;
+const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true, preserveDrawingBuffer: true });
+renderer.setClearColor(0x1c1c20);
+const file = q.get('file') ?? 'Haraldur6-mudra.dae', scene = new THREE.Scene();
+let root, clip, mesh, bone;
+if (/\.glb$/i.test(file)) {            // another character (tools/figure-slim/retarget.py): its own joint names and materials
+  const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
+  const g = await new GLTFLoader().loadAsync(file.startsWith('/') ? file : '/assets/' + file);
+  root = g.scene; clip = g.animations[0];
+  const tk = root.userData.imweb_takes;                 // as SceneManager's declareTakes reads them
+  if (Array.isArray(tk)) { clip.takes = []; for (let i = 0; i + 1 < tk.length; i += 2) clip.takes.push([tk[i], tk[i + 1]]); }
+  root.traverse(o => { if (o.isSkinnedMesh) { o.frustumCulled = false; mesh ??= o; } });
+  const alias = { chest: 'spine4', lHand: 'l_hand', rHand: 'r_hand' };
+  bone = b => root.getObjectByName(alias[b] ?? b);
+} else {
+  const text = await (await fetch('/assets/' + file)).text();
+  const warn = console.warn; console.warn = () => {};
+  const col = new ColladaLoader().parse(text, '/assets/'); console.warn = warn;
+  root = col.scene; clip = buildComponentClip(text, col.scene, 'Animation');
+  root.traverse(o => { if (o.isSkinnedMesh) { mesh = o; o.frustumCulled = false;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    o.material = mats.map(() => new THREE.MeshStandardMaterial({ color: 0xc9a48f, roughness: 0.65 })); } });
+  bone = b => mesh.skeleton.bones.find(x => x.name === `Figure_1${b}_1_node`);
+}
+scene.add(root);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444455, 1.7));
+const key = new THREE.DirectionalLight(0xffffff, 2.2); key.position.set(1, 2, 3); scene.add(key);
+const col = { scene: root };
+const wp = b => new THREE.Vector3().setFromMatrixPosition(bone(b).matrixWorld);
+const mixer = new THREE.AnimationMixer(col.scene); mixer.clipAction(clip).play();
+const segs = q.get('loops') ? clipSegments(clip).segments : [];
+const spans = q.get('spans') ? q.get('spans').split(',').map(s => { const [a, b] = s.split('-').map(Number); return { name: `${a}–${b} s`, start: a, end: b }; })
+  : q.get('loops').split(',').map(l => ({ name: `loop ${l}`, ...segs[l - 1] }));
+const VIEWS = [['front', 0], ['side', Math.PI / 2], ['back', Math.PI], ['above', null]].filter(v => (q.get('views') ?? 'front,side').split(',').includes(v[0]));
+const cam = new THREE.PerspectiveCamera(24, W / H, 0.01, 100);
+const across = q.get('across'), cols = VIEWS.length > 1 ? VIEWS.length : (q.get('spans') ?? q.get('loops')).split(',').length;      // &across=1: one frame per view, the views side by side (a turnaround)
+const sheet = document.createElement('canvas'); sheet.width = across ? cols * W : n * W; sheet.height = across ? Math.ceil(spans.length * VIEWS.length / cols) * (H + 22) : spans.length * VIEWS.length * (H + 22);
+const g = sheet.getContext('2d'); g.fillStyle = '#1c1c20'; g.fillRect(0, 0, sheet.width, sheet.height); g.textAlign = 'left';
+let row = 0;
+for (const s of spans) for (const [vn, ang] of VIEWS) {
+  for (let i = 0; i < n; i++) {
+    const t = s.start + (s.end - s.start) * i / Math.max(1, n - 1) * 0.999;
+    mixer.setTime(t); col.scene.updateMatrixWorld(true);
+    const c = wp('chest').lerp(wp('hip'), 0.6); c.y += +(q.get('lift') ?? 0); const fwd = new THREE.Vector3(0, 0, 1).transformDirection(bone(q.get('follow') ?? 'hip').matrixWorld);
+    if (q.get('follow')) c.copy(wp(q.get('follow'))).add(new THREE.Vector3(0, +(q.get('lift') ?? 0), 0)); else { fwd.y = 0; fwd.normalize(); }   // &follow=head: a portrait that stays on the face
+    const D = +(q.get('dist') ?? 4.6);
+    if (ang === null) { cam.position.set(c.x + fwd.x * 0.6, c.y + D, c.z + fwd.z * 0.6); cam.up.copy(fwd).negate(); }
+    else { const d = fwd.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), ang); cam.up.set(0, 1, 0); cam.position.set(c.x + d.x * D, c.y + 0.25, c.z + d.z * D); key.position.copy(cam.position).add(new THREE.Vector3(1, 2, 0)); }
+    cam.lookAt(c); renderer.render(scene, cam);
+    const gx = across ? (row % cols) * W : i * W, gy = across ? Math.floor(row / cols) * (H + 22) : row * (H + 22);
+    g.drawImage(renderer.domElement, gx, gy);
+    g.fillStyle = '#b8b2a6'; g.font = '13px Helvetica, Arial, sans-serif'; g.fillText(i ? t.toFixed(2) : `${s.name} · ${vn} · ${t.toFixed(2)}`, gx + 6, gy + H + 15);
+  }
+  row++;
+}
+window.__result = { takes: segs.length, spans, img: sheet.toDataURL('image/jpeg', 0.86) };
+} catch (e) { window.__result = { error: String(e), stack: e.stack }; }
+</script>
