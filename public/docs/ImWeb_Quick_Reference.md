@@ -64,7 +64,7 @@ FX Chain is **reorderable** by dragging nodes in the Signal Path display.
 | **Video Delay** | Frame ring; 0.5–8 s depth, resolution-capped for VRAM |
 | **RGB Delay** | Reads the *same* ring three times, one per channel — moving edges separate into coloured fringes. Equal values = bit-exact passthrough |
 | **Sound** | Microphone / audio input as a routable texture |
-| **Color / Color 2** | Two independent solid-or-gradient generators |
+| **Color 1 / Color 2** | Color 1 is a solid colour. Color 2 is a solid colour or, with **Gradient** set to Grad H / V / R, a gradient from Color 1 to Color 2 |
 | **BG1 / BG2** | Two frozen background stills held by the Stills Buffer. `Freeze BG1` / `Freeze BG2` (triggers) grab the current frame into them — a held plate to key or mix against |
 | **Output (feedback)** | The finished frame, fed back in as a source (`pipeline.prev`) — the raw material for feedback routing |
 | **Growth** | Growth patterns (reaction-diffusion and related engines) seeded by a source (**Seed src**, Draw by default) — paint, and it grows out of the strokes. Pick a **Look**; six engines (**GrowMode**: Single / Nested / Frost / Hyphae / Curves / Neural). Panel lives in the Draw workspace |
