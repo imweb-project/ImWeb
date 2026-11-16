@@ -51,10 +51,13 @@ uniform float uShape;    // 0=Sphere,1=Box,2=Torus,3=Capsule,4=HexPrism,5=Octahe
 uniform float uShapeB;   // second primitive; < 0 means "same as A"
 uniform float uMorph;    // 0 = A and B as picked, 0.5 = every instance half of each, 1 = swapped
 uniform float uCount;    // number of orbiting instances, 1–8
+uniform float uMotion;   // 0=Orbit, 1=Lissajous, 2=Swarm, 3=Pulse
 uniform float uSize;     // uniform scale on every primitive
 uniform float uTile;     // domain repetition on/off
 uniform float uRepeat;   // domain repetition cell spacing
 uniform float uWarp;      // surface displacement amplitude
+uniform float uWarpMode;  // 0 = Ripple (the sine product), 1 = Organic (layered noise)
+uniform float uTwist;     // radians of turn about Y per world unit of height
 uniform float uVary;      // per-instance and per-cell variation, 0 = all alike
 uniform vec3  uMove;      // translates the FIELD (Rutt-Etra's rig.position)
 uniform float uOrbitX;    // camera azimuth, radians
@@ -89,6 +92,8 @@ uniform float uShadow;      // soft shadow strength (0=off, 1=full)
 uniform float uGlow;        // step-count glow intensity
 uniform vec3  uBaseHSV;     // base material color (hue 0–1, sat 0–1, val 0–1)
 uniform float uRefract;     // glass refraction strength
+uniform float uGlassSolid;  // 0 = flat screen-space lens, 1 = traced through the solid
+uniform float uDispersion;  // colour split: R, G and B bend by different amounts
 uniform float uFresnel;     // Fresnel edge rim strength
 uniform vec2  uResolution;  // render target size in pixels
 uniform sampler2D uFgTex;   // foreground video texture (luma warp + triplanar)
@@ -299,6 +304,26 @@ float hash31(vec3 c)  { return fract(sin(dot(c, vec3(127.1, 311.7, 74.7))) * 437
 // Written by scene(), read by the marches. See the step clamp in main().
 float gCellWall = 1e9;
 
+// ── Organic warp ─────────────────────────────────────────────────────────────
+// Three octaves of a gyroid-style product, each at about twice the frequency
+// and half the strength of the one before, with the axes shuffled between
+// octaves so the layers do not line up. The Ripple warp is one frequency on a
+// regular lattice and reads as corrugation; stacking octaves is what makes a
+// surface look grown or melted instead — large swells carrying smaller ones.
+// No texture and no hash: it is continuous everywhere, which the march needs.
+// Returns roughly -1..1. Animated by the same phase as everything else, the
+// two halves drifting in opposite directions so it churns rather than slides.
+float organicNoise(vec3 p, float t) {
+  float a = 1.0, sum = 0.0;
+  p *= 3.0;
+  for (int i = 0; i < 3; i++) {
+    sum += a * dot(sin(p + t), cos(p.yzx - t * 0.7));
+    p = p.zxy * 1.9 + vec3(1.7, 4.1, 2.3);
+    a *= 0.5;
+  }
+  return sum / 3.5;
+}
+
 // ── Scene SDF ────────────────────────────────────────────────────────────────
 float scene(vec3 p) {
   // Move translates the FIELD rather than the camera, so it swings with the
@@ -341,6 +366,13 @@ float scene(vec3 p) {
   // kifsScl accumulates it and the result is divided back out below — without
   // that the estimate over-reports and the march tunnels straight through the
   // fractal. At Scale 1 the accumulator stays 1 and the division is a no-op.
+  // TWIST: turn each horizontal slice about the vertical axis by an angle
+  // that grows with height. Applied to q, so under Tile every cell twists
+  // about its own centre, and before the fold, so Folds kaleidoscope the
+  // twisted form. A twist stretches space more the further a point is from
+  // the axis, so distances over-report — stepScale carries the correction.
+  if (uTwist != 0.0) q.xz = rot2D(uTwist * q.y) * q.xz;
+
   vec3  kp      = q;
   float kifsScl = 1.0;
   for (int ki = 0; ki < 5; ki++) {
@@ -390,7 +422,43 @@ float scene(vec3 p) {
     // shape much bigger than its neighbours swallows them under Smooth Union,
     // and under Tile it would outgrow the smallest cell.
     float si = s * (1.0 + uVary * (hash11(hs + 2.0) * 0.9 - 0.6));
-    vec3  ci = vec3(cos(ph) * ri, sin(ph * 0.7) * 0.3, sin(ph * 0.4) * 0.2);
+    // MOTION. Orbit was the only path there was: every instance on one ring,
+    // evenly spaced, so however the shapes and materials changed the
+    // choreography never did. The other three reuse the same two controls —
+    // Speed (through the phase) and Separation (through ri) — so switching
+    // mode changes the dance and nothing else has to be re-dialled. All four
+    // are functions of the phase alone, so Speed 0 still freezes every one of
+    // them in place. uMotion is a uniform: one branch for the whole frame.
+    vec3  ci;
+    float fi = float(i);
+    if (uMotion < 0.5) {
+      // Orbit — the original line, untouched.
+      ci = vec3(cos(ph) * ri, sin(ph * 0.7) * 0.3, sin(ph * 0.4) * 0.2);
+    } else if (uMotion < 1.5) {
+      // Lissajous — three sines at frequencies that never line up, so each
+      // instance draws a knot through the whole volume instead of a ring in
+      // one plane. The per-instance offsets keep them from chasing each other
+      // along the same curve.
+      ci = ri * vec3(sin(ph),
+                     sin(ph * 1.31 + fi * 1.7) * 0.7,
+                     cos(ph * 0.83 + fi * 0.9));
+    } else if (uMotion < 2.5) {
+      // Swarm — every instance wanders on its own. Two sines per axis at
+      // rates drawn from the instance's hash: slow enough to read as drifting,
+      // different enough that no two move together. They meet and part at
+      // random, which under Smooth Union is the classic lava-lamp behaviour.
+      vec3 f1 = 0.5 + vec3(hash11(hs + 5.0), hash11(hs + 6.0), hash11(hs + 7.0));
+      vec3 o1 = 6.2831853 * vec3(hash11(hs + 8.0), hash11(hs + 9.0), hash11(hs + 10.0));
+      ci = ri * (sin(uPhase * f1 + o1) + 0.5 * sin(uPhase * f1.yzx * 1.7 + o1.zxy)) / 1.5;
+    } else {
+      // Pulse — the instances sit on directions spread evenly over a sphere
+      // (a golden-angle spiral) and all breathe in and out together: gathered
+      // into one mass at the centre, then thrown out to Separation and back.
+      float y  = 1.0 - 2.0 * (fi + 0.5) / cnt;
+      float rr = sqrt(max(1.0 - y * y, 0.0));
+      float th = fi * 2.39996323 + ang * 0.25;
+      ci = vec3(cos(th) * rr, y, sin(th) * rr) * ri * (0.5 - 0.5 * cos(ang * 2.0));
+    }
     // Alternate primitives so Shape B reads as "the other one" at Count 2 and
     // as an alternating pattern above it. uShapeB < 0 means "same as A".
     float useB = (uShapeB >= 0.0 && mod(float(i), 2.0) > 0.5) ? 1.0 : 0.0;
@@ -430,10 +498,12 @@ float scene(vec3 p) {
   // Surface displacement: sin-product warp on the distance field.
   // Uses q (cell-local) so displacement tiles cleanly with repetition.
   float sdfT = uPhase;
-  float displacement = sin(sdfT + q.x * 5.0)
-                     * sin(sdfT + q.y * 5.0)
-                     * sin(sdfT + q.z * 5.0)
-                     * uWarp;
+  float displacement = (uWarpMode > 0.5)
+    ? organicNoise(q, sdfT) * uWarp
+    : sin(sdfT + q.x * 5.0)
+    * sin(sdfT + q.y * 5.0)
+    * sin(sdfT + q.z * 5.0)
+    * uWarp;
 
   // Video luma displacement: project world-space XY onto [0,1] UVs, sample the
   // foreground texture, compute Rec.709 luminance, displace outward.
@@ -550,6 +620,35 @@ float softShadow(vec3 ro, vec3 rd, float stepScale) {
   return res * res * (3.0 - 2.0 * res);   // ease the penumbra's two edges
 }
 
+// ── Where a ray leaving the glass lands on screen ────────────────────────────
+// The ray is refracted out through the back face, followed to where the
+// surround stands, and that point is projected back through the same camera
+// the primary rays came from. This is the inverse of the ray setup in main(),
+// so glass at IOR 1 would show the background exactly where it already is.
+//
+// The surround stands FOUR camera distances behind the exit point, and the
+// number matters. A ball of glass is a lens with a focal length of about one
+// and a half radii; a background close to that distance is magnified without
+// limit, and at one camera distance a sphere showed nothing but a smear of
+// whichever patch sat behind its centre. Well beyond the focal length it shows
+// what a crystal ball shows: the whole scene, small and upside down.
+//
+// At a steep enough angle nothing gets out (total internal reflection:
+// refract() returns the zero vector) and the ray bounces back inside. Following
+// that bounce one hop, rather than tracing it to its eventual exit, is what
+// gives thick glass its bright inner edge without a second interior march.
+// Mirrored, not clamped: a strong lens reaches well outside the frame, and a
+// clamp there is the same smeared edge row the triplanar taps used to have.
+vec2 glassExitUv(vec3 pe, vec3 rin, vec3 nOut, float ior,
+                 vec3 ro, mat3 cam, float focal, float aspect) {
+  vec3 dout = refract(rin, -nOut, ior);
+  if (dot(dout, dout) < 1e-6) dout = reflect(rin, -nOut);
+  vec3 v   = (pe + dout * uCamDist * 4.0 - ro) * cam;   // world → view (cam is orthonormal)
+  vec2 ndc = v.xy / max(-v.z, 0.05) * focal;
+  ndc.x /= aspect;
+  return mirrorUv(ndc * 0.5 + 0.5);
+}
+
 // ── Orbit camera ─────────────────────────────────────────────────────────────
 // Orientation from Euler angles, NOT lookAt — the same choice RuttEtra.js:719
 // documents, for the same reason. lookAt needs an up vector, and at ±90°
@@ -583,7 +682,12 @@ void main() {
   // Conservative step scaling: each displacement term inflates the Lipschitz
   // constant. Combine both factors multiplicatively so neither overshoots.
   // At uWarp=0 and uLumaWarp=0 both divisors collapse to 1 — zero cost.
-  float stepScale = (1.0 / (1.0 + uWarp * 2.5))
+  // Organic's top octave is over twice Ripple's frequency, so its slope per
+  // unit of Warp is steeper and it needs the larger divisor. Twist's stretch
+  // grows with distance from the axis; 1.2 covers a shape orbiting out to
+  // about two units. Both are exactly 1 at Twist 0 / Ripple.
+  float stepScale = (1.0 / (1.0 + uWarp * (uWarpMode > 0.5 ? 4.0 : 2.5)))
+                  * (1.0 / (1.0 + abs(uTwist) * 1.2))
                   * (1.0 / (1.0 + uLumaWarp * 2.0))
                   * shapeStepScale();
 
@@ -791,8 +895,58 @@ void main() {
     // control; obvious the moment there was one.
     vec3  nv          = n * cam;
     vec2  screenUV    = gl_FragCoord.xy / uResolution;
-    vec2  refractUV   = clamp(screenUV + nv.xy * uRefract * 0.5, 0.0, 1.0);
-    vec3  glassColor  = texture2D(uBgTex, refractUV).rgb;
+    vec2  flatOff     = nv.xy * uRefract * 0.5;
+    vec2  refractUV   = clamp(screenUV + flatOff, 0.0, 1.0);
+    vec3  glassColor;
+    // DISPERSION: glass bends blue more than red, so each channel is looked up
+    // through a slightly different lens. Three taps instead of one.
+    vec3  dsp = vec3(-1.0, 0.0, 1.0) * uDispersion;
+    if (uGlassSolid > 0.0 && uRefract > 0.0) {
+      // SOLID GLASS. The flat lens above nudges a screen lookup by the front
+      // normal and knows nothing about the back of the object, so a sphere and
+      // a slab bend the picture alike. Here the ray is refracted INTO the
+      // shape, marched through the inside to the back face, and refracted out
+      // — which is what turns a ball into a lens that flips the scene, and
+      // makes thick and thin parts of one shape read differently.
+      //
+      // Refract is still the strength: it sets the index (1.0 – 1.5, water
+      // through to glass) as well as how much of the body is transmitted.
+      // Inside the shape the field is negative, so its negation is the
+      // distance left to the surface. 32 steps: an interior is short.
+      float ior = 1.0 + uRefract * 0.5;
+      vec3  rin = refract(rd, n, 1.0 / ior);
+      vec3  gro = p - n * 0.01;          // step inside or the march exits at once
+      float gt  = 0.0;
+      for (int i = 0; i < 32; i++) {
+        float h = -scene(gro + rin * gt);
+        if (h < 0.002 || gt > 6.0) break;
+        gt += max(h, 0.004) * stepScale;
+      }
+      vec3  pe   = gro + rin * gt;
+      vec3  nOut = calcNormal(pe);
+      float asp  = uResolution.x / max(uResolution.y, 1.0);
+      // Each channel: the flat lookup and the traced one, blended by Solid
+      // Glass, so the control inflates the lens rather than switching it.
+      vec2 uvR = mix(clamp(screenUV + flatOff * (1.0 + dsp.r * 0.35), 0.0, 1.0),
+                     glassExitUv(pe, rin, nOut, ior + dsp.r * 0.08, ro, cam, focal, asp), uGlassSolid);
+      vec2 uvG = mix(refractUV,
+                     glassExitUv(pe, rin, nOut, ior,                ro, cam, focal, asp), uGlassSolid);
+      vec2 uvB = mix(clamp(screenUV + flatOff * (1.0 + dsp.b * 0.35), 0.0, 1.0),
+                     glassExitUv(pe, rin, nOut, ior + dsp.b * 0.08, ro, cam, focal, asp), uGlassSolid);
+      glassColor = vec3(texture2D(uBgTex, uvR).r, texture2D(uBgTex, uvG).g, texture2D(uBgTex, uvB).b);
+      // COLOURED GLASS from the path length, no extra control: light crossing
+      // more glass loses more of what the material absorbs. (1 - baseColor) is
+      // zero at Sat 0, so clear glass stays clear, and Hue / Sat tint the thick
+      // parts more than the thin ones — which is how a real tinted object reads.
+      glassColor *= exp(-gt * 2.0 * (1.0 - baseColor) * uGlassSolid);
+    } else if (uDispersion > 0.0) {
+      glassColor = vec3(
+        texture2D(uBgTex, clamp(screenUV + flatOff * (1.0 + dsp.r * 0.35), 0.0, 1.0)).r,
+        texture2D(uBgTex, refractUV).g,
+        texture2D(uBgTex, clamp(screenUV + flatOff * (1.0 + dsp.b * 0.35), 0.0, 1.0)).b);
+    } else {
+      glassColor = texture2D(uBgTex, refractUV).rgb;   // the line this all replaced
+    }
     finalCol = mix(finalCol, glassColor, uRefract);
     // Surface layer, on top of body and glass alike — this is the part that
     // reads as "wet"/"glazed" rather than "painted".
@@ -975,10 +1129,13 @@ export class SDFGenerator {
         uShapeB:     { value: -1 },
         uMorph:      { value: 0 },
         uCount:      { value: 2 },
+        uMotion:     { value: 0 },
         uSize:       { value: 1 },
         uTile:       { value: 0 },
         uRepeat:     { value: 3 },
         uWarp:       { value: 0 },
+        uWarpMode:   { value: 0 },
+        uTwist:      { value: 0 },
         uVary:       { value: 0 },
         uMove:       { value: new THREE.Vector3(0, 0, 0) },
         uOrbitX:     { value: 0 },
@@ -1013,6 +1170,8 @@ export class SDFGenerator {
         uGlow:        { value: 0.2 },
         uBaseHSV:     { value: new THREE.Vector3(0, 0, 1) },
         uRefract:     { value: 0 },
+        uGlassSolid:  { value: 0 },
+        uDispersion:  { value: 0 },
         uFresnel:     { value: 0.5 },
         uResolution:  { value: new THREE.Vector2(rtW, rtH) },
         uFgTex:       { value: this._black },
@@ -1060,10 +1219,13 @@ export class SDFGenerator {
     u.uShapeB.value   = ps.get('sdf.shapeB').value - 1;
     u.uMorph.value    = ps.get('sdf.morph').value;
     u.uCount.value    = ps.get('sdf.count').value;
+    u.uMotion.value   = ps.get('sdf.motion').value;
     u.uSize.value     = ps.get('sdf.size').value;
     u.uTile.value     = ps.get('sdf.tile').value ? 1 : 0;
     u.uRepeat.value   = ps.get('sdf.repeat').value;
     u.uWarp.value     = ps.get('sdf.warp').value;
+    u.uWarpMode.value = ps.get('sdf.warpMode').value;
+    u.uTwist.value    = ps.get('sdf.twist').value;
     u.uVary.value     = ps.get('sdf.vary').value;
     u.uMove.value.set(
       ps.get('sdf.moveX').value,
@@ -1114,6 +1276,8 @@ export class SDFGenerator {
       ps.get('sdf.val').value,
     );
     u.uRefract.value    = ps.get('sdf.refract').value;
+    u.uGlassSolid.value = ps.get('sdf.glassSolid').value;
+    u.uDispersion.value = ps.get('sdf.dispersion').value;
     u.uFresnel.value    = ps.get('sdf.fresnel').value;
     u.uFgTex.value = fgTex || this._black;
     u.uBgTex.value = bgTex || this._black;

@@ -4555,6 +4555,20 @@ export function registerCoreParameters(ps) {
     step: 1,
   });
   ps.register({
+    // How the instances move. Orbit is the one ring they always travelled and
+    // stays the default at index 0. Lissajous sends each through a knot in
+    // the whole volume, Swarm lets each wander on its own, Pulse gathers them
+    // into one mass and throws them out again. All four are driven by Speed
+    // and sized by Separation. APPEND-ONLY.
+    id: "sdf.motion",
+    label: "Motion",
+    group: "sdf",
+    type: PARAM_TYPE.SELECT,
+    value: 0,
+    select: true,
+    options: ["Orbit", "Lissajous", "Swarm", "Pulse"],
+  });
+  ps.register({
     // Makes the instances — and, under Tile, the cells — differ from one
     // another: each draws its own size, orbit radius and place on the orbit
     // from a fixed hash. 0 is the default and is exactly the old behaviour,
@@ -4611,6 +4625,31 @@ export function registerCoreParameters(ps) {
     label: "Warp",
     group: "sdf",
     min: 0,
+    max: 2.0,
+    value: 0,
+    step: 0.01,
+  });
+  ps.register({
+    // What Warp displaces the surface WITH. Ripple is the sine product it
+    // always was — one frequency, a regular corrugation — and stays the
+    // default at index 0. Organic is three layered octaves of noise: swells
+    // carrying smaller swells, which reads as grown or melted. APPEND-ONLY.
+    id: "sdf.warpMode",
+    label: "Warp Type",
+    group: "sdf",
+    type: PARAM_TYPE.SELECT,
+    value: 0,
+    select: true,
+    options: ["Ripple", "Organic"],
+  });
+  ps.register({
+    // Turns each horizontal slice about the vertical axis, more with height —
+    // radians per world unit, either direction. Under Tile each cell twists
+    // about its own centre. 0 is off and is exactly the old render.
+    id: "sdf.twist",
+    label: "Twist",
+    group: "sdf",
+    min: -2.0,
     max: 2.0,
     value: 0,
     step: 0.01,
@@ -5085,6 +5124,32 @@ export function registerCoreParameters(ps) {
   ps.register({
     id: "sdf.refract",
     label: "Refract",
+    group: "sdf",
+    min: 0,
+    max: 1.0,
+    value: 0,
+    step: 0.01,
+  });
+  ps.register({
+    // 0 is the flat screen-space lens Refract always was. Toward 1 the ray is
+    // traced through the inside of the shape and out of its back face, so a
+    // ball becomes a lens that flips the picture and thick parts bend more
+    // than thin ones. Refract stays the strength (it sets the index, 1.0–1.5)
+    // and Hue / Sat tint the glass by its thickness. Needs Refract above 0.
+    id: "sdf.glassSolid",
+    label: "Solid Glass",
+    group: "sdf",
+    min: 0,
+    max: 1.0,
+    value: 0,
+    step: 0.01,
+  });
+  ps.register({
+    // Splits the refracted picture into colour fringes — red, green and blue
+    // each take a slightly different lens. Works with the flat lens and with
+    // Solid Glass. Needs Refract above 0.
+    id: "sdf.dispersion",
+    label: "Dispersion",
     group: "sdf",
     min: 0,
     max: 1.0,

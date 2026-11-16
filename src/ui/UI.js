@@ -397,11 +397,12 @@ export function buildMappingPanels(ps, contextMenu) {
     // automatically (it scans for pick() calls) and fails if a sdf.* param ends
     // up in no section, in two, or under a name that no longer exists.
     'sdf-shape-params':    pick('sdf', ['active', 'shape', 'shapeB', 'morph', 'count', 'size',
-                                        'vary', 'opMode', 'opAmount', 'distance', 'speed']),
+                                        'vary', 'opMode', 'opAmount', 'motion', 'distance', 'speed']),
     // "Space", not "Fold": the section holds domain repetition and surface
     // warp as well as the kaleidoscopic fold, and Fold named only one of three.
     'sdf-space-params':    pick('sdf', ['tile', 'repeat', 'kifsIter', 'kifsAngle',
-                                        'kifsScale', 'kifsOffset', 'warp']),
+                                        'kifsScale', 'kifsOffset', 'warp', 'warpMode',
+                                        'twist']),
     'sdf-camera-params':   pick('sdf', ['orbitX', 'orbitY', 'camDist',
                                         'moveX', 'moveY', 'moveZ', 'fov']),
     'sdf-material-params': pick('sdf', ['hue', 'sat', 'val', 'ao']),
@@ -409,7 +410,7 @@ export function buildMappingPanels(ps, contextMenu) {
     'sdf-glow-params':     pick('sdf', ['glow', 'glowHue', 'glowSat', 'glowVal',
                                         'glowHue2', 'glowSat2', 'glowVal2',
                                         'glowSize', 'glowEnv']),
-    'sdf-glass-params':    pick('sdf', ['refract', 'fresnel', 'envAmt', 'selfReflect',
+    'sdf-glass-params':    pick('sdf', ['refract', 'glassSolid', 'dispersion', 'fresnel', 'envAmt', 'selfReflect',
                                         'reflectAmt', 'reflectRange', 'reflectDetail',
                                         'refractSrc']),
     'sdf-video-params':    pick('sdf', ['texSrc', 'texBlend', 'lumaWarp', 'lumaThresh']),
