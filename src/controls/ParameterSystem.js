@@ -1468,6 +1468,49 @@ export const PARTICLE_MASK_LABELS = PARTICLE_MASK_SRC.map((v) =>
   v == null ? "None" : CAPTURE_SOURCES[v],
 );
 
+/**
+ * sdf.texSrc / sdf.refractSrc option index → source KEY (null = entry 0, which
+ * follows layer.fg / layer.bg, and entry 8, which is None).
+ *
+ * ONE list for both menus and for main.js's index map. It used to be three
+ * hand-kept copies — two label arrays here and a key array in main.js — held
+ * in register by a comment, and frozen at sixteen entries while the source
+ * list grew to thirty-eight: Color 2, Text, Rutt-Etra, Growth and the rest
+ * were simply not selectable as the SDF's texture or surround.
+ *
+ * The first sixteen are FROZEN in the order they shipped in — the value
+ * persists as an integer in every saved state, bank, .imweb file and MIDI
+ * mapping — which is why None sits at 8 and not at the end. Everything after
+ * is derived: every other source, in SOURCE_DEFS order. SOURCE_DEFS is
+ * append-only, so that tail is append-only too, and a source added later
+ * appears here without anyone remembering to list it. (SOURCE_DEFS order, NOT
+ * SOURCE_DISPLAY_ORDER: the display order is free to be rearranged, and a
+ * tail derived from it would re-point saved values when it was.)
+ *
+ * The SDF's own two outputs are left out. "SDF" could only resolve to black
+ * through _notSelf, and "SDF Depth" would be sampled by the depth pass while
+ * that pass is writing it. Output (feedback) is the honest way to reflect
+ * itself.
+ */
+const SDF_SRC_HEAD = [
+  null, "camera", "movie", "draw", "noise", "color", "buffer", "scene3d", null,
+  "output", "bg1", "bg2", "movieB", "mixbus", "mixbus2", "mixbus3",
+];
+export const SDF_SRC_KEYS = [
+  ...SDF_SRC_HEAD,
+  ...SOURCE_KEYS.filter(
+    (k) => !SDF_SRC_HEAD.includes(k) && k !== "sdf" && k !== "sdfdepth",
+  ),
+];
+if (SDF_SRC_KEYS.some((k) => k != null && !SOURCE_KEYS.includes(k))) {
+  throw new Error("SDF_SRC_KEYS names a key that is not in SOURCE_DEFS");
+}
+/** Menu labels for SDF_SRC_KEYS; `first` names entry 0 (FG Layer / BG Layer). */
+const sdfSrcLabels = (first) =>
+  SDF_SRC_KEYS.map((k, i) =>
+    k == null ? (i === 0 ? first : "None") : SOURCES[SOURCE_KEYS.indexOf(k)],
+  );
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Capture-base migration (Phase 26 Step 0)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4487,6 +4530,19 @@ export function registerCoreParameters(ps) {
     ],
   });
   ps.register({
+    // Blends every instance toward the OTHER slot's shape: 0 is A and B as
+    // picked (the default, and exactly the old alternating behaviour), 0.5
+    // makes every instance half of each, 1 swaps them. Needs a Shape B — on
+    // "Same as A" there is nothing to morph toward and this does nothing.
+    id: "sdf.morph",
+    label: "Morph",
+    group: "sdf",
+    min: 0,
+    max: 1.0,
+    value: 0,
+    step: 0.01,
+  });
+  ps.register({
     // Instances on the orbit. 2 was hardcoded; it stays the default, though the
     // generalised placement moves the second instance's wobble phase slightly
     // (the old counter-shape was not a rotation of the first).
@@ -4497,6 +4553,20 @@ export function registerCoreParameters(ps) {
     max: 8,
     value: 2,
     step: 1,
+  });
+  ps.register({
+    // Makes the instances — and, under Tile, the cells — differ from one
+    // another: each draws its own size, orbit radius and place on the orbit
+    // from a fixed hash. 0 is the default and is exactly the old behaviour,
+    // every instance alike; the draws are static, so this is a setting and not
+    // a flicker. Group 'sdf', so Display States capture it like the rest.
+    id: "sdf.vary",
+    label: "Variation",
+    group: "sdf",
+    min: 0,
+    max: 1.0,
+    value: 0,
+    step: 0.01,
   });
   ps.register({
     // Uniform scale on every primitive. Each shape's radius used to be a
@@ -4973,6 +5043,18 @@ export function registerCoreParameters(ps) {
     unit: "°",
   });
   ps.register({
+    // Shapes cast soft shadows on each other, from the direction Light Az /
+    // Light El set. One extra short march per lit pixel while above 0; 0 is
+    // the default and is exactly the old unshadowed lighting.
+    id: "sdf.shadow",
+    label: "Shadow",
+    group: "sdf",
+    min: 0,
+    max: 1.0,
+    value: 0,
+    step: 0.01,
+  });
+  ps.register({
     id: "sdf.hue",
     label: "Hue",
     group: "sdf",
@@ -5019,41 +5101,19 @@ export function registerCoreParameters(ps) {
     step: 0.01,
   });
   ps.register({
-    // APPEND-ONLY, and kept in lockstep with sdf.refractSrc below and with
-    // _sdfSrcToLayerIdx in main.js — one map serves both menus, so the two
-    // option arrays must stay the same length and order after entry 0.
-    //
-    // "None" sits at index 8 and stays there: a SELECT persists an integer, so
-    // moving it to the end of the menu would silently re-route every saved
-    // state, bank and .imweb that stores 9..15. A slightly odd reading order is
-    // the cheaper price.
+    // Options come from SDF_SRC_KEYS (top of this file), which also explains
+    // why None sits at index 8. Labels are the canonical source labels, so the
+    // old short ones moved: "Color" is "Color 1", "3D" is "3D Scene".
     id: "sdf.texSrc",
     label: "Source",
     group: "sdf",
     type: PARAM_TYPE.SELECT,
     value: 0,
-    options: [
-      "FG Layer",
-      "Camera",
-      "Movie A",
-      "Draw",
-      "Noise",
-      "Color",
-      "Buffer",
-      "3D",
-      "None",
-      "Output",
-      "BG1",
-      "BG2",
-      "Movie B",
-      "Mix 1",
-      "Mix 2",
-      "Mix 3",
-    ],
+    options: sdfSrcLabels("FG Layer"),
   });
   ps.register({
-    // Same list as sdf.texSrc apart from entry 0, and the same append-only
-    // rule. This one is sampled through equirectUv() as a lat-long surround,
+    // Same list as sdf.texSrc apart from entry 0 (SDF_SRC_KEYS). This one is
+    // sampled through equirectUv() as a lat-long surround,
     // which is why BG1/BG2 earn their place: an environment map is meant to be
     // a still panorama, and until now those were only reachable by routing them
     // through the BG layer. "Output" is the honest version of "reflect itself"
@@ -5065,24 +5125,7 @@ export function registerCoreParameters(ps) {
     group: "sdf",
     type: PARAM_TYPE.SELECT,
     value: 0,
-    options: [
-      "BG Layer",
-      "Camera",
-      "Movie A",
-      "Draw",
-      "Noise",
-      "Color",
-      "Buffer",
-      "3D",
-      "None",
-      "Output",
-      "BG1",
-      "BG2",
-      "Movie B",
-      "Mix 1",
-      "Mix 2",
-      "Mix 3",
-    ],
+    options: sdfSrcLabels("BG Layer"),
   });
 
   // ── Draw ──────────────────────────────────────────────────────────────────

@@ -49,11 +49,13 @@ uniform float uSdfOpAmount; // blend / smooth radius 0–1
 uniform float uDistance; // separation between the two orbiting shapes
 uniform float uShape;    // 0=Sphere,1=Box,2=Torus,3=Capsule,4=HexPrism,5=Octahedron,6=Link,7=Mandelbulb
 uniform float uShapeB;   // second primitive; < 0 means "same as A"
+uniform float uMorph;    // 0 = A and B as picked, 0.5 = every instance half of each, 1 = swapped
 uniform float uCount;    // number of orbiting instances, 1–8
 uniform float uSize;     // uniform scale on every primitive
 uniform float uTile;     // domain repetition on/off
 uniform float uRepeat;   // domain repetition cell spacing
 uniform float uWarp;      // surface displacement amplitude
+uniform float uVary;      // per-instance and per-cell variation, 0 = all alike
 uniform vec3  uMove;      // translates the FIELD (Rutt-Etra's rig.position)
 uniform float uOrbitX;    // camera azimuth, radians
 uniform float uOrbitY;    // camera elevation, radians
@@ -83,6 +85,7 @@ uniform float uLumaWarp;    // video luma displacement amplitude
 uniform float uLumaThresh;  // smoothstep low edge — cuts noise below this luma
 uniform float uTexBlend;    // 0=base material, 1=triplanar video texture
 uniform float uAO;          // ambient occlusion strength (0=off, 1=full)
+uniform float uShadow;      // soft shadow strength (0=off, 1=full)
 uniform float uGlow;        // step-count glow intensity
 uniform vec3  uBaseHSV;     // base material color (hue 0–1, sat 0–1, val 0–1)
 uniform float uRefract;     // glass refraction strength
@@ -286,6 +289,16 @@ mat2 rot2D(float a) {
   return mat2(c, -s, s, c);
 }
 
+// ── Variation ────────────────────────────────────────────────────────────────
+// Static hashes: the same instance in the same cell always draws the same
+// number, so Variation is a setting, not a flicker.
+float hash11(float n) { return fract(sin(n * 127.1 + 11.7) * 43758.5453); }
+float hash31(vec3 c)  { return fract(sin(dot(c, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+
+// Distance from the last scene() sample to the nearest wall of its Tile cell.
+// Written by scene(), read by the marches. See the step clamp in main().
+float gCellWall = 1e9;
+
 // ── Scene SDF ────────────────────────────────────────────────────────────────
 float scene(vec3 p) {
   // Move translates the FIELD rather than the camera, so it swings with the
@@ -302,6 +315,19 @@ float scene(vec3 p) {
   vec3 q = (uTile > 0.5)
     ? mod(p + 0.5 * uRepeat, uRepeat) - 0.5 * uRepeat
     : p;
+
+  // VARIATION, per cell. Every Tile cell used to hold the identical cluster in
+  // the identical pose, which is what made a lattice read as wallpaper. The
+  // cell's integer address seeds everything the instances draw below, so each
+  // cell gets its own sizes, spacing and place in the animation. With Tile off
+  // there is one cell and the seed is 0 — the instances still differ from each
+  // other, just not from cell to cell.
+  float cellSeed = 0.0;
+  gCellWall = 1e9;
+  if (uTile > 0.5) {
+    cellSeed  = hash31(floor((p + 0.5 * uRepeat) / uRepeat));
+    gCellWall = 0.5 * uRepeat - max(abs(q.x), max(abs(q.y), abs(q.z)));
+  }
 
   // KIFS folding — Kaleidoscopic Iterated Function System.
   // Each iteration: mirror all axis planes (abs), then rotate xy and xz to
@@ -353,11 +379,37 @@ float scene(vec3 p) {
   for (int i = 0; i < 8; i++) {
     if (float(i) >= cnt) break;
     float ph = ang + float(i) * 6.28318531 / cnt;
-    vec3  ci = vec3(cos(ph) * rad, sin(ph * 0.7) * 0.3, sin(ph * 0.4) * 0.2);
+    // Three independent draws per instance: where it is on the orbit, how far
+    // out, and how big. Each term is multiplied by uVary, so at Variation 0
+    // every one of them is exactly the value it replaced — ph + 0, rad * 1,
+    // s * 1 — and no existing render moves.
+    float hs = float(i) * 3.0 + cellSeed * 97.0;
+    ph += uVary * (hash11(hs) - 0.5) * 6.28318531;
+    float ri = rad * (1.0 + uVary * (hash11(hs + 1.0) - 0.5) * 1.2);
+    // Size varies downward more than up (0.4x – 1.3x at full Variation): a
+    // shape much bigger than its neighbours swallows them under Smooth Union,
+    // and under Tile it would outgrow the smallest cell.
+    float si = s * (1.0 + uVary * (hash11(hs + 2.0) * 0.9 - 0.6));
+    vec3  ci = vec3(cos(ph) * ri, sin(ph * 0.7) * 0.3, sin(ph * 0.4) * 0.2);
     // Alternate primitives so Shape B reads as "the other one" at Count 2 and
     // as an alternating pattern above it. uShapeB < 0 means "same as A".
     float useB = (uShapeB >= 0.0 && mod(float(i), 2.0) > 0.5) ? 1.0 : 0.0;
-    float di = sdShapeSel((kp - ci) / s, mix(uShape, uShapeB, useB)) * s;
+    vec3  pp = (kp - ci) / si;
+    float di = sdShapeSel(pp, mix(uShape, uShapeB, useB)) * si;
+    // MORPH: blend each instance toward the OTHER slot's shape. A straight mix
+    // of two distance fields is the in-between surface, and a weighted average
+    // of two fields that each change by at most 1 per unit also changes by at
+    // most 1 — so the sphere trace needs no extra step correction for it.
+    // (shapeStepScale already takes the slower of the two slots.)
+    //
+    // Branch, not an unconditional mix: the second sdShapeSel is a whole extra
+    // shape evaluation per instance per march step — a Mandelbulb, at worst —
+    // and at Morph 0 it would be multiplied by zero. Both conditions are
+    // uniforms. With Shape B on "Same as A" there is nothing to morph toward.
+    if (uMorph > 0.0 && uShapeB >= 0.0) {
+      float dj = sdShapeSel(pp, mix(uShapeB, uShape, useB)) * si;
+      di = mix(di, dj, uMorph);
+    }
 
     // The first instance seeds d1; combining it with the 1e9 sentinel would
     // let smin/opSmoothSub blend against a number that is not a surface.
@@ -467,6 +519,37 @@ float calcAO(vec3 p, vec3 n) {
   return clamp(1.0 - 2.5 * occ, 0.0, 1.0);
 }
 
+// ── Soft shadow ──────────────────────────────────────────────────────────────
+// Marches from the surface toward the light and returns 1.0 = fully lit,
+// 0.0 = fully shadowed. The penumbra costs nothing extra: a ray that MISSES
+// but passes close to a shape is partly shadowed, by how close it came
+// relative to how far along it was (h / t) — near the occluder the shadow is
+// hard, far from it the shadow widens, which is what a real area light does.
+//
+// Takes stepScale because every correction the primary march needs applies
+// here too: Warp, Luma Warp and the implicit shells all over-report distance,
+// and a shadow ray that tunnels through its occluder is a hole in the shadow.
+// The same goes for the Tile cell-wall clamp. Steps are also capped at 0.4 so
+// a long stride through open space cannot jump clean over a thin shape.
+//
+// 40 steps and 8 units: a shadow carries far less detail than the surface it
+// falls on, and under Tile it is the nearest few cells that matter.
+float softShadow(vec3 ro, vec3 rd, float stepScale) {
+  float res = 1.0;
+  float t   = 0.02;
+  for (int i = 0; i < 40; i++) {
+    float h = scene(ro + rd * t);
+    if (h < 0.001) return 0.0;
+    res = min(res, 10.0 * h / t);
+    float stp = clamp(h, 0.01, 0.4) * stepScale;
+    if (uTile > 0.5) stp = min(stp, gCellWall + 0.02);
+    t += stp;
+    if (t > 8.0) break;
+  }
+  res = clamp(res, 0.0, 1.0);
+  return res * res * (3.0 - 2.0 * res);   // ease the penumbra's two edges
+}
+
 // ── Orbit camera ─────────────────────────────────────────────────────────────
 // Orientation from Euler angles, NOT lookAt — the same choice RuttEtra.js:719
 // documents, for the same reason. lookAt needs an up vector, and at ±90°
@@ -519,13 +602,31 @@ void main() {
   // it is a sixth), while a fixed budget then reached only a sixth as far and
   // distant geometry silently vanished. Raising Steps is the lever for that.
   float minD = 1e9;   // closest the ray ever came to the surface
+  float tMin = 0.0;   // ...and how far along the ray that was
   for (int i = 0; i < 256; i++) {
     if (float(i) >= uSteps) break;
     stepCount = i;
     d = scene(ro + rd * t);
-    minD = min(minD, d);
+    if (d < minD) { minD = d; tMin = t; }
     if (d < 0.001 || t > tMax) break;
-    t += max(d, 0.001) * stepScale;
+    float stp = max(d, 0.001) * stepScale;
+    // CELL-WALL CLAMP. Domain repetition reports the distance to THIS cell's
+    // shapes and knows nothing about the neighbours', so a long stride can
+    // carry the ray into a shape it was never told about — holes and slices at
+    // cell borders. No step may therefore go further than the wall it is
+    // heading for, plus a margin that gets it across (without the margin it
+    // would creep up to the wall forever). Clamped HERE and not inside
+    // scene(): folding the wall into the returned distance would register
+    // walls as hits and light them as aura.
+    //
+    // On for EVERY Tile render, not only when Variation makes cells differ.
+    // Identical cells are not safe either: a shape orbiting near one wall has
+    // a copy just the other side of the opposite wall, and the plain lattice
+    // striped and sliced for exactly that reason (measured at Tile Size 3,
+    // Separation 1.5). The price is a step or two per cell crossed, so a very
+    // deep lattice at a low Steps budget ends a little sooner — raise Steps.
+    if (uTile > 0.5) stp = min(stp, gCellWall + 0.02);
+    t += stp;
   }
 
   // AURA from CLOSEST APPROACH, not from step count.
@@ -608,12 +709,43 @@ void main() {
     return;
   }
 
-  if (d < 0.001) {
+  // ANTI-ALIASED SILHOUETTE.
+  //
+  // Coverage was binary: a ray either hit (alpha 1) or missed, so every edge
+  // was a staircase at the internal resolution, which the bilinear upscale
+  // then smeared rather than smoothed. But the march already knows how close
+  // each missing ray came (minD) and where (tMin). A pixel is not a line, it
+  // is a cone that widens with distance — pix is the world size of one pixel
+  // at distance 1 — so a ray that misses by less than its own pixel's width
+  // is a pixel PARTLY covered by the shape. Those rays are shaded at their
+  // closest approach and written with fractional coverage. The gradient of
+  // the field is defined off the surface too, so the normal there is sound.
+  //
+  // A true hit keeps cov = 1 and, without Tile, takes exactly the path it
+  // always did: only former-miss pixels along an edge change.
+  float pix = 2.0 / (focal * max(uResolution.y, 1.0));
+  float cov = 1.0;
+  if (d >= 0.001) {
+    cov = clamp(1.0 - minD / max(tMin * pix, 1e-5), 0.0, 1.0);
+    t   = tMin;
+  }
+
+  if (cov > 0.0) {
     vec3  p     = ro + rd * t;
     vec3  n     = calcNormal(p);
     vec3  light = uLightDir;
     float diff  = clamp(dot(n, light), 0.0, 1.0);
     float spec  = pow(clamp(dot(reflect(-light, n), -rd), 0.0, 1.0), 32.0);
+    // SHADOW dims what the light contributes — diffuse and the highlight — and
+    // leaves the ambient floor alone, so a shadowed surface is dark, not black.
+    // Lifted off the surface along the normal or the ray re-hits where it
+    // starts. Branch, not mix(): mix() would run the 40-step march at Shadow 0.
+    // Skipped on faces turned away from the light, which are already unlit.
+    if (uShadow > 0.0 && diff > 0.0) {
+      float sh = mix(1.0, softShadow(p + n * 0.02, light, stepScale), uShadow);
+      diff *= sh;
+      spec *= sh;
+    }
     vec3  baseColor = hsv2rgb(uBaseHSV);
     // BODY terms only — no specular. Specular is a reflection off the surface,
     // not part of what the surface transmits, so it is added once at the very
@@ -715,7 +847,9 @@ void main() {
         rdd = scene(rro + refl * rt);
         if (rdd < 0.002) { rHit = 1.0; break; }
         if (rt > uReflectRange) break;
-        rt += max(rdd, 0.002) * stepScale;
+        float rstp = max(rdd, 0.002) * stepScale;
+        if (uTile > 0.5) rstp = min(rstp, gCellWall + 0.02);
+        rt += rstp;
       }
       if (rHit > 0.5) {
         vec3  rp    = rro + refl * rt;
@@ -770,7 +904,20 @@ void main() {
     finalCol += auraTint * uGlow * rimGlow;
 
     // ALPHA IS COVERAGE. The object is opaque.
-    gl_FragColor = vec4(finalCol, 1.0);
+    //
+    // DISTANCE FADE, Tile only. An infinite lattice has to end somewhere, and
+    // it ended in a wall: tMax cut it off at full brightness, cells beyond
+    // simply absent. Over the far half of the march the shapes now lose
+    // coverage instead, so the lattice dissolves into whatever is behind this
+    // source — or into the aura, when Glow is up — rather than stopping.
+    // Without Tile there is one cluster at the centre and nothing to fade.
+    if (uTile > 0.5) cov *= 1.0 - smoothstep(0.5 * tMax, tMax, t);
+    // Same convention as the miss branch below: colour already weighted by
+    // its own coverage, with the aura showing through what the shape does not
+    // cover. At cov = 1 this is vec4(finalCol, 1.0), the line it replaced.
+    float glowA = clamp(halo * uGlow, 0.0, 1.0);
+    gl_FragColor = vec4(finalCol * cov + glowCol * (1.0 - cov),
+                        cov + glowA * (1.0 - cov));
   } else {
     // Background glow: rays that pass close to the surface carry the aura.
     //
@@ -826,11 +973,13 @@ export class SDFGenerator {
         uDistance:   { value: 1.5 },
         uShape:      { value: 0 },
         uShapeB:     { value: -1 },
+        uMorph:      { value: 0 },
         uCount:      { value: 2 },
         uSize:       { value: 1 },
         uTile:       { value: 0 },
         uRepeat:     { value: 3 },
         uWarp:       { value: 0 },
+        uVary:       { value: 0 },
         uMove:       { value: new THREE.Vector3(0, 0, 0) },
         uOrbitX:     { value: 0 },
         uOrbitY:     { value: 0 },
@@ -860,6 +1009,7 @@ export class SDFGenerator {
         uLumaThresh:  { value: 0.2 },
         uTexBlend:    { value: 0.8 },
         uAO:          { value: 0.5 },
+        uShadow:      { value: 0 },
         uGlow:        { value: 0.2 },
         uBaseHSV:     { value: new THREE.Vector3(0, 0, 1) },
         uRefract:     { value: 0 },
@@ -908,11 +1058,13 @@ export class SDFGenerator {
     // Shape B option 0 is "Same as A"; the shader takes < 0 to mean that, so
     // the index shifts down by one and 0 becomes the sentinel.
     u.uShapeB.value   = ps.get('sdf.shapeB').value - 1;
+    u.uMorph.value    = ps.get('sdf.morph').value;
     u.uCount.value    = ps.get('sdf.count').value;
     u.uSize.value     = ps.get('sdf.size').value;
     u.uTile.value     = ps.get('sdf.tile').value ? 1 : 0;
     u.uRepeat.value   = ps.get('sdf.repeat').value;
     u.uWarp.value     = ps.get('sdf.warp').value;
+    u.uVary.value     = ps.get('sdf.vary').value;
     u.uMove.value.set(
       ps.get('sdf.moveX').value,
       ps.get('sdf.moveY').value,
@@ -954,6 +1106,7 @@ export class SDFGenerator {
     u.uLumaThresh.value = ps.get('sdf.lumaThresh').value;
     u.uTexBlend.value   = ps.get('sdf.texBlend').value;
     u.uAO.value         = ps.get('sdf.ao').value;
+    u.uShadow.value     = ps.get('sdf.shadow').value;
     u.uGlow.value       = ps.get('sdf.glow').value;
     u.uBaseHSV.value.set(
       ps.get('sdf.hue').value / 360,

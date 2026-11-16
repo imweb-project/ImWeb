@@ -396,8 +396,8 @@ export function buildMappingPanels(ps, contextMenu) {
     // accordion entry. tests/audit-panel-coverage.mjs picks these up
     // automatically (it scans for pick() calls) and fails if a sdf.* param ends
     // up in no section, in two, or under a name that no longer exists.
-    'sdf-shape-params':    pick('sdf', ['active', 'shape', 'shapeB', 'count', 'size',
-                                        'opMode', 'opAmount', 'distance', 'speed']),
+    'sdf-shape-params':    pick('sdf', ['active', 'shape', 'shapeB', 'morph', 'count', 'size',
+                                        'vary', 'opMode', 'opAmount', 'distance', 'speed']),
     // "Space", not "Fold": the section holds domain repetition and surface
     // warp as well as the kaleidoscopic fold, and Fold named only one of three.
     'sdf-space-params':    pick('sdf', ['tile', 'repeat', 'kifsIter', 'kifsAngle',
@@ -405,7 +405,7 @@ export function buildMappingPanels(ps, contextMenu) {
     'sdf-camera-params':   pick('sdf', ['orbitX', 'orbitY', 'camDist',
                                         'moveX', 'moveY', 'moveZ', 'fov']),
     'sdf-material-params': pick('sdf', ['hue', 'sat', 'val', 'ao']),
-    'sdf-light-params':    pick('sdf', ['lightAz', 'lightEl']),
+    'sdf-light-params':    pick('sdf', ['lightAz', 'lightEl', 'shadow']),
     'sdf-glow-params':     pick('sdf', ['glow', 'glowHue', 'glowSat', 'glowVal',
                                         'glowHue2', 'glowSat2', 'glowVal2',
                                         'glowSize', 'glowEnv']),

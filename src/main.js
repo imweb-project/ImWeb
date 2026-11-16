@@ -42,6 +42,7 @@ import {
   CAPTURE_INDIRECT_BASE,
   MIXBUS_IDX,
   PARTICLE_MASK_SRC,
+  SDF_SRC_KEYS,
   PARAM_TYPE,
   MIDI_PAGES,
   TEXSRC_TO_SOURCE,
@@ -6385,10 +6386,10 @@ async function main() {
   /**
    * sdf.texSrc / sdf.refractSrc option index → SOURCE_DEFS index.
    *
-   * Both params carry their own short 9-entry option list (a deliberate small
-   * menu, not the full source dropdown), so the two lists have to be kept in
-   * register by hand somewhere. Doing it by KEY rather than by number is what
-   * makes it safe: the bare-number literal this replaced was copied from an
+   * Both menus keep their own ordering (a frozen sixteen-entry head, then
+   * every other source), so their indices are not SOURCE_DEFS indices and have
+   * to be translated. Doing it by KEY rather than by number is what makes it
+   * safe: the bare-number literal this replaced was copied from an
    * older SOURCE_DEFS ordering and had drifted three ways —
    *   "Draw"  fetched 3D Scene, "3D" fetched Noise, and
    *   "Noise" fetched Color2 — a solid cyan fill (hue 50, sat 80, val 60),
@@ -6399,15 +6400,13 @@ async function main() {
    * Index 0 means "follow layer.fg / layer.bg" and index 8 means None; both are
    * null here and handled by the call site.
    */
-  const _sdfSrcToLayerIdx = [
-    null, "camera", "movie", "draw", "noise", "color", "buffer", "scene3d", null,
-    // Appended after "None" (index 8) rather than around it: SELECT values
-    // persist as integers, so inserting would re-route every saved state.
-    // Safe to add only because _direct() now counts these two selectors —
-    // before that, picking Movie B or a mix bus would have resolved to a
-    // texture nothing had scheduled and rendered black or stale.
-    "output", "bg1", "bg2", "movieB", "mixbus", "mixbus2", "mixbus3",
-  ].map((k) => (k == null ? null : SOURCE_KEYS.indexOf(k)));
+  // The list itself is SDF_SRC_KEYS in ParameterSystem.js, which the two menus'
+  // labels are built from too — one list, so menu and map cannot drift apart.
+  // Every entry is counted by _direct() below, which is what makes it safe to
+  // offer the whole source list: a source picked only here is still scheduled.
+  const _sdfSrcToLayerIdx = SDF_SRC_KEYS.map((k) =>
+    k == null ? null : SOURCE_KEYS.indexOf(k),
+  );
 
   /**
    * Collapse a CAPTURE_SOURCES index to a real SOURCE_DEFS index.
