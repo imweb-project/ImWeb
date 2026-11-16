@@ -8,7 +8,18 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Added
+- **Color 2 gradients: Angle, Bands, Steps, Path, Scroll and Conic** — the
+  gradient can be turned to any angle, repeated as stripes or rings, cut into
+  flat steps, sent round the colour wheel (**Path** = Rainbow) and set moving
+  (**Scroll**). **Conic** is a new sweep round the centre. The gradient is now
+  drawn at output size without visible banding, and blends without a grey
+  middle between opposite hues, so existing gradients look slightly cleaner.
+
 ### Changed
+- **Color is now Color 1, and Col2 Type is now Gradient** — the source menus
+  list **Color 1** beside Color 2, and the row that turns Color 2 into a
+  gradient says so. Names only: saved states, banks and mappings are unchanged.
 - **The 3D plane takes the picture's shape** — new **PlaneShape** (Square /
   Image, default Image): Basic: Plane keeps its width and takes the output's
   aspect, so a texture is no longer squashed onto a square (Relief (3D)).

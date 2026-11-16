@@ -18,7 +18,7 @@
 import * as THREE from 'three';
 import {
   VERT, KEYER, DISPLACE, BLEND, FEEDBACK,
-  TRANSFERMODE, COLORSHIFT, NOISE_BFG, NOISE_UNIFORM_DEFAULTS, INTERLACE, MIRROR, WARP, FADE, PASSTHROUGH,
+  TRANSFERMODE, COLORSHIFT, NOISE_BFG, NOISE_UNIFORM_DEFAULTS, GRADIENT, INTERLACE, MIRROR, WARP, FADE, PASSTHROUGH,
   BUFFER_TRANSFORM, INTERP,
   PIXELATE, EDGE, RGBSHIFT, POSTERIZE, SOLARIZE, COLOR_CORRECT, CHROMA_KEY,
   VIGNETTE, BLOOM_EXTRACT, BLOOM_BLUR, BLOOM_COMPOSITE, BOKEH_GATHER,
@@ -526,6 +526,11 @@ export class Pipeline {
     // Second 512×512 target for the optional noise-sharpen pass (ping-pong
     // independent of the main pipeline's targets).
     this._noiseSharpTarget = this._makeTarget(512, 512);
+
+    // Color 2 (solid / gradient). 4×4 while it is a solid, output size once it
+    // is a gradient — see generateGradient().
+    this._gradTarget = this._makeTarget(4, 4);
+    this._gradKey = '';
 
     // Dedicated half-resolution targets for bloom blur passes.
     // BlurH and BlurV render at w/2 × h/2; composite upsamples back to full-res.
@@ -1356,6 +1361,42 @@ export class Pipeline {
     }, this._noiseSharpTarget);
   }
 
+  /** The Color 2 texture. One object for the pipeline's life — setSize keeps it. */
+  get gradientTexture() { return this._gradTarget.texture; }
+
+  /**
+   * Draw the Color 2 generator. Call every frame: it renders only when a value
+   * it draws from has changed, so a still gradient costs nothing and an
+   * animated one costs one small pass — never a texture upload.
+   *
+   * The skip compares VALUES (every uniform plus the target size), not a dirty
+   * flag: a flag has to be set by every path that can move a colour, and a
+   * controller writing a param is exactly the path that gets forgotten.
+   * @param {object} u  uniform values; uC1 / uC2 are [h, s, v] arrays
+   */
+  generateGradient(u) {
+    const solid = u.uType === 0;
+    const w = solid ? 4 : this.width;
+    const h = solid ? 4 : this.height;
+    const t = this._gradTarget;
+    if (t.width !== w || t.height !== h) t.setSize(w, h);
+    const aspect = this.width / this.height;
+    const key = `${w}x${h}|${aspect}|${u.uC1}|${u.uC2}|${u.uHuePhase}|${u.uType}|${u.uAngle}|${u.uBands}|${u.uSteps}|${u.uPath}|${u.uScroll}`;
+    if (key === this._gradKey) return t.texture;
+    this._gradKey = key;
+    this._gradRenders = (this._gradRenders ?? 0) + 1;
+    const m = this.m.gradient;
+    const mu = m.uniforms;
+    mu.uC1.value.fromArray(u.uC1);
+    mu.uC2.value.fromArray(u.uC2);
+    for (const k of ['uHuePhase', 'uType', 'uAngle', 'uBands', 'uSteps', 'uPath', 'uScroll']) mu[k].value = u[k];
+    mu.uAspect.value = aspect;
+    this._quad.material = m;
+    this.renderer.setRenderTarget(t);
+    this.renderer.render(this._scene, this._camera);
+    return t.texture;
+  }
+
   // ── Resize ────────────────────────────────────────────────────────────────
 
   resize(w, h) {
@@ -1739,6 +1780,12 @@ export class Pipeline {
       noise: this._mat(NOISE_BFG, Object.fromEntries(
         Object.entries(NOISE_UNIFORM_DEFAULTS).map(([k, v]) => [k, { value:
           Array.isArray(v) ? (v.length === 2 ? new THREE.Vector2(...v) : new THREE.Vector3(...v)) : v }]))),
+      gradient: this._mat(GRADIENT, {
+        uC1: { value: new THREE.Vector3() }, uC2: { value: new THREE.Vector3() },
+        uHuePhase: { value: 0 }, uType: { value: 0 }, uAngle: { value: 0 },
+        uBands: { value: 1 }, uSteps: { value: 0 }, uPath: { value: 0 },
+        uScroll: { value: 0 }, uAspect: { value: 1 },
+      }),
       bufferTransform: this._mat(BUFFER_TRANSFORM, {
         uPanX:  { value: 0 },
         uPanY:  { value: 0 },
