@@ -417,6 +417,18 @@ vec3 calcNormal(vec3 p) {
   ));
 }
 
+// ── Mirrored wrap for the triplanar taps ─────────────────────────────────────
+// The triplanar lookups index the video by WORLD position, which is negative on
+// half of every axis and runs past 1 beyond two units — and every source
+// texture is ClampToEdge. Unwrapped, only the octant where all coordinates are
+// positive showed real picture; the rest was the edge row smeared into streaks,
+// and one quadrant was a single flat corner texel. Wrapping here rather than on
+// the texture keeps it local: the same textures feed layers and mix buses,
+// which want the clamp. Mirrored, not repeated, so there is no seam at the
+// origin — and it is the identity on [0,1], so the part that was already right
+// does not move.
+vec2 mirrorUv(vec2 u) { return 1.0 - abs(mod(u, 2.0) - 1.0); }
+
 // ── Equirectangular lookup for the environment tap ───────────────────────────
 // Treats the Refract Src texture as a spherical surround and maps a direction
 // into it. This is what makes the reflection behave like a reflection: it is a
@@ -568,7 +580,34 @@ void main() {
   // outer stop could be set to anything and never showed.
   vec3 glowCol = halo * auraTint * uGlow;
 
-  float depthVal = 0.0;   // filled on a hit; a miss stays at 0 = maximally far
+  // DEPTH PASS EXITS HERE, before any shading.
+  //
+  // Depth is a second render of this same material (see renderDepth), and it
+  // needs exactly two things the march above already produced: whether the ray
+  // hit, and how far it travelled. It used to fall through the whole hit branch
+  // — a 6-tap normal, 5-tap occlusion, three texture taps and, with Self
+  // Reflect on, a second march of up to 128 steps and another normal — and then
+  // overwrite the result on the last line. uDepthPass is a uniform, so the
+  // branch is the same for every fragment and the colour pass pays nothing.
+  //
+  // Centred on the field and scaled by uDepthRange, NOT normalised over the
+  // whole marched distance. Over the full range the object occupied 6–12% of
+  // 0–1 — as little as 15 of 255 levels — because most of the march is empty
+  // space, and worse, the value drifted with camera distance, so a depth map
+  // driving Displace changed meaning every time you dollied. Measuring from
+  // the field centre makes 0.5 the centre at any distance, and Depth Range
+  // sets how much world depth fills the channel. Nearer = brighter; a miss is
+  // 0, as far away as the channel can express.
+  if (uDepthPass > 0.5) {
+    float depthVal = 0.0;
+    if (d < 0.001) {
+      float dc = length(ro - uMove);
+      depthVal = clamp(0.5 + (dc - t) / (2.0 * max(uDepthRange, 0.001)), 0.0, 1.0);
+    }
+    gl_FragColor = vec4(vec3(depthVal), 1.0);
+    return;
+  }
+
   if (d < 0.001) {
     vec3  p     = ro + rd * t;
     vec3  n     = calcNormal(p);
@@ -588,9 +627,9 @@ void main() {
     vec3  triW     = abs(n);
     triW = triW / (triW.x + triW.y + triW.z);
     float tsc      = 0.5; // world-space scale — repeats every 2 units
-    vec3  tpX      = texture2D(uFgTex, p.yz * tsc).rgb;
-    vec3  tpY      = texture2D(uFgTex, p.xz * tsc).rgb;
-    vec3  tpZ      = texture2D(uFgTex, p.xy * tsc).rgb;
+    vec3  tpX      = texture2D(uFgTex, mirrorUv(p.yz * tsc)).rgb;
+    vec3  tpY      = texture2D(uFgTex, mirrorUv(p.xz * tsc)).rgb;
+    vec3  tpZ      = texture2D(uFgTex, mirrorUv(p.xy * tsc)).rgb;
     vec3  texColor = tpX * triW.x + tpY * triW.y + tpZ * triW.z;
     // Modulate tex sample by lighting so shading is preserved at uTexBlend=1.
     //
@@ -692,9 +731,9 @@ void main() {
         // as the thing it reflects.
         vec3  rtriW = abs(rn);
         rtriW = rtriW / (rtriW.x + rtriW.y + rtriW.z);
-        vec3  rtex  = texture2D(uFgTex, rp.yz * tsc).rgb * rtriW.x
-                    + texture2D(uFgTex, rp.xz * tsc).rgb * rtriW.y
-                    + texture2D(uFgTex, rp.xy * tsc).rgb * rtriW.z;
+        vec3  rtex  = texture2D(uFgTex, mirrorUv(rp.yz * tsc)).rgb * rtriW.x
+                    + texture2D(uFgTex, mirrorUv(rp.xz * tsc)).rgb * rtriW.y
+                    + texture2D(uFgTex, mirrorUv(rp.xy * tsc)).rgb * rtriW.z;
         vec3  rcol  = mix(baseColor * (0.2 + rdiff * 0.8),
                           rtex * baseColor * (0.15 + rdiff * 0.85),
                           uTexBlend);
@@ -730,20 +769,6 @@ void main() {
     float rimGlow = pow(1.0 - max(dot(n, -rd), 0.0), 2.0);
     finalCol += auraTint * uGlow * rimGlow;
 
-    // ALPHA CARRIES DEPTH, not opacity. Layer compositing in Pipeline.js goes
-    // through explicit blend modes and the keyer and never reads source alpha,
-    // so this channel was writing a constant 1.0 into every frame for nothing.
-    // The material is NoBlending precisely so this can be data.
-    //
-    // Centred on the field and scaled by uDepthRange, NOT normalised over the
-    // whole marched distance. Over the full range the object occupied 6–12% of
-    // 0–1 — as little as 15 of 255 levels — because most of the march is empty
-    // space, and worse, the value drifted with camera distance, so a depth map
-    // driving Displace changed meaning every time you dollied. Measuring from
-    // the field centre makes 0.5 the centre at any distance, and Depth Range
-    // sets how much world depth fills the channel. Nearer = brighter.
-    float dc = length(ro - uMove);
-    depthVal = clamp(0.5 + (dc - t) / (2.0 * max(uDepthRange, 0.001)), 0.0, 1.0);
     // ALPHA IS COVERAGE. The object is opaque.
     gl_FragColor = vec4(finalCol, 1.0);
   } else {
@@ -757,14 +782,6 @@ void main() {
     // everywhere. Depth 0: a miss is as far away as the channel can express.
     gl_FragColor = vec4(glowCol, clamp(halo * uGlow, 0.0, 1.0));
   }
-
-  // Depth is a SECOND pass over the same march rather than a channel of the
-  // first. It used to ride in alpha, which cost nothing but took the one
-  // channel the compositor needs to know where this source actually IS.
-  // Coverage is worth more there than depth, so depth pays for itself instead:
-  // main.js only runs this pass when the SDF Depth source is really consumed,
-  // so a project that never routes it never marches twice.
-  if (uDepthPass > 0.5) gl_FragColor = vec4(vec3(depthVal), 1.0);
 }
 `;
 
