@@ -374,6 +374,7 @@ export function buildMappingPanels(ps, contextMenu) {
                                .map(id => ps.get(id)).filter(Boolean)),
     'global-params':       ps.getGroup('global').filter(p =>
       p.id !== 'glsl.preset' && p.id !== 'displace.warpSlot' && p.id !== 'growth.look' &&
+      p.id !== 'sdf.look' &&
       p.id !== 'reimagine.auto' && p.id !== 'reimagine.look' &&
       // Segment rows live in each model's animation block (buildSegmentRow).
       !/^(scene3d\.anim\.segment|model[234]\.animSegment)$/.test(p.id) &&
@@ -396,8 +397,11 @@ export function buildMappingPanels(ps, contextMenu) {
     // accordion entry. tests/audit-panel-coverage.mjs picks these up
     // automatically (it scans for pick() calls) and fails if a sdf.* param ends
     // up in no section, in two, or under a name that no longer exists.
-    'sdf-shape-params':    pick('sdf', ['active', 'shape', 'shapeB', 'morph', 'count', 'size',
-                                        'vary', 'opMode', 'opAmount', 'motion', 'distance', 'speed']),
+    // sdf.look is group 'global' (a loader — see its registration), so it is
+    // placed here by id, at the top: the Look is the first thing to reach for.
+    'sdf-shape-params':    [ps.get('sdf.look')].filter(Boolean).concat(
+                           pick('sdf', ['active', 'shape', 'shapeB', 'morph', 'count', 'size',
+                                        'vary', 'opMode', 'opAmount', 'motion', 'distance', 'speed'])),
     // "Space", not "Fold": the section holds domain repetition and surface
     // warp as well as the kaleidoscopic fold, and Fold named only one of three.
     'sdf-space-params':    pick('sdf', ['tile', 'repeat', 'kifsIter', 'kifsAngle',

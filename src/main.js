@@ -98,6 +98,7 @@ import { RGBDelay } from "./inputs/RGBDelay.js";
 import { MotionExtract } from "./inputs/MotionExtract.js";
 import { GrowthRD } from "./inputs/GrowthRD.js";
 import { GROWTH_RES, GROWTH_LOOKS } from "./inputs/GrowthPatterns.js";
+import { SDF_LOOKS } from "./inputs/SDFLooks.js";
 import { TimeDisplaceEngine } from "./inputs/TimeDisplaceEngine.js";
 import { SpacetimeRing } from "./inputs/SpacetimeRing.js";
 import { SpacetimeSlice } from "./inputs/SpacetimeSlice.js";
@@ -6559,6 +6560,35 @@ async function main() {
     if (best < 0 || best === ps.get("growth.look").value) return;
     _lookSyncing = true;
     try { ps.set("growth.look", best); } finally { _lookSyncing = false; }
+  });
+  // SDF Look: the same loader shape as the Growth Look above. Writes every
+  // value of the chosen Look and switches the generator on, so picking a name
+  // always shows that look. It does NOT route the SDF to a layer or choose
+  // what is on its surface or behind its glass — those are the patch's.
+  let _sdfLookSyncing = false;   // true only while a recall re-labels the menu
+  const applySdfLook = (i) => {
+    if (_sdfLookSyncing) return;
+    const look = SDF_LOOKS[Math.round(i)];
+    if (!look) return;
+    for (const [id, v] of Object.entries(look.values)) ps.set(id, v);
+    ps.set("sdf.active", 1);
+  };
+  ps.get("sdf.look").onChange(applySdfLook);
+  ps.get("sdf.look").onReselect(applySdfLook);
+  // After a recall, show the Look the recalled values come from (most values
+  // equal) without APPLYING it — that would overwrite what was just recalled.
+  // A state that matches no Look better than the one shown leaves the menu be.
+  ps.addEventListener("stateRestored", (e) => {
+    const st = e.detail ?? {};
+    const val = (id) => st[id] ?? ps.get(id)?.value;
+    let best = -1, bestScore = -1;
+    SDF_LOOKS.forEach((look, i) => {
+      const score = Object.entries(look.values).filter(([id, v]) => val(id) === v).length;
+      if (score > bestScore) { best = i; bestScore = score; }
+    });
+    if (best < 0 || best === ps.get("sdf.look").value) return;
+    _sdfLookSyncing = true;
+    try { ps.set("sdf.look", best); } finally { _sdfLookSyncing = false; }
   });
   ps.get("growth.plant").onTrigger(() => growthRD.plant(
     ps.get("growth.plantX").value / 100,

@@ -25,6 +25,7 @@ import { isPagedBinding } from './controlInput.js';
 // built from the one list the index itself reads, never retyped beside it.
 import { DESCRIPTOR_LABELS } from '../audio/corpus-index.js';
 import { GROWTH_PATTERNS, GROWTH_MODES, GROWTH_LOOKS, NCA_MODELS } from '../inputs/GrowthPatterns.js';
+import { SDF_LOOKS } from '../inputs/SDFLooks.js';
 import { REIMAGINE_LOOKS } from '../ai/ReimagineLooks.js';
 import { SPLAT_ATTRACTORS } from '../ai/SplatAttractors.js';
 
@@ -4447,6 +4448,23 @@ export function registerCoreParameters(ps) {
   });
 
   // ── SDF Generator ────────────────────────────────────────────────────────
+  // Look: a LOADER, not a state — the growth.look pattern, for the same
+  // reasons. Choosing one writes every sdf.* value that shapes the picture
+  // (SDF_LOOKS in src/inputs/SDFLooks.js), so a name always gives its look
+  // whatever was dialled in before. Group 'global' so a Display State captures
+  // the real values rather than an index that would re-apply over them on
+  // recall. Appended to sdf-shape-params by id and kept out of the auto-built
+  // global panel, as growth.look and glsl.preset are. APPEND-ONLY.
+  ps.register({
+    id: "sdf.look",
+    label: "Look",
+    group: "global",
+    type: PARAM_TYPE.SELECT,
+    options: SDF_LOOKS.map((l) => l.name),
+    value: 0,
+    select: true,
+    reselect: true,   // choosing the Look already shown re-applies it
+  });
   ps.register({
     id: "sdf.active",
     label: "SDF",
