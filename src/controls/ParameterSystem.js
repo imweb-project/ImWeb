@@ -4453,7 +4453,7 @@ export function registerCoreParameters(ps) {
   // (SDF_LOOKS in src/inputs/SDFLooks.js), so a name always gives its look
   // whatever was dialled in before. Group 'global' so a Display State captures
   // the real values rather than an index that would re-apply over them on
-  // recall. Appended to sdf-shape-params by id and kept out of the auto-built
+  // recall. Placed at the top of sdf-params by id and kept out of the auto-built
   // global panel, as growth.look and glsl.preset are. APPEND-ONLY.
   ps.register({
     id: "sdf.look",

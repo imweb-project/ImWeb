@@ -397,11 +397,21 @@ export function buildMappingPanels(ps, contextMenu) {
     // accordion entry. tests/audit-panel-coverage.mjs picks these up
     // automatically (it scans for pick() calls) and fails if a sdf.* param ends
     // up in no section, in two, or under a name that no longer exists.
+    // SDF's LIVE SET, in panel order: the Look, the switch, and the controls a
+    // performer reaches for once a Look is up. Everything else is in the nine
+    // subsections below it, which start collapsed. A param is listed in ONE
+    // place — the subsection lists leave these out.
+    //
+    // Written as pick() rather than a list of ids mapped through ps.get, on
+    // purpose: tests/audit-panel-coverage.mjs finds placed params by reading
+    // pick('sdf', [...]) calls, so a hand-mapped list would hide these eight
+    // from the one audit that notices a registered param with no row.
     // sdf.look is group 'global' (a loader — see its registration), so it is
-    // placed here by id, at the top: the Look is the first thing to reach for.
-    'sdf-shape-params':    [ps.get('sdf.look')].filter(Boolean).concat(
-                           pick('sdf', ['active', 'shape', 'shapeB', 'morph', 'count', 'size',
-                                        'vary', 'opMode', 'opAmount', 'motion', 'distance', 'speed'])),
+    // reached by id, as growth.look is.
+    'sdf-params':          [ps.get('sdf.look')].filter(Boolean).concat(
+                           pick('sdf', ['active', 'speed', 'size', 'vary', 'morph',
+                                        'distance', 'hue', 'glow'])),
+    'sdf-shape-params':    pick('sdf', ['shape', 'shapeB', 'count', 'opMode', 'opAmount', 'motion']),
     // "Space", not "Fold": the section holds domain repetition and surface
     // warp as well as the kaleidoscopic fold, and Fold named only one of three.
     'sdf-space-params':    pick('sdf', ['tile', 'repeat', 'kifsIter', 'kifsAngle',
@@ -409,9 +419,9 @@ export function buildMappingPanels(ps, contextMenu) {
                                         'twist']),
     'sdf-camera-params':   pick('sdf', ['orbitX', 'orbitY', 'camDist',
                                         'moveX', 'moveY', 'moveZ', 'fov']),
-    'sdf-material-params': pick('sdf', ['hue', 'sat', 'val', 'ao']),
+    'sdf-material-params': pick('sdf', ['sat', 'val', 'ao']),
     'sdf-light-params':    pick('sdf', ['lightAz', 'lightEl', 'shadow']),
-    'sdf-glow-params':     pick('sdf', ['glow', 'glowHue', 'glowSat', 'glowVal',
+    'sdf-glow-params':     pick('sdf', ['glowHue', 'glowSat', 'glowVal',
                                         'glowHue2', 'glowSat2', 'glowVal2',
                                         'glowSize', 'glowEnv']),
     'sdf-glass-params':    pick('sdf', ['refract', 'glassSolid', 'dispersion', 'fresnel', 'envAmt', 'selfReflect',
