@@ -3522,6 +3522,16 @@ export function registerCoreParameters(ps) {
       "Platonic: Octahedron",
       "Platonic: Tetrahedron",
       "Basic: Ring",
+      // Append-only, and in step with GEOMETRY_NAMES (GeometryFactory.js).
+      "Surface: Möbius",
+      "Surface: Klein Bottle",
+      "Complex: Spring",
+      "Surface: Shell",
+      "Complex: Supershape",
+      "Complex: Star",
+      "Complex: Knot 3·7",
+      "Faceted: Gem",
+      "Complex: Teapot",
     ],
     value: 0,
   });
