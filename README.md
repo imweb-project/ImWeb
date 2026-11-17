@@ -8,7 +8,7 @@
 [![Open Collective](https://img.shields.io/badge/Open%20Collective-support-7FADF2?logo=opencollective&logoColor=white)](https://opencollective.com/imweb)
 [![Live Demo](https://img.shields.io/badge/demo-live-orange)](https://imweb.image-ine.org)
 
-**ImWeb is Image/ine — reimagined** — The legendary real-time video synthesis instrument created by Tom Demeyer and Steina Vasulka at STEIM Amsterdam, rebuilt for the modern browser and pointed toward what comes next. Free, open source, no installation required.
+**ImWeb is Image/ine — reimagined** — The legendary real-time video synthesis instrument created by Tom Demeyer and Steina Vasulka at STEIM Amsterdam, continued in the modern browser and pointed toward what comes next. Free, open source, no installation required.
 → **[Try it live → imweb.image-ine.org](https://imweb.image-ine.org)**
 
 💖 **[Support ImWeb on Open Collective](https://opencollective.com/imweb)**
@@ -373,7 +373,7 @@ This project is a personal reimagining and artistic continuation. It is not affi
 
 GNU Affero General Public License v3.0 — see [LICENSE](LICENSE) for full text.
 
-The AGPL v3 was chosen deliberately: any hosted derivative of ImWeb must remain open source. The license file includes a dedication to Tom Demeyer and Steina Vasulka.
+The AGPL v3 was chosen deliberately: any hosted derivative of ImWeb must remain open source. The dedication to Tom Demeyer and Steina Vasulka and the copyright notice are in [CREDITS.md](CREDITS.md).
 
 ---
 
