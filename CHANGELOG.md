@@ -9,6 +9,36 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **States remember their movie clip** — saving a state now keeps which
+  library clip each deck is showing, and recalling it cuts to that clip,
+  loading it into the rack if needed. A deck the state saved switched off is
+  left alone. States saved before this keep working but do not switch clips
+  until they are saved again.
+- **Nine new 3D shapes** in the Geometry menu — Möbius, Klein Bottle, Shell
+  (surfaces), Spring, Supershape, Star, Knot 3·7, Teapot (complex) and Gem
+  (a faceted icosahedron). All sit in the same frame as the basic shapes.
+- **SDF Looks** — a new **Look** menu at the top of the SDF panel loads a
+  complete, tested setting: Default, Lava Lamp, Crystal Balls, Coral, Lattice,
+  Video Helix, Bubbles and Amethyst. A Look sets every SDF control and switches
+  SDF on; it leaves Source, Refract Src and Detail as they are. Crystal Balls
+  and Bubbles want something on Refract Src.
+- **SDF shapes can differ, blend and cast shadows** — **Variation** gives each
+  shape (and, with Tile on, each cell) its own size and place; **Morph** blends
+  each shape into Shape B; **Shadow** (in Light) lets shapes shade each other.
+- **SDF glass you can see through** — **Solid Glass** (in Glass) bends the
+  picture through the whole shape, so a ball shows the background small and
+  upside down, and Hue/Sat tint the thick parts more than the thin.
+  **Dispersion** splits it into colour fringes. Both need Refract above 0.
+- **SDF can twist, grow and move in new ways** — **Warp Type** adds **Organic**,
+  a layered, grown-looking surface, beside the old Ripple; **Twist** turns the
+  shapes more the higher they go; **Motion** adds **Lissajous**, **Swarm** and
+  **Pulse** to the old Orbit. All default to the old behaviour.
+- **Color 2 gradients: Angle, Bands, Steps, Path, Scroll and Conic** — the
+  gradient can be turned to any angle, repeated as stripes or rings, cut into
+  flat steps, sent round the colour wheel (**Path** = Rainbow) and set moving
+  (**Scroll**). **Conic** is a new sweep round the centre. The gradient is now
+  drawn at output size without visible banding, and blends without a grey
+  middle between opposite hues, so existing gradients look slightly cleaner.
 - **PMaskSrc reaches every source** — Particles can now use Growth, Volume,
   Shader Code, AI Depth and Splat World as a mask, which the menu had left out.
 - **Depth recovers after a failed run** — one failed estimate used to stop depth
@@ -66,12 +96,6 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   turns one thing into another. At a low Shatter the pieces fly straight from
   the old shape to the new. Changing PieceSize or ShatterBy mid-flight keeps
   the cloud too, where it used to snap home.
-- **Color 2 gradients: Angle, Bands, Steps, Path, Scroll and Conic** — the
-  gradient can be turned to any angle, repeated as stripes or rings, cut into
-  flat steps, sent round the colour wheel (**Path** = Rainbow) and set moving
-  (**Scroll**). **Conic** is a new sweep round the centre. The gradient is now
-  drawn at output size without visible banding, and blends without a grey
-  middle between opposite hues, so existing gradients look slightly cleaner.
 
 ### Fixed
 - **Pictures on GLB models are the right way up** — a movie, camera or layer used
@@ -85,11 +109,33 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 - **The 3D plane takes the picture's shape** — new **PlaneShape** (Square /
   Image, default Image): Basic: Plane keeps its width and takes the output's
   aspect, so a texture is no longer squashed onto a square (Relief (3D)).
+- **Video covers the whole SDF shape** — with Tex Blend up, only one side of
+  each shape showed the picture; the rest was smeared streaks. The picture now
+  wraps all the way round, so existing looks with video on them change.
+- **SDF Tile no longer slices shapes** — shapes near the edge of a tile came
+  out striped or cut. The far end of a deep lattice is now a little nearer at
+  low Steps; raise Steps to push it back.
+- **SDF Luma Warp pushes outward** — bright parts of the picture now raise the
+  surface, as the control always said; they used to carve into it.
+- **SDF Depth costs less** — it no longer shades anything it throws away, and
+  it no longer runs while SDF is switched off.
   PlaneShape and Scale now sit under Geometry; the Transform section lives in
   Import Model ▸ M1, where a basic shape's size was hard to find.
 - **Hue, Saturation, Color and Luminosity blends follow Photoshop / W3C** —
   luma is perceptual (0.3 / 0.59 / 0.11) and saturation is the channel
   spread, replacing an HSL model that carried *relative* saturation. Faint
+- **The SDF panel opens on a short live set** — Look, SDF, Speed, Size,
+  Variation, Morph, Separation, Hue and Glow; the other sections start
+  collapsed below it. Nothing is renamed, so states, banks and mappings are
+  unchanged.
+- **SDF Source and Refract Src list every source** — they offered 16 of 38,
+  so Color 2, Text, Rutt-Etra, Growth and the rest were missing. Saved choices
+  keep their meaning; some labels now match the Sources tab ("Color 1",
+  "Stills Buffer", "3D Scene", "Output (feedback)").
+- **SDF edges are smooth, and a Tile lattice fades into the distance** — shape
+  outlines are no longer stair-stepped, and a tiled lattice dissolves at the far
+  end instead of stopping at a wall. Existing Tile looks are fainter in the
+  distance.
   tints (ink on rice paper) no longer go neon blue and red under a darker
   luma source. Saved states using these four modes look calmer than before.
   GPU-checked against the spec formulas: 256 colour pairs within 1/255.

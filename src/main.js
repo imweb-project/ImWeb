@@ -42,6 +42,7 @@ import {
   CAPTURE_INDIRECT_BASE,
   MIXBUS_IDX,
   PARTICLE_MASK_SRC,
+  SDF_SRC_KEYS,
   PARAM_TYPE,
   MIDI_PAGES,
   TEXSRC_TO_SOURCE,
@@ -98,6 +99,7 @@ import { MotionExtract } from "./inputs/MotionExtract.js";
 import { GrowthRD } from "./inputs/GrowthRD.js";
 import { GROWTH_RES, GROWTH_LOOKS } from "./inputs/GrowthPatterns.js";
 import { SHATTER_LOOKS, resolveShatterLook } from "./scene3d/ShatterLooks.js";
+import { SDF_LOOKS } from "./inputs/SDFLooks.js";
 import { TimeDisplaceEngine } from "./inputs/TimeDisplaceEngine.js";
 import { SpacetimeRing } from "./inputs/SpacetimeRing.js";
 import { SpacetimeSlice } from "./inputs/SpacetimeSlice.js";
@@ -441,6 +443,54 @@ async function main() {
     },
   };
   const movieCues = new MovieCues(ps, { movie: movieInput, movieB: movieInputB }, movieClipHost);
+  /**
+   * Bring back the clip a Display State was saved with, per deck.
+   *
+   * The clip is named by LIBRARY ID in the state's `extra` (movieClips), not by
+   * `movie.clip`: that param is an index into a rack whose contents differ per
+   * project and session, which is why it stays group 'global'. An id means the
+   * same clip wherever the library has it — and nothing at all where it does
+   * not, so a missing clip leaves the deck as it is.
+   *
+   * A deck the state saved switched OFF is skipped: browsing a bank must not
+   * download movies no state shows.
+   *
+   * A racked clip goes through the `.clip` param, the same path as a click or
+   * a MIDI note. An unracked one is loaded WITHOUT selecting and cut to only
+   * if this is still the latest recall for that deck — a slow load finishing
+   * after a later recall must not take the output back.
+   */
+  const _clipRecallSeq = { movie: 0, movieB: 0 };
+  const _restoreStateClips = (ds) => {
+    const want = ds?.extra?.movieClips;
+    if (!want) return;                          // saved before clips were kept
+    for (const prefix of ["movie", "movieB"]) {
+      const id = want[prefix];
+      if (!id || !ds.values?.[`${prefix}.active`]) continue;
+      const deck = _deckFor(prefix);
+      const seq = ++_clipRecallSeq[prefix];
+      const cut = () => {
+        const idx = deck.clips.findIndex((c) => _clipIdOf(c) === id);
+        if (idx < 0) return;
+        ps.set(`${prefix}.clip`, idx);
+        // The param may already read idx while a cue showed another clip.
+        if (deck.currentIndex !== idx) deck.selectClip(idx);
+        deck.clips[idx]?.video.play().catch(() => {});
+        if (prefix === "movieB") refreshClipBStatus(); else refreshClipsList();
+      };
+      if (deck.clips.some((c) => _clipIdOf(c) === id)) { cut(); continue; }
+      const entry = movieLibrary.get(id);
+      if (!entry) continue;
+      const wasActive = ds.values[`${prefix}.active`];
+      loadEntryToDeck(entry, prefix === "movieB" ? "B" : "A", { select: false })
+        .then(() => {
+          if (seq !== _clipRecallSeq[prefix]) return;
+          cut();
+          ps.set(`${prefix}.active`, wasActive);
+        })
+        .catch((err) => console.warn(`[Movie] state clip "${id}" did not load:`, err));
+    }
+  };
   /**
    * The Playback Zone's eight cues: Start, Length, Rate, Level.
    *
@@ -1101,6 +1151,9 @@ async function main() {
     // Reimagine block (stateRecalled); a state saved before this has no key
     // and leaves the current prompt alone.
     reimaginePrompt:  reimagine ? reimagine.prompt : null,
+    // Which library clip each deck is showing (null = none, or not from the
+    // library). Restored by _restoreStateClips.
+    movieClips:       { movie: movieClipHost.currentId("movie"), movieB: movieClipHost.currentId("movieB") },
   }));
 
   // Populated by the hypercube panel build block (below). Calling it clears and
@@ -1120,6 +1173,8 @@ async function main() {
 
     // ── Restore the Live GLSL shader ────────────────────────────────────────
     if (extra?.glsl) _glslStateHooks?.restore(extra.glsl);
+
+    _restoreStateClips(ds);
 
     // ── Restore text layer content ──────────────────────────────────────────
     if (Array.isArray(extra?.textContent) && extra.textContent.length > 0) {
@@ -1228,6 +1283,7 @@ async function main() {
       else if (scene3d.importedModelName !== ref) _restoreSceneModel(ref);
     }
     _restoreModelSlots(ds.extra?.modelSlots).then(() => _restoreModelImages(ds.extra?.modelImages));
+    _restoreStateClips(ds);
   };
 
   // Force-push all hypercube ps values into the HypercubeObject unconditionally.
@@ -6386,10 +6442,10 @@ async function main() {
   /**
    * sdf.texSrc / sdf.refractSrc option index → SOURCE_DEFS index.
    *
-   * Both params carry their own short 9-entry option list (a deliberate small
-   * menu, not the full source dropdown), so the two lists have to be kept in
-   * register by hand somewhere. Doing it by KEY rather than by number is what
-   * makes it safe: the bare-number literal this replaced was copied from an
+   * Both menus keep their own ordering (a frozen sixteen-entry head, then
+   * every other source), so their indices are not SOURCE_DEFS indices and have
+   * to be translated. Doing it by KEY rather than by number is what makes it
+   * safe: the bare-number literal this replaced was copied from an
    * older SOURCE_DEFS ordering and had drifted three ways —
    *   "Draw"  fetched 3D Scene, "3D" fetched Noise, and
    *   "Noise" fetched Color2 — a solid cyan fill (hue 50, sat 80, val 60),
@@ -6400,15 +6456,13 @@ async function main() {
    * Index 0 means "follow layer.fg / layer.bg" and index 8 means None; both are
    * null here and handled by the call site.
    */
-  const _sdfSrcToLayerIdx = [
-    null, "camera", "movie", "draw", "noise", "color", "buffer", "scene3d", null,
-    // Appended after "None" (index 8) rather than around it: SELECT values
-    // persist as integers, so inserting would re-route every saved state.
-    // Safe to add only because _direct() now counts these two selectors —
-    // before that, picking Movie B or a mix bus would have resolved to a
-    // texture nothing had scheduled and rendered black or stale.
-    "output", "bg1", "bg2", "movieB", "mixbus", "mixbus2", "mixbus3",
-  ].map((k) => (k == null ? null : SOURCE_KEYS.indexOf(k)));
+  // The list itself is SDF_SRC_KEYS in ParameterSystem.js, which the two menus'
+  // labels are built from too — one list, so menu and map cannot drift apart.
+  // Every entry is counted by _direct() below, which is what makes it safe to
+  // offer the whole source list: a source picked only here is still scheduled.
+  const _sdfSrcToLayerIdx = SDF_SRC_KEYS.map((k) =>
+    k == null ? null : SOURCE_KEYS.indexOf(k),
+  );
 
   /**
    * Collapse a CAPTURE_SOURCES index to a real SOURCE_DEFS index.
@@ -6581,6 +6635,35 @@ async function main() {
     if (best < 0 || best === ps.get("growth.look").value) return;
     _lookSyncing = true;
     try { ps.set("growth.look", best); } finally { _lookSyncing = false; }
+  });
+  // SDF Look: the same loader shape as the Growth Look above. Writes every
+  // value of the chosen Look and switches the generator on, so picking a name
+  // always shows that look. It does NOT route the SDF to a layer or choose
+  // what is on its surface or behind its glass — those are the patch's.
+  let _sdfLookSyncing = false;   // true only while a recall re-labels the menu
+  const applySdfLook = (i) => {
+    if (_sdfLookSyncing) return;
+    const look = SDF_LOOKS[Math.round(i)];
+    if (!look) return;
+    for (const [id, v] of Object.entries(look.values)) ps.set(id, v);
+    ps.set("sdf.active", 1);
+  };
+  ps.get("sdf.look").onChange(applySdfLook);
+  ps.get("sdf.look").onReselect(applySdfLook);
+  // After a recall, show the Look the recalled values come from (most values
+  // equal) without APPLYING it — that would overwrite what was just recalled.
+  // A state that matches no Look better than the one shown leaves the menu be.
+  ps.addEventListener("stateRestored", (e) => {
+    const st = e.detail ?? {};
+    const val = (id) => st[id] ?? ps.get(id)?.value;
+    let best = -1, bestScore = -1;
+    SDF_LOOKS.forEach((look, i) => {
+      const score = Object.entries(look.values).filter(([id, v]) => val(id) === v).length;
+      if (score > bestScore) { best = i; bestScore = score; }
+    });
+    if (best < 0 || best === ps.get("sdf.look").value) return;
+    _sdfLookSyncing = true;
+    try { ps.set("sdf.look", best); } finally { _sdfLookSyncing = false; }
   });
   ps.get("growth.plant").onTrigger(() => growthRD.plant(
     ps.get("growth.plantX").value / 100,
@@ -11099,8 +11182,9 @@ void main() {
           : null;
     const SDF_IDX = 21;
     const SDFDEPTH_IDX = 30;
-    // Depth is a blit over the raymarcher's own target, so routing SDF Depth
-    // alone still has to run the march. Ticking on either keeps "the depth tap
+    // Depth is a second march of the generator's own material, so routing SDF
+    // Depth alone still has to tick the generator (that is what writes the
+    // uniforms the depth pass reads). Ticking on either keeps "the depth tap
     // works even when the colour is not on screen" true, which is the whole
     // point of a depth source — it is normally driving Displace, not the view.
     const _sdfDepthUsed = _srcUsed(SDFDEPTH_IDX);
@@ -11115,7 +11199,8 @@ void main() {
         _notSelf(_sdfTex, sdfGen.texture),
         _notSelf(_sdfRef, sdfGen.texture),
       );
-    // After the march, so the alpha it reads is this frame's.
+    // After tick(), which sets this frame's uniforms and this.active — the
+    // depth pass reads both, and skips itself while SDF is switched off.
     if (_sdfDepthUsed) sdfGen.renderDepth();
 
     // Rutt-Etra Scan Processor — on-demand rendering (source index 29)
