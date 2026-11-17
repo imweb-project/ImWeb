@@ -55,6 +55,11 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 - **Shattered pieces can turn to dust** — new **Dust**: pieces shrink as they
   leave and grow back on the way home, so at a high Dust an object dissolves
   into a fine spray instead of flying chunks.
+- **Shatter Looks** — a **ShatterLook** menu at the top of 3D ▸ Shatter:
+  **Porcelain** (large turning pieces), **Dust storm** (single triangles
+  blown to dust along the butterfly), **Limb from limb** (a figure comes apart
+  at the joints) and **Eaten by light** (the camera decides what dissolves).
+  A Look sets every Shatter control and nothing else.
 - **Color 2 gradients: Angle, Bands, Steps, Path, Scroll and Conic** — the
   gradient can be turned to any angle, repeated as stripes or rings, cut into
   flat steps, sent round the colour wheel (**Path** = Rainbow) and set moving

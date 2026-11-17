@@ -97,6 +97,7 @@ import { RGBDelay } from "./inputs/RGBDelay.js";
 import { MotionExtract } from "./inputs/MotionExtract.js";
 import { GrowthRD } from "./inputs/GrowthRD.js";
 import { GROWTH_RES, GROWTH_LOOKS } from "./inputs/GrowthPatterns.js";
+import { SHATTER_LOOKS, resolveShatterLook } from "./scene3d/ShatterLooks.js";
 import { TimeDisplaceEngine } from "./inputs/TimeDisplaceEngine.js";
 import { SpacetimeRing } from "./inputs/SpacetimeRing.js";
 import { SpacetimeSlice } from "./inputs/SpacetimeSlice.js";
@@ -6540,6 +6541,26 @@ async function main() {
   // "Mitosis" shown, so choosing Mitosis was no change and did nothing: a
   // black frame, measured in the app while the same values grew in isolation.
   ps.get("growth.look").onReselect(applyGrowthLook);
+  // Shatter Look: the same loader pattern, without the planting — it writes
+  // the Shatter controls and nothing else. After a recall the menu shows the
+  // Look the recalled values ARE, or the heading if they are none of them, so
+  // it never names a look the scene is not in.
+  let _shatterLookSyncing = false;
+  const applyShatterLook = (i) => {
+    if (_shatterLookSyncing) return;
+    for (const [id, v] of resolveShatterLook(ps, SHATTER_LOOKS[Math.round(i)]).values) ps.set(id, v);
+  };
+  ps.get("scene3d.shatter.look").onChange(applyShatterLook);
+  ps.get("scene3d.shatter.look").onReselect(applyShatterLook);
+  ps.addEventListener("stateRestored", (e) => {
+    const st = e.detail ?? {};
+    const is = SHATTER_LOOKS.findIndex((look, i) => i > 0 &&
+      resolveShatterLook(ps, look).values.every(([id, v]) => (st[id] ?? ps.get(id)?.value) === v));
+    const want = Math.max(is, 0);
+    if (want === ps.get("scene3d.shatter.look").value) return;
+    _shatterLookSyncing = true;
+    try { ps.set("scene3d.shatter.look", want); } finally { _shatterLookSyncing = false; }
+  });
   // A Display State stores a Look's VALUES, not the menu (growth.look is a
   // loader, group 'global'), so after a recall the menu kept showing whatever
   // it showed before — Neural lichen on the canvas under "Mitosis" (owner,

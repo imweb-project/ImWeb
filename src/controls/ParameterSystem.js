@@ -27,6 +27,7 @@ import { DESCRIPTOR_LABELS } from '../audio/corpus-index.js';
 import { GROWTH_PATTERNS, GROWTH_MODES, GROWTH_LOOKS, NCA_MODELS } from '../inputs/GrowthPatterns.js';
 import { REIMAGINE_LOOKS } from '../ai/ReimagineLooks.js';
 import { SPLAT_ATTRACTORS } from '../ai/SplatAttractors.js';
+import { SHATTER_LOOKS } from '../scene3d/ShatterLooks.js';
 
 /**
  * How the performer is listening (§8.6). ONE list, read twice: the labels are
@@ -4409,6 +4410,13 @@ export function registerCoreParameters(ps) {
   // shapes and step as Splat World's Scatter. Shape's options ARE
   // SPLAT_ATTRACTORS (append-only), so it is captured like any other.
   // Does nothing while the Cloner is on or a Hypercube has adopted the mesh.
+  // Look: a LOADER, not a state — the growth.look pattern. Choosing one writes
+  // every Shatter control, so a name always gives its look. Group 'global' so
+  // Display States capture the real values, not an index that would re-apply
+  // over them on recall. SHATTER_LOOKS (append-only); index 0 is a heading.
+  ps.register({ id: "scene3d.shatter.look", label: "ShatterLook", group: "global",
+    type: PARAM_TYPE.SELECT, options: SHATTER_LOOKS.map((l) => l.name), value: 0,
+    select: true, reselect: true });
   ps.register({ id: "scene3d.shatter", label: "Shatter", group: "scene3d",
     min: 0, max: 100, value: 0, step: 0.5, unit: "%" });
   ps.register({ id: "scene3d.shatter.shape", label: "ShatterShape", group: "scene3d",
