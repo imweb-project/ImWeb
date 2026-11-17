@@ -1,0 +1,97 @@
+<!doctype html><meta charset="utf-8">
+<script type="importmap">{"imports":{"three":"/node_modules/three/build/three.module.js","three/addons/":"/node_modules/three/examples/jsm/"}}</script>
+<canvas id="c" width="360" height="360"></canvas>
+<script type="module">
+import * as THREE from 'three';
+import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
+import { MUDRAS, RELAXED, handQuats } from '/tools/figure-slim/mudras.mjs';
+try {
+const T = 360, COLS = 7;
+const only = new URLSearchParams(location.search).get('only')?.split(',');
+const views = (new URLSearchParams(location.search).get('views') ?? 'palm').split(',');
+const names = Object.keys(MUDRAS).filter(n => !only || only.includes(n));
+const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true, preserveDrawingBuffer: true });
+renderer.setClearColor(0x1c1c20);
+const text = await (await fetch('/assets/Haraldur6-slim.dae')).text();
+const warn = console.warn; console.warn = () => {};
+const col = new ColladaLoader().parse(text, '/assets/'); console.warn = warn;
+const scene = new THREE.Scene(); scene.add(col.scene);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x555566, 1.6));
+const key = new THREE.DirectionalLight(0xffffff, 2.4); scene.add(key); scene.add(key.target);
+let mesh; col.scene.traverse(o => { if (o.isSkinnedMesh) { mesh = o; o.frustumCulled = false;
+  const mats = Array.isArray(o.material) ? o.material : [o.material];
+  o.material = mats.map(m => new THREE.MeshStandardMaterial({ color: /Nail/.test(m.name) ? 0xe8cfc4 : 0xc9a48f, roughness: 0.65 })); } });
+const bone = n => mesh.skeleton.bones.find(b => b.name === `Figure_1${n}_1_node`);
+const next = { Index1: 'Index2', Index2: 'Index3', Mid1: 'Mid2', Mid2: 'Mid3', Ring1: 'Ring2', Ring2: 'Ring3', Pinky1: 'Pinky2', Pinky2: 'Pinky3', Thumb1: 'Thumb2', Thumb2: 'Thumb3' };
+const dirOf = n => next[n] ? bone('l' + next[n]).position.clone() : dirOf(n.replace('3', '2'));
+const hand = bone('lHand'); hand.quaternion.identity();
+// straighten the arm so nothing else is in the picture
+for (const n of ['lShldr', 'lForeArm', 'lCollar']) bone(n).quaternion.identity();
+// ── solver: fit the fingers so tips that should touch do ──
+const U = col.scene.scale.x || 1;
+const tipOf = k => { const n = k === 'T' ? 'Thumb' : { I: 'Index', M: 'Mid', R: 'Ring', P: 'Pinky' }[k];
+  const a = new THREE.Vector3().setFromMatrixPosition(bone('l' + n + '2').matrixWorld), b = new THREE.Vector3().setFromMatrixPosition(bone('l' + n + '3').matrixWorld);
+  return b.clone().addScaledVector(b.clone().sub(a), k === 'T' ? 0.75 : 0.9); };
+function apply(pose) { for (const [bn, q] of handQuats(pose, 'l', dirOf)) bone(bn).quaternion.copy(q); hand.updateMatrixWorld(true); }
+function solve(name) {
+  const base = MUDRAS[name]; if (!base.touch && !base.bud) return null;
+  const fixed = base.fixed ?? [];
+  const keys = base.bud ? ['I', 'M', 'R', 'P', 'T'] : [...new Set(base.touch.flat())];
+  const vars = keys.filter(k => !fixed.includes(k));
+  const get = k => k === 'T' ? [base.t1[0], base.t1[1], base.t2] : [base[k][0], base[k][1], base[k][3]];
+  const lim = k => k === 'T' ? [[-30, 70], [-40, 70], [-10, 70]] : [[-10, 95], [0, base.maxC2 ?? 100], [-15, 25]];
+  const x = vars.map(get), x0 = x.map(v => v.slice());
+  const build = () => { const p = { ...base }; vars.forEach((k, i) => { const v = x[i];
+    if (k === 'T') { p.t1 = [v[0], v[1], base.t1[2]]; p.t2 = v[2]; p.t3 = v[2] * 0.8; } else p[k] = [v[0], v[1], v[1] * 0.6, v[2]]; }); return p; };
+  const cost = () => { apply(build()); let J = 0;
+    if (base.bud) { const tips = keys.map(tipOf), c = hand.localToWorld(bone('lMid1').position.clone().add(new THREE.Vector3(...(base.focus ?? [-0.003, -0.026, 0.005]))));   // a point in front of the palm, toward the thumb
+      for (const t of tips) J += (t.distanceTo(c) / U - base.bud) ** 2 * 4e6; }
+    else for (const [a, b] of base.touch) J += (tipOf(a).distanceTo(tipOf(b)) / U - 0.0042) ** 2 * 4e6;
+    x.forEach((v, i) => v.forEach((q, j) => { J += (q - x0[i][j]) ** 2 * 0.0004; })); return J; };
+  let best = cost();
+  for (const step of [10, 5, 2.5, 1.2, 0.6]) for (let sweep = 0; sweep < 8; sweep++) {
+    let moved = false;
+    x.forEach((v, i) => v.forEach((_, j) => { for (const s of [step, -step]) { const old = v[j], L = lim(vars[i])[j];
+      v[j] = Math.min(L[1], Math.max(L[0], old + s)); const c = cost(); if (c < best - 1e-6) { best = c; moved = true; } else v[j] = old; } }));
+    if (!moved) break;
+  }
+  const p = build(), r = v => +v.toFixed(1), o = {};
+  for (const k of vars) { if (k === 'T') { o.t1 = p.t1.map(r); o.t2 = r(p.t2); o.t3 = r(p.t3); } else o[k] = p[k].map(r); }
+  let miss = 0;
+  if (base.touch) { apply(p); miss = Math.max(...base.touch.map(([a, b]) => tipOf(a).distanceTo(tipOf(b)) / U)); }
+  return { o, cost: r(best), gap: +miss.toFixed(4) };
+}
+if (new URLSearchParams(location.search).get('solve')) {
+  const res = {}; for (const n of Object.keys(MUDRAS)) { const s = solve(n); if (s) res[n] = s; }
+  window.__result = { solved: res }; throw 'done';
+}
+const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 50);
+const sheet = document.createElement('canvas'); const rows = Math.ceil(names.length / COLS) * views.length;
+sheet.width = COLS * T; sheet.height = rows * (T + 34);
+const g = sheet.getContext('2d'); g.fillStyle = '#1c1c20'; g.fillRect(0, 0, sheet.width, sheet.height);
+g.font = '600 22px Helvetica, Arial, sans-serif'; g.textAlign = 'center';
+names.forEach((name, i) => {
+  for (const [bn, q] of handQuats(MUDRAS[name], 'l', dirOf)) bone(bn).quaternion.copy(q);
+  col.scene.updateMatrixWorld(true);
+  const R = new THREE.Matrix4().extractRotation(hand.matrixWorld);
+  const fingers = new THREE.Vector3(0.93, 0, 0.37).applyMatrix4(R).normalize();
+  const palm = new THREE.Vector3(0, -1, 0).applyMatrix4(R).normalize();
+  const thumb = new THREE.Vector3().crossVectors(palm, fingers).normalize();
+  const c = new THREE.Vector3().setFromMatrixPosition(bone('lMid1').matrixWorld).addScaledVector(fingers, 0.0).addScaledVector(palm, 0.02);
+  const half = 0.155; cam.left = -half; cam.right = half; cam.top = half; cam.bottom = -half; cam.updateProjectionMatrix();
+  views.forEach((v, vi) => {
+    const dir = v === 'palm' ? palm.clone().addScaledVector(thumb, 0.25).addScaledVector(fingers, 0.15)
+              : v === 'side' ? thumb.clone().addScaledVector(palm, 0.35)
+              : palm.clone().multiplyScalar(-1).addScaledVector(thumb, 0.3);
+    dir.normalize();
+    cam.position.copy(c).addScaledVector(dir, 3); cam.up.copy(fingers); cam.lookAt(c);
+    key.position.copy(cam.position).addScaledVector(fingers, 1.5).addScaledVector(thumb, 1); key.target.position.copy(c);
+    renderer.render(scene, cam);
+    const x = (i % COLS) * T, y = (Math.floor(i / COLS) * views.length + vi) * (T + 34);
+    g.drawImage(renderer.domElement, x, y);
+    g.fillStyle = '#e8e4dc'; g.fillText(`${i + 1}  ${name}${views.length > 1 ? ' · ' + v : ''}`, x + T / 2, y + T + 24);
+  });
+});
+window.__result = { img: sheet.toDataURL('image/jpeg', 0.9), n: names.length };
+} catch (e) { if (e !== 'done') window.__result = { error: String(e), stack: e.stack }; }
+</script>

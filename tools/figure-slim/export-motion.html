@@ -1,0 +1,33 @@
+<!doctype html><meta charset="utf-8">
+<!-- Motion of a baked figure file as plain numbers, for putting it on ANOTHER character
+     (tools/figure-slim/retarget.py): per joint its bind orientation and place, and its
+     orientation at every frame, all in the figure's own space (Y up, facing +Z).
+     ?file=Haraldur6-mudra.dae  — serve the repo root, load through tools/nca/cdp-run.mjs. -->
+<script type="importmap">{"imports":{"three":"/node_modules/three/build/three.module.js","three/addons/":"/node_modules/three/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
+import { buildComponentClip } from '/src/scene3d/ColladaChannels.js';
+try {
+const q = new URLSearchParams(location.search), FPS = 30;
+const text = await (await fetch('/assets/' + (q.get('file') ?? 'Haraldur6-mudra.dae'))).text();
+const warn = console.warn; console.warn = () => {};
+const col = new ColladaLoader().parse(text, '/assets/'); console.warn = warn;
+const clip = buildComponentClip(text, col.scene, 'Animation');
+let mesh; col.scene.traverse(o => { if (o.isSkinnedMesh) mesh = o; });
+const FACE = /jaw|lip|corner|brow|lid|cheek|nose|nostril|Eye|Toe\d|genital|BODY/i;
+const bones = mesh.skeleton.bones.map((b, i) => ({ b, i, name: b.name.replace(/^Figure_1|_1_node$/g, '') })).filter(x => !FACE.test(x.name));
+col.scene.updateMatrixWorld(true);
+const rootInv = col.scene.matrixWorld.clone().invert(), m = new THREE.Matrix4(), p = new THREE.Vector3(), r = new THREE.Quaternion(), s = new THREE.Vector3();
+const rest = bones.map(({ i }) => { m.copy(mesh.skeleton.boneInverses[i]).invert().decompose(p, r, s); return [...p.toArray(), ...r.toArray()]; });
+const mixer = new THREE.AnimationMixer(col.scene); mixer.clipAction(clip).play();
+const N = Math.floor(clip.duration * FPS) + 1, rot = new Float32Array(N * bones.length * 4), hip = new Float32Array(N * 3);
+const hipBone = bones.find(x => x.name === 'hip').b;
+for (let k = 0; k < N; k++) {
+  mixer.setTime(Math.min(k / FPS, clip.duration - 1e-4)); col.scene.updateMatrixWorld(true);
+  bones.forEach(({ b }, j) => { m.multiplyMatrices(rootInv, b.matrixWorld).decompose(p, r, s); rot.set([r.x, r.y, r.z, r.w], (k * bones.length + j) * 4); if (b === hipBone) hip.set(p.toArray(), k * 3); });
+}
+const b64 = a => { const u = new Uint8Array(a.buffer); let o = ''; for (let i = 0; i < u.length; i += 0x8000) o += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(o); };
+window.__result = { fps: FPS, frames: N, names: bones.map(x => x.name), rest, takes: clip.takes ?? null, rot: b64(rot), hip: b64(hip) };
+} catch (e) { window.__result = { error: String(e), stack: e.stack }; }
+</script>

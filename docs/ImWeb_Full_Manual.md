@@ -452,8 +452,13 @@ Solid colour or gradient texture.
 | `color1.sat` | 0–100% | Saturation |
 | `color1.val` | 0–100% | Brightness |
 | `color2.hue / sat / val` | — | Secondary colour |
-| `color2.type` | SELECT | 0=Solid / 1=H-gradient / 2=V-gradient / 3=Radial |
-| `color2.speed` | −5 – 5 | Animate hue over time (hue/sec) |
+| `color2.type` (**Gradient**) | SELECT | 0=Solid / 1=Grad H / 2=Grad V / 3=Grad R (radial) / 4=Conic. A gradient runs from Color 1 to Color 2 |
+| `color2.angle` | 0 – 360° | Turns Grad H, Grad V and Conic clockwise. Grad V is Grad H at 90° |
+| `color2.bands` | 1 – 16 | Repeats the gradient, mirrored, as stripes or rings |
+| `color2.steps` | 0 – 16 | 0 = smooth; from 2 up, that many flat colours |
+| `color2.path` | SELECT | Straight (even blend, no grey middle) / Rainbow (round the colour wheel from Hue 1 to Hue 2) |
+| `color2.speed` | −200 – 200 % | Turns both hues over time (200 = one full turn per second) |
+| `color2.scroll` | −200 – 200 % | Moves the gradient along itself (100 = one band per second) |
 
 Click the colour swatch in the UI to open a quick colour picker.
 
@@ -1535,7 +1540,7 @@ groups plus the mix buses (the menu labels, in menu order):
 |-------|---------|
 | **Live In** | Camera, Sound |
 | **Media** | Movie A, Movie B, Stills Buffer, AI Depth, BG1, BG2 |
-| **Generators** | Color, Color 2, Noise, Particles, SDF, SDF Depth, Text, Draw, Growth, 3D Scene, 3D Depth, Analog TV, Rutt-Etra, Shader Code |
+| **Generators** | Color 1, Color 2, Noise, Particles, SDF, SDF Depth, Text, Draw, Growth, 3D Scene, 3D Depth, Analog TV, Rutt-Etra, Shader Code |
 | **From the Signal** | Output (feedback), Video Delay, RGB Delay, Motion Extraction, Time Displace, Volume, Slit Scan, Frame Seq 1, Frame Seq 2, Frame Seq 3, Vectorscope, Warp Tape |
 | **Mix** | Mix 1, Mix 2, Mix 3 |
 

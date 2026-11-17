@@ -93,6 +93,13 @@ function analyse(clip) {
     const nb = Math.max(speed[k - 1] ?? 0, speed[k + 1] ?? 0);
     if (speed[k] > JUMP && speed[k] > JUMP_RATIO * nb) jumps.push(k);
   }
+  // A file may declare its own takes (tools/figure-slim/loops.mjs writes them, read in
+  // ColladaChannels): two takes that begin from the same pose have no jump between them
+  // to find, so detection alone joins them.
+  if (clip.takes?.length) {
+    jumps.length = 0;
+    for (const [, end] of clip.takes.slice(0, -1)) jumps.push(Math.round(end * FPS));
+  }
   if (jumps.length) {
     const segments = [];
     let a = 0;

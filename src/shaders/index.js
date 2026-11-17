@@ -2228,6 +2228,104 @@ export const COLORSHIFT = /* glsl */ `
 
 // Uniform defaults for NOISE_BFG — the Pipeline material is built from this,
 // so a uniform added to the shader is declared in exactly one other place.
+// ── Color 2 gradient generator ────────────────────────────────────────────────
+// Solid, linear, radial or conic blend from Color 1 to Color 2, drawn on the
+// GPU at output size. It replaced a 256×256 2D canvas that banded on a
+// projector and was re-uploaded every frame while animating.
+//
+// Colours arrive as HSV and are blended HERE, per pixel: Path 0 blends in
+// OKLab (no grey middle between opposite hues), Path 1 walks the hue wheel
+// from Hue 1 to Hue 2. Values in and out are display-referred sRGB, the same
+// convention the canvas version had.
+//
+// Types 1/2/3 keep the geometry of the canvas version exactly (H left→right,
+// V top→bottom, R an ellipse reaching the frame edges) so saved states look
+// the same; Angle is added on top of the linear types.
+export const GRADIENT = /* glsl */ `
+  precision highp float;
+  varying vec2 vUv;
+  uniform vec3  uC1;       // h, s, v — 0..1
+  uniform vec3  uC2;
+  uniform float uHuePhase; // Col2 Speed's hue rotation
+  uniform float uType;     // 0 solid, 1 H, 2 V, 3 radial, 4 conic
+  uniform float uAngle;    // radians, clockwise on screen
+  uniform float uBands;
+  uniform float uSteps;    // < 2 = smooth
+  uniform float uPath;     // 0 OKLab, 1 hue wheel
+  uniform float uScroll;   // phase in bands
+  uniform float uAspect;
+
+  vec3 hsv2rgb(vec3 c) {
+    vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+  }
+  vec3 toLin(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }
+  vec3 toSrgb(vec3 c) {
+    c = clamp(c, 0.0, 1.0);
+    return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+  }
+  vec3 cbrt3(vec3 v) { return sign(v) * pow(abs(v), vec3(1.0 / 3.0)); }
+  vec3 toOklab(vec3 c) {
+    vec3 lms = cbrt3(vec3(
+      dot(c, vec3(0.4122214708, 0.5363325363, 0.0514459929)),
+      dot(c, vec3(0.2119034982, 0.6806995451, 0.1073969566)),
+      dot(c, vec3(0.0883024619, 0.2817188376, 0.6299787005))));
+    return vec3(
+      dot(lms, vec3(0.2104542553,  0.7936177850, -0.0040720468)),
+      dot(lms, vec3(1.9779984951, -2.4285922050,  0.4505937099)),
+      dot(lms, vec3(0.0259040371,  0.7827717662, -0.8086757660)));
+  }
+  vec3 fromOklab(vec3 c) {
+    vec3 lms = vec3(
+      c.x + 0.3963377774 * c.y + 0.2158037573 * c.z,
+      c.x - 0.1055613458 * c.y - 0.0638541728 * c.z,
+      c.x - 0.0894841775 * c.y - 1.2914855480 * c.z);
+    lms = lms * lms * lms;
+    return vec3(
+      dot(lms, vec3( 4.0767416621, -3.3077115913,  0.2309699292)),
+      dot(lms, vec3(-1.2684380046,  2.6097574011, -0.3413193965)),
+      dot(lms, vec3(-0.0041960863, -0.7034186147,  1.7076147010)));
+  }
+
+  void main() {
+    vec3 h1 = vec3(uC1.x + uHuePhase, uC1.yz);
+    vec3 h2 = vec3(uC2.x + uHuePhase, uC2.yz);
+    if (uType < 0.5) { gl_FragColor = vec4(hsv2rgb(h2), 1.0); return; }
+
+    vec2 p = vUv - 0.5;
+    float t;
+    if (uType < 2.5) {
+      // Linear. V is H turned a quarter clockwise; the span is fitted so the
+      // two colours land exactly on the frame's edges (corners, when turned).
+      float a = uAngle + (uType > 1.5 ? 1.5707963 : 0.0);
+      vec2 d = vec2(cos(a), -sin(a));
+      vec2 q = vec2(p.x * uAspect, p.y);
+      t = dot(q, d) / (uAspect * abs(d.x) + abs(d.y)) + 0.5;
+    } else if (uType < 3.5) {
+      t = length(p) * 2.0;
+    } else {
+      t = fract(atan(-p.y, p.x * uAspect) / 6.2831853 - uAngle / 6.2831853);
+    }
+
+    // Bands repeat mirrored, so neighbours meet without a seam and Scroll
+    // can run forever. One band with no scroll is the plain 0..1 ramp.
+    t = clamp(t, 0.0, 1.0) * uBands + uScroll;
+    t = 1.0 - abs(mod(t, 2.0) - 1.0);
+    if (uSteps >= 2.0) t = min(floor(t * uSteps), uSteps - 1.0) / (uSteps - 1.0);
+
+    vec3 col = uPath > 0.5
+      ? hsv2rgb(mix(h1, h2, t))
+      : toSrgb(fromOklab(mix(toOklab(toLin(hsv2rgb(h1))), toOklab(toLin(hsv2rgb(h2))), t)));
+
+    // Half a code value of noise: the target is 8-bit, and a slow ramp across
+    // a projector otherwise shows as stripes.
+    float n = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453)
+            + fract(sin(dot(gl_FragCoord.xy, vec2(39.3468, 11.135))) * 24634.6345) - 1.0;
+    gl_FragColor = vec4(col + n / 255.0, 1.0);
+  }
+`;
+
 export const NOISE_UNIFORM_DEFAULTS = {
   uPhase: 0, uPhaseB: 0, uType: 1, uFractal: 1, uOctaves: 4, uLacunarity: 2,
   uGain: 0.5, uScale: 3, uRotate: 0, uStretch: 1, uOffset: [0, 0], uAspect: 1, uCoords: 0,

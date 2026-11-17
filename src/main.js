@@ -949,76 +949,10 @@ async function main() {
   );
   updateColorTexture();
 
-  // Color2 input — solid or gradient source (between color1 and color2)
-  const color2Canvas = document.createElement("canvas");
-  color2Canvas.width = color2Canvas.height = 256;
-  const color2Ctx = color2Canvas.getContext("2d");
-  const color2Texture = new THREE.CanvasTexture(color2Canvas);
-
-  // Phase accumulator for Color2 gradient animation (driven by color2.speed)
-  let _color2Phase = 0;
-
-  function updateColor2Texture() {
-    // Only apply phase offset when speed is non-zero (avoid permanent hue shift after stopping)
-    const _phaseActive = (ps.get("color2.speed")?.value ?? 0) !== 0;
-    const phaseOff = _phaseActive ? ((_color2Phase % 1) + 1) % 1 : 0;
-    const h1 = (ps.get("color1.hue").value / 100 + phaseOff + 1) % 1;
-    const s1 = ps.get("color1.sat").value / 100;
-    const v1 = ps.get("color1.val").value / 100;
-    const h2 = (ps.get("color2.hue").value / 100 + phaseOff + 1) % 1;
-    const s2 = ps.get("color2.sat").value / 100;
-    const v2 = ps.get("color2.val").value / 100;
-    const type = ps.get("color2.type").value;
-    const c1 = hsvToHex(h1, s1, v1);
-    const c2 = hsvToHex(h2, s2, v2);
-    const W = color2Canvas.width;
-    const H = color2Canvas.height;
-
-    if (type === 0) {
-      // Solid
-      color2Ctx.fillStyle = c2;
-      color2Ctx.fillRect(0, 0, W, H);
-    } else if (type === 1) {
-      // Horizontal gradient
-      const grad = color2Ctx.createLinearGradient(0, 0, W, 0);
-      grad.addColorStop(0, c1);
-      grad.addColorStop(1, c2);
-      color2Ctx.fillStyle = grad;
-      color2Ctx.fillRect(0, 0, W, H);
-    } else if (type === 2) {
-      // Vertical gradient
-      const grad = color2Ctx.createLinearGradient(0, 0, 0, H);
-      grad.addColorStop(0, c1);
-      grad.addColorStop(1, c2);
-      color2Ctx.fillStyle = grad;
-      color2Ctx.fillRect(0, 0, W, H);
-    } else {
-      // Radial gradient
-      const grad = color2Ctx.createRadialGradient(
-        W / 2,
-        H / 2,
-        0,
-        W / 2,
-        H / 2,
-        W / 2,
-      );
-      grad.addColorStop(0, c1);
-      grad.addColorStop(1, c2);
-      color2Ctx.fillStyle = grad;
-      color2Ctx.fillRect(0, 0, W, H);
-    }
-    color2Texture.needsUpdate = true;
-  }
-  [
-    "color1.hue",
-    "color1.sat",
-    "color1.val",
-    "color2.hue",
-    "color2.sat",
-    "color2.val",
-    "color2.type",
-  ].forEach((id) => ps.get(id).onChange(updateColor2Texture));
-  updateColor2Texture();
+  // Color2 input — solid or gradient source (between color1 and color2).
+  // Drawn by pipeline.generateGradient() in the tick; these are its two clocks.
+  let _color2Phase = 0;   // hue rotation, driven by color2.speed
+  let _color2Scroll = 0;  // travel along the gradient, driven by color2.scroll
 
   // Noise texture — generated each frame on GPU via pipeline.generateNoise()
   let noiseTexture = null; // set in render loop after first pipeline call
@@ -1031,6 +965,7 @@ async function main() {
   // ── 5. Pipeline ───────────────────────────────────────────────────────────
 
   const pipeline = new Pipeline(renderer, W, H);
+  const color2Texture = pipeline.gradientTexture;
   // Dev-only console access for headless verification (verdict-cli)
   if (import.meta.env.DEV) window.__pipeline = pipeline;
   // VJ contract audio texture (256x2: FFT row + waveform row), lazily
@@ -1099,9 +1034,9 @@ async function main() {
   // recalled state asked for but this browser does not hold is kept here so
   // the picker can say so, as a missing slot model does.
   const _imageMissing = [null, null, null, null];
-  // glTF expects images unflipped; COLLADA / OBJ / STL flipped.
-  const _imageFlipFor = (i) =>
-    !/\.gl(b|tf)$/i.test((i === 0 ? scene3d.importedModelName : modelSlots.names()[i - 1]) ?? '');
+  // Flipped for every format: a GLB's UVs are turned to the common convention when it
+  // loads (SceneManager._prepareGLTFScene), so it no longer needs its images unflipped.
+  const _imageFlipFor = () => true;
   async function _restoreModelImages(list) {
     if (!Array.isArray(list)) return;
     const have = scene3d.imageNames();
@@ -11192,9 +11127,26 @@ void main() {
 
     // Animate Color2 gradient when speed is non-zero
     const _c2speed = ps.get("color2.speed")?.value ?? 0;
-    if (_c2speed !== 0) {
-      _color2Phase += dt * _c2speed * 0.005; // 200 = 1 full cycle/sec
-      updateColor2Texture();
+    if (_c2speed !== 0) _color2Phase = (_color2Phase + dt * _c2speed * 0.005) % 1; // 200 = 1 full cycle/sec
+    // Scroll: 100 = one band per second. Wrapped at 2 because the bands mirror.
+    const _c2scroll = ps.get("color2.scroll").value;
+    if (_c2scroll !== 0) _color2Scroll = (_color2Scroll + dt * _c2scroll * 0.01) % 2;
+    {
+      const cv = (id) => ps.get(id).value;
+      pipeline.generateGradient({
+        uC1: [cv("color1.hue") / 100, cv("color1.sat") / 100, cv("color1.val") / 100],
+        uC2: [cv("color2.hue") / 100, cv("color2.sat") / 100, cv("color2.val") / 100],
+        // The hue offset applies only while Speed runs, so stopping it returns
+        // to the colours as set rather than leaving them shifted.
+        uHuePhase: _c2speed !== 0 ? _color2Phase : 0,
+        uType: cv("color2.type"),
+        uAngle: cv("color2.angle") * Math.PI / 180,
+        uBands: Math.max(1, Math.round(cv("color2.bands"))),
+        uSteps: Math.round(cv("color2.steps")),
+        uPath: cv("color2.path"),
+        // Same rule as the hue offset: Scroll at 0 is the gradient as set.
+        uScroll: _c2scroll !== 0 ? _color2Scroll : 0,
+      });
     }
 
     // Generate noise only when a layer is using it as a source (512×512 dedicated target)
