@@ -9,6 +9,14 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **States remember their movie clip** — saving a state now keeps which
+  library clip each deck is showing, and recalling it cuts to that clip,
+  loading it into the rack if needed. A deck the state saved switched off is
+  left alone. States saved before this keep working but do not switch clips
+  until they are saved again.
+- **Nine new 3D shapes** in the Geometry menu — Möbius, Klein Bottle, Shell
+  (surfaces), Spring, Supershape, Star, Knot 3·7, Teapot (complex) and Gem
+  (a faceted icosahedron). All sit in the same frame as the basic shapes.
 - **SDF Looks** — a new **Look** menu at the top of the SDF panel loads a
   complete, tested setting: Default, Lava Lamp, Crystal Balls, Coral, Lattice,
   Video Helix, Bubbles and Amethyst. A Look sets every SDF control and switches

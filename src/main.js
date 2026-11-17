@@ -443,6 +443,54 @@ async function main() {
   };
   const movieCues = new MovieCues(ps, { movie: movieInput, movieB: movieInputB }, movieClipHost);
   /**
+   * Bring back the clip a Display State was saved with, per deck.
+   *
+   * The clip is named by LIBRARY ID in the state's `extra` (movieClips), not by
+   * `movie.clip`: that param is an index into a rack whose contents differ per
+   * project and session, which is why it stays group 'global'. An id means the
+   * same clip wherever the library has it — and nothing at all where it does
+   * not, so a missing clip leaves the deck as it is.
+   *
+   * A deck the state saved switched OFF is skipped: browsing a bank must not
+   * download movies no state shows.
+   *
+   * A racked clip goes through the `.clip` param, the same path as a click or
+   * a MIDI note. An unracked one is loaded WITHOUT selecting and cut to only
+   * if this is still the latest recall for that deck — a slow load finishing
+   * after a later recall must not take the output back.
+   */
+  const _clipRecallSeq = { movie: 0, movieB: 0 };
+  const _restoreStateClips = (ds) => {
+    const want = ds?.extra?.movieClips;
+    if (!want) return;                          // saved before clips were kept
+    for (const prefix of ["movie", "movieB"]) {
+      const id = want[prefix];
+      if (!id || !ds.values?.[`${prefix}.active`]) continue;
+      const deck = _deckFor(prefix);
+      const seq = ++_clipRecallSeq[prefix];
+      const cut = () => {
+        const idx = deck.clips.findIndex((c) => _clipIdOf(c) === id);
+        if (idx < 0) return;
+        ps.set(`${prefix}.clip`, idx);
+        // The param may already read idx while a cue showed another clip.
+        if (deck.currentIndex !== idx) deck.selectClip(idx);
+        deck.clips[idx]?.video.play().catch(() => {});
+        if (prefix === "movieB") refreshClipBStatus(); else refreshClipsList();
+      };
+      if (deck.clips.some((c) => _clipIdOf(c) === id)) { cut(); continue; }
+      const entry = movieLibrary.get(id);
+      if (!entry) continue;
+      const wasActive = ds.values[`${prefix}.active`];
+      loadEntryToDeck(entry, prefix === "movieB" ? "B" : "A", { select: false })
+        .then(() => {
+          if (seq !== _clipRecallSeq[prefix]) return;
+          cut();
+          ps.set(`${prefix}.active`, wasActive);
+        })
+        .catch((err) => console.warn(`[Movie] state clip "${id}" did not load:`, err));
+    }
+  };
+  /**
    * The Playback Zone's eight cues: Start, Length, Rate, Level.
    *
    * PARTITION IS DELIBERATELY NOT IN THE SET (owner's call, 2026-08-27). A cue
@@ -1102,6 +1150,9 @@ async function main() {
     // Reimagine block (stateRecalled); a state saved before this has no key
     // and leaves the current prompt alone.
     reimaginePrompt:  reimagine ? reimagine.prompt : null,
+    // Which library clip each deck is showing (null = none, or not from the
+    // library). Restored by _restoreStateClips.
+    movieClips:       { movie: movieClipHost.currentId("movie"), movieB: movieClipHost.currentId("movieB") },
   }));
 
   // Populated by the hypercube panel build block (below). Calling it clears and
@@ -1121,6 +1172,8 @@ async function main() {
 
     // ── Restore the Live GLSL shader ────────────────────────────────────────
     if (extra?.glsl) _glslStateHooks?.restore(extra.glsl);
+
+    _restoreStateClips(ds);
 
     // ── Restore text layer content ──────────────────────────────────────────
     if (Array.isArray(extra?.textContent) && extra.textContent.length > 0) {
@@ -1229,6 +1282,7 @@ async function main() {
       else if (scene3d.importedModelName !== ref) _restoreSceneModel(ref);
     }
     _restoreModelSlots(ds.extra?.modelSlots).then(() => _restoreModelImages(ds.extra?.modelImages));
+    _restoreStateClips(ds);
   };
 
   // Force-push all hypercube ps values into the HypercubeObject unconditionally.
