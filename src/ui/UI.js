@@ -1264,7 +1264,7 @@ export function buildGeometryButtons(ps, sceneManager, contextMenu) {
   const shatterEl = document.getElementById('shatter-params');
   if (shatterEl) {
     ['scene3d.shatter', 'scene3d.shatter.shape', 'scene3d.shatter.flow',
-     'scene3d.shatter.piece', 'scene3d.shatter.by', 'scene3d.shatter.tumble', 'scene3d.shatter.mask',
+     'scene3d.shatter.piece', 'scene3d.shatter.by', 'scene3d.shatter.tumble', 'scene3d.shatter.dust', 'scene3d.shatter.mask',
     ].forEach(id => {
       const p = ps.get(id);
       if (p) shatterEl.appendChild(buildParamRow(p, contextMenu));

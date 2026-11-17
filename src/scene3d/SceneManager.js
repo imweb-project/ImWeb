@@ -376,6 +376,7 @@ export class SceneManager {
         uniform highp sampler2D uShardOff;
         uniform highp sampler2D uShardHome;
         uniform float uShardSpin;
+        uniform float uShardDust;
         attribute vec2 aShard;
         #endif
         varying vec3 vObjPos;
@@ -523,20 +524,26 @@ export class SceneManager {
         `#ifdef USE_SHARDS
           vec4 mvPosition = modelMatrix * vec4(transformed, 1.0);
           vec3 _so = texture2D(uShardOff, aShard).xyz;
-          // Tumble: the piece turns about its home, about its own axis, by how
-          // far it has travelled — so a piece at home has not turned.
-          float _sa = length(_so) * uShardSpin;
-          if (_sa > 0.0) {
+          float _sl = length(_so);
+          if (_sl > 0.0 && (uShardSpin > 0.0 || uShardDust > 0.0)) {
+            // Both act about the piece's HOME, by how far it has travelled —
+            // so a piece at home has neither turned nor shrunk.
             vec3 _sh = texture2D(uShardHome, aShard).xyz;
-            vec3 _ax = normalize(fract(sin(vec3(dot(aShard, vec2(127.1, 311.7)), dot(aShard, vec2(269.5, 183.3)), dot(aShard, vec2(419.2, 371.9)))) * 43758.5453) - 0.5 + 1.0e-4);
-            float _c = cos(_sa); float _s = sin(_sa);
-            vec3 _r = mvPosition.xyz - _sh;
-            mvPosition.xyz = _sh + _r * _c + cross(_ax, _r) * _s + _ax * dot(_ax, _r) * (1.0 - _c);
-            #ifndef FLAT_SHADED
-              vec3 _wn = vNormal * mat3(viewMatrix);          // view → world
-              _wn = _wn * _c + cross(_ax, _wn) * _s + _ax * dot(_ax, _wn) * (1.0 - _c);
-              vNormal = mat3(viewMatrix) * _wn;
-            #endif
+            // Dust: the piece shrinks toward its home point as it leaves.
+            vec3 _r = (mvPosition.xyz - _sh) * exp(-_sl * uShardDust);
+            // Tumble: it turns about its own axis.
+            float _sa = _sl * uShardSpin;
+            if (_sa > 0.0) {
+              vec3 _ax = normalize(fract(sin(vec3(dot(aShard, vec2(127.1, 311.7)), dot(aShard, vec2(269.5, 183.3)), dot(aShard, vec2(419.2, 371.9)))) * 43758.5453) - 0.5 + 1.0e-4);
+              float _c = cos(_sa); float _s = sin(_sa);
+              _r = _r * _c + cross(_ax, _r) * _s + _ax * dot(_ax, _r) * (1.0 - _c);
+              #ifndef FLAT_SHADED
+                vec3 _wn = vNormal * mat3(viewMatrix);          // view → world
+                _wn = _wn * _c + cross(_ax, _wn) * _s + _ax * dot(_ax, _wn) * (1.0 - _c);
+                vNormal = mat3(viewMatrix) * _wn;
+              #endif
+            }
+            mvPosition.xyz = _sh + _r;
           }
           mvPosition.xyz += _so;
           mvPosition = viewMatrix * mvPosition;

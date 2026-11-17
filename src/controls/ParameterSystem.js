@@ -4422,6 +4422,9 @@ export function registerCoreParameters(ps) {
     min: 0, max: 100, value: 0, step: 0.5, unit: "%" });
   ps.register({ id: "scene3d.shatter.tumble", label: "Tumble", group: "scene3d",
     min: 0, max: 100, value: 0, step: 0.5, unit: "%" });
+  // Dust: pieces shrink as they leave and grow back on the way home.
+  ps.register({ id: "scene3d.shatter.dust", label: "Dust", group: "scene3d",
+    min: 0, max: 100, value: 0, step: 0.5, unit: "%" });
   // ShatterBy: Pieces (PieceSize decides) or Body parts — everything one bone
   // carries, or one whole mesh of a model made of parts, flies as one piece.
   // A single unrigged mesh has no parts, and stays in Pieces.

@@ -43,6 +43,8 @@ const FORM_SCALE = 1.3;
 // Tumble 100 %: a piece has turned this many radians by the time it is one
 // form-radius from home.
 const TUMBLE_TURNS = 8.0;
+// Dust 100 %: what is left of a piece's size one form-radius from home.
+const DUST_LEFT = 0.04;
 // ShatterMask: the darkest piece starts this far up the Shatter control.
 const MASK_SPREAD = 0.8;
 
@@ -135,7 +137,8 @@ export class ShardScatter {
     // offsets, homes (a tumbling piece turns about its home) and the spin.
     this._homeUniform = { value: zero };
     this._spinUniform = { value: 0 };
-    this._uniforms = { uShardOff: this._offUniform, uShardHome: this._homeUniform, uShardSpin: this._spinUniform };
+    this._dustUniform = { value: 0 };
+    this._uniforms = { uShardOff: this._offUniform, uShardHome: this._homeUniform, uShardSpin: this._spinUniform, uShardDust: this._dustUniform };
     this._bakeMat = new THREE.ShaderMaterial({
       uniforms: { uTexel: { value: new THREE.Vector2(1, 1) } },
       vertexShader: BAKE_VERT, fragmentShader: BAKE_FRAG,
@@ -236,6 +239,9 @@ export class ShardScatter {
     // Tumble: a piece turns as it travels — radians per world unit of offset,
     // so at home (offset zero) it has not turned at all.
     this._spinUniform.value = ((params.get('scene3d.shatter.tumble')?.value ?? 0) / 100) * TUMBLE_TURNS / u.uFrame.value;
+    // Dust: a piece shrinks as it leaves — to DUST_LEFT of its size one
+    // form-radius from home at 100 %.
+    this._dustUniform.value = ((params.get('scene3d.shatter.dust')?.value ?? 0) / 100) * -Math.log(DUST_LEFT) / u.uFrame.value;
     this._clock.ran(scatter, simDt);
   }
 
