@@ -16,6 +16,11 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   drawn at output size without visible banding, and blends without a grey
   middle between opposite hues, so existing gradients look slightly cleaner.
 
+### Fixed
+- **Pictures on GLB models are the right way up** — a movie, camera or layer used
+  as the texture of a GLB model was upside down against the same picture on a
+  DAE model. Texture = Image is unchanged.
+
 ### Changed
 - **Color is now Color 1, and Col2 Type is now Gradient** — the source menus
   list **Color 1** beside Color 2, and the row that turns Color 2 into a
@@ -33,6 +38,14 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   GPU-checked against the spec formulas: 256 colour pairs within 1/255.
 
 ### Added
+- **A figure file can name its own takes** — a COLLADA file may now list where
+  each small animation starts and ends, and the Segment menu uses that list
+  instead of hunting for cuts. Two animations that begin from the same pose
+  used to be joined into one; files without the list behave as before.
+  A GLB file can carry the same list.
+- **Animated GLB figures move** — a rigged GLB with animation used to load as a
+  still shape lying in its bind pose; it now keeps its skeleton and plays, as a
+  DAE figure does.
 - **Smoother Reimagine landings and LFO moves** — a landed image is decoded
   off the main thread (createImageBitmap); measured, the 50–100 ms frame at
   each landing is gone (no frame over 25 ms in a full cycle). Splat World's

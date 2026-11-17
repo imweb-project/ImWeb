@@ -1,0 +1,27 @@
+<!doctype html><meta charset="utf-8">
+<!-- Does ImWeb's own GLB preparation leave an animated figure standing and moving?
+     Runs SceneManager's _prepareGLTFScene and ClipSegments on ?file= (in /assets) and reports
+     the figure's box, how far a hand travels over the clip, and the take count. -->
+<script type="importmap">{"imports":{"three":"/node_modules/three/build/three.module.js","three/addons/":"/node_modules/three/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+try {
+  const { SceneManager } = await import('/src/scene3d/SceneManager.js');
+  const { clipSegments } = await import('/src/scene3d/ClipSegments.js');
+  const q = new URLSearchParams(location.search);
+  const run = async animated => {
+    const g = await new GLTFLoader().loadAsync('/assets/' + q.get('file'));
+    const fake = { material: new THREE.MeshStandardMaterial() };
+    SceneManager.prototype._prepareGLTFScene.call(fake, g.scene, animated);
+    const tk = g.scene.userData.imweb_takes; if (Array.isArray(tk)) { g.animations[0].takes = []; for (let i = 0; i + 1 < tk.length; i += 2) g.animations[0].takes.push([tk[i], tk[i + 1]]); }
+    const mixer = new THREE.AnimationMixer(g.scene); mixer.clipAction(g.animations[0]).play();
+    let skinned = 0, plain = 0; g.scene.traverse(o => { if (o.isSkinnedMesh) skinned++; else if (o.isMesh) plain++; });
+    const box = t => { mixer.setTime(t); g.scene.updateMatrixWorld(true); const b = new THREE.Box3();
+      g.scene.traverse(o => { if (o.isSkinnedMesh) { o.computeBoundingBox(); b.union(o.boundingBox.clone().applyMatrix4(o.matrixWorld)); } else if (o.isMesh) b.expandByObject(o); });
+      return b.getSize(new THREE.Vector3()).toArray().map(v => +v.toFixed(2)); };
+    return { animated, skinned, plain, sizeStanding: box(0), sizeLyingLoop56: box(264), takes: clipSegments(g.animations[0]).segments.length };
+  };
+  window.__result = { old: await run(false), now: await run(true) };
+} catch (e) { window.__result = { error: String(e), stack: e.stack }; }
+</script>
