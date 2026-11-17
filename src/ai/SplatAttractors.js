@@ -55,6 +55,11 @@ export const SPLAT_ATTRACTORS = [
   // the rim — 56 of 245 in the storm test, even sampling the field well inside
   // the rim. The audit's "ends ON the form" check is what says so; a shape
   // must pass it before it goes in this list.
+  // Likewise Burke–Shaw and Nosé–Hoover (2026-11-18): 5 of 245 starts parked at
+  // the rim each. Close, but a handful of stragglers is still a shell.
+  // And a four-wing attractor (0.2x + yz, -0.01x - 0.4y - xz, -z - xy): it PASSES
+  // the storm test, but after 60 s on screen it is still a cloud with a faint
+  // cross in it, not a form. The audit cannot see that; an eye has to.
   {
     // Lorenz: the butterfly. Its own axis is z; `axes` stands it upright.
     name: 'Lorenz',
@@ -74,6 +79,27 @@ export const SPLAT_ATTRACTORS = [
       '0.2 + z * (x - 5.7)',
     ],
     extent: 15.0, centre: [1.0, -1.5, 8.0], axes: 'xzy', rate: 1.0, hold: 18.0,
+  },
+  {
+    // Thomas with half the damping: the single knot opens into a lattice the
+    // points wander through, cell to cell.
+    name: 'Lattice',
+    d: [
+      'sin(y) - 0.1 * x',
+      'sin(z) - 0.1 * y',
+      'sin(x) - 0.1 * z',
+    ],
+    extent: 7.8, centre: [0.0, 0.0, 0.0], axes: 'xyz', rate: 4.2, hold: 11.0,
+  },
+  {
+    // Rucklidge: two rounded lobes, like a figure of eight seen from above.
+    name: 'Rucklidge',
+    d: [
+      '-2.0 * x + 6.7 * y - y * z',
+      'x',
+      '-z + y * y',
+    ],
+    extent: 12.6, centre: [0.0, 0.0, 7.7], axes: 'xzy', rate: 1.1, hold: 14.5,
   },
 ];
 

@@ -4479,6 +4479,11 @@ export function registerCoreParameters(ps) {
     select: true });
   ps.register({ id: "scene3d.shatter.flow", label: "ShatterFlow", group: "scene3d",
     min: 0, max: 200, value: 100, step: 0.5, unit: "%" });
+  // ShatterSize: the size of the form against the object. 100 % is 1.3 x the
+  // object's own radius, which runs off the frame with the camera close — so
+  // it rests lower.
+  ps.register({ id: "scene3d.shatter.size", label: "ShatterSize", group: "scene3d",
+    min: 10, max: 200, value: 60, step: 0.5, unit: "%" });
   // PieceSize: 0 = every triangle flies alone; higher gathers them into
   // bigger pieces, like broken china. Tumble: pieces turn as they travel.
   ps.register({ id: "scene3d.shatter.piece", label: "PieceSize", group: "scene3d",

@@ -65,7 +65,7 @@ check('shape names are unique', new Set(SPLAT_ATTRACTORS.map(a => a.name)).size 
 // APPEND-ONLY, held here and not only by a comment: splat.shape is saved as an
 // index, so reordering or removing a shape would make every saved state recall
 // a different one, silently. New shapes go on the END of both lists.
-const SHIPPED = ['Thomas', 'Aizawa', 'Lorenz', 'Rössler'];
+const SHIPPED = ['Thomas', 'Aizawa', 'Lorenz', 'Rössler', 'Lattice', 'Rucklidge'];
 check(`the shipped shapes keep their indices (${SHIPPED.join(', ')} first, in that order)`,
   SHIPPED.every((n, i) => SPLAT_ATTRACTORS[i]?.name === n));
 check('splat.scatter rests at 0 (a fresh patch shows the picture)', ps.get('splat.scatter')?.value === 0);
@@ -167,6 +167,7 @@ for (const a of SPLAT_ATTRACTORS) {
   for (const dt of [1 / 50, 1 / 60, MAX_DT]) {
     const tag = `${a.name} @ dt 1/${Math.round(1 / dt)}`;
     let guarded = 0, nonFinite = 0, worstEnd = 0, moved = 0, worstHome = 0, onForm = 0, atRim = 0;
+    const ends = [];
     for (const h of homes) {
       let off = [0, 0, 0];
       // 2. Storm: 120 s free in the attractor at twice the flow.
@@ -180,6 +181,7 @@ for (const a of SPLAT_ATTRACTORS) {
       worstEnd = Math.max(worstEnd, Math.hypot(...w));
       if (Math.hypot(...w) <= 1.15) onForm++;
       if (Math.hypot(...w) >= 0.97 * a.hold / a.extent) atRim++;
+      ends.push(w);
       if (Math.hypot(...off) > 0.05) moved++;
       // 3. Home: Scatter 0 for the settle time.
       for (let t = 0; t < SETTLE_S; t += dt) off = step(flow, h, off, 0, 2, dt, pivot, frame).off;
@@ -197,6 +199,11 @@ for (const a of SPLAT_ATTRACTORS) {
     // form's own reach, so ending within it (with a little room) is "on it".
     check(`${tag}: every point ends ON the form, none parked at the rim (${onForm}/${homes.length} on, ${atRim} at the rim)`,
       onForm === homes.length && atRim === 0);
+    // …and the form must BE a form: a field whose every start falls into one
+    // fixed point would pass "on the form" as a single dot.
+    const mid = [0, 1, 2].map(k => ends.reduce((p, e) => p + e[k], 0) / Math.max(ends.length, 1));
+    const spread = Math.sqrt(ends.reduce((p, e) => p + (e[0] - mid[0]) ** 2 + (e[1] - mid[1]) ** 2 + (e[2] - mid[2]) ** 2, 0) / Math.max(ends.length, 1));
+    check(`${tag}: the points end spread over a form, not gathered in a dot (spread ${spread.toFixed(2)})`, spread > 0.2);
     // Nearly all: a point may happen to pass its own home at the 120 s mark.
     check(`${tag}: the storm moved the points (${moved}/${homes.length})`, moved >= homes.length * 0.9);
     check(`${tag}: home again within OFF_EPS after the settle time (worst ${worstHome.toExponential(1)})`,
