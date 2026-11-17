@@ -99,6 +99,12 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   turns one thing into another. At a low Shatter the pieces fly straight from
   the old shape to the new. Changing PieceSize or ShatterBy mid-flight keeps
   the cloud too, where it used to snap home.
+- **ShatterSize, and two more shapes** — **ShatterSize** sets how big the form
+  is against the object, so a large object no longer throws its pieces off the
+  frame (the form used to be fixed at 1.3 × the object; it now rests at 60 %
+  of that). New shapes, in Shatter and in Splat World's Scatter alike:
+  **Lattice** (a woven grid the pieces wander through) and **Rucklidge** (two
+  rounded lobes).
 
 ### Fixed
 - **A bundled 3D model can be reloaded after Back to Geometry** — it used to

@@ -240,7 +240,9 @@ export class ShardScatter {
     root.getWorldPosition(this._v);
     u.uPivot.value.copy(this._centre0).sub(this._pos0).add(this._v);
     root.getWorldScale(this._v);
-    u.uFrame.value = this._frame0 * (Math.abs(this._v.x) / this._scale0 || 1);
+    // ShatterSize: how big the form is against the object (100 % = FORM_SCALE).
+    u.uFrame.value = this._frame0 * (Math.abs(this._v.x) / this._scale0 || 1)
+      * Math.max((params.get('scene3d.shatter.size')?.value ?? 100) / 100, 0.01);
     const next = 1 - this._cur;
     r.setRenderTarget(this._off[next]);
     r.render(this._simScene, this._cam);

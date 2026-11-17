@@ -21,7 +21,7 @@ export const SHATTER_LOOKS = [
     name: 'Porcelain',
     about: 'Breaks into large turning pieces, like china, that drift through a knot and reassemble.',
     set: [
-      ['scene3d.shatter', 70], ['scene3d.shatter.shape', 'Thomas'], ['scene3d.shatter.flow', 70],
+      ['scene3d.shatter', 70], ['scene3d.shatter.shape', 'Thomas'], ['scene3d.shatter.size', 60], ['scene3d.shatter.flow', 70],
       ['scene3d.shatter.piece', 30], ['scene3d.shatter.by', 'Pieces'],
       ['scene3d.shatter.tumble', 45], ['scene3d.shatter.dust', 0], ['scene3d.shatter.mask', 'None'],
     ],
@@ -31,7 +31,7 @@ export const SHATTER_LOOKS = [
     name: 'Dust storm',
     about: 'Every triangle flies alone and shrinks to dust along the butterfly.',
     set: [
-      ['scene3d.shatter', 100], ['scene3d.shatter.shape', 'Lorenz'], ['scene3d.shatter.flow', 120],
+      ['scene3d.shatter', 100], ['scene3d.shatter.shape', 'Lorenz'], ['scene3d.shatter.size', 70], ['scene3d.shatter.flow', 120],
       ['scene3d.shatter.piece', 0], ['scene3d.shatter.by', 'Pieces'],
       ['scene3d.shatter.tumble', 0], ['scene3d.shatter.dust', 45], ['scene3d.shatter.mask', 'None'],
     ],
@@ -42,7 +42,7 @@ export const SHATTER_LOOKS = [
     name: 'Limb from limb',
     about: 'A figure comes apart at the joints; each part flies whole, still moving, around a shell.',
     set: [
-      ['scene3d.shatter', 80], ['scene3d.shatter.shape', 'Aizawa'], ['scene3d.shatter.flow', 60],
+      ['scene3d.shatter', 80], ['scene3d.shatter.shape', 'Aizawa'], ['scene3d.shatter.size', 55], ['scene3d.shatter.flow', 60],
       ['scene3d.shatter.piece', 35], ['scene3d.shatter.by', 'Body parts'],
       ['scene3d.shatter.tumble', 25], ['scene3d.shatter.dust', 0], ['scene3d.shatter.mask', 'None'],
     ],
@@ -53,7 +53,7 @@ export const SHATTER_LOOKS = [
     name: 'Eaten by light',
     about: 'The camera decides: where its picture is bright the object dissolves, where it is dark it holds.',
     set: [
-      ['scene3d.shatter', 50], ['scene3d.shatter.shape', 'Rössler'], ['scene3d.shatter.flow', 100],
+      ['scene3d.shatter', 50], ['scene3d.shatter.shape', 'Rössler'], ['scene3d.shatter.size', 60], ['scene3d.shatter.flow', 100],
       ['scene3d.shatter.piece', 15], ['scene3d.shatter.by', 'Pieces'],
       ['scene3d.shatter.tumble', 30], ['scene3d.shatter.dust', 30], ['scene3d.shatter.mask', 'Camera'],
     ],
