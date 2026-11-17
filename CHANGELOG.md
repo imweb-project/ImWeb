@@ -47,6 +47,11 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   source, and as Shatter rises the pieces under its bright parts (as the 3D
   camera sees them) leave first and the dark ones last. With a live source and
   Shatter held in the middle, the picture itself chooses what is in pieces.
+- **A figure can come apart limb by limb** — new **ShatterBy** (Pieces / Body
+  parts). Body parts makes one piece of everything a bone carries — a forearm,
+  a hand, a head fly whole and go on moving — or, for a model built of
+  separate rigid parts, of each part. An object that is one unrigged mesh has
+  no parts, and stays in Pieces.
 - **Color 2 gradients: Angle, Bands, Steps, Path, Scroll and Conic** — the
   gradient can be turned to any angle, repeated as stripes or rings, cut into
   flat steps, sent round the colour wheel (**Path** = Rainbow) and set moving

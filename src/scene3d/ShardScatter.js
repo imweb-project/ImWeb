@@ -189,8 +189,9 @@ export class ShardScatter {
     // model): the old twins describe something that no longer exists.
     // … or PieceSize changed: the pieces are different pieces now.
     const piece = (params.get('scene3d.shatter.piece')?.value ?? 0) / 100;
-    if (this._root && (this._root !== root || this._piece !== piece || !this._sameParts(root))) this._teardown();
-    if (!this._root) { this._build(root, piece); if (!this._root) { this._clock.left = 0; return; } }
+    const byParts = Math.round(params.get('scene3d.shatter.by')?.value ?? 0) === 1;
+    if (this._root && (this._root !== root || this._piece !== piece || this._byParts !== byParts || !this._sameParts(root))) this._teardown();
+    if (!this._root) { this._build(root, piece, byParts); if (!this._root) { this._clock.left = 0; return; } }
 
     const simDt = Math.min(Math.max(dt, 0), MAX_DT);
     root.updateWorldMatrix(true, true);
@@ -280,9 +281,17 @@ export class ShardScatter {
    *   object is cut by a grid in world space, bent by a slow wave so the cuts
    *   are not flat planes, and every triangle in a cell shares one home and
    *   one offset — so the cell flies as one piece, like broken china.
+   * @param {boolean} byParts Body parts: a piece is everything one BONE
+   *   carries (a triangle goes to the bone that holds most of it), or, for a
+   *   model made of rigid parts, one whole mesh — a forearm, a head, a hand
+   *   fly whole. An object that is a single unrigged mesh has no parts to
+   *   come apart into, so there the grid above is used instead: the control
+   *   never just carries the whole object away.
    */
-  _build(root, piece = 0) {
+  _build(root, piece = 0, byParts = false) {
     const meshes = this._meshes(root);
+    const hasParts = meshes.length > 1 || meshes.some(m => m.isSkinnedMesh && m.geometry.attributes.skinIndex);
+    const parts = byParts && hasParts;
     root.updateWorldMatrix(true, true);
     this._box.setFromObject(root);
     const diag = Math.max(this._box.getSize(this._v).length(), 1e-3);
@@ -291,14 +300,34 @@ export class ShardScatter {
     const ids = new Map();
     const c = new THREE.Vector3();
     let n = 0;
-    const made = meshes.map(src => {
+    const made = meshes.map((src, mi) => {
       const g = src.geometry.index ? src.geometry.toNonIndexed() : src.geometry.clone();
       const pos = g.attributes.position;
       const tris = Math.floor(pos.count / 3);
       const id = new Uint32Array(tris);
+      const si = parts && src.isSkinnedMesh ? g.attributes.skinIndex : null;
+      const sw = si ? g.attributes.skinWeight : null;
+      const held = new Map();
       for (let t = 0; t < tris; t++) {
-        if (!cell) { id[t] = n++; continue; }
         const a = t * 3;
+        if (parts) {
+          let bone = -1;
+          if (si) {   // the bone that holds most of this triangle
+            held.clear();
+            let best = -1;
+            for (let k = 0; k < 3; k++) for (let c2 = 0; c2 < 4; c2++) {
+              const b = si.getComponent(a + k, c2), w = (held.get(b) ?? 0) + sw.getComponent(a + k, c2);
+              held.set(b, w);
+              if (w > best) { best = w; bone = b; }
+            }
+          }
+          const key = mi * 65536 + (bone + 1);
+          let v = ids.get(key);
+          if (v === undefined) { v = n++; ids.set(key, v); }
+          id[t] = v;
+          continue;
+        }
+        if (!cell) { id[t] = n++; continue; }
         c.set((pos.getX(a) + pos.getX(a + 1) + pos.getX(a + 2)) / 3,
               (pos.getY(a) + pos.getY(a + 1) + pos.getY(a + 2)) / 3,
               (pos.getZ(a) + pos.getZ(a + 1) + pos.getZ(a + 2)) / 3).applyMatrix4(src.matrixWorld);
@@ -397,6 +426,7 @@ export class ShardScatter {
     this.sm.scene.add(this._group);
     this._n = n;
     this._piece = piece;
+    this._byParts = byParts;
     this._root = root;
     // Where the form sits and how big it is, measured from the whole object now.
     root.updateWorldMatrix(true, true);

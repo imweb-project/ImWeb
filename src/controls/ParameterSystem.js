@@ -4422,6 +4422,11 @@ export function registerCoreParameters(ps) {
     min: 0, max: 100, value: 0, step: 0.5, unit: "%" });
   ps.register({ id: "scene3d.shatter.tumble", label: "Tumble", group: "scene3d",
     min: 0, max: 100, value: 0, step: 0.5, unit: "%" });
+  // ShatterBy: Pieces (PieceSize decides) or Body parts — everything one bone
+  // carries, or one whole mesh of a model made of parts, flies as one piece.
+  // A single unrigged mesh has no parts, and stays in Pieces.
+  ps.register({ id: "scene3d.shatter.by", label: "ShatterBy", group: "scene3d",
+    type: PARAM_TYPE.SELECT, options: ["Pieces", "Body parts"], value: 0 });
   // ShatterMask: a picture decides the ORDER. Seen through the 3D camera, the
   // pieces under its bright parts leave first as Shatter rises and the dark
   // ones last — so with a live source at a middle Shatter, the picture itself
