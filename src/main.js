@@ -10710,6 +10710,7 @@ void main() {
     const _s3dReads = [
       _s3d(ps.get("scene3d.mat.texsrc")?.value ?? 0),
       _dispSel >= 2 ? _s3d(_dispSel - 2) : -1,   // 0 = the surface's own, 1 = the DS layer (_cDs)
+      (ps.get("scene3d.shatter.mask")?.value ?? 0) - 1,   // OPT_SOURCES: 0 is None
       ...SLOT_PREFIXES.map((pre) => {
         const v = ps.get(`${pre}.texsrc`)?.value ?? 0;   // 0 = Shared
         return ps.get(`${pre}.visible`)?.value && v > 0 ? _s3d(v - 1) : -1;

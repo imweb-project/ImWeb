@@ -43,6 +43,8 @@ const FORM_SCALE = 1.3;
 // Tumble 100 %: a piece has turned this many radians by the time it is one
 // form-radius from home.
 const TUMBLE_TURNS = 8.0;
+// ShatterMask: the darkest piece starts this far up the Shatter control.
+const MASK_SPREAD = 0.8;
 
 // BAKE draws one tiny triangle per shard, over that shard's own texel, and
 // writes where the shard's ANCHOR (its first corner) is in the world right
@@ -83,11 +85,25 @@ const SIM_FRAG = /* glsl */ `
   uniform float uFlow;
   uniform float uShape;
   uniform float uDt;
+  uniform sampler2D uMask;
+  uniform float uMaskOn;
+  uniform mat4 uViewProj;
   varying vec2 vUv;
   ${scatterStepGLSL()}
   void main() {
-    vec3 off = scatterStep(texture2D(uHome, vUv).xyz, texture2D(uOff, vUv).xyz, uPivot, uFrame,
-                           uScatter, uFlow, uShape, uDt);
+    vec3 h = texture2D(uHome, vUv).xyz;
+    float s = uScatter;
+    if (uMaskOn > 0.5) {
+      // Where this piece's home is on screen, and how bright the mask is there.
+      // Bright leaves first: a piece waits (1 - brightness) of the way up the
+      // Shatter control before it starts, and all are out at 100 %.
+      vec4 c = uViewProj * vec4(h, 1.0);
+      vec2 suv = clamp(c.xy / max(c.w, 1.0e-4) * 0.5 + 0.5, 0.0, 1.0);
+      float m = dot(texture2D(uMask, suv).rgb, vec3(0.2126, 0.7152, 0.0722));
+      s = clamp((uScatter - (1.0 - m) * ${MASK_SPREAD.toFixed(2)}) / ${(1 - MASK_SPREAD).toFixed(2)}, 0.0, 1.0);
+    }
+    vec3 off = scatterStep(h, texture2D(uOff, vUv).xyz, uPivot, uFrame,
+                           s, uFlow, uShape, uDt);
     gl_FragColor = vec4(off, 1.0);
   }
 `;
@@ -130,6 +146,7 @@ export class ShardScatter {
         uHome: { value: zero }, uOff: { value: zero },
         uPivot: { value: new THREE.Vector3() }, uFrame: { value: 1 },
         uScatter: { value: 0 }, uFlow: { value: 1 }, uShape: { value: 0 }, uDt: { value: 0 },
+        uMask: { value: zero }, uMaskOn: { value: 0 }, uViewProj: { value: new THREE.Matrix4() },
       },
       vertexShader: SIM_VERT, fragmentShader: SIM_FRAG,
       depthTest: false, depthWrite: false, blending: THREE.NoBlending,
@@ -158,8 +175,9 @@ export class ShardScatter {
   /**
    * Once a frame, after the scene's params are applied and before it draws.
    * @param {number} dt seconds
+   * @param {THREE.Texture|null} mask ShatterMask's picture, or null
    */
-  update(params, dt) {
+  update(params, dt, mask = null) {
     const root = this._eligible();
     const scatter = root ? (params.get('scene3d.shatter')?.value ?? 0) / 100 : 0;
     const { out } = this._clock.tick(scatter);
@@ -196,6 +214,11 @@ export class ShardScatter {
     u.uScatter.value = scatter;
     u.uFlow.value = (params.get('scene3d.shatter.flow')?.value ?? 100) / 100;
     u.uShape.value = Math.round(params.get('scene3d.shatter.shape')?.value ?? 0);
+    u.uMask.value = mask ?? this._zero;
+    u.uMaskOn.value = mask ? 1 : 0;
+    const cam = this.sm.camera;
+    cam.updateMatrixWorld();
+    u.uViewProj.value.copy(cam.matrixWorld).invert().premultiply(cam.projectionMatrix);
     // The form sits on the object and is sized by it; both follow its
     // transform from where they were measured at build.
     root.getWorldPosition(this._v);

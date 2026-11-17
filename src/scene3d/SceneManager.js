@@ -1625,7 +1625,10 @@ export class SceneManager {
   render(params, dt = 0, inputs = {}) {
     this.update(dt * 1000);
     this.applyParams(params, dt, inputs);
-    this._shards.update(params, dt);
+    // ShatterMask: any source, through the one canonical resolver — never the
+    // scene's own picture, which this very render is about to draw into.
+    const shMask = this._resolveOptSource(params, 'scene3d.shatter.mask', inputs);
+    this._shards.update(params, dt, shMask === this.target.texture ? null : shMask);
     // Face texture — any source, through the one canonical resolver.
     const faceTex = this._resolveOptSource(params, 'hypercube.faces.texsrc', inputs);
 

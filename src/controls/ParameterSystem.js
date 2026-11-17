@@ -4422,6 +4422,13 @@ export function registerCoreParameters(ps) {
     min: 0, max: 100, value: 0, step: 0.5, unit: "%" });
   ps.register({ id: "scene3d.shatter.tumble", label: "Tumble", group: "scene3d",
     min: 0, max: 100, value: 0, step: 0.5, unit: "%" });
+  // ShatterMask: a picture decides the ORDER. Seen through the 3D camera, the
+  // pieces under its bright parts leave first as Shatter rises and the dark
+  // ones last — so with a live source at a middle Shatter, the picture itself
+  // chooses what is in pieces. OPT_SOURCES (0 = None), captured like the mix
+  // buses' inputs: the source list is append-only.
+  ps.register({ id: "scene3d.shatter.mask", label: "ShatterMask", group: "scene3d",
+    type: PARAM_TYPE.SELECT, options: OPT_SOURCES, value: 0, select: true });
 
   // ── SDF Generator ────────────────────────────────────────────────────────
   ps.register({

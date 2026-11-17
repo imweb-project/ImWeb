@@ -43,6 +43,10 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   travel. Two new shapes, in Shatter and in Splat World's Scatter alike:
   **Lorenz** (the butterfly) and **Rössler** (a flat spiral that throws a loop
   straight up). Both Shape controls are now menus.
+- **A picture can decide what shatters** — new **ShatterMask**: choose any
+  source, and as Shatter rises the pieces under its bright parts (as the 3D
+  camera sees them) leave first and the dark ones last. With a live source and
+  Shatter held in the middle, the picture itself chooses what is in pieces.
 - **Color 2 gradients: Angle, Bands, Steps, Path, Scroll and Conic** — the
   gradient can be turned to any angle, repeated as stripes or rings, cut into
   flat steps, sent round the colour wheel (**Path** = Rainbow) and set moving
