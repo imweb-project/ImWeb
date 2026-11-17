@@ -353,7 +353,7 @@ export class SceneManager {
       shader.uniforms.uRimColor   = { value: new THREE.Color(0xffffff) };
       // Shatter's twins only (ShardScatter): the offsets texture, as the one
       // uniform object ShardScatter keeps pointed at the current target.
-      if (mat._shardUniform) shader.uniforms.uShardOff = mat._shardUniform;
+      if (mat._shardUniforms) Object.assign(shader.uniforms, mat._shardUniforms);
       mat._shader = shader;
 
       shader.vertexShader = `
@@ -374,6 +374,8 @@ export class SceneManager {
         uniform float uDispSmooth;
         #ifdef USE_SHARDS
         uniform highp sampler2D uShardOff;
+        uniform highp sampler2D uShardHome;
+        uniform float uShardSpin;
         attribute vec2 aShard;
         #endif
         varying vec3 vObjPos;
@@ -520,7 +522,23 @@ export class SceneManager {
         '#include <project_vertex>',
         `#ifdef USE_SHARDS
           vec4 mvPosition = modelMatrix * vec4(transformed, 1.0);
-          mvPosition.xyz += texture2D(uShardOff, aShard).xyz;
+          vec3 _so = texture2D(uShardOff, aShard).xyz;
+          // Tumble: the piece turns about its home, about its own axis, by how
+          // far it has travelled — so a piece at home has not turned.
+          float _sa = length(_so) * uShardSpin;
+          if (_sa > 0.0) {
+            vec3 _sh = texture2D(uShardHome, aShard).xyz;
+            vec3 _ax = normalize(fract(sin(vec3(dot(aShard, vec2(127.1, 311.7)), dot(aShard, vec2(269.5, 183.3)), dot(aShard, vec2(419.2, 371.9)))) * 43758.5453) - 0.5 + 1.0e-4);
+            float _c = cos(_sa); float _s = sin(_sa);
+            vec3 _r = mvPosition.xyz - _sh;
+            mvPosition.xyz = _sh + _r * _c + cross(_ax, _r) * _s + _ax * dot(_ax, _r) * (1.0 - _c);
+            #ifndef FLAT_SHADED
+              vec3 _wn = vNormal * mat3(viewMatrix);          // view → world
+              _wn = _wn * _c + cross(_ax, _wn) * _s + _ax * dot(_ax, _wn) * (1.0 - _c);
+              vNormal = mat3(viewMatrix) * _wn;
+            #endif
+          }
+          mvPosition.xyz += _so;
           mvPosition = viewMatrix * mvPosition;
           gl_Position = projectionMatrix * mvPosition;
         #else

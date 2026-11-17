@@ -65,7 +65,7 @@ check('shape names are unique', new Set(SPLAT_ATTRACTORS.map(a => a.name)).size 
 // APPEND-ONLY, held here and not only by a comment: splat.shape is saved as an
 // index, so reordering or removing a shape would make every saved state recall
 // a different one, silently. New shapes go on the END of both lists.
-const SHIPPED = ['Thomas', 'Aizawa'];
+const SHIPPED = ['Thomas', 'Aizawa', 'Lorenz', 'Rössler'];
 check(`the shipped shapes keep their indices (${SHIPPED.join(', ')} first, in that order)`,
   SHIPPED.every((n, i) => SPLAT_ATTRACTORS[i]?.name === n));
 check('splat.scatter rests at 0 (a fresh patch shows the picture)', ps.get('splat.scatter')?.value === 0);
@@ -166,7 +166,7 @@ for (const a of SPLAT_ATTRACTORS) {
   const flow = makeFlow(a);
   for (const dt of [1 / 50, 1 / 60, MAX_DT]) {
     const tag = `${a.name} @ dt 1/${Math.round(1 / dt)}`;
-    let guarded = 0, nonFinite = 0, worstEnd = 0, moved = 0, worstHome = 0;
+    let guarded = 0, nonFinite = 0, worstEnd = 0, moved = 0, worstHome = 0, onForm = 0, atRim = 0;
     for (const h of homes) {
       let off = [0, 0, 0];
       // 2. Storm: 120 s free in the attractor at twice the flow.
@@ -178,6 +178,8 @@ for (const a of SPLAT_ATTRACTORS) {
       }
       const w = [0, 1, 2].map(j => (h[j] + off[j] - pivot[j]) / frame);
       worstEnd = Math.max(worstEnd, Math.hypot(...w));
+      if (Math.hypot(...w) <= 1.15) onForm++;
+      if (Math.hypot(...w) >= 0.97 * a.hold / a.extent) atRim++;
       if (Math.hypot(...off) > 0.05) moved++;
       // 3. Home: Scatter 0 for the settle time.
       for (let t = 0; t < SETTLE_S; t += dt) off = step(flow, h, off, 0, 2, dt, pivot, frame).off;
@@ -189,6 +191,12 @@ for (const a of SPLAT_ATTRACTORS) {
     // as a point can be held; ending inside it means it was caught, not lost.
     check(`${tag}: every point ends inside the hold radius (worst ${worstEnd.toFixed(2)} of ${(a.hold / a.extent).toFixed(2)})`,
       worstEnd <= a.hold / a.extent);
+    // Caught is not enough: a start outside the basin can be HELD at the rim for
+    // good, pushed out by the field and pulled in by the hold, and never join
+    // the form — a shell of stragglers around the shape. `extent` is the
+    // form's own reach, so ending within it (with a little room) is "on it".
+    check(`${tag}: every point ends ON the form, none parked at the rim (${onForm}/${homes.length} on, ${atRim} at the rim)`,
+      onForm === homes.length && atRim === 0);
     // Nearly all: a point may happen to pass its own home at the 120 s mark.
     check(`${tag}: the storm moved the points (${moved}/${homes.length})`, moved >= homes.length * 0.9);
     check(`${tag}: home again within OFF_EPS after the settle time (worst ${worstHome.toExponential(1)})`,

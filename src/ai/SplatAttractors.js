@@ -50,6 +50,31 @@ export const SPLAT_ATTRACTORS = [
     ],
     extent: 1.6, centre: [0.0, 0.0, 0.6], axes: 'xzy', rate: 0.6, hold: 2.5,
   },
+  // Tried and NOT shipped: Halvorsen (2026-11-17). Its basin does not fill any
+  // ball around it, so starts that are caught by the hold are then parked at
+  // the rim — 56 of 245 in the storm test, even sampling the field well inside
+  // the rim. The audit's "ends ON the form" check is what says so; a shape
+  // must pass it before it goes in this list.
+  {
+    // Lorenz: the butterfly. Its own axis is z; `axes` stands it upright.
+    name: 'Lorenz',
+    d: [
+      '10.0 * (y - x)',
+      'x * (28.0 - z) - y',
+      'x * y - 2.6666667 * z',
+    ],
+    extent: 32.0, centre: [0.0, 0.0, 24.7], axes: 'xzy', rate: 0.2, hold: 45.0,
+  },
+  {
+    // Rössler: a flat spiral that now and then throws one loop straight up.
+    name: 'Rössler',
+    d: [
+      '-y - z',
+      'x + 0.2 * y',
+      '0.2 + z * (x - 5.7)',
+    ],
+    extent: 15.0, centre: [1.0, -1.5, 8.0], axes: 'xzy', rate: 1.0, hold: 18.0,
+  },
 ];
 
 /** Pull back toward the rim outside `hold`, per shape time unit. */

@@ -37,6 +37,12 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   Shards follow the object while it moves or plays an animation. It does nothing
   while the Cloner is on or a Hypercube has adopted the mesh, and models in
   slots 2–4 are not shattered. The depth output shows the object whole.
+- **Shatter in pieces, and two more shapes** — **PieceSize** gathers the
+  triangles into bigger pieces, so an object breaks like china instead of
+  turning to dust (0 = single triangles). **Tumble** makes pieces turn as they
+  travel. Two new shapes, in Shatter and in Splat World's Scatter alike:
+  **Lorenz** (the butterfly) and **Rössler** (a flat spiral that throws a loop
+  straight up). Both Shape controls are now menus.
 - **Color 2 gradients: Angle, Bands, Steps, Path, Scroll and Conic** — the
   gradient can be turned to any angle, repeated as stripes or rings, cut into
   flat steps, sent round the colour wheel (**Path** = Rainbow) and set moving

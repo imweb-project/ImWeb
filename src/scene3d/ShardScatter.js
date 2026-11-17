@@ -5,8 +5,9 @@
  * The second consumer of the scatter step in ../ai/SplatAttractors.js (Splat
  * World's Scatter is the first): the same shapes, the same step, the same
  * settle clock. What differs is what a "thing" is and where its home comes
- * from. Here a thing is one TRIANGLE — it flies as a rigid shard, keeping its
- * shape, lighting and texture — and its home is where its first corner is in
+ * from. Here a thing is one PIECE — a triangle, or with PieceSize a patch of
+ * them — which flies whole, keeping its shape, lighting and texture, and with
+ * Tumble turns as it goes. Its home is where one of its corners is in
  * world space, which moves every frame with the object's transform, its
  * animation and, for a figure that keeps its skeleton, its bones.
  *
@@ -39,6 +40,9 @@ import { scatterStepGLSL, SettleClock, MAX_DT } from '../ai/SplatAttractors.js';
 
 // The form is this many times the object's own radius.
 const FORM_SCALE = 1.3;
+// Tumble 100 %: a piece has turned this many radians by the time it is one
+// form-radius from home.
+const TUMBLE_TURNS = 8.0;
 
 // BAKE draws one tiny triangle per shard, over that shard's own texel, and
 // writes where the shard's ANCHOR (its first corner) is in the world right
@@ -111,6 +115,11 @@ export class ShardScatter {
     zero.needsUpdate = true;
     this._zero = zero;
     this._offUniform = { value: zero };
+    // Everything a twin's program needs beyond the scene material's own:
+    // offsets, homes (a tumbling piece turns about its home) and the spin.
+    this._homeUniform = { value: zero };
+    this._spinUniform = { value: 0 };
+    this._uniforms = { uShardOff: this._offUniform, uShardHome: this._homeUniform, uShardSpin: this._spinUniform };
     this._bakeMat = new THREE.ShaderMaterial({
       uniforms: { uTexel: { value: new THREE.Vector2(1, 1) } },
       vertexShader: BAKE_VERT, fragmentShader: BAKE_FRAG,
@@ -135,7 +144,7 @@ export class ShardScatter {
 
   /** True while any shard may be away from home (the twins exist). */
   get out() { return this._root !== null; }
-  /** How many triangles are flying. */
+  /** How many pieces are flying. */
   get count() { return this._n ?? 0; }
 
   /** The object Shatter can take apart right now, or null. */
@@ -160,8 +169,10 @@ export class ShardScatter {
     if (!out || !root) { if (this._root) this._teardown(); return; }
     // The object was swapped while its shards were out (a new geometry, a new
     // model): the old twins describe something that no longer exists.
-    if (this._root && (this._root !== root || !this._sameParts(root))) this._teardown();
-    if (!this._root) { this._build(root); if (!this._root) { this._clock.left = 0; return; } }
+    // … or PieceSize changed: the pieces are different pieces now.
+    const piece = (params.get('scene3d.shatter.piece')?.value ?? 0) / 100;
+    if (this._root && (this._root !== root || this._piece !== piece || !this._sameParts(root))) this._teardown();
+    if (!this._root) { this._build(root, piece); if (!this._root) { this._clock.left = 0; return; } }
 
     const simDt = Math.min(Math.max(dt, 0), MAX_DT);
     root.updateWorldMatrix(true, true);
@@ -197,6 +208,10 @@ export class ShardScatter {
     r.setRenderTarget(prev);
     this._cur = next;
     this._offUniform.value = this._off[next].texture;
+    this._homeUniform.value = this._home.texture;
+    // Tumble: a piece turns as it travels — radians per world unit of offset,
+    // so at home (offset zero) it has not turned at all.
+    this._spinUniform.value = ((params.get('scene3d.shatter.tumble')?.value ?? 0) / 100) * TUMBLE_TURNS / u.uFrame.value;
     this._clock.ran(scatter, simDt);
   }
 
@@ -208,7 +223,7 @@ export class ShardScatter {
     if (!this._mat || this._matBase !== main) {
       this._mat?.dispose();
       this._mat = main.clone();
-      this._mat._shardUniform = this._offUniform;
+      this._mat._shardUniforms = this._uniforms;
       this.sm._setupMaterial(this._mat);
       this._matBase = main;
       this._matKey = '';
@@ -218,7 +233,7 @@ export class ShardScatter {
     // copy() resets the defines and shares nothing of the hook.
     m.defines = { ...(main.defines ?? {}), USE_SHARDS: 1 };
     const mu = main._shader?.uniforms, ou = m._shader?.uniforms;
-    if (mu && ou) for (const k in mu) if (ou[k] && k !== 'uShardOff') ou[k].value = mu[k].value;
+    if (mu && ou) for (const k in mu) if (ou[k]) ou[k].value = mu[k].value;
     const key = `${main.version}|${!!m.map}|${!!m.defines.USE_TRIPLANAR}`;
     if (key !== this._matKey) { this._matKey = key; m.needsUpdate = true; }
     return m;
@@ -236,14 +251,43 @@ export class ShardScatter {
       && list.every((m, i) => this._parts[i].src === m && this._parts[i].geo === m.geometry);
   }
 
-  _build(root) {
+  /**
+   * @param {number} piece 0..1 — PieceSize. 0: every triangle is its own
+   *   piece. Above 0 triangles are gathered into pieces by where they are: the
+   *   object is cut by a grid in world space, bent by a slow wave so the cuts
+   *   are not flat planes, and every triangle in a cell shares one home and
+   *   one offset — so the cell flies as one piece, like broken china.
+   */
+  _build(root, piece = 0) {
     const meshes = this._meshes(root);
+    root.updateWorldMatrix(true, true);
+    this._box.setFromObject(root);
+    const diag = Math.max(this._box.getSize(this._v).length(), 1e-3);
+    const cell = piece > 0 ? diag * (0.02 + 0.33 * piece) : 0;
+    const wave = cell * 0.35, wk = Math.PI / Math.max(cell * 2.3, 1e-6);
+    const ids = new Map();
+    const c = new THREE.Vector3();
     let n = 0;
     const made = meshes.map(src => {
       const g = src.geometry.index ? src.geometry.toNonIndexed() : src.geometry.clone();
-      const tris = Math.floor(g.attributes.position.count / 3);
-      const first = n; n += tris;
-      return { src, g, tris, first };
+      const pos = g.attributes.position;
+      const tris = Math.floor(pos.count / 3);
+      const id = new Uint32Array(tris);
+      for (let t = 0; t < tris; t++) {
+        if (!cell) { id[t] = n++; continue; }
+        const a = t * 3;
+        c.set((pos.getX(a) + pos.getX(a + 1) + pos.getX(a + 2)) / 3,
+              (pos.getY(a) + pos.getY(a + 1) + pos.getY(a + 2)) / 3,
+              (pos.getZ(a) + pos.getZ(a + 1) + pos.getZ(a + 2)) / 3).applyMatrix4(src.matrixWorld);
+        const kx = Math.floor((c.x + wave * Math.sin(c.y * wk + 1.3) + wave * Math.sin(c.z * wk * 0.7)) / cell) + 512;
+        const ky = Math.floor((c.y + wave * Math.sin(c.z * wk + 2.1) + wave * Math.sin(c.x * wk * 0.7)) / cell) + 512;
+        const kz = Math.floor((c.z + wave * Math.sin(c.x * wk + 0.4) + wave * Math.sin(c.y * wk * 0.7)) / cell) + 512;
+        const key = (kx * 1024 + ky) * 1024 + kz;
+        let v = ids.get(key);
+        if (v === undefined) { v = n++; ids.set(key, v); }
+        id[t] = v;
+      }
+      return { src, g, tris, id };
     });
     if (n === 0) return;
     const W = Math.ceil(Math.sqrt(n)), H = Math.ceil(n / W);
@@ -269,7 +313,7 @@ export class ShardScatter {
     this._group = new THREE.Group();
     this._group.name = 'shards';
     const mat = this._syncMaterial();
-    for (const { src, g, tris, first } of made) {
+    for (const { src, g, tris, id } of made) {
       const skinned = src.isSkinnedMesh === true;
       const pos = g.attributes.position;
       const si = skinned ? g.attributes.skinIndex : null, sw = skinned ? g.attributes.skinWeight : null;
@@ -280,7 +324,7 @@ export class ShardScatter {
       const bi = si ? new si.array.constructor(tris * 3 * 4) : null;
       const bw = sw ? new Float32Array(tris * 3 * 4) : null;
       for (let t = 0; t < tris; t++) {
-        const i = first + t, a = t * 3;
+        const i = id[t], a = t * 3;
         const uu = ((i % W) + 0.5) / W, vv = (Math.floor(i / W) + 0.5) / H;
         for (let k = 0; k < 3; k++) {
           const v = a + k;
@@ -329,6 +373,7 @@ export class ShardScatter {
     }
     this.sm.scene.add(this._group);
     this._n = n;
+    this._piece = piece;
     this._root = root;
     // Where the form sits and how big it is, measured from the whole object now.
     root.updateWorldMatrix(true, true);
@@ -351,6 +396,7 @@ export class ShardScatter {
     this._off?.forEach(rt => rt.dispose());
     this._home = null; this._off = null;
     this._offUniform.value = this._zero;
+    this._homeUniform.value = this._zero;
     this._parts = [];
     this._group = null;
     this._root = null;

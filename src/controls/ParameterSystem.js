@@ -3221,7 +3221,8 @@ export function registerCoreParameters(ps) {
   ps.register({ id: "splat.scatter", label: "Scatter", group: "splat",
     min: 0, max: 100, value: 0, step: 0.5, unit: "%" });
   ps.register({ id: "splat.shape", label: "Shape", group: "splat",
-    type: PARAM_TYPE.SELECT, options: SPLAT_ATTRACTORS.map((a) => a.name), value: 0 });
+    type: PARAM_TYPE.SELECT, options: SPLAT_ATTRACTORS.map((a) => a.name), value: 0,
+    select: true });
   ps.register({ id: "splat.flow", label: "Flow", group: "splat",
     min: 0, max: 200, value: 100, step: 0.5, unit: "%" });
   // FadeScatter: the fade itself scatters — out as one image leaves, home as
@@ -4411,9 +4412,16 @@ export function registerCoreParameters(ps) {
   ps.register({ id: "scene3d.shatter", label: "Shatter", group: "scene3d",
     min: 0, max: 100, value: 0, step: 0.5, unit: "%" });
   ps.register({ id: "scene3d.shatter.shape", label: "ShatterShape", group: "scene3d",
-    type: PARAM_TYPE.SELECT, options: SPLAT_ATTRACTORS.map((a) => a.name), value: 0 });
+    type: PARAM_TYPE.SELECT, options: SPLAT_ATTRACTORS.map((a) => a.name), value: 0,
+    select: true });
   ps.register({ id: "scene3d.shatter.flow", label: "ShatterFlow", group: "scene3d",
     min: 0, max: 200, value: 100, step: 0.5, unit: "%" });
+  // PieceSize: 0 = every triangle flies alone; higher gathers them into
+  // bigger pieces, like broken china. Tumble: pieces turn as they travel.
+  ps.register({ id: "scene3d.shatter.piece", label: "PieceSize", group: "scene3d",
+    min: 0, max: 100, value: 0, step: 0.5, unit: "%" });
+  ps.register({ id: "scene3d.shatter.tumble", label: "Tumble", group: "scene3d",
+    min: 0, max: 100, value: 0, step: 0.5, unit: "%" });
 
   // ── SDF Generator ────────────────────────────────────────────────────────
   ps.register({
