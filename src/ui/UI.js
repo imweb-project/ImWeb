@@ -374,7 +374,8 @@ export function buildMappingPanels(ps, contextMenu) {
                                .map(id => ps.get(id)).filter(Boolean)),
     'global-params':       ps.getGroup('global').filter(p =>
       p.id !== 'glsl.preset' && p.id !== 'displace.warpSlot' && p.id !== 'growth.look' &&
-      p.id !== 'reimagine.auto' && p.id !== 'reimagine.look' &&
+      p.id !== 'sdf.look' &&
+      p.id !== 'reimagine.auto' && p.id !== 'reimagine.look' && p.id !== 'scene3d.shatter.look' &&
       // Segment rows live in each model's animation block (buildSegmentRow).
       !/^(scene3d\.anim\.segment|model[234]\.animSegment)$/.test(p.id) &&
       p.id !== 'noise.recipe' &&
@@ -396,20 +397,34 @@ export function buildMappingPanels(ps, contextMenu) {
     // accordion entry. tests/audit-panel-coverage.mjs picks these up
     // automatically (it scans for pick() calls) and fails if a sdf.* param ends
     // up in no section, in two, or under a name that no longer exists.
-    'sdf-shape-params':    pick('sdf', ['active', 'shape', 'shapeB', 'count', 'size',
-                                        'opMode', 'opAmount', 'distance', 'speed']),
+    // SDF's LIVE SET, in panel order: the Look, the switch, and the controls a
+    // performer reaches for once a Look is up. Everything else is in the nine
+    // subsections below it, which start collapsed. A param is listed in ONE
+    // place — the subsection lists leave these out.
+    //
+    // Written as pick() rather than a list of ids mapped through ps.get, on
+    // purpose: tests/audit-panel-coverage.mjs finds placed params by reading
+    // pick('sdf', [...]) calls, so a hand-mapped list would hide these eight
+    // from the one audit that notices a registered param with no row.
+    // sdf.look is group 'global' (a loader — see its registration), so it is
+    // reached by id, as growth.look is.
+    'sdf-params':          [ps.get('sdf.look')].filter(Boolean).concat(
+                           pick('sdf', ['active', 'speed', 'size', 'vary', 'morph',
+                                        'distance', 'hue', 'glow'])),
+    'sdf-shape-params':    pick('sdf', ['shape', 'shapeB', 'count', 'opMode', 'opAmount', 'motion']),
     // "Space", not "Fold": the section holds domain repetition and surface
     // warp as well as the kaleidoscopic fold, and Fold named only one of three.
     'sdf-space-params':    pick('sdf', ['tile', 'repeat', 'kifsIter', 'kifsAngle',
-                                        'kifsScale', 'kifsOffset', 'warp']),
+                                        'kifsScale', 'kifsOffset', 'warp', 'warpMode',
+                                        'twist']),
     'sdf-camera-params':   pick('sdf', ['orbitX', 'orbitY', 'camDist',
                                         'moveX', 'moveY', 'moveZ', 'fov']),
-    'sdf-material-params': pick('sdf', ['hue', 'sat', 'val', 'ao']),
-    'sdf-light-params':    pick('sdf', ['lightAz', 'lightEl']),
-    'sdf-glow-params':     pick('sdf', ['glow', 'glowHue', 'glowSat', 'glowVal',
+    'sdf-material-params': pick('sdf', ['sat', 'val', 'ao']),
+    'sdf-light-params':    pick('sdf', ['lightAz', 'lightEl', 'shadow']),
+    'sdf-glow-params':     pick('sdf', ['glowHue', 'glowSat', 'glowVal',
                                         'glowHue2', 'glowSat2', 'glowVal2',
                                         'glowSize', 'glowEnv']),
-    'sdf-glass-params':    pick('sdf', ['refract', 'fresnel', 'envAmt', 'selfReflect',
+    'sdf-glass-params':    pick('sdf', ['refract', 'glassSolid', 'dispersion', 'fresnel', 'envAmt', 'selfReflect',
                                         'reflectAmt', 'reflectRange', 'reflectDetail',
                                         'refractSrc']),
     'sdf-video-params':    pick('sdf', ['texSrc', 'texBlend', 'lumaWarp', 'lumaThresh']),
@@ -1257,6 +1272,17 @@ export function buildGeometryButtons(ps, sceneManager, contextMenu) {
     ].forEach(id => {
       const p = ps.get(id);
       if (p) blobEl.appendChild(buildParamRow(p, contextMenu));
+    });
+  }
+
+  // ── Shatter section ──────────────────────────────────────────────────────
+  const shatterEl = document.getElementById('shatter-params');
+  if (shatterEl) {
+    ['scene3d.shatter.look', 'scene3d.shatter', 'scene3d.shatter.shape', 'scene3d.shatter.flow',
+     'scene3d.shatter.piece', 'scene3d.shatter.by', 'scene3d.shatter.tumble', 'scene3d.shatter.dust', 'scene3d.shatter.mask',
+    ].forEach(id => {
+      const p = ps.get(id);
+      if (p) shatterEl.appendChild(buildParamRow(p, contextMenu));
     });
   }
 

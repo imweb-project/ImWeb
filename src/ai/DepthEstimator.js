@@ -33,8 +33,8 @@ function _getWorker() {
       const job = _jobs.get(m.id);
       if (!job) return;
       if (m.type === 'status') { job.onStatus?.(m.msg); return; }
+      if (m.type === 'error') { _recover(job, m.message); return; }
       _jobs.delete(m.id);
-      if (m.type === 'error') { job.reject(new Error(m.message)); return; }
       _device = m.device;
       job.resolve({ canvas: _greyToCanvas(m.width, m.height, m.data), ms: m.ms, device: m.device });
     };
@@ -51,6 +51,31 @@ function _getWorker() {
     _worker = false;
   }
   return _worker || null;
+}
+
+// One failed run stops depth for good in that worker: transformers.js chains
+// every run as chain = chain.then(run), so after a rejection each later run
+// rejects with the same error without running. Only a new worker clears it.
+// The job that failed is retried once there, the others just move across.
+function _recover(failed, message) {
+  console.warn('[depth] run failed, restarting the worker:', message);
+  _worker.terminate();
+  _worker = null;
+  const pending = [..._jobs.values()];
+  _jobs.clear();
+  for (const job of pending) {
+    if (job === failed && job.retried) { job.reject(new Error(message)); continue; }
+    if (job === failed) job.retried = true;
+    _post(job);
+  }
+}
+
+function _post(job) {
+  const w = _getWorker();
+  if (!w) { _estimateHere(job.url, job.onStatus).then(job.resolve, job.reject); return; }
+  const id = ++_seq;
+  _jobs.set(id, job);
+  w.postMessage({ id, url: job.url, on: job.on });
 }
 
 function _greyToCanvas(w, h, grey) {
@@ -95,12 +120,8 @@ export function depthDevice() { return _device; }
  * @returns {Promise<{canvas: HTMLCanvasElement, ms: number, device: string}>}
  */
 export function estimateDepth(imageURL, onStatus, on = 'gpu') {
-  const w = _getWorker();
-  if (!w) return _estimateHere(imageURL, onStatus);
   return new Promise((resolve, reject) => {
-    const id = ++_seq;
-    _jobs.set(id, { resolve, reject, onStatus, url: imageURL });
-    w.postMessage({ id, url: imageURL, on });
+    _post({ resolve, reject, onStatus, url: imageURL, on });
   });
 }
 

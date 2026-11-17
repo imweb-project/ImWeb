@@ -25,7 +25,10 @@ import { isPagedBinding } from './controlInput.js';
 // built from the one list the index itself reads, never retyped beside it.
 import { DESCRIPTOR_LABELS } from '../audio/corpus-index.js';
 import { GROWTH_PATTERNS, GROWTH_MODES, GROWTH_LOOKS, NCA_MODELS } from '../inputs/GrowthPatterns.js';
+import { SDF_LOOKS } from '../inputs/SDFLooks.js';
 import { REIMAGINE_LOOKS } from '../ai/ReimagineLooks.js';
+import { SPLAT_ATTRACTORS } from '../ai/SplatAttractors.js';
+import { SHATTER_LOOKS } from '../scene3d/ShatterLooks.js';
 
 /**
  * How the performer is listening (§8.6). ONE list, read twice: the labels are
@@ -1148,8 +1151,9 @@ export const SOURCE_DEFS = [
   // indirect capture entries that used to sit at 29 moved with it, kept in
   // register by the base stamp in migrateCaptureBase().
   { key: "rutt",      label: "Rutt-Etra" }, // 29
-  // 30 — the raymarcher's depth, packed into its colour target's alpha and
-  // expanded by a blit. Not a second raymarch: WebGL 1 has no MRT here.
+  // 30 — the raymarcher's depth, rendered by a second march of the same
+  // material (WebGL 1 has no MRT here, and the colour target's alpha is
+  // coverage). Only marched while something routes this source.
   { key: "sdfdepth",  label: "SDF Depth" }, // 30
   // 31 — per-channel time offset over the Video Delay ring. Appended at the
   // true end; the indirect capture entries that sat at 31 move with it, kept in
@@ -1441,6 +1445,8 @@ export const PARTICLE_MASK_SRC = [
   // ── appended, SOURCE_DISPLAY_ORDER sequence ──
   12, 25, 9, 10, 3, 4, 21, 30, 11, 6, 20, 23, 29,
   13, 31, 32, 24, 15, 17, 18, 19, 22, 26, 27, 28,
+  // Sources added since. This list has to be extended by hand for each new one.
+  33, 34, 35, 36, 37,          // Growth, Volume, Shader Code, AI Depth, Splat World
 ];
 
 // Same shape as the SOURCE_DISPLAY_ORDER assertion: fail at load rather than
@@ -1453,12 +1459,60 @@ export const PARTICLE_MASK_SRC = [
   ) {
     throw new Error("PARTICLE_MASK_SRC must hold unique, in-range capture indices");
   }
+  // Every source but Particles itself, so a new source can't be left out unnoticed.
+  const missing = SOURCES.map((_, i) => i).filter((i) => i !== 16 && !real.includes(i));
+  if (missing.length) {
+    throw new Error(`PARTICLE_MASK_SRC is missing source(s) ${missing.join(", ")} — append them`);
+  }
 }
 
 /** particle.masksrc SELECT options, index-aligned to PARTICLE_MASK_SRC. */
 export const PARTICLE_MASK_LABELS = PARTICLE_MASK_SRC.map((v) =>
   v == null ? "None" : CAPTURE_SOURCES[v],
 );
+
+/**
+ * sdf.texSrc / sdf.refractSrc option index → source KEY (null = entry 0, which
+ * follows layer.fg / layer.bg, and entry 8, which is None).
+ *
+ * ONE list for both menus and for main.js's index map. It used to be three
+ * hand-kept copies — two label arrays here and a key array in main.js — held
+ * in register by a comment, and frozen at sixteen entries while the source
+ * list grew to thirty-eight: Color 2, Text, Rutt-Etra, Growth and the rest
+ * were simply not selectable as the SDF's texture or surround.
+ *
+ * The first sixteen are FROZEN in the order they shipped in — the value
+ * persists as an integer in every saved state, bank, .imweb file and MIDI
+ * mapping — which is why None sits at 8 and not at the end. Everything after
+ * is derived: every other source, in SOURCE_DEFS order. SOURCE_DEFS is
+ * append-only, so that tail is append-only too, and a source added later
+ * appears here without anyone remembering to list it. (SOURCE_DEFS order, NOT
+ * SOURCE_DISPLAY_ORDER: the display order is free to be rearranged, and a
+ * tail derived from it would re-point saved values when it was.)
+ *
+ * The SDF's own two outputs are left out. "SDF" could only resolve to black
+ * through _notSelf, and "SDF Depth" would be sampled by the depth pass while
+ * that pass is writing it. Output (feedback) is the honest way to reflect
+ * itself.
+ */
+const SDF_SRC_HEAD = [
+  null, "camera", "movie", "draw", "noise", "color", "buffer", "scene3d", null,
+  "output", "bg1", "bg2", "movieB", "mixbus", "mixbus2", "mixbus3",
+];
+export const SDF_SRC_KEYS = [
+  ...SDF_SRC_HEAD,
+  ...SOURCE_KEYS.filter(
+    (k) => !SDF_SRC_HEAD.includes(k) && k !== "sdf" && k !== "sdfdepth",
+  ),
+];
+if (SDF_SRC_KEYS.some((k) => k != null && !SOURCE_KEYS.includes(k))) {
+  throw new Error("SDF_SRC_KEYS names a key that is not in SOURCE_DEFS");
+}
+/** Menu labels for SDF_SRC_KEYS; `first` names entry 0 (FG Layer / BG Layer). */
+const sdfSrcLabels = (first) =>
+  SDF_SRC_KEYS.map((k, i) =>
+    k == null ? (i === 0 ? first : "None") : SOURCES[SOURCE_KEYS.indexOf(k)],
+  );
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Capture-base migration (Phase 26 Step 0)
@@ -3199,6 +3253,30 @@ export function registerCoreParameters(ps) {
     min: 25, max: 300, value: 100, step: 0.5, unit: "%" });
   ps.register({ id: "splat.density", label: "Density", group: "splat",
     type: PARAM_TYPE.SELECT, options: ["Low", "Mid", "High"], value: 1 });
+  // Points: soft splats, holes behind near things. Surface: the same world as
+  // one closed skin with the image at full resolution, stretching over the
+  // holes. Group 'splat', so Display States capture it: the options are fixed.
+  ps.register({ id: "splat.draw", label: "Draw", group: "splat",
+    type: PARAM_TYPE.SELECT, options: ["Points", "Surface"], value: 0 });
+  // Scatter: the points leave the picture and flow into a strange attractor;
+  // back at 0 they come home, to whichever image the fade has reached by then.
+  // In between, the flow and the pull home balance and the picture breathes.
+  // Shape's options ARE SPLAT_ATTRACTORS (append-only), so group 'splat' and
+  // captured by Display States, as splat.draw is. While points are out the
+  // world draws as Points whatever Draw says.
+  ps.register({ id: "splat.scatter", label: "Scatter", group: "splat",
+    min: 0, max: 100, value: 0, step: 0.5, unit: "%" });
+  ps.register({ id: "splat.shape", label: "Shape", group: "splat",
+    type: PARAM_TYPE.SELECT, options: SPLAT_ATTRACTORS.map((a) => a.name), value: 0,
+    select: true });
+  ps.register({ id: "splat.flow", label: "Flow", group: "splat",
+    min: 0, max: 200, value: 100, step: 0.5, unit: "%" });
+  // FadeScatter: the fade itself scatters — out as one image leaves, home as
+  // the next arrives — so a Look can dissolve and assemble with no hand on
+  // Scatter. It follows FrameBlend, so a FrameBlend held part-way holds the
+  // points out too.
+  ps.register({ id: "splat.fadeScatter", label: "FadeScatter", group: "splat",
+    min: 0, max: 100, value: 0, step: 0.5, unit: "%" });
 
   // ── Movie / clip ──────────────────────────────────────────────────────────
   // Both decks register from one descriptor table so movie.* (Deck A) and
@@ -3446,6 +3524,16 @@ export function registerCoreParameters(ps) {
       "Platonic: Octahedron",
       "Platonic: Tetrahedron",
       "Basic: Ring",
+      // Append-only, and in step with GEOMETRY_NAMES (GeometryFactory.js).
+      "Surface: Möbius",
+      "Surface: Klein Bottle",
+      "Complex: Spring",
+      "Surface: Shell",
+      "Complex: Supershape",
+      "Complex: Star",
+      "Complex: Knot 3·7",
+      "Faceted: Gem",
+      "Complex: Teapot",
     ],
     value: 0,
   });
@@ -4372,7 +4460,65 @@ export function registerCoreParameters(ps) {
     unit: "Hz",
   });
 
+  // Shatter: the main 3D object comes apart into its own triangles, which
+  // flow into a strange attractor and come home (ShardScatter.js). The same
+  // shapes and step as Splat World's Scatter. Shape's options ARE
+  // SPLAT_ATTRACTORS (append-only), so it is captured like any other.
+  // Does nothing while the Cloner is on or a Hypercube has adopted the mesh.
+  // Look: a LOADER, not a state — the growth.look pattern. Choosing one writes
+  // every Shatter control, so a name always gives its look. Group 'global' so
+  // Display States capture the real values, not an index that would re-apply
+  // over them on recall. SHATTER_LOOKS (append-only); index 0 is a heading.
+  ps.register({ id: "scene3d.shatter.look", label: "ShatterLook", group: "global",
+    type: PARAM_TYPE.SELECT, options: SHATTER_LOOKS.map((l) => l.name), value: 0,
+    select: true, reselect: true });
+  ps.register({ id: "scene3d.shatter", label: "Shatter", group: "scene3d",
+    min: 0, max: 100, value: 0, step: 0.5, unit: "%" });
+  ps.register({ id: "scene3d.shatter.shape", label: "ShatterShape", group: "scene3d",
+    type: PARAM_TYPE.SELECT, options: SPLAT_ATTRACTORS.map((a) => a.name), value: 0,
+    select: true });
+  ps.register({ id: "scene3d.shatter.flow", label: "ShatterFlow", group: "scene3d",
+    min: 0, max: 200, value: 100, step: 0.5, unit: "%" });
+  // PieceSize: 0 = every triangle flies alone; higher gathers them into
+  // bigger pieces, like broken china. Tumble: pieces turn as they travel.
+  ps.register({ id: "scene3d.shatter.piece", label: "PieceSize", group: "scene3d",
+    min: 0, max: 100, value: 0, step: 0.5, unit: "%" });
+  ps.register({ id: "scene3d.shatter.tumble", label: "Tumble", group: "scene3d",
+    min: 0, max: 100, value: 0, step: 0.5, unit: "%" });
+  // Dust: pieces shrink as they leave and grow back on the way home.
+  ps.register({ id: "scene3d.shatter.dust", label: "Dust", group: "scene3d",
+    min: 0, max: 100, value: 0, step: 0.5, unit: "%" });
+  // ShatterBy: Pieces (PieceSize decides) or Body parts — everything one bone
+  // carries, or one whole mesh of a model made of parts, flies as one piece.
+  // A single unrigged mesh has no parts, and stays in Pieces.
+  ps.register({ id: "scene3d.shatter.by", label: "ShatterBy", group: "scene3d",
+    type: PARAM_TYPE.SELECT, options: ["Pieces", "Body parts"], value: 0 });
+  // ShatterMask: a picture decides the ORDER. Seen through the 3D camera, the
+  // pieces under its bright parts leave first as Shatter rises and the dark
+  // ones last — so with a live source at a middle Shatter, the picture itself
+  // chooses what is in pieces. OPT_SOURCES (0 = None), captured like the mix
+  // buses' inputs: the source list is append-only.
+  ps.register({ id: "scene3d.shatter.mask", label: "ShatterMask", group: "scene3d",
+    type: PARAM_TYPE.SELECT, options: OPT_SOURCES, value: 0, select: true });
+
   // ── SDF Generator ────────────────────────────────────────────────────────
+  // Look: a LOADER, not a state — the growth.look pattern, for the same
+  // reasons. Choosing one writes every sdf.* value that shapes the picture
+  // (SDF_LOOKS in src/inputs/SDFLooks.js), so a name always gives its look
+  // whatever was dialled in before. Group 'global' so a Display State captures
+  // the real values rather than an index that would re-apply over them on
+  // recall. Placed at the top of sdf-params by id and kept out of the auto-built
+  // global panel, as growth.look and glsl.preset are. APPEND-ONLY.
+  ps.register({
+    id: "sdf.look",
+    label: "Look",
+    group: "global",
+    type: PARAM_TYPE.SELECT,
+    options: SDF_LOOKS.map((l) => l.name),
+    value: 0,
+    select: true,
+    reselect: true,   // choosing the Look already shown re-applies it
+  });
   ps.register({
     id: "sdf.active",
     label: "SDF",
@@ -4456,6 +4602,19 @@ export function registerCoreParameters(ps) {
     ],
   });
   ps.register({
+    // Blends every instance toward the OTHER slot's shape: 0 is A and B as
+    // picked (the default, and exactly the old alternating behaviour), 0.5
+    // makes every instance half of each, 1 swaps them. Needs a Shape B — on
+    // "Same as A" there is nothing to morph toward and this does nothing.
+    id: "sdf.morph",
+    label: "Morph",
+    group: "sdf",
+    min: 0,
+    max: 1.0,
+    value: 0,
+    step: 0.01,
+  });
+  ps.register({
     // Instances on the orbit. 2 was hardcoded; it stays the default, though the
     // generalised placement moves the second instance's wobble phase slightly
     // (the old counter-shape was not a rotation of the first).
@@ -4466,6 +4625,34 @@ export function registerCoreParameters(ps) {
     max: 8,
     value: 2,
     step: 1,
+  });
+  ps.register({
+    // How the instances move. Orbit is the one ring they always travelled and
+    // stays the default at index 0. Lissajous sends each through a knot in
+    // the whole volume, Swarm lets each wander on its own, Pulse gathers them
+    // into one mass and throws them out again. All four are driven by Speed
+    // and sized by Separation. APPEND-ONLY.
+    id: "sdf.motion",
+    label: "Motion",
+    group: "sdf",
+    type: PARAM_TYPE.SELECT,
+    value: 0,
+    select: true,
+    options: ["Orbit", "Lissajous", "Swarm", "Pulse"],
+  });
+  ps.register({
+    // Makes the instances — and, under Tile, the cells — differ from one
+    // another: each draws its own size, orbit radius and place on the orbit
+    // from a fixed hash. 0 is the default and is exactly the old behaviour,
+    // every instance alike; the draws are static, so this is a setting and not
+    // a flicker. Group 'sdf', so Display States capture it like the rest.
+    id: "sdf.vary",
+    label: "Variation",
+    group: "sdf",
+    min: 0,
+    max: 1.0,
+    value: 0,
+    step: 0.01,
   });
   ps.register({
     // Uniform scale on every primitive. Each shape's radius used to be a
@@ -4510,6 +4697,31 @@ export function registerCoreParameters(ps) {
     label: "Warp",
     group: "sdf",
     min: 0,
+    max: 2.0,
+    value: 0,
+    step: 0.01,
+  });
+  ps.register({
+    // What Warp displaces the surface WITH. Ripple is the sine product it
+    // always was — one frequency, a regular corrugation — and stays the
+    // default at index 0. Organic is three layered octaves of noise: swells
+    // carrying smaller swells, which reads as grown or melted. APPEND-ONLY.
+    id: "sdf.warpMode",
+    label: "Warp Type",
+    group: "sdf",
+    type: PARAM_TYPE.SELECT,
+    value: 0,
+    select: true,
+    options: ["Ripple", "Organic"],
+  });
+  ps.register({
+    // Turns each horizontal slice about the vertical axis, more with height —
+    // radians per world unit, either direction. Under Tile each cell twists
+    // about its own centre. 0 is off and is exactly the old render.
+    id: "sdf.twist",
+    label: "Twist",
+    group: "sdf",
+    min: -2.0,
     max: 2.0,
     value: 0,
     step: 0.01,
@@ -4942,6 +5154,18 @@ export function registerCoreParameters(ps) {
     unit: "°",
   });
   ps.register({
+    // Shapes cast soft shadows on each other, from the direction Light Az /
+    // Light El set. One extra short march per lit pixel while above 0; 0 is
+    // the default and is exactly the old unshadowed lighting.
+    id: "sdf.shadow",
+    label: "Shadow",
+    group: "sdf",
+    min: 0,
+    max: 1.0,
+    value: 0,
+    step: 0.01,
+  });
+  ps.register({
     id: "sdf.hue",
     label: "Hue",
     group: "sdf",
@@ -4979,6 +5203,32 @@ export function registerCoreParameters(ps) {
     step: 0.01,
   });
   ps.register({
+    // 0 is the flat screen-space lens Refract always was. Toward 1 the ray is
+    // traced through the inside of the shape and out of its back face, so a
+    // ball becomes a lens that flips the picture and thick parts bend more
+    // than thin ones. Refract stays the strength (it sets the index, 1.0–1.5)
+    // and Hue / Sat tint the glass by its thickness. Needs Refract above 0.
+    id: "sdf.glassSolid",
+    label: "Solid Glass",
+    group: "sdf",
+    min: 0,
+    max: 1.0,
+    value: 0,
+    step: 0.01,
+  });
+  ps.register({
+    // Splits the refracted picture into colour fringes — red, green and blue
+    // each take a slightly different lens. Works with the flat lens and with
+    // Solid Glass. Needs Refract above 0.
+    id: "sdf.dispersion",
+    label: "Dispersion",
+    group: "sdf",
+    min: 0,
+    max: 1.0,
+    value: 0,
+    step: 0.01,
+  });
+  ps.register({
     id: "sdf.fresnel",
     label: "Fresnel",
     group: "sdf",
@@ -4988,41 +5238,19 @@ export function registerCoreParameters(ps) {
     step: 0.01,
   });
   ps.register({
-    // APPEND-ONLY, and kept in lockstep with sdf.refractSrc below and with
-    // _sdfSrcToLayerIdx in main.js — one map serves both menus, so the two
-    // option arrays must stay the same length and order after entry 0.
-    //
-    // "None" sits at index 8 and stays there: a SELECT persists an integer, so
-    // moving it to the end of the menu would silently re-route every saved
-    // state, bank and .imweb that stores 9..15. A slightly odd reading order is
-    // the cheaper price.
+    // Options come from SDF_SRC_KEYS (top of this file), which also explains
+    // why None sits at index 8. Labels are the canonical source labels, so the
+    // old short ones moved: "Color" is "Color 1", "3D" is "3D Scene".
     id: "sdf.texSrc",
     label: "Source",
     group: "sdf",
     type: PARAM_TYPE.SELECT,
     value: 0,
-    options: [
-      "FG Layer",
-      "Camera",
-      "Movie A",
-      "Draw",
-      "Noise",
-      "Color",
-      "Buffer",
-      "3D",
-      "None",
-      "Output",
-      "BG1",
-      "BG2",
-      "Movie B",
-      "Mix 1",
-      "Mix 2",
-      "Mix 3",
-    ],
+    options: sdfSrcLabels("FG Layer"),
   });
   ps.register({
-    // Same list as sdf.texSrc apart from entry 0, and the same append-only
-    // rule. This one is sampled through equirectUv() as a lat-long surround,
+    // Same list as sdf.texSrc apart from entry 0 (SDF_SRC_KEYS). This one is
+    // sampled through equirectUv() as a lat-long surround,
     // which is why BG1/BG2 earn their place: an environment map is meant to be
     // a still panorama, and until now those were only reachable by routing them
     // through the BG layer. "Output" is the honest version of "reflect itself"
@@ -5034,24 +5262,7 @@ export function registerCoreParameters(ps) {
     group: "sdf",
     type: PARAM_TYPE.SELECT,
     value: 0,
-    options: [
-      "BG Layer",
-      "Camera",
-      "Movie A",
-      "Draw",
-      "Noise",
-      "Color",
-      "Buffer",
-      "3D",
-      "None",
-      "Output",
-      "BG1",
-      "BG2",
-      "Movie B",
-      "Mix 1",
-      "Mix 2",
-      "Mix 3",
-    ],
+    options: sdfSrcLabels("BG Layer"),
   });
 
   // ── Draw ──────────────────────────────────────────────────────────────────

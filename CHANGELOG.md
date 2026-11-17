@@ -9,14 +9,100 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **A basic-shape state shows its shape** — recalling a state that was saved
+  with a basic 3D shape now removes a model that is loaded, instead of leaving
+  it on screen. States from before this flag existed are left alone.
+- **States remember their movie clip** — saving a state now keeps which
+  library clip each deck is showing, and recalling it cuts to that clip,
+  loading it into the rack if needed. A deck the state saved switched off is
+  left alone. States saved before this keep working but do not switch clips
+  until they are saved again.
+- **Nine new 3D shapes** in the Geometry menu — Möbius, Klein Bottle, Shell
+  (surfaces), Spring, Supershape, Star, Knot 3·7, Teapot (complex) and Gem
+  (a faceted icosahedron). All sit in the same frame as the basic shapes.
+- **SDF Looks** — a new **Look** menu at the top of the SDF panel loads a
+  complete, tested setting: Default, Lava Lamp, Crystal Balls, Coral, Lattice,
+  Video Helix, Bubbles and Amethyst. A Look sets every SDF control and switches
+  SDF on; it leaves Source, Refract Src and Detail as they are. Crystal Balls
+  and Bubbles want something on Refract Src.
+- **SDF shapes can differ, blend and cast shadows** — **Variation** gives each
+  shape (and, with Tile on, each cell) its own size and place; **Morph** blends
+  each shape into Shape B; **Shadow** (in Light) lets shapes shade each other.
+- **SDF glass you can see through** — **Solid Glass** (in Glass) bends the
+  picture through the whole shape, so a ball shows the background small and
+  upside down, and Hue/Sat tint the thick parts more than the thin.
+  **Dispersion** splits it into colour fringes. Both need Refract above 0.
+- **SDF can twist, grow and move in new ways** — **Warp Type** adds **Organic**,
+  a layered, grown-looking surface, beside the old Ripple; **Twist** turns the
+  shapes more the higher they go; **Motion** adds **Lissajous**, **Swarm** and
+  **Pulse** to the old Orbit. All default to the old behaviour.
 - **Color 2 gradients: Angle, Bands, Steps, Path, Scroll and Conic** — the
   gradient can be turned to any angle, repeated as stripes or rings, cut into
   flat steps, sent round the colour wheel (**Path** = Rainbow) and set moving
   (**Scroll**). **Conic** is a new sweep round the centre. The gradient is now
   drawn at output size without visible banding, and blends without a grey
   middle between opposite hues, so existing gradients look slightly cleaner.
+- **PMaskSrc reaches every source** — Particles can now use Growth, Volume,
+  Shader Code, AI Depth and Splat World as a mask, which the menu had left out.
+- **Depth recovers after a failed run** — one failed estimate used to stop depth
+  until the page was reloaded; the depth worker now restarts and tries again.
+  Loading a Reimagine Look also keeps your DepthOn setting instead of resetting it.
+- **Splat World can draw a solid surface** — new **Draw** (Points / Surface).
+  Surface is the same world and camera (Sway, Orbit, Tilt, Dolly, Fly, Morph)
+  as one closed skin with the image at full resolution, stretching over the
+  holes Points leaves behind near things. New Look: **Surface world**.
+- **Splat World can come apart** — new **Scatter**, **Shape** and **Flow**.
+  Scatter releases the points into a strange attractor (Shape: Thomas, a braided
+  knot, or Aizawa, a shell with a column through it) at the speed Flow sets; in
+  between, the picture bends and breathes along the flow. Back at 0 the points
+  come home — to the *next* image if a fade ran while they were out, so one
+  picture dissolves and another assembles. The form sits where the camera
+  orbits, so Orbit, Dolly and Fly go around and through it. While points are
+  out the world is drawn as Points, whatever Draw says.
+- **Splat World can dissolve on its own** — new **FadeScatter**: the fade itself
+  scatters the points, out as one image leaves and home as the next arrives, with
+  no hand on Scatter. It follows FrameBlend, so a FrameBlend held part-way holds
+  the points out. New Look: **Dissolving world**.
+- **The 3D object can shatter** — new **Shatter**, **ShatterShape** and
+  **ShatterFlow** (3D ▸ Shatter). The main object comes apart into its own
+  triangles, each flying as a whole shard with its lighting and texture, into
+  the same attractors as Splat World (Thomas, Aizawa), and assembles again at 0.
+  Shards follow the object while it moves or plays an animation. It does nothing
+  while the Cloner is on or a Hypercube has adopted the mesh, and models in
+  slots 2–4 are not shattered. The depth output shows the object whole.
+- **Shatter in pieces, and two more shapes** — **PieceSize** gathers the
+  triangles into bigger pieces, so an object breaks like china instead of
+  turning to dust (0 = single triangles). **Tumble** makes pieces turn as they
+  travel. Two new shapes, in Shatter and in Splat World's Scatter alike:
+  **Lorenz** (the butterfly) and **Rössler** (a flat spiral that throws a loop
+  straight up). Both Shape controls are now menus.
+- **A picture can decide what shatters** — new **ShatterMask**: choose any
+  source, and as Shatter rises the pieces under its bright parts (as the 3D
+  camera sees them) leave first and the dark ones last. With a live source and
+  Shatter held in the middle, the picture itself chooses what is in pieces.
+- **A figure can come apart limb by limb** — new **ShatterBy** (Pieces / Body
+  parts). Body parts makes one piece of everything a bone carries — a forearm,
+  a hand, a head fly whole and go on moving — or, for a model built of
+  separate rigid parts, of each part. An object that is one unrigged mesh has
+  no parts, and stays in Pieces.
+- **Shattered pieces can turn to dust** — new **Dust**: pieces shrink as they
+  leave and grow back on the way home, so at a high Dust an object dissolves
+  into a fine spray instead of flying chunks.
+- **Shatter Looks** — a **ShatterLook** menu at the top of 3D ▸ Shatter:
+  **Porcelain** (large turning pieces), **Dust storm** (single triangles
+  blown to dust along the butterfly), **Limb from limb** (a figure comes apart
+  at the joints) and **Eaten by light** (the camera decides what dissolves).
+  A Look sets every Shatter control and nothing else.
+- **One object can settle as another** — change the Geometry, or import
+  another model, while its pieces are out: the new object's pieces start where
+  the old one's were flying, so Shatter up → change the object → Shatter down
+  turns one thing into another. At a low Shatter the pieces fly straight from
+  the old shape to the new. Changing PieceSize or ShatterBy mid-flight keeps
+  the cloud too, where it used to snap home.
 
 ### Fixed
+- **A bundled 3D model can be reloaded after Back to Geometry** — it used to
+  count as still loaded, so neither the button nor a state could bring it back.
 - **Pictures on GLB models are the right way up** — a movie, camera or layer used
   as the texture of a GLB model was upside down against the same picture on a
   DAE model. Texture = Image is unchanged.
@@ -28,11 +114,33 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 - **The 3D plane takes the picture's shape** — new **PlaneShape** (Square /
   Image, default Image): Basic: Plane keeps its width and takes the output's
   aspect, so a texture is no longer squashed onto a square (Relief (3D)).
+- **Video covers the whole SDF shape** — with Tex Blend up, only one side of
+  each shape showed the picture; the rest was smeared streaks. The picture now
+  wraps all the way round, so existing looks with video on them change.
+- **SDF Tile no longer slices shapes** — shapes near the edge of a tile came
+  out striped or cut. The far end of a deep lattice is now a little nearer at
+  low Steps; raise Steps to push it back.
+- **SDF Luma Warp pushes outward** — bright parts of the picture now raise the
+  surface, as the control always said; they used to carve into it.
+- **SDF Depth costs less** — it no longer shades anything it throws away, and
+  it no longer runs while SDF is switched off.
   PlaneShape and Scale now sit under Geometry; the Transform section lives in
   Import Model ▸ M1, where a basic shape's size was hard to find.
 - **Hue, Saturation, Color and Luminosity blends follow Photoshop / W3C** —
   luma is perceptual (0.3 / 0.59 / 0.11) and saturation is the channel
   spread, replacing an HSL model that carried *relative* saturation. Faint
+- **The SDF panel opens on a short live set** — Look, SDF, Speed, Size,
+  Variation, Morph, Separation, Hue and Glow; the other sections start
+  collapsed below it. Nothing is renamed, so states, banks and mappings are
+  unchanged.
+- **SDF Source and Refract Src list every source** — they offered 16 of 38,
+  so Color 2, Text, Rutt-Etra, Growth and the rest were missing. Saved choices
+  keep their meaning; some labels now match the Sources tab ("Color 1",
+  "Stills Buffer", "3D Scene", "Output (feedback)").
+- **SDF edges are smooth, and a Tile lattice fades into the distance** — shape
+  outlines are no longer stair-stepped, and a tiled lattice dissolves at the far
+  end instead of stopping at a wall. Existing Tile looks are fainter in the
+  distance.
   tints (ink on rice paper) no longer go neon blue and red under a darker
   luma source. Saved states using these four modes look calmer than before.
   GPU-checked against the spec formulas: 256 colour pairs within 1/255.

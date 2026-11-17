@@ -23,6 +23,7 @@ import { TEXSRC_TO_SOURCE } from '../controls/ParameterSystem.js';
 import { GeometryFactory, GEOMETRY_NAMES } from './GeometryFactory.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { TRIPLANAR_GLSL, TRI_MAP_FRAGMENT, TRI_EMISSIVEMAP_FRAGMENT } from './Triplanar.js';
+import { ShardScatter } from './ShardScatter.js';
 
 // scene3d.mat.texsrc index of Image (the model's own picture).
 const IMAGE_SRC = 7;
@@ -155,6 +156,9 @@ export class SceneManager {
     // Lights
     this._setupLights();
 
+    // Shatter: the main object as flying shards. Builds nothing until used.
+    this._shards = new ShardScatter(this);
+
     // Build default geometry
     this.setGeometry('Sphere');
   }
@@ -178,6 +182,10 @@ export class SceneManager {
     if (name === this._geoKey) return;
     this._geoKey = name;
     this._importedModelName = null;
+    // The model is gone, so its URL must not still count as loaded: otherwise
+    // loadModelFromUrl() early-returns and the same bundled model can never
+    // come back after "Back to Geometry" — by button or by state recall.
+    this.currentModelUrl = null;
 
     const geo = this.geoFactory.create(name);
     this._replaceMesh(geo);
@@ -347,6 +355,9 @@ export class SceneManager {
       shader.uniforms.uDispSmooth = { value: 0.3 };
       shader.uniforms.uRimAmount  = { value: 0 };
       shader.uniforms.uRimColor   = { value: new THREE.Color(0xffffff) };
+      // Shatter's twins only (ShardScatter): the offsets texture, as the one
+      // uniform object ShardScatter keeps pointed at the current target.
+      if (mat._shardUniforms) Object.assign(shader.uniforms, mat._shardUniforms);
       mat._shader = shader;
 
       shader.vertexShader = `
@@ -365,6 +376,13 @@ export class SceneManager {
         uniform float uDispTexProj;
         uniform float uTriplanarDisp;
         uniform float uDispSmooth;
+        #ifdef USE_SHARDS
+        uniform highp sampler2D uShardOff;
+        uniform highp sampler2D uShardHome;
+        uniform float uShardSpin;
+        uniform float uShardDust;
+        attribute vec2 aShard;
+        #endif
         varying vec3 vObjPos;
         varying vec3 vObjNormal;
         ${TRIPLANAR_GLSL}
@@ -502,6 +520,43 @@ export class SceneManager {
       );
 
       // Rim / Fresnel — fragment shader injection
+      // Shatter: a twin's triangle is moved as one piece, in WORLD space, after
+      // the object's own transform — so shards fly free of the model's pose.
+      // Without USE_SHARDS this is three's chunk, untouched.
+      shader.vertexShader = shader.vertexShader.replace(
+        '#include <project_vertex>',
+        `#ifdef USE_SHARDS
+          vec4 mvPosition = modelMatrix * vec4(transformed, 1.0);
+          vec3 _so = texture2D(uShardOff, aShard).xyz;
+          float _sl = length(_so);
+          if (_sl > 0.0 && (uShardSpin > 0.0 || uShardDust > 0.0)) {
+            // Both act about the piece's HOME, by how far it has travelled —
+            // so a piece at home has neither turned nor shrunk.
+            vec3 _sh = texture2D(uShardHome, aShard).xyz;
+            // Dust: the piece shrinks toward its home point as it leaves.
+            vec3 _r = (mvPosition.xyz - _sh) * exp(-_sl * uShardDust);
+            // Tumble: it turns about its own axis.
+            float _sa = _sl * uShardSpin;
+            if (_sa > 0.0) {
+              vec3 _ax = normalize(fract(sin(vec3(dot(aShard, vec2(127.1, 311.7)), dot(aShard, vec2(269.5, 183.3)), dot(aShard, vec2(419.2, 371.9)))) * 43758.5453) - 0.5 + 1.0e-4);
+              float _c = cos(_sa); float _s = sin(_sa);
+              _r = _r * _c + cross(_ax, _r) * _s + _ax * dot(_ax, _r) * (1.0 - _c);
+              #ifndef FLAT_SHADED
+                vec3 _wn = vNormal * mat3(viewMatrix);          // view → world
+                _wn = _wn * _c + cross(_ax, _wn) * _s + _ax * dot(_ax, _wn) * (1.0 - _c);
+                vNormal = mat3(viewMatrix) * _wn;
+              #endif
+            }
+            mvPosition.xyz = _sh + _r;
+          }
+          mvPosition.xyz += _so;
+          mvPosition = viewMatrix * mvPosition;
+          gl_Position = projectionMatrix * mvPosition;
+        #else
+          #include <project_vertex>
+        #endif`
+      );
+
       shader.fragmentShader = `
         uniform float uRimAmount;
         uniform vec3  uRimColor;
@@ -531,7 +586,7 @@ export class SceneManager {
       );
     };
     mat.customProgramCacheKey = () =>
-      'warpblobrimdispvtfv6' + (mat.defines?.USE_TRIPLANAR ? '_tri' : '');
+      'warpblobrimdispvtfv6' + (mat.defines?.USE_TRIPLANAR ? '_tri' : '') + (mat.defines?.USE_SHARDS ? '_shard' : '');
   }
 
   /**
@@ -1581,6 +1636,10 @@ export class SceneManager {
   render(params, dt = 0, inputs = {}) {
     this.update(dt * 1000);
     this.applyParams(params, dt, inputs);
+    // ShatterMask: any source, through the one canonical resolver — never the
+    // scene's own picture, which this very render is about to draw into.
+    const shMask = this._resolveOptSource(params, 'scene3d.shatter.mask', inputs);
+    this._shards.update(params, dt, shMask === this.target.texture ? null : shMask);
     // Face texture — any source, through the one canonical resolver.
     const faceTex = this._resolveOptSource(params, 'hypercube.faces.texsrc', inputs);
 
@@ -1676,6 +1735,17 @@ export class SceneManager {
     this._faceTexCopy.setSize(w, h);
     this._faceMaskCopy.setSize(w, h);
     this.camera.aspect = w / h;
+  /**
+   * Drop the imported model and let applyParams() rebuild scene3d.geo — what
+   * the "Back to Geometry" button does. Used by state recall: a state saved
+   * with a basic shape must show that shape, not whatever model is loaded.
+   */
+  backToGeometry() {
+    this._importedModelName = null;
+    this._importPending     = false;
+    this._geoKey            = null;
+  }
+
     this.camera.updateProjectionMatrix();
   }
 
@@ -1834,6 +1904,7 @@ export class SceneManager {
   }
 
   dispose() {
+    this._shards.dispose();
     this.target.dispose();
     this.depthTarget.dispose();
     this._depthMat.dispose();
