@@ -1232,7 +1232,9 @@ export class SceneManager {
     if (this.material) {
       const hue = (p.get('scene3d.mat.hue')?.value ?? 0) / 360;
       const sat = (p.get('scene3d.mat.sat')?.value ?? 0) / 100;
-      this.material.color.set(0xffffff);
+      // MeshNormalMaterial has no `color`. Unguarded, this threw on every
+      // frame with Material = Normal, out of render() — freezing the output.
+      if (this.material.color) this.material.color.set(0xffffff);
       if (this.material.emissive)
         this.material.emissive.setHSL(hue, sat, sat > 0 ? 0.5 : 0.0);
 

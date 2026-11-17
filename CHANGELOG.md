@@ -107,6 +107,8 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   rounded lobes).
 
 ### Fixed
+- **Material: Normal no longer freezes the picture** — choosing the Normal
+  material on a 3D shape threw an error on every frame and stopped the output.
 - **A bundled 3D model can be reloaded after Back to Geometry** — it used to
   count as still loaded, so neither the button nor a state could bring it back.
 - **Pictures on GLB models are the right way up** — a movie, camera or layer used
