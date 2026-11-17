@@ -60,6 +60,12 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   blown to dust along the butterfly), **Limb from limb** (a figure comes apart
   at the joints) and **Eaten by light** (the camera decides what dissolves).
   A Look sets every Shatter control and nothing else.
+- **One object can settle as another** — change the Geometry, or import
+  another model, while its pieces are out: the new object's pieces start where
+  the old one's were flying, so Shatter up → change the object → Shatter down
+  turns one thing into another. At a low Shatter the pieces fly straight from
+  the old shape to the new. Changing PieceSize or ShatterBy mid-flight keeps
+  the cloud too, where it used to snap home.
 - **Color 2 gradients: Angle, Bands, Steps, Path, Scroll and Conic** — the
   gradient can be turned to any angle, repeated as stripes or rings, cut into
   flat steps, sent round the colour wheel (**Path** = Rainbow) and set moving

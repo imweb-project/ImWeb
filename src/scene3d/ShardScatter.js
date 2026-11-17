@@ -31,6 +31,10 @@
  *   - two passes run before the colour pass: BAKE (each triangle writes its
  *     home into its own texel) and STEP (the shared scatter step).
  *
+ * Changing the object while its pieces are out (another geometry, another
+ * model, another PieceSize) keeps the CLOUD: the new object's pieces start
+ * where the old one's were flying, so one object settles as another.
+ *
  * Out of scope, and Shatter does nothing there: the cloner (an InstancedMesh)
  * and a Hypercube-adopted mesh. Slots 2–4 are not shattered. The depth pass
  * draws shards at home — it uses an override material that knows no offsets.
@@ -158,6 +162,13 @@ export class ShardScatter {
     const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this._simMat);
     quad.frustumCulled = false;
     this._simScene.add(quad);
+    this._simQuad = quad;
+    this._copyMat = new THREE.ShaderMaterial({
+      uniforms: { uTex: { value: zero } },
+      vertexShader: SIM_VERT,
+      fragmentShader: 'uniform sampler2D uTex; varying vec2 vUv; void main() { gl_FragColor = texture2D(uTex, vUv); }',
+      depthTest: false, depthWrite: false, blending: THREE.NoBlending,
+    });
     this._v = new THREE.Vector3();
     this._box = new THREE.Box3();
   }
@@ -193,23 +204,24 @@ export class ShardScatter {
     // … or PieceSize changed: the pieces are different pieces now.
     const piece = (params.get('scene3d.shatter.piece')?.value ?? 0) / 100;
     const byParts = Math.round(params.get('scene3d.shatter.by')?.value ?? 0) === 1;
-    if (this._root && (this._root !== root || this._piece !== piece || this._byParts !== byParts || !this._sameParts(root))) this._teardown();
-    if (!this._root) { this._build(root, piece, byParts); if (!this._root) { this._clock.left = 0; return; } }
-
-    const simDt = Math.min(Math.max(dt, 0), MAX_DT);
-    root.updateWorldMatrix(true, true);
-    const mat = this._syncMaterial();
-    for (const p of this._parts) {
-      p.twin.matrixWorld.copy(p.src.matrixWorld);
-      p.pts.matrixWorld.copy(p.src.matrixWorld);
-      p.twin.material = mat;
+    // Either way the CLOUD is kept: the new pieces start exactly where the old
+    // ones were flying, so the cloud of one object settles as another —
+    // Shatter up, change the object, Shatter down.
+    let cloud = null;
+    if (this._root && (this._root !== root || this._piece !== piece || this._byParts !== byParts || !this._sameParts(root))) {
+      cloud = this._readCloud();
+      this._teardown();
+    }
+    if (!this._root) {
+      this._build(root, piece, byParts);
+      if (!this._root) { this._clock.left = 0; return; }
+      if (cloud) this._seedFrom(cloud, root);
     }
 
+    const simDt = Math.min(Math.max(dt, 0), MAX_DT);
     const r = this.renderer;
     const prev = r.getRenderTarget();
-    // BAKE: where every triangle's home is, this frame.
-    r.setRenderTarget(this._home);
-    r.render(this._bakeScene, this._cam);
+    this._bake(root);
     // STEP.
     const u = this._simMat.uniforms;
     u.uHome.value = this._home.texture;
@@ -243,6 +255,71 @@ export class ShardScatter {
     // form-radius from home at 100 %.
     this._dustUniform.value = ((params.get('scene3d.shatter.dust')?.value ?? 0) / 100) * -Math.log(DUST_LEFT) / u.uFrame.value;
     this._clock.ran(scatter, simDt);
+  }
+
+  // BAKE: put the twins where the meshes are, and write where every piece's
+  // home is this frame. Leaves the render target as it found it.
+  _bake(root) {
+    root.updateWorldMatrix(true, true);
+    const mat = this._syncMaterial();
+    for (const p of this._parts) {
+      p.twin.matrixWorld.copy(p.src.matrixWorld);
+      p.pts.matrixWorld.copy(p.src.matrixWorld);
+      p.twin.material = mat;
+    }
+    const r = this.renderer;
+    const prev = r.getRenderTarget();
+    r.setRenderTarget(this._home);
+    r.render(this._bakeScene, this._cam);
+    r.setRenderTarget(prev);
+  }
+
+  _readRT(rt) {
+    const f = new Float32Array(rt.width * rt.height * 4);
+    this.renderer.readRenderTargetPixels(rt, 0, 0, rt.width, rt.height, f);
+    return f;
+  }
+
+  // Where every piece IS right now (home + offset), in world space. Read back
+  // once, on the frame the object is swapped — never per frame.
+  _readCloud() {
+    if (!this._home || !this._n) return null;
+    const h = this._readRT(this._home), o = this._readRT(this._off[this._cur]);
+    const n = this._n, p = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) {
+      const v = h[i * 4 + k] + o[i * 4 + k];
+      if (!Number.isFinite(v)) return null;      // nothing worth inheriting
+      p[i * 3 + k] = v;
+    }
+    return { n, p };
+  }
+
+  // Start the new pieces where the old cloud was: offset = old position −
+  // new home. The counts differ, so the old pieces are stepped through evenly.
+  _seedFrom(cloud, root) {
+    this._bake(root);
+    const h = this._readRT(this._home);
+    const W = this._home.width, H = this._home.height, n = this._n;
+    const d = new Float32Array(W * H * 4);
+    for (let i = 0; i < n; i++) {
+      const j = Math.min(cloud.n - 1, Math.floor((i + 0.5) * cloud.n / n));
+      for (let k = 0; k < 3; k++) d[i * 4 + k] = cloud.p[j * 3 + k] - h[i * 4 + k];
+      d[i * 4 + 3] = 1;
+    }
+    const tex = new THREE.DataTexture(d, W, H, THREE.RGBAFormat, THREE.FloatType);
+    tex.minFilter = tex.magFilter = THREE.NearestFilter;
+    tex.needsUpdate = true;
+    const r = this.renderer;
+    const prev = r.getRenderTarget();
+    this._copyMat.uniforms.uTex.value = tex;
+    this._simQuad.material = this._copyMat;
+    r.setRenderTarget(this._off[this._cur]);
+    r.render(this._simScene, this._cam);
+    r.setRenderTarget(prev);
+    this._simQuad.material = this._simMat;
+    this._copyMat.uniforms.uTex.value = this._zero;
+    tex.dispose();
+    this._offUniform.value = this._off[this._cur].texture;
   }
 
   // The twins' material: the scene's own, in step with it every frame, plus
@@ -467,6 +544,7 @@ export class ShardScatter {
     this._mat?.dispose();
     this._bakeMat.dispose();
     this._simMat.dispose();
+    this._copyMat.dispose();
     this._zero.dispose();
   }
 }
