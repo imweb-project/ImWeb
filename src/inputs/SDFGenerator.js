@@ -40,8 +40,11 @@ precision highp float;
 // hold the shapes where they were: it snapped them to the pose at angle 0, and
 // nudging Speed off zero teleported to wherever the free-running clock had got
 // to. Neither freezing nor ramping was possible, which for a live instrument
-// is the whole point of the control. Integrating also stops the value growing
-// without bound, which costs float precision over a long set.
+// is the whole point of the control. The phase is NOT wrapped and grows for as
+// long as the set runs: the motion multiplies it by 0.4, 0.7, 0.83, 1.31 … —
+// rates with no common period — so any wrap point would be a visible jump.
+// At Speed 0.2 it reaches ~720 after an hour, where a float still resolves
+// steps of about 0.00006 — far below anything visible.
 uniform float uPhase;
 uniform float uSteps;       // raymarch iteration budget
 uniform float uSdfOpMode;   // 0=Union, 1=Smooth Union, 2=Subtraction, 3=Intersection
@@ -506,7 +509,15 @@ float scene(vec3 p) {
     * uWarp;
 
   // Video luma displacement: project world-space XY onto [0,1] UVs, sample the
-  // foreground texture, compute Rec.709 luminance, displace outward.
+  // foreground texture, compute Rec.709 luminance, displace OUTWARD — bright
+  // parts of the picture push the surface out toward the viewer.
+  //
+  // SUBTRACTED from the distance below. It used to be added, which shrinks the
+  // field's zero set: bright areas carved INTO the shape while this comment
+  // promised the opposite. Changed 2026-11-17 while no saved project used it
+  // (MasterProject and the demo presets all have Luma Warp 0). The march needs
+  // no new correction: the sign of a term does not change its slope, and
+  // stepScale already divides by (1 + Luma Warp × 2).
   //
   // The branch is the point. scene() runs up to 96 times per ray in the march,
   // plus 6 for the normal and 5 for AO — so an UNCONDITIONAL texture2D here was
@@ -525,7 +536,7 @@ float scene(vec3 p) {
     lumaDsp = smoothstep(uLumaThresh, 1.0, luma) * uLumaWarp;
   }
 
-  return d1 + displacement + lumaDsp;
+  return d1 + displacement - lumaDsp;
 }
 
 // ── Normal (6-sample central differences) ────────────────────────────────────
@@ -697,7 +708,6 @@ void main() {
   float tMax = length(ro - uMove) + 8.0;
   float t = 0.0;
   float d = 0.0;
-  int stepCount = 0; // declared outside loop — GLSL ES loop vars are loop-scoped
   // The bound must be a compile-time constant in GLSL ES 1.00, so the budget is
   // a uniform break instead — the same shape as the KIFS loop. 256 is the
   // ceiling the Steps control can ask for, not what it costs by default.
@@ -709,7 +719,6 @@ void main() {
   float tMin = 0.0;   // ...and how far along the ray that was
   for (int i = 0; i < 256; i++) {
     if (float(i) >= uSteps) break;
-    stepCount = i;
     d = scene(ro + rd * t);
     if (d < minD) { minD = d; tMin = t; }
     if (d < 0.001 || t > tMax) break;
@@ -1290,18 +1299,23 @@ export class SDFGenerator {
   get texture() { return this._rt.texture; }
 
   /**
-   * Expand the depth packed into the colour target's alpha into a greyscale
-   * texture, for the "SDF Depth" source.
-   *
-   * A separate pass rather than a second render target written by the
-   * raymarcher: WebGL 1 has no MRT without EXT_draw_buffers, so the alternative
-   * was marching the whole field twice. This is one full-screen blit over a
-   * texture that already exists.
+   * Render the "SDF Depth" source: a second march of the same material with
+   * uDepthPass set, which exits right after the march (see the shader).
+   * WebGL 1 has no MRT here, and the colour target's alpha is coverage, so
+   * depth cannot ride along in the colour pass.
    *
    * Allocated lazily and rendered only when main.js says the source is used, so
    * a project that never routes SDF Depth pays neither the VRAM nor the pass.
+   *
+   * Skipped while the generator is OFF, matching tick(): with sdf.active 0,
+   * tick() returns before writing a single uniform, so a depth march here ran
+   * every frame on whatever the uniforms last held, and drew nothing new. Both
+   * targets now hold their last frame while off. this.active is this frame's
+   * value — main.js only calls this straight after tick(), under a condition
+   * (_sdfDepthUsed) that implies tick() ran.
    */
   renderDepth() {
+    if (!this.active) return;
     if (!this._depthRt) {
       this._depthRt = new THREE.WebGLRenderTarget(this._rt.width, this._rt.height, {
         minFilter: THREE.LinearFilter,

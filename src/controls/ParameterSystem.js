@@ -1150,8 +1150,9 @@ export const SOURCE_DEFS = [
   // indirect capture entries that used to sit at 29 moved with it, kept in
   // register by the base stamp in migrateCaptureBase().
   { key: "rutt",      label: "Rutt-Etra" }, // 29
-  // 30 — the raymarcher's depth, packed into its colour target's alpha and
-  // expanded by a blit. Not a second raymarch: WebGL 1 has no MRT here.
+  // 30 — the raymarcher's depth, rendered by a second march of the same
+  // material (WebGL 1 has no MRT here, and the colour target's alpha is
+  // coverage). Only marched while something routes this source.
   { key: "sdfdepth",  label: "SDF Depth" }, // 30
   // 31 — per-channel time offset over the Video Delay ring. Appended at the
   // true end; the indirect capture entries that sat at 31 move with it, kept in

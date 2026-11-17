@@ -11106,8 +11106,9 @@ void main() {
           : null;
     const SDF_IDX = 21;
     const SDFDEPTH_IDX = 30;
-    // Depth is a blit over the raymarcher's own target, so routing SDF Depth
-    // alone still has to run the march. Ticking on either keeps "the depth tap
+    // Depth is a second march of the generator's own material, so routing SDF
+    // Depth alone still has to tick the generator (that is what writes the
+    // uniforms the depth pass reads). Ticking on either keeps "the depth tap
     // works even when the colour is not on screen" true, which is the whole
     // point of a depth source — it is normally driving Displace, not the view.
     const _sdfDepthUsed = _srcUsed(SDFDEPTH_IDX);
@@ -11122,7 +11123,8 @@ void main() {
         _notSelf(_sdfTex, sdfGen.texture),
         _notSelf(_sdfRef, sdfGen.texture),
       );
-    // After the march, so the alpha it reads is this frame's.
+    // After tick(), which sets this frame's uniforms and this.active — the
+    // depth pass reads both, and skips itself while SDF is switched off.
     if (_sdfDepthUsed) sdfGen.renderDepth();
 
     // Rutt-Etra Scan Processor — on-demand rendering (source index 29)
