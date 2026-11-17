@@ -1112,7 +1112,7 @@ export const SOURCE_DEFS = [
   { key: "camera",    label: "Camera"    }, //  0
   { key: "movie",     label: "Movie A"   }, //  1
   { key: "buffer",    label: "Stills Buffer" }, //  2
-  { key: "color",     label: "Color"     }, //  3
+  { key: "color",     label: "Color 1"   }, //  3
   { key: "color2",    label: "Color 2"   }, //  4
   { key: "noise",     label: "Noise"     }, //  5
   { key: "scene3d",   label: "3D Scene"  }, //  6
@@ -2636,15 +2636,67 @@ export function registerCoreParameters(ps) {
   });
   ps.register({
     id: "color2.type",
-    label: "Col2 Type",
+    label: "Gradient",
     group: "color",
     type: PARAM_TYPE.SELECT,
-    options: ["Solid", "Grad H", "Grad V", "Grad R"],
+    // APPEND-ONLY: saved states store the index. 0–3 draw exactly what the
+    // canvas version drew.
+    options: ["Solid", "Grad H", "Grad V", "Grad R", "Conic"],
+    value: 0,
+  });
+  // Turns the linear types (and the conic sweep) clockwise. Grad V is Grad H
+  // at 90°, so one dial covers every direction between them.
+  ps.register({
+    id: "color2.angle",
+    label: "Angle",
+    group: "color",
+    min: 0,
+    max: 360,
+    step: 1,
+    value: 0,
+    unit: "°",
+  });
+  ps.register({
+    id: "color2.bands",
+    label: "Bands",
+    group: "color",
+    min: 1,
+    max: 16,
+    step: 1,
+    value: 1,
+  });
+  // 0 = smooth. From 2 up, the ramp is cut into that many flat colours.
+  ps.register({
+    id: "color2.steps",
+    label: "Steps",
+    group: "color",
+    min: 0,
+    max: 16,
+    step: 1,
+    value: 0,
+  });
+  ps.register({
+    id: "color2.path",
+    label: "Path",
+    group: "color",
+    type: PARAM_TYPE.SELECT,
+    options: ["Straight", "Rainbow"],
     value: 0,
   });
   ps.register({
     id: "color2.speed",
     label: "Col2 Speed",
+    group: "color",
+    min: -200,
+    max: 200,
+    value: 0,
+    unit: "%",
+  });
+  // Moves the gradient along itself. Separate from Col2 Speed, which turns the
+  // two hues and is left as it was so saved states animate the same way.
+  ps.register({
+    id: "color2.scroll",
+    label: "Scroll",
     group: "color",
     min: -200,
     max: 200,
