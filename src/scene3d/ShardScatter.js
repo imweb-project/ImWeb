@@ -6,8 +6,9 @@
  * World's Scatter is the first): the same shapes, the same step, the same
  * settle clock. What differs is what a "thing" is and where its home comes
  * from. Here a thing is one TRIANGLE — it flies as a rigid shard, keeping its
- * shape, lighting and texture — and its home is its centroid in world space,
- * which moves every frame with the object's transform and its animation.
+ * shape, lighting and texture — and its home is where its first corner is in
+ * world space, which moves every frame with the object's transform, its
+ * animation and, for a figure that keeps its skeleton, its bones.
  *
  * AT REST NOTHING OF THIS EXISTS. The twins below are built when Shatter first
  * leaves 0 and torn down when every shard is provably home (the settle clock),
@@ -24,9 +25,10 @@
  *   - twins live beside the object, not inside it, so the code that walks the
  *     model (materials, the cloner's merge, bounds) never meets them; they
  *     follow by having the mesh's world matrix copied onto them;
- *   - three passes run before the colour pass: BAKE (one point per triangle
- *     writes its centroid's world position into a texture), STEP (the shared
- *     scatter step, one texel per triangle), then the scene draws.
+ *   - a skinned mesh gets a skinned twin on the SAME skeleton (and the same
+ *     morph influences), so a figure goes on moving while it is in pieces;
+ *   - two passes run before the colour pass: BAKE (each triangle writes its
+ *     home into its own texel) and STEP (the shared scatter step).
  *
  * Out of scope, and Shatter does nothing there: the cloner (an InstancedMesh)
  * and a Hypercube-adopted mesh. Slots 2–4 are not shattered. The depth pass
@@ -38,15 +40,28 @@ import { scatterStepGLSL, SettleClock, MAX_DT } from '../ai/SplatAttractors.js';
 // The form is this many times the object's own radius.
 const FORM_SCALE = 1.3;
 
+// BAKE draws one tiny triangle per shard, over that shard's own texel, and
+// writes where the shard's ANCHOR (its first corner) is in the world right
+// now. A triangle and not a point, because a figure that keeps its skeleton
+// has to be baked THROUGH the skeleton, and three skins meshes, not points.
+// The three corners carry the same position and the same bones; aCorner only
+// spreads them enough (in texels) to cover the one texel centre.
 const BAKE_VERT = /* glsl */ `
   attribute vec2 aShard;
+  attribute vec2 aCorner;
+  uniform vec2 uTexel;
   varying vec3 vWorld;
+  #include <skinning_pars_vertex>
   void main() {
-    vWorld = (modelMatrix * vec4(position, 1.0)).xyz;
-    gl_Position = vec4(aShard * 2.0 - 1.0, 0.0, 1.0);
-    gl_PointSize = 1.0;
+    vec3 transformed = position;
+    #include <skinbase_vertex>
+    #include <skinning_vertex>
+    vWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;
+    gl_Position = vec4(aShard * 2.0 - 1.0 + aCorner * uTexel, 0.0, 1.0);
   }
 `;
+// Texel units, around the texel centre: contains it, and no neighbour's.
+const CORNERS = [-0.4, -0.4, 0.8, -0.4, -0.4, 0.8];
 const BAKE_FRAG = /* glsl */ `
   varying vec3 vWorld;
   void main() { gl_FragColor = vec4(vWorld, 1.0); }
@@ -97,8 +112,9 @@ export class ShardScatter {
     this._zero = zero;
     this._offUniform = { value: zero };
     this._bakeMat = new THREE.ShaderMaterial({
+      uniforms: { uTexel: { value: new THREE.Vector2(1, 1) } },
       vertexShader: BAKE_VERT, fragmentShader: BAKE_FRAG,
-      depthTest: false, depthWrite: false, blending: THREE.NoBlending,
+      depthTest: false, depthWrite: false, blending: THREE.NoBlending, side: THREE.DoubleSide,
     });
     this._simMat = new THREE.ShaderMaterial({
       uniforms: {
@@ -248,31 +264,56 @@ export class ShardScatter {
     r.setClearColor(prevClear, prevAlpha);
     r.setRenderTarget(prev);
     this._offUniform.value = this._off[0].texture;
+    this._bakeMat.uniforms.uTexel.value.set(2 / W, 2 / H);
 
     this._group = new THREE.Group();
     this._group.name = 'shards';
     const mat = this._syncMaterial();
     for (const { src, g, tris, first } of made) {
+      const skinned = src.isSkinnedMesh === true;
       const pos = g.attributes.position;
+      const si = skinned ? g.attributes.skinIndex : null, sw = skinned ? g.attributes.skinWeight : null;
       const shard = new Float32Array(tris * 3 * 2);   // per vertex: its triangle's texel
-      const cen = new Float32Array(tris * 3);         // per triangle: centroid, local
-      const cuv = new Float32Array(tris * 2);
+      // The bake's geometry: three corners per shard, all AT the anchor.
+      const anchor = new Float32Array(tris * 3 * 3);
+      const corner = new Float32Array(tris * 3 * 2);
+      const bi = si ? new si.array.constructor(tris * 3 * 4) : null;
+      const bw = sw ? new Float32Array(tris * 3 * 4) : null;
       for (let t = 0; t < tris; t++) {
-        const i = first + t;
+        const i = first + t, a = t * 3;
         const uu = ((i % W) + 0.5) / W, vv = (Math.floor(i / W) + 0.5) / H;
-        cuv[t * 2] = uu; cuv[t * 2 + 1] = vv;
         for (let k = 0; k < 3; k++) {
-          const v = t * 3 + k;
+          const v = a + k;
           shard[v * 2] = uu; shard[v * 2 + 1] = vv;
-          cen[t * 3] += pos.getX(v) / 3; cen[t * 3 + 1] += pos.getY(v) / 3; cen[t * 3 + 2] += pos.getZ(v) / 3;
+          anchor[v * 3] = pos.getX(a); anchor[v * 3 + 1] = pos.getY(a); anchor[v * 3 + 2] = pos.getZ(a);
+          corner[v * 2] = CORNERS[k * 2]; corner[v * 2 + 1] = CORNERS[k * 2 + 1];
+          if (bi) for (let c = 0; c < 4; c++) {
+            bi[v * 4 + c] = si.getComponent(a, c);
+            bw[v * 4 + c] = sw.getComponent(a, c);
+          }
         }
       }
       g.setAttribute('aShard', new THREE.BufferAttribute(shard, 2));
-      const twin = new THREE.Mesh(g, mat);
-      const pg = new THREE.BufferGeometry();
-      pg.setAttribute('position', new THREE.BufferAttribute(cen, 3));
-      pg.setAttribute('aShard', new THREE.BufferAttribute(cuv, 2));
-      const pts = new THREE.Points(pg, this._bakeMat);
+      const bg = new THREE.BufferGeometry();
+      bg.setAttribute('position', new THREE.BufferAttribute(anchor, 3));
+      bg.setAttribute('aShard', new THREE.BufferAttribute(shard, 2));
+      bg.setAttribute('aCorner', new THREE.BufferAttribute(corner, 2));
+      let twin, pts;
+      if (skinned) {
+        bg.setAttribute('skinIndex', new THREE.BufferAttribute(bi, 4));
+        bg.setAttribute('skinWeight', new THREE.BufferAttribute(bw, 4));
+        // The SAME skeleton: the twin and the bake move as the figure moves.
+        twin = new THREE.SkinnedMesh(g, mat);
+        pts = new THREE.SkinnedMesh(bg, this._bakeMat);
+        for (const o of [twin, pts]) { o.bindMode = src.bindMode; o.bind(src.skeleton, src.bindMatrix); }
+      } else {
+        twin = new THREE.Mesh(g, mat);
+        pts = new THREE.Mesh(bg, this._bakeMat);
+      }
+      if (src.morphTargetInfluences) {    // a face goes on making its expression
+        twin.morphTargetInfluences = src.morphTargetInfluences;
+        twin.morphTargetDictionary = src.morphTargetDictionary;
+      }
       for (const o of [twin, pts]) {
         o.frustumCulled = false;            // offsets move it; its own bounds mean nothing
         o.matrixAutoUpdate = false;
