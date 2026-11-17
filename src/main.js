@@ -1036,9 +1036,9 @@ async function main() {
   // recalled state asked for but this browser does not hold is kept here so
   // the picker can say so, as a missing slot model does.
   const _imageMissing = [null, null, null, null];
-  // glTF expects images unflipped; COLLADA / OBJ / STL flipped.
-  const _imageFlipFor = (i) =>
-    !/\.gl(b|tf)$/i.test((i === 0 ? scene3d.importedModelName : modelSlots.names()[i - 1]) ?? '');
+  // Flipped for every format: a GLB's UVs are turned to the common convention when it
+  // loads (SceneManager._prepareGLTFScene), so it no longer needs its images unflipped.
+  const _imageFlipFor = () => true;
   async function _restoreModelImages(list) {
     if (!Array.isArray(list)) return;
     const have = scene3d.imageNames();

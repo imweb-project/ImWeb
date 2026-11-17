@@ -131,7 +131,15 @@ export function buildComponentClip(text, root, name = 'Animation') {
     tracks.push(new THREE.VectorKeyframeTrack(`${obj.uuid}.scale`, allTimes, S));
   }
   if (!tracks.length) return null;
-  return new THREE.AnimationClip(name, duration, tracks);
+  const clip = new THREE.AnimationClip(name, duration, tracks);
+  // Declared takes: "<imweb_takes>start end start end …</imweb_takes>" in seconds.
+  const tk = text.match(/<imweb_takes>([^<]*)<\/imweb_takes>/);
+  if (tk) {
+    const v = tk[1].trim().split(/\s+/).map(Number);
+    clip.takes = [];
+    for (let i = 0; i + 1 < v.length; i += 2) clip.takes.push([v[i], v[i + 1]]);
+  }
+  return clip;
 }
 
 // Linear sample of channel c's component j at time t (clamped at the ends).

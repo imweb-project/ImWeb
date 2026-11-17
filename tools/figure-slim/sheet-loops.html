@@ -1,0 +1,132 @@
+<!doctype html><meta charset="utf-8">
+<!-- Contact sheet of every loop with a proposed mudra pair and rasa.
+     Serve the repo root (python3 -m http.server) and load through tools/nca/cdp-run.mjs;
+     ?assign=<url of an edited assignments json> shows that instead of the proposal. -->
+<script type="importmap">{"imports":{"three":"/node_modules/three/build/three.module.js","three/addons/":"/node_modules/three/examples/jsm/"}}</script>
+<canvas id="c" width="230" height="300"></canvas>
+<script type="module">
+import * as THREE from 'three';
+import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
+import { buildComponentClip } from '/src/scene3d/ColladaChannels.js';
+import { clipSegments } from '/src/scene3d/ClipSegments.js';
+import { MUDRAS, RELAXED, handQuats } from '/tools/figure-slim/mudras.mjs';
+import { RASAS, facePose } from '/tools/figure-slim/rasas.mjs';
+try {
+const W = 230, H = 300, COLS = 9;
+const q = new URLSearchParams(location.search);
+const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true, preserveDrawingBuffer: true });
+renderer.setClearColor(0x1c1c20);
+const text = await (await fetch('/assets/' + (q.get('file') ?? 'Haraldur6-loops.dae'))).text();
+const warn = console.warn; console.warn = () => {};
+const col = new ColladaLoader().parse(text, '/assets/'); console.warn = warn;
+const clip = buildComponentClip(text, col.scene, 'Animation');
+const scene = new THREE.Scene(); scene.add(col.scene);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444455, 1.7));
+const key = new THREE.DirectionalLight(0xffffff, 2.2); key.position.set(1, 2, 3); scene.add(key);
+const tint = n => /Teeth/.test(n) ? 0xeeeae0 : /Gums|Tongue/.test(n) ? 0x7a2c30 : /Eyeball/.test(n) ? 0xf4f2ee : /Iris/.test(n) ? 0x4a6a78 : /Pupil/.test(n) ? 0x101010 : 0xc9a48f;
+let mesh; col.scene.traverse(o => { if (o.isSkinnedMesh) { mesh = o; o.frustumCulled = false;
+  const mats = Array.isArray(o.material) ? o.material : [o.material];
+  o.material = mats.map(m => new THREE.MeshStandardMaterial({ color: tint(m.name), roughness: 0.65 })); } });
+const bone = n => mesh.skeleton.bones.find(b => b.name === `Figure_1${n}_1_node`);
+const next = { Index1: 'Index2', Index2: 'Index3', Mid1: 'Mid2', Mid2: 'Mid3', Ring1: 'Ring2', Ring2: 'Ring3', Pinky1: 'Pinky2', Pinky2: 'Pinky3', Thumb1: 'Thumb2', Thumb2: 'Thumb3' };
+const dirs = {}; for (const n of Object.keys(next)) dirs[n] = bone('l' + next[n]).position.clone();
+const dirOf = n => dirs[n] ?? dirs[n.replace('3', '2')];
+const faceRest = new Map();
+const mixer = new THREE.AnimationMixer(col.scene); mixer.clipAction(clip).play();
+const wp = n => new THREE.Vector3().setFromMatrixPosition(bone(n).matrixWorld);
+const segs = clipSegments(clip).segments, speed = clipSegments(clip).speed;
+
+// ── what each loop does, in a few numbers ──
+mixer.setTime(0); col.scene.updateMatrixWorld(true);
+const stand = wp('hip').y, tall = wp('head').y, shoulder = wp('lShldr').distanceTo(wp('rShldr'));
+const feats = segs.map(s => {
+  let crouch = 0, up = 0, apart = 0, together = 0, front = 0, bowed = 0; const n = 10;
+  for (let i = 0; i < n; i++) {
+    mixer.setTime(s.start + (s.end - s.start) * (i + 0.5) / n); col.scene.updateMatrixWorld(true);
+    const hip = wp('hip'), chest = wp('chest'), head = wp('head'), l = wp('lHand'), r = wp('rHand');
+    crouch += 1 - hip.y / stand;
+    up += (Math.max(l.y, r.y) - chest.y) / (head.y - chest.y + 1e-6);
+    const d = l.distanceTo(r) / shoulder; apart += d; if (d < 0.8) together++;
+    const fwd = new THREE.Vector3(0, 0, 1).transformDirection(bone('chest').matrixWorld);
+    front += l.clone().add(r).multiplyScalar(0.5).sub(chest).dot(fwd) / shoulder;
+    bowed += new THREE.Vector3(0, 0, 1).transformDirection(bone('head').matrixWorld).y < -0.25 ? 1 : 0;
+  }
+  let e = 0, k0 = Math.round(s.start * 30), k1 = Math.round(s.end * 30); for (let k = k0; k < k1; k++) e += speed[k] ?? 0;
+  return { len: s.end - s.start, energy: e / Math.max(1, k1 - k0), crouch: crouch / n, up: up / n, apart: apart / n, together: together / n, front: front / n, bowed: bowed / n };
+});
+const sortedE = feats.map(f => f.energy).sort((a, b) => a - b), qE = p => sortedE[Math.floor(p * (sortedE.length - 1))];
+const lo = qE(0.33), hi = qE(0.7);
+
+// ── proposal: rasa from the movement, mudras from the rasa ──
+const PAIRS = {            // [left, right], taken in turn so the whole vocabulary gets used
+  Shringara: [['Alapadma', 'Katakamukha'], ['Hamsasya', 'Alapadma'], ['Padmakosha', 'Padmakosha'], ['Katakamukha', 'Katakamukha'], ['Mayura', 'Alapadma'], ['Bhramara', 'Hamsasya']],
+  Hasya:     [['Tripataka', 'Alapadma'], ['Kartarimukha', 'Kartarimukha'], ['Shukatunda', 'Tripataka'], ['Tamrachuda', 'Alapadma']],
+  Karuna:    [['Mukula', 'Pataka'], ['Sarpashirsha', 'Sarpashirsha'], ['Pataka', 'Mukula'], ['Sandamsha', 'Ardhapataka']],
+  Raudra:    [['Mushti', 'Mushti'], ['Shikhara', 'Suchi'], ['Trishula', 'Mushti'], ['Suchi', 'Mushti']],
+  Veera:     [['Shikhara', 'Mushti'], ['Pataka', 'Shikhara'], ['Ardhachandra', 'Shikhara'], ['Kapittha', 'Pataka'], ['Simhamukha', 'Shikhara']],
+  Bhayanaka: [['Pataka', 'Pataka'], ['Alapadma', 'Pataka'], ['Mrigashirsha', 'Pataka'], ['Kangula', 'Alapadma']],
+  Bibhatsa:  [['Arala', 'Pataka'], ['Hamsapaksha', 'Arala'], ['Pataka', 'Arala']],
+  Adbhuta:   [['Alapadma', 'Alapadma'], ['Hamsasya', 'Padmakosha'], ['Chandrakala', 'Alapadma'], ['Ardhachandra', 'Ardhachandra']],
+  Shanta:    [['Hamsasya', 'Pataka'], ['Mukula', 'Mukula'], ['Chatura', 'Pataka'], ['Pataka', 'Hamsasya']],
+};
+const hiE = feats.map(f => f.energy).filter(e => e > hi).sort((x, y) => x - y);
+function rasaFor(f) {
+  if (f.energy < 0.004) return 'Shanta';
+  if (f.together > 0.4) return f.energy > hi ? 'Shringara' : 'Shanta';
+  if (f.crouch > 0.22) return f.energy > lo ? 'Bhayanaka' : 'Karuna';
+  if (f.bowed > 0.5 && f.energy <= hi) return 'Karuna';
+  if (f.up > 1.0) return f.energy > hi ? 'Veera' : 'Adbhuta';
+  if (f.energy > hi) {                       // the liveliest third: fury at the top, heroism, then laughter
+    const rank = hiE.indexOf(f.energy) / Math.max(1, hiE.length - 1);
+    return rank > 0.66 ? 'Raudra' : rank > 0.33 ? 'Veera' : 'Hasya';
+  }
+  if (f.energy < lo) return f.front > 0.8 ? 'Bibhatsa' : 'Shanta';
+  return f.front > 0.8 ? 'Bibhatsa' : 'Shringara';
+}
+let assign = feats.map((f, i) => ({ loop: i + 1, start: +segs[i].start.toFixed(2), end: +segs[i].end.toFixed(2), rasa: rasaFor(f) }));
+// every rasa should appear a few times: hand the scarce ones loops from the commonest
+for (const name of Object.keys(RASAS)) {
+  while (assign.filter(a => a.rasa === name).length < 3) {
+    const count = {}; assign.forEach(a => count[a.rasa] = (count[a.rasa] ?? 0) + 1);
+    const big = Object.entries(count).sort((a, b) => b[1] - a[1])[0][0];
+    const pool = assign.filter(a => a.rasa === big); pool[Math.floor(pool.length / 2)].rasa = name; pool[Math.floor(pool.length / 2)].filled = true;
+  }
+}
+const turn = {};
+for (const a of assign) {
+  const f = feats[a.loop - 1];
+  if (f.together > 0.4) { a.left = a.right = 'Pataka'; a.note = 'hands meet: Anjali'; continue; }
+  const opts = PAIRS[a.rasa], k = turn[a.rasa] = (turn[a.rasa] ?? -1) + 1;
+  [a.left, a.right] = opts[k % opts.length];
+}
+if (q.get('assign')) assign = (await (await fetch(q.get('assign'))).json()).loops;
+
+// ── sheet ──
+const cam = new THREE.PerspectiveCamera(24, W / H, 0.01, 100);
+const rows = Math.ceil(assign.length / COLS);
+const sheet = document.createElement('canvas'); sheet.width = COLS * W; sheet.height = rows * (H + 46);
+const g = sheet.getContext('2d'); g.fillStyle = '#1c1c20'; g.fillRect(0, 0, sheet.width, sheet.height); g.textAlign = 'center';
+assign.forEach((a, i) => {
+  const s = segs[a.loop - 1];
+  mixer.setTime(s.start + (s.end - s.start) * 0.5);
+  if (!q.get('raw')) for (const [side, name] of [['l', a.left], ['r', a.right]]) for (const [bn, qq] of handQuats(MUDRAS[name] ?? RELAXED, side, dirOf)) bone(bn).quaternion.copy(qq);
+  for (const [bn, p] of q.get('raw') ? [] : facePose(RASAS[a.rasa] ?? {})) {
+    const b = bone(bn); if (!b) continue;
+    if (p.additive) { b.quaternion.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(p.r[0] * Math.PI / 180, 0, 0))); continue; }
+    if (!faceRest.has(bn)) faceRest.set(bn, b.position.clone());
+    b.position.copy(faceRest.get(bn)).add(new THREE.Vector3(...p.t));
+    b.rotation.set(p.r[0] * Math.PI / 180, p.r[1] * Math.PI / 180, p.r[2] * Math.PI / 180, 'ZYX');
+  }
+  col.scene.updateMatrixWorld(true);
+  const c = wp('chest'); c.y = (c.y + wp('hip').y) / 2 + 0.1;
+  if (q.get('zoom')) { const h = wp('head'); c.copy(h); c.y -= 0.12; cam.position.set(c.x + 0.8, c.y + 0.15, c.z + 2.6); } else cam.position.set(c.x + 1.6, c.y + 0.5, c.z + 5.6);
+  cam.lookAt(c);
+  renderer.render(scene, cam);
+  const x = (i % COLS) * W, y = Math.floor(i / COLS) * (H + 46);
+  g.drawImage(renderer.domElement, x, y);
+  g.fillStyle = '#e8e4dc'; g.font = '600 17px Helvetica, Arial, sans-serif'; g.fillText(`${a.loop} · ${a.rasa}`, x + W / 2, y + H + 18);
+  g.fillStyle = '#b8b2a6'; g.font = '14px Helvetica, Arial, sans-serif'; g.fillText(`${a.left} | ${a.right}`, x + W / 2, y + H + 37);
+});
+window.__result = { loops: assign, feats: feats.map(f => Object.fromEntries(Object.entries(f).map(([k, v]) => [k, +v.toFixed(3)]))), takes: segs.length, bones: mesh.skeleton.bones.length, img: sheet.toDataURL('image/jpeg', 0.88) };
+} catch (e) { window.__result = { error: String(e), stack: e.stack }; }
+</script>

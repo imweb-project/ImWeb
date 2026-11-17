@@ -1,0 +1,57 @@
+<!doctype html><meta charset="utf-8">
+<script type="importmap">{"imports":{"three":"/node_modules/three/build/three.module.js","three/addons/":"/node_modules/three/examples/jsm/"}}</script>
+<canvas id="c" width="380" height="380"></canvas>
+<script type="module">
+import * as THREE from 'three';
+import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
+import { RASAS, facePose } from '/tools/figure-slim/rasas.mjs';
+try {
+const T = 380, COLS = 5;
+const q = new URLSearchParams(location.search);
+const view = q.get('view') ?? 'front';
+if (q.get('test')) { for (const k of Object.keys(RASAS)) delete RASAS[k]; Object.assign(RASAS, JSON.parse(q.get('test'))); }
+const names = ['(neutral)', ...Object.keys(RASAS)];
+const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true, preserveDrawingBuffer: true });
+renderer.setClearColor(0x1c1c20);
+const text = await (await fetch('/assets/Haraldur6-slim.dae')).text();
+const warn = console.warn; console.warn = () => {};
+const col = new ColladaLoader().parse(text, '/assets/'); console.warn = warn;
+const scene = new THREE.Scene(); scene.add(col.scene);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444455, 1.5));
+const key = new THREE.DirectionalLight(0xffffff, 2.3); scene.add(key); scene.add(key.target);
+const tint = n => /Teeth/.test(n) ? 0xeeeae0 : /Gums|Tongue/.test(n) ? 0x7a2c30 : /Eyeball/.test(n) ? 0xf4f2ee : /Iris/.test(n) ? 0x4a6a78 : /Pupil/.test(n) ? 0x101010 : /Socket/.test(n) ? 0x9a6a62 : 0xc9a48f;
+let mesh; col.scene.traverse(o => { if (o.isSkinnedMesh) { mesh = o; o.frustumCulled = false;
+  const mats = Array.isArray(o.material) ? o.material : [o.material];
+  o.material = mats.map(m => new THREE.MeshStandardMaterial({ color: tint(m.name), roughness: 0.6 })); } });
+const bone = n => mesh.skeleton.bones.find(b => b.name === `Figure_1${n}_1_node`);
+for (const n of ['neck', 'head', 'chest', 'abdomen']) bone(n).quaternion.identity();
+const rest = new Map();
+const cam = new THREE.PerspectiveCamera(+(q.get('fov') ?? 14), 1, 0.01, 50);
+const rows = Math.ceil(names.length / COLS);
+const sheet = document.createElement('canvas'); sheet.width = COLS * T; sheet.height = rows * (T + 34);
+const g = sheet.getContext('2d'); g.fillStyle = '#1c1c20'; g.fillRect(0, 0, sheet.width, sheet.height);
+g.font = '600 22px Helvetica, Arial, sans-serif'; g.textAlign = 'center';
+const missing = new Set();
+names.forEach((name, i) => {
+  for (const [bn, p] of facePose(RASAS[name] ?? {})) {
+    const b = bone(bn); if (!b) { missing.add(bn); continue; }
+    if (!rest.has(bn)) rest.set(bn, b.position.clone());
+    b.position.copy(rest.get(bn)).add(new THREE.Vector3(...p.t));
+    b.rotation.set(p.r[0] * Math.PI / 180, p.r[1] * Math.PI / 180, p.r[2] * Math.PI / 180, 'ZYX');
+  }
+  col.scene.updateMatrixWorld(true);
+  const head = bone('head');
+  const R = new THREE.Matrix4().extractRotation(bone('neck').matrixWorld);   // the camera stays with the neck, so a head tilt shows
+  const fwd = new THREE.Vector3(0, 0, 1).applyMatrix4(R), up = new THREE.Vector3(0, 1, 0).applyMatrix4(R), side = new THREE.Vector3(1, 0, 0).applyMatrix4(R);
+  const c = new THREE.Vector3().setFromMatrixPosition(head.matrixWorld).addScaledVector(up, +(q.get('cy') ?? 0.045)).addScaledVector(fwd, 0.08);
+  const dir = view === 'front' ? fwd.clone() : fwd.clone().addScaledVector(side, 0.75).normalize();
+  cam.position.copy(c).addScaledVector(dir, 1.25); cam.up.copy(up); cam.lookAt(c);
+  key.position.copy(cam.position).addScaledVector(up, 0.6).addScaledVector(side, 0.5); key.target.position.copy(c);
+  renderer.render(scene, cam);
+  const x = (i % COLS) * T, y = Math.floor(i / COLS) * (T + 34);
+  g.drawImage(renderer.domElement, x, y);
+  g.fillStyle = '#e8e4dc'; g.fillText(name, x + T / 2, y + T + 24);
+});
+window.__result = { img: sheet.toDataURL('image/jpeg', 0.9), bones: mesh.skeleton.bones.length, missing: [...missing] };
+} catch (e) { window.__result = { error: String(e), stack: e.stack }; }
+</script>
