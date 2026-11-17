@@ -182,6 +182,10 @@ export class SceneManager {
     if (name === this._geoKey) return;
     this._geoKey = name;
     this._importedModelName = null;
+    // The model is gone, so its URL must not still count as loaded: otherwise
+    // loadModelFromUrl() early-returns and the same bundled model can never
+    // come back after "Back to Geometry" — by button or by state recall.
+    this.currentModelUrl = null;
 
     const geo = this.geoFactory.create(name);
     this._replaceMesh(geo);
@@ -1731,6 +1735,17 @@ export class SceneManager {
     this._faceTexCopy.setSize(w, h);
     this._faceMaskCopy.setSize(w, h);
     this.camera.aspect = w / h;
+  /**
+   * Drop the imported model and let applyParams() rebuild scene3d.geo — what
+   * the "Back to Geometry" button does. Used by state recall: a state saved
+   * with a basic shape must show that shape, not whatever model is loaded.
+   */
+  backToGeometry() {
+    this._importedModelName = null;
+    this._importPending     = false;
+    this._geoKey            = null;
+  }
+
     this.camera.updateProjectionMatrix();
   }
 

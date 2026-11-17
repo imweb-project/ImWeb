@@ -1199,6 +1199,11 @@ async function main() {
       // bytes were never stored — a state saved before the store existed.
       if (!scene3d.importedModelName) scene3d.setImportPending(mr.scene3d);
       _restoreSceneModel(mr.scene3d);
+    } else if (extra?.scene3dHasImport === false && scene3d.importedModelName) {
+      // Saved with a basic shape, and SAYS so: show the shape. `=== false`, not
+      // falsy — a state from before the flag existed says nothing either way,
+      // and must not take a performer's model off the screen.
+      scene3d.backToGeometry();
     } else if (!extra?.scene3dHasImport) {
       // State was saved without an imported model — clear any pending suppression
       scene3d.clearImportPending();
@@ -1281,6 +1286,8 @@ async function main() {
     if (ref && scene3d) {
       if (ref.startsWith('/')) scene3d.loadModelFromUrl(ref);
       else if (scene3d.importedModelName !== ref) _restoreSceneModel(ref);
+    } else if (scene3d && ds.extra?.scene3dHasImport === false && scene3d.importedModelName) {
+      scene3d.backToGeometry();   // same rule as the stateRecalled handler
     }
     _restoreModelSlots(ds.extra?.modelSlots).then(() => _restoreModelImages(ds.extra?.modelImages));
     _restoreStateClips(ds);

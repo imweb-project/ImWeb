@@ -9,6 +9,9 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **A basic-shape state shows its shape** — recalling a state that was saved
+  with a basic 3D shape now removes a model that is loaded, instead of leaving
+  it on screen. States from before this flag existed are left alone.
 - **States remember their movie clip** — saving a state now keeps which
   library clip each deck is showing, and recalling it cuts to that clip,
   loading it into the rack if needed. A deck the state saved switched off is
@@ -98,6 +101,8 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   the cloud too, where it used to snap home.
 
 ### Fixed
+- **A bundled 3D model can be reloaded after Back to Geometry** — it used to
+  count as still loaded, so neither the button nor a state could bring it back.
 - **Pictures on GLB models are the right way up** — a movie, camera or layer used
   as the texture of a GLB model was upside down against the same picture on a
   DAE model. Texture = Image is unchanged.
