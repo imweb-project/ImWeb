@@ -3180,6 +3180,16 @@ body.sp-floating #signal-path-docked-space {
     padding: 4px 8px;
     text-align: left;
 }
+/* Manual pictures: never wider than the window, never upscaled past their
+   own pixels (a 320px panel shot blown up to the full column is a blur). */
+.docs-viewer-content img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 10px 0 4px;
+    border: 1px solid var(--border, #2a2a33);
+    border-radius: 3px;
+}
 .docs-viewer-content blockquote {
     border-left: 2px solid var(--accent-dim);
     margin: 8px 0;

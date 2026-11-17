@@ -48,6 +48,10 @@ Every row is the same shape, left to right:
                                         [── slider ──]
 ```
 
+![A parameter row: 1 name, 2 controller badge, 3 range minimum, 4 range maximum, 5 slider, 6 value](img/param-row.png)
+
+*1 name · 2 controller badge · 3 range minimum · 4 range maximum · 5 slider · 6 value*
+
 **Setting the value** — and note these, because two of them are not what you'd
 guess:
 
@@ -147,13 +151,16 @@ The machine lies about depth. That's the point — drive the lie.
 ## 2. SDF field renderer
 
 1. Press **`a`** until Background reads `SDF`.
-2. **Sources ▸ Generators ▸ SDF**. Click the **SDF** row to switch it on. Thirteen
+2. **Sources ▸ Generators ▸ SDF**. Click the **SDF** row to switch it on, or
+   pick a ready-made setting from the **Look** menu at the top. Thirteen
    shapes under **Shape**, then
    **Space · Camera · Material · Light · Glow · Glass · Video · Quality**.
 3. **Glow** is two-stop — set the inner tight and the outer wide and it stops
    looking like a bloom filter.
 4. **Video** feeds a source into the surface, so the raymarcher can wear the
    camera.
+![Six SDF Looks: Lava Lamp, Crystal Balls, Coral, Lattice, Bubbles, Amethyst](img/sdf-looks.jpg)
+
 5. `SDF Depth` is the same render's depth as a source of its own. Press **`z`**
    until DisplaceSrc reads `SDF Depth` and the picture gets pushed around by the
    solid you can no longer see.

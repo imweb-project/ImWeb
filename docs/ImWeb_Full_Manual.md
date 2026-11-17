@@ -1,6 +1,6 @@
 # ImWeb — Full Operation Manual
 
-> **Version:** 0.28.0
+> **Version:** 0.29.0, plus the additions listed under *Unreleased* in the changelog
 > **Platform:** Browser (Chrome 113+ recommended)
 > **Original concept:** Image/ine — Tom Demeyer, STEIM Amsterdam 1997/2008
 > **ImWeb:** H. Karlsson
@@ -49,9 +49,30 @@ Open Chrome at `localhost:5173`. On first load:
 
 - Camera is activated automatically
 - FG and BG layers both show camera
-- DS (displacement source) defaults to noise
+- DS (displacement source) is the camera too
 - All effect sections are collapsed
 - BPM is set to 120
+
+The first time the app opens it shows the welcome screen:
+
+![The welcome screen, with its three ways in](img/welcome-screen.png)
+
+- **Explore the Looks** — closes the screen. Each thumbnail along the bottom
+  is a complete patch; click one, or press `0`–`9`.
+- **Learn step by step** — opens the guided tour, which points at each control
+  while you try it.
+- **Just start** — closes the screen.
+
+The **?** button at the top right brings the welcome screen back. It also holds
+the guided tour, the keyboard shortcut list and the manuals:
+
+![The ? menu: Welcome screen, Guided Tour, Keyboard Shortcuts, Quick Start, Try This First, Quick Reference, Full Manual, About ImWeb](img/help-menu.png)
+
+The guided tour has four tracks. **Tutorials** is the one for making pictures:
+each tutorial builds one thing in about five moves, grouped under **Start**,
+**Feedback**, **Audio**, **3D** and **Time**. A tutorial's **Load starting
+point** button resets the instrument (it asks first) and switches to a bank
+named *Tutorials*, so `Shift+S` never fills your own banks with practice states.
 
 ### First steps
 
@@ -66,6 +87,17 @@ Open Chrome at `localhost:5173`. On first load:
 
 ## 3. Interface Layout
 
+![The ImWeb window with its six areas numbered](img/interface-overview.jpg)
+
+| | Area | What it is |
+|---|------|------------|
+| **1** | Status bar | Frame rate, current Bank and State, tempo, MIDI / OSC / gamepad indicators |
+| **2** | Toolbar buttons | Reset, Movie and Camera on/off, second screen, fullscreen, record, AI, **?** |
+| **3** | Output | The picture. Double-click for fullscreen |
+| **4** | Tabs | Sources · Mix · Effects · Output · Audio · Project, in the order the signal flows |
+| **5** | Control panel | The sections and parameter rows of the open tab |
+| **6** | State bar | 32 saved States as thumbnails, plus Bank and project buttons |
+
 ### Status Bar (top)
 
 | Element | Function |
@@ -77,6 +109,7 @@ Open Chrome at `localhost:5173`. On first load:
 | BPM display | Current tempo; click = tap tempo, right-click = toggle MIDI clock sync |
 | MIDI dot | Flashes on incoming CC/Note |
 | OSC dot | WebSocket OSC bridge status |
+| SOLO pill | Yellow, and only shown while **Solo** (`S`) is on. Solo bypasses every effect, so effect controls seem dead while it is lit. Click the pill to turn Solo off |
 | VU meter | Audio level bars (bass / mid / high / overall) |
 
 ### Status Bar Buttons (right side)
@@ -126,6 +159,10 @@ alongside.
 | **Audio** | Tape, Engine, Partitions, Recording Zone, Playback Zone, Spectral Writer, Corpus, Grain Player, Voice — see §9 *Audio* |
 | **Project** | Project save/load, AI, Banks, States, State Step Sequencer, Response Curves (tables) |
 
+![The Sources tab with every section closed: Live In, Media, Generators, From the Signal](img/sources-tab.png)
+
+*The Sources tab with every section closed. Click a section name to open it.*
+
 There are **six** tabs. The first four follow the video signal; **Audio** is a
 top-level tab of its own because it is a large editor for a different kind of
 material, not a stage in the video chain.
@@ -144,7 +181,18 @@ as the window is tall.
 
 ### Bottom Bar
 
-The bottom bar runs across the full width of the app and contains three zones:
+The bottom bar runs across the full width of the app:
+
+![The state bar with its parts numbered](img/state-bar.jpg)
+
+| | Part | What it does |
+|---|------|--------------|
+| **1** | ○ Neutral | Resets all parameter values, keeps controller assignments |
+| **2** | State grid | 32 tiles; click a saved one to recall it |
+| **3** | **+** | Saves the current State to the next empty slot (`Shift+S`) |
+| **4** | Morph | State morph time — drag to change; 0 = instant |
+| **5** | 📂 💾 | Open a project file (`Cmd+O`) / save the project with all its Banks (`Cmd+S`) |
+| **6** | Bank menu | Current Bank name; click to switch, create or import a Bank |
 
 **State grid** — 32 thumbnail tiles arranged in two rows of 16. Tiles show auto-captured thumbnails for saved states and appear dark for empty slots.
 
@@ -169,17 +217,28 @@ The bottom bar runs across the full width of the app and contains three zones:
 (the canvas reclaims the space while hidden); `Shift+P` floats it as a
 draggable window. When visible it shows the live routing: **FG → BG → DS → TransferMode → Displacement → WarpMap → Keyer → Blend → ColorShift → FX Chain → LUT → Interlace → Fade → Output**. Effects in the FX chain can be dragged to reorder.
 
+![The signal path band: Camera / Camera → keyer → displace → Camera → blend → out](img/signal-path.png)
+
 ### Parameter Rows
 
-Each row shows:
-- **Parameter name** (left)
-- **Value display** (centre — drag to change)
-- **Controller label** (right — shows assigned controller type)
+![One parameter row, Blend Amt, with its parts numbered](img/param-row.png)
 
-Drag left/right on the value area to change continuous parameters. Click SELECT rows to cycle options.
+| | Part | What it does |
+|---|------|--------------|
+| **1** | Name | Right-click it to give the parameter a controller |
+| **2** | Controller badge | `—` when nothing is assigned; otherwise the controller type (LFO, MIDI, RND…). Right-click the badge to edit its settings |
+| **3** | Range minimum | The lowest value a controller can reach. Drag up/down, or double-click to type |
+| **4** | Range maximum | The highest value a controller can reach |
+| **5** | Slider | Drag to change the value |
+| **6** | Value | Drag sideways to change it, `Cmd`-click to type a number, double-click to reset |
 
-> [!tip]
-> Right-click any parameter row to open the controller assignment menu.
+Menu rows (a source, a blend mode) have a drop-down in place of the slider, and
+toggles have a single dot at the right edge.
+
+Right-click a parameter's name to open the controller menu — MIDI, LFO, sound,
+random, gamepad and the rest are described in §6:
+
+![The controller menu opened on Blend Amt](img/controller-menu.jpg)
 
 ---
 
@@ -460,6 +519,8 @@ Solid colour or gradient texture.
 | `color2.speed` | −200 – 200 % | Turns both hues over time (200 = one full turn per second) |
 | `color2.scroll` | −200 – 200 % | Moves the gradient along itself (100 = one band per second) |
 
+![Four Color 2 gradients: Grad H, the same at Angle 35 with Bands 4, Grad R with Steps 6, and Conic with Path Rainbow](img/color2-gradients.jpg)
+
 Click the colour swatch in the UI to open a quick colour picker.
 
 ---
@@ -549,7 +610,19 @@ Full Three.js 3D scene rendered to a WebGL render target.
 
 #### Built-in geometries
 
-Sphere, Cube, Torus, Icosahedron, Cone, Pyramid, Plane, Ring, Octahedron, Dodecahedron, Tetrahedron
+The **Geometry** menu (`scene3d.geo`) holds 22 shapes, all in the same frame:
+
+| Family | Shapes |
+|--------|--------|
+| **Basic** | Sphere, Torus, Cube, Plane, Cylinder, Capsule, Cone, Ring |
+| **Platonic** | Dodecahedron, Icosahedron, Octahedron, Tetrahedron |
+| **Surface** | Möbius, Klein Bottle, Shell |
+| **Complex** | TorusKnot, Spring, Supershape, Star, Knot 3·7, Teapot |
+| **Faceted** | Gem (a faceted icosahedron) |
+
+![The nine newest shapes, each with the camera picture as its texture](img/shapes-new.jpg)
+
+*The nine newest shapes, here with **Texture** set to Camera.*
 
 #### Importing models
 
@@ -809,6 +882,39 @@ read as motion rather than as a static pattern:
 | `scene3d.blob.scale` | 0.1–10 | **Metaball Scale** |
 | `scene3d.blob.speed` | −5 – 5 Hz | **Metaball Speed** |
 
+#### Parameters — Shatter
+
+The main object comes apart into its own triangles. Each one flies as a whole
+shard, keeping its lighting and texture, into a strange attractor, and they
+all assemble again when **Shatter** returns to 0. Panel: **3D Scene** workspace
+▸ **Shatter**.
+
+![A textured teapot at Shatter 0, 25, 55 and 100, with the Porcelain Look](img/shatter-sequence.jpg)
+
+![The Shatter section of the 3D Scene workspace](img/shatter-panel.png)
+
+| Parameter | Range | Description |
+|-----------|-------|-------------|
+| `scene3d.shatter.look` | SELECT | **ShatterLook** — loads a tested setting: **Porcelain** (large turning pieces), **Dust storm** (single triangles blown to dust along the butterfly), **Limb from limb** (a figure comes apart at the joints), **Eaten by light** (the camera decides what dissolves). A Look sets every Shatter control and nothing else |
+| `scene3d.shatter` | 0–100 % | **Shatter** — how far the pieces have left. 0 = the object whole |
+| `scene3d.shatter.shape` | SELECT | **ShatterShape** — the form the pieces flow into: Thomas (a braided knot), Aizawa (a shell with a column through it), Lorenz (the butterfly), Rössler (a flat spiral that throws a loop straight up) |
+| `scene3d.shatter.size` | 10–200 % | **ShatterSize** — the size of that form against the object. Default 60 |
+| `scene3d.shatter.flow` | 0–200 % | **ShatterFlow** — how fast the pieces travel along the form |
+| `scene3d.shatter.piece` | 0–100 % | **PieceSize** — 0 = every triangle flies alone; higher gathers them into bigger pieces, so the object breaks like china |
+| `scene3d.shatter.by` | Pieces / Body parts | **ShatterBy** — Body parts makes one piece of everything a bone carries (a forearm, a hand, a head fly whole and go on moving), or of each part of a model built from separate rigid parts. An object that is one unrigged mesh has no parts and stays in Pieces |
+| `scene3d.shatter.tumble` | 0–100 % | **Tumble** — pieces turn as they travel |
+| `scene3d.shatter.dust` | 0–100 % | **Dust** — pieces shrink as they leave and grow back on the way home |
+| `scene3d.shatter.mask` | SELECT (source) | **ShatterMask** — a picture decides the order. As Shatter rises, the pieces under its bright parts (as the 3D camera sees them) leave first and the dark ones last |
+
+- **One object can settle as another.** Change the Geometry, or import another
+  model, while the pieces are out: the new object's pieces start where the old
+  one's were flying. Shatter up → change the object → Shatter down turns one
+  thing into another.
+- Pieces follow the object while it moves or plays an animation.
+- Shatter does nothing while the **Cloner** is on or a **Hypercube** has adopted
+  the mesh, and models in slots 2–4 are not shattered.
+- The depth output shows the object whole.
+
 #### Parameters — Animation (imported models)
 
 | Parameter | Range | Description |
@@ -818,7 +924,7 @@ read as motion rather than as a static pattern:
 | `scene3d.anim.speed` | −2 – 2 | **Anim Speed**. Negative runs the clip backwards |
 
 Dropping a `.glb` with animation switches the scene and its animation on
-automatically.
+automatically. A rigged GLB keeps its skeleton and plays, as a DAE figure does.
 
 #### Parameters — Depth Pass
 
@@ -1148,6 +1254,22 @@ rather than as meshes, so they combine, repeat and deform continuously.
 Panel: **Sources ▸ Generators ▸ SDF**. It renders nothing until its **SDF**
 toggle (`sdf.active`) is on.
 
+**Looks.** The **Look** menu at the top of the panel (`sdf.look`) loads a
+complete, tested setting: Default, Lava Lamp, Crystal Balls, Coral, Lattice,
+Video Helix, Bubbles and Amethyst. A Look sets every SDF control and switches
+SDF on; it leaves Source, Refract Src and Detail as they are. Crystal Balls
+and Bubbles want a picture on **Refract Src**, and Video Helix wants one on
+**Source**.
+
+![Six SDF Looks: Lava Lamp, Crystal Balls, Coral, Lattice, Bubbles, Amethyst](img/sdf-looks.jpg)
+
+The panel opens on a short live set — Look, SDF, Speed, Size, Variation,
+Morph, Separation, Hue and Glow. Everything else is in the collapsed
+sections below it (Shape, Space, Camera, Material, Light, Glow, Glass, Video,
+Quality).
+
+![The SDF panel: the live set on top, the other sections collapsed below](img/sdf-panel.png)
+
 **Geometry**
 
 | Parameter | Range | Description |
@@ -1162,8 +1284,13 @@ toggle (`sdf.active`) is on.
 | `sdf.size` | 0.1–3 | Shape scale |
 | `sdf.tile` | TOGGLE | Infinite domain repetition on/off |
 | `sdf.repeat` | 1.2–10 | Tile spacing (only meaningful when Tile is on) |
+| `sdf.vary` | 0–1 | **Variation** — gives each shape (and, with Tile on, each cell) its own size and place |
+| `sdf.morph` | 0–1 | **Morph** — blends each shape into Shape B |
+| `sdf.motion` | SELECT | **Motion** — how the shapes move: Orbit / Lissajous / Swarm / Pulse |
 | `sdf.warp` | 0–2 | Domain warp amount |
-| `sdf.lumaWarp` | 0–2 | Warp driven by source luminance |
+| `sdf.warpMode` | SELECT | **Warp Type** — Ripple, or Organic (a layered, grown-looking surface) |
+| `sdf.twist` | −2 – 2 | **Twist** — turns the shapes more the higher they go |
+| `sdf.lumaWarp` | 0–2 | Warp driven by source luminance. Bright parts of the picture raise the surface |
 | `sdf.speed` | 0–5 | Animation rate |
 
 > **Shape sizing note.** Most shapes sit at a bounding radius between 0.50 and
@@ -1199,10 +1326,12 @@ toggle (`sdf.active`) is on.
 
 | Parameter | Range | Description |
 |-----------|-------|-------------|
-| `sdf.texSrc` | SELECT (16) | Texture source; "FG Layer" follows the foreground |
-| `sdf.texBlend` | 0–1 | Texture vs. shaded surface mix |
-| `sdf.refractSrc` | SELECT (16) | Refraction source; "BG Layer" follows the background |
+| `sdf.texSrc` | SELECT (every source) | Texture source; "FG Layer" follows the foreground |
+| `sdf.texBlend` | 0–1 | Texture vs. shaded surface mix. The picture wraps all the way round each shape |
+| `sdf.refractSrc` | SELECT (every source) | Refraction source; "BG Layer" follows the background |
 | `sdf.refract` | 0–1 | Refraction amount |
+| `sdf.glassSolid` | 0–1 | **Solid Glass** — bends the picture through the whole shape, so a ball shows the background small and upside down, and Hue/Sat tint the thick parts more than the thin. Needs Refract above 0 |
+| `sdf.dispersion` | 0–1 | **Dispersion** — splits the refracted picture into colour fringes. Needs Refract above 0 |
 | `sdf.fresnel` | 0–1 | Edge-facing reflectivity |
 | `sdf.hue` / `sat` / `val` | 0–360° / 0–1 / 0–1 | Surface colour |
 | `sdf.lumaThresh` | 0–1 | Luminance threshold for source-driven effects |
@@ -1233,6 +1362,7 @@ toggle (`sdf.active`) is on.
 |-----------|-------|-------------|
 | `sdf.lightAz` | 0–360° | Key light azimuth |
 | `sdf.lightEl` | -90–90° | Key light elevation |
+| `sdf.shadow` | 0–1 | **Shadow** — lets shapes shade each other |
 | `sdf.rscale` | 0.25–1 | Render scale — the main performance control |
 | `sdf.steps` | 32–256 | Raymarch step budget |
 
@@ -1525,6 +1655,16 @@ DS Source
 
 ### 5.2 Layer Routing
 
+![The Layers section of the Mix tab with its controls numbered](img/layers-section.png)
+
+| | Control | What it does |
+|---|---------|--------------|
+| **1** | Foreground source | The picture on top |
+| **2** | Foreground blend mode | How the foreground meets the background (Copy, Screen, Difference…) |
+| **3** | Blend Amt | A three-stop crossfade: 0 % = background alone, 50 % = the blend at full strength, 100 % = foreground alone |
+| **4** | Background source | The picture underneath |
+| **5** | DisplaceSrc | The picture that pushes the others around (§5.5) |
+
 Three routing layers feed the pipeline:
 
 | Layer | Parameter | Description |
@@ -1604,6 +1744,16 @@ Reimagine panel:
 | `splat.fly` | CONTINUOUS 0–100 % | Fly into the world and back out, at DriftSpeed |
 | `splat.size` | CONTINUOUS 25–300 % | **PointSize** — larger closes holes, smaller looks grainier |
 | `splat.density` | SELECT Low/Mid/High | Number of points (Low if the frame rate drops) |
+| `splat.draw` | SELECT Points/Surface | **Draw** — Surface is the same world and camera as one closed skin with the image at full resolution, stretching over the holes Points leaves behind near things |
+| `splat.scatter` | CONTINUOUS 0–100 % | **Scatter** — releases the points into a strange attractor. Back at 0 they come home — to the *next* image if a fade ran while they were out, so one picture dissolves and another assembles |
+| `splat.shape` | SELECT | **Shape** — Thomas, Aizawa, Lorenz or Rössler (the same forms as 3D ▸ Shatter) |
+| `splat.flow` | CONTINUOUS 0–200 % | **Flow** — how fast the points travel along the form |
+| `splat.fadeScatter` | CONTINUOUS 0–100 % | **FadeScatter** — the fade itself scatters the points, out as one image leaves and home as the next arrives. It follows FrameBlend, so a FrameBlend held part-way holds the points out |
+
+While points are out, the world is drawn as Points whatever **Draw** says. The
+form sits where the camera orbits, so Orbit, Dolly and Fly go around and
+through it. Two more Looks set these up: **Surface world** and **Dissolving
+world**.
 
 #### Mirroring
 
@@ -1832,6 +1982,13 @@ pixel-identically to before these existed.
 ### 5.10 Post-FX Chain
 
 The following effects run in sequence after the main composite. Their order can be changed by dragging nodes in the Signal Path display.
+
+![One camera picture four ways: untouched, Kaleidoscope 6, Rutt-Etra scan lines, and a 3D knot leaving feedback trails](img/effects-examples.jpg)
+
+*What a few controls do to a picture. Top: the camera, then **Kaleidoscope**
+at 6. Bottom: the same camera through the **Rutt-Etra** source (§4.16), and a
+3D knot with **Blend** on and **Feedback Mode** Screen (§5.8). Feedback needs
+somewhere dark in the picture for its trails to show.*
 
 #### Chain-wide controls
 
@@ -2669,6 +2826,13 @@ A State is a complete, self-contained snapshot of the instrument at a moment in 
 - The **FX chain order**
 - All **controller assignments** (LFO shapes, rates, MIDI CC numbers, etc.)
 - **Media filenames** (the names of the movie clip and 3D model that were loaded — as a reminder, since the File API prevents auto-reloading files)
+
+- The **library clip on each movie deck**. Recalling the State cuts to that
+  clip, loading it into the rack if needed. A deck the State saved switched off
+  is left alone. States saved before this existed keep working but do not switch
+  clips until they are saved again
+- Whether the 3D object was a **basic shape**. Recalling such a State removes a
+  loaded model, so the shape it was saved with is what shows
 
 Each Bank holds up to **32 States**, displayed as a thumbnail grid in the bottom bar.
 

@@ -9,6 +9,13 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Pictures in the manual** — the Full Manual now has 16 screenshots: the
+  window with its areas numbered, a parameter row, the controller menu, the
+  state bar, the Layers section, and example pictures of the new 3D shapes,
+  Shatter, SDF Looks and Color 2 gradients. Quick Start, Quick Reference and
+  Try This First each carry one or two. The in-app manual window shows them,
+  and they print. The manual also gained sections for Shatter, SDF Looks,
+  Splat World's Scatter and Surface, the SOLO pill and the Tutorials track.
 - **A basic-shape state shows its shape** — recalling a state that was saved
   with a basic 3D shape now removes a model that is loaded, instead of leaving
   it on screen. States from before this flag existed are left alone.

@@ -1,10 +1,14 @@
 # ImWeb — Quick Reference
 
-> Browser-based real-time video synthesis instrument · v0.28.0
+> Browser-based real-time video synthesis instrument · v0.29.0
 
 ---
 
 ## The Panel
+
+![The ImWeb window: 1 status bar, 2 toolbar, 3 output, 4 tabs, 5 control panel, 6 state bar](img/interface-overview.jpg)
+
+*1 status bar · 2 toolbar · 3 output · 4 tabs · 5 control panel · 6 state bar*
 
 Six tabs: **Sources · Mix · Effects · Output · Audio · Project**.
 
@@ -45,18 +49,19 @@ FX Chain is **reorderable** by dragging nodes in the Signal Path display.
 | **Movie A / Movie B** | Two decks, 8 loaded slots each. `Shift+0–8` selects on A, `Option+0–8` on B (0 aliases clip 1). A full rack evicts its oldest clip, never the one playing. Both decks start off; routing a layer to one switches it on |
 | **Analog TV** | Self-contained 720×480 analog signal simulator: 4:3 cropping and base signal colour grading (hue, saturation, brightness, contrast). Routes as a standard layer source. **Teletext** is one of its signal types (`analog.sourceType` → Teletext), not a source of its own — selecting it reveals the page-navigation panel |
 | **Stills Buffer** | Up to 64 captured frames (configurable rows×cols grid, 1–8 each, default 4×4=16); `C` to capture; scan/blend between slots |
-| **Color** | Solid or gradient (H/V/radial); HSV + animated hue |
+| **Color 1 / Color 2** | Solid, or a gradient from Color 1 to Color 2 (H/V/radial/conic) with Angle, Bands, Steps, a Rainbow path and Scroll; HSV + animated hue |
 | **Noise** | GPU fractal (Perlin/Voronoi/Worley/Simplex); 512×512; resolution-independent |
-| **3D Scene** | Three.js; built-in shapes + imported `.glb/.gltf/.obj/.stl/.dae`; auto-fits. 7 material shaders (Standard/Physical/Toon/Normal/Matcap/Lambert/Phong); glass via Physical's Transmit+IOR; rim light; live texture with UV scroll; geometry displacement from noise or from the texture; Cloner (Grid/Ring/Line, up to 200, with twist/scatter/travelling wave); metaballs; glTF animation clips |
+| **3D Scene** | Three.js; 22 built-in shapes (incl. Möbius, Klein Bottle, Shell, Spring, Supershape, Star, Knot 3·7, Teapot, Gem) + imported `.glb/.gltf/.obj/.stl/.dae`; auto-fits. 7 material shaders (Standard/Physical/Toon/Normal/Matcap/Lambert/Phong); glass via Physical's Transmit+IOR; rim light; live texture with UV scroll; geometry displacement from noise or from the texture; Cloner (Grid/Ring/Line, up to 200, with twist/scatter/travelling wave); metaballs; glTF animation clips; **Shatter** — the object flies apart into pieces along a strange attractor and reassembles (ShatterLook: Porcelain / Dust storm / Limb from limb / Eaten by light) |
 | **Slit Scan** | Classic time→space mapping; V/H/centre axes |
 | **Draw** | Freehand canvas, 1024×1024; map position to mouse |
 | **Text** | Live text, 512×512; Char/Word/Line advance mode |
 | **Particles** | GPU particle field; physics (gravity, wind, life) |
-| **SDF Generator** | GPU-raymarched field; 13 shapes + second shape w/ Union/Subtract/Intersect; KIFS folding; orbit camera (Orbit X/Y + Distance) + FOV; luma warp; triplanar texturing; AO; two-stop glow; self-reflection; glass refraction; dedicated texture + refraction routing |
+| **SDF Generator** | GPU-raymarched field; a **Look** menu of eight tested settings (Lava Lamp, Crystal Balls, Coral, Lattice…); 13 shapes + second shape w/ Union/Subtract/Intersect; KIFS folding; orbit camera (Orbit X/Y + Distance) + FOV; luma warp; triplanar texturing; AO; two-stop glow; self-reflection; glass refraction with Solid Glass and Dispersion; Variation, Morph, Twist, four Motion types; dedicated texture + refraction routing |
 | **Rutt-Etra** | Scanline Z-displacement in 3D; 7 lattice shapes; Lines/Points/Both; per-line rise/fall follower; persistence + spread |
 | **Mix Buses ×3** | Two free source inputs each; Crossfade/Add/Multiply/Luma Mask/Displace. Double-buffered — a later bus reading an earlier one sees this frame, otherwise last frame. Self-routing is legal (1-frame loop) |
 | **Warp Tape** | Rolling time buffer (8/16/32 s); scrub or smear along Time (X) or Picture (Y). One *column* per time step — ~18× cheaper than Time Displace for an axis-aligned gradient, and cannot express anything else. Params are `vwarp.*`; the old `vasulka.*` namespace is deprecated and unreachable |
 | **Time Displace** | Per-pixel delay from a map image; 7 modes; up to 119 frames deep. Buffer res is the memory cost — drop from Native first |
+| **AI Depth / Splat World** | The depth of the Stills Buffer image, made in the browser; and that image as a 3D world of points (or a closed Surface) with a drifting camera, which can Scatter into an attractor and reassemble as the next image |
 | **3D Depth / SDF Depth** | Depth outputs of the 3D Scene and SDF field, routable like any source |
 | **Frame Seq 1 / 2 / 3** | Record/loop any source; 4–480 frames; ±300% speed (negative = reverse); independent |
 | **Vectorscope** | Audio visualiser (Lissajous / Waveform / FFT) |
@@ -275,8 +280,13 @@ momentum · right-drag pans · wheel / trackpad-pinch zooms (eased;
 ## Status Bar (top)
 
 ```
-ImWeb  |  fps · CPU · VRAM  |  Bank name  |  State name  |  BPM ♩  |  MIDI  OSC  VU  |  [FIT][FAST][MED][MAX][LOW]  [⊡][◫][⌨][◧][⛶][⏺][📷][𝔸][⬡][⚙]
+ImWeb  |  fps · CPU · VRAM  |  Bank name  |  State name  |  BPM ♩  |  MIDI  OSC  [SOLO]  PAD  VU
+[↺][⊟][┄][⇌][◎][▤]  [Movie][Camera]  [⊡][⬡][◫][⌨][◧][⛶][⏺][📷]  [𝔸][⬡][⚙][?]
 ```
+
+The yellow **SOLO** pill shows only while Solo (`S`) is on — effects are
+bypassed, so their controls seem dead. Click it to turn Solo off. Output
+resolution is the **Display** selector in **Output ▸ Display & Record**.
 
 ## Bottom Bar
 
@@ -400,4 +410,4 @@ recalling a State never erases tape or opens a device.
 
 ---
 
-*ImWeb v0.28.0 · H. Karlsson · [Full manual →](ImWeb_Full_Manual.md)*
+*ImWeb v0.29.0 · H. Karlsson · [Full manual →](ImWeb_Full_Manual.md)*

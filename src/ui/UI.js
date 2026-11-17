@@ -4889,6 +4889,16 @@ export async function openDocsViewer(url, title) {
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     const text = await res.text();
     contentEl.innerHTML = marked.parse(text);
+    // Pictures are written relative to the .md file (img/x.png), which is what
+    // GitHub resolves. Here the page's base is the site root, so make each one
+    // absolute against the document's own URL — absolute also survives the
+    // print iframe, whose <base> is /docs/.
+    const docUrl = new URL(url, location.href);
+    contentEl.querySelectorAll('img[src]').forEach((img) => {
+      const src = img.getAttribute('src');
+      if (!/^([a-z]+:|\/)/i.test(src)) img.src = new URL(src, docUrl).href;
+      img.loading = 'lazy';
+    });
   } catch (err) {
     // Say what to do, not just what broke — this panel is the only route to the
     // manual, so a dead end here has no fallback for the reader.
