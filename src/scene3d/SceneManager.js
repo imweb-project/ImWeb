@@ -1728,13 +1728,6 @@ export class SceneManager {
     }
   }
 
-  resize(w, h) {
-    this.width = w; this.height = h;
-    this.target.setSize(w, h);
-    this.depthTarget.setSize(w, h);
-    this._faceTexCopy.setSize(w, h);
-    this._faceMaskCopy.setSize(w, h);
-    this.camera.aspect = w / h;
   /**
    * Drop the imported model and let applyParams() rebuild scene3d.geo — what
    * the "Back to Geometry" button does. Used by state recall: a state saved
@@ -1746,6 +1739,13 @@ export class SceneManager {
     this._geoKey            = null;
   }
 
+  resize(w, h) {
+    this.width = w; this.height = h;
+    this.target.setSize(w, h);
+    this.depthTarget.setSize(w, h);
+    this._faceTexCopy.setSize(w, h);
+    this._faceMaskCopy.setSize(w, h);
+    this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   }
 
