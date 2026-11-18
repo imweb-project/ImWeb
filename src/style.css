@@ -3310,6 +3310,15 @@ body.sp-floating #signal-path-docked-space {
     font-size: 12px;
     line-height: 1.55;
 }
+/* Tour pictures fit the panel's width and are never upscaled. */
+#guide-body img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 6px 0;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+}
 #guide-body p {
     margin: 0 0 8px;
 }
