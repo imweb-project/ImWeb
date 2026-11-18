@@ -1,6 +1,6 @@
 # ImWeb Quick-Start: From Zero to Real-Time Performance
 
-> Browser-based live video synthesis ecosystem · v0.28.0
+> Browser-based live video synthesis ecosystem · v0.29.0
 
 Welcome to **ImWeb**. Think of this interface as a digital video instrument:
 every slider can be performed live, automated, or mapped to your surroundings.
@@ -12,6 +12,11 @@ Here is how to get your first reactive patch running in under two minutes.
 ## 🛠️ Step 1: Learn the Safety Net & Immediate Presets
 
 Before you tweak anything, locate your two biggest anchor points.
+
+![The ImWeb window: 1 status bar, 2 toolbar, 3 output, 4 tabs, 5 control panel, 6 state bar](img/interface-overview.jpg)
+
+*The thumbnail States are along the bottom (6); the Panic Button is the first
+button in the toolbar (2).*
 
 **The Thumbnail States (bottom bar).** The row of thumbnails across the very
 bottom is the **State grid** — 32 tiles in two rows of 16. On first launch it is
