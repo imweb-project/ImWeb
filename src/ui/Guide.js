@@ -369,7 +369,16 @@ function render() {
     b.textContent = t;
     themesEl.appendChild(b);
   }
-  _panel.querySelector('#guide-body').innerHTML = marked.parse(step.body);
+  const bodyEl = _panel.querySelector('#guide-body');
+  bodyEl.innerHTML = marked.parse(step.body);
+  // Pictures are written relative to the guide file (img/x.jpg), as GitHub
+  // reads them; the page's base is the site root, so resolve each against
+  // the guide's own URL — the same rule as the manual window (UI.js).
+  const guideUrl = new URL('docs/ImWeb-Guide.md', location.href);
+  bodyEl.querySelectorAll('img[src]').forEach((img) => {
+    const src = img.getAttribute('src');
+    if (!/^([a-z]+:|\/)/i.test(src)) img.src = new URL(src, guideUrl).href;
+  });
   _panel.querySelector('#guide-start').classList.toggle('hidden', !step.start || !_loadStart);
 
   const pts = _panel.querySelector('#guide-points');

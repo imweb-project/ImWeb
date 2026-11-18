@@ -44,6 +44,8 @@ tab: mix
 show: #layer-params
 -->
 
+![The whole ImWeb window: output in the middle, tabs and control panel on the right, saved States along the bottom](img/interface-overview.jpg)
+
 ImWeb composites video sources through a chain of effects and renders to a
 WebGL canvas. Everything you can hear yourself thinking about — a camera, a
 movie, a noise field, a raymarched solid, the picture from two seconds ago — is
@@ -113,6 +115,10 @@ tab: mix
 point: mix.xfade
 -->
 
+![A parameter row: name, controller badge, range minimum and maximum, slider, value](img/param-row.png)
+
+*1 name · 2 controller badge · 3 range minimum · 4 range maximum · 5 slider · 6 value*
+
 Every row is the same shape, and learning it once is learning the whole panel:
 
 ```
@@ -170,6 +176,8 @@ Set the range first, then assign the controller.
 track: basics
 point: displace.amount, displace.angle
 -->
+
+![The assignment menu opened on Blend Amt](img/controller-menu.jpg)
 
 **Right-click any row** to open its **assignment menu** — the list of things
 that can move that parameter for you instead of your hand. On a Mac trackpad
@@ -307,6 +315,8 @@ tab: mix
 point: layer.fg, layer.bg, layer.fg.blend, layer.fg.blendAmount
 keys: v, q, a
 -->
+
+![The Layers section of the Mix tab: Foreground, Background and DisplaceSrc](img/layers-section.png)
 
 **Three moves.** Press `v` for the camera. Press `a` until **Background** reads
 `Camera`. Press `q` until **Foreground** reads `Noise`. (`q` / `a` / `z` cycle
@@ -447,6 +457,8 @@ point: rutt.active, rutt.source, rutt.zgain, rutt.lines, rutt.dist
 keys: a
 -->
 
+![A camera picture drawn as Rutt-Etra scan lines](img/tour-rutt-etra.jpg)
+
 Scanlines deflected by luminance, viewed through an orbiting camera. The one
 machine of the trio — Sandin, Paik/Abe, Rutt/Etra — with no representation here
 until v0.15. Built faithful before general, on the argument that the machine is
@@ -470,6 +482,8 @@ track: instruments
 point: sdf.active, sdf.shape, sdf.glow, sdf.glowSize, sdf.texSrc, sdf.texBlend
 keys: a, z
 -->
+
+![Six SDF Looks: Lava Lamp, Crystal Balls, Coral, Lattice, Bubbles, Amethyst](img/sdf-looks.jpg)
 
 Thirteen shapes, orbit camera, two-stop glow. Press **`a`** until Background
 reads `SDF`.
@@ -691,6 +705,8 @@ keys: Shift+S
 **What you will make:** your own camera picture folded into a slowly turning
 kaleidoscope, saved so that one key brings it back.
 
+![The camera picture folded by Kaleidoscope 6](img/tour-kaleidoscope.jpg)
+
 **Starting point:** press **Load starting point** above. You move to a bank
 called **Tutorials**, so what you save here stays out of your own banks.
 Everything goes back to its default and the camera comes on. The browser asks to use the camera the
@@ -779,6 +795,8 @@ keys: Shift+S
 
 **What you will make:** a spiral whose colours rotate through the spectrum
 as they fall away.
+
+![A feedback spiral trailing from a moving shape](img/tour-feedback-spiral.jpg)
 
 **Starting point:** press **Load starting point**. You get the tunnel from
 Feedback 1, ready to go.
@@ -1119,6 +1137,8 @@ keys: Shift+S
 **What you will make:** your camera picture wrapped around a turning 3D
 knot.
 
+![A torus knot wearing the camera picture](img/tour-3d-knot.jpg)
+
 **Starting point:** press **Load starting point**. The Foreground is the
 **3D Scene**, a plain sphere for now. The 3D controls open in their own
 workspace; the chips below take you straight to them.
@@ -1155,6 +1175,8 @@ keys: Shift+S
 **What you will make:** a sphere whose surface rises where the picture is
 bright, so your face becomes a relief.
 
+![A plane pushed into relief by the camera picture](img/tour-3d-relief.jpg)
+
 **Starting point:** press **Load starting point**. The camera is already
 painted onto a sphere.
 
@@ -1190,6 +1212,8 @@ keys: Shift+S
 
 **What you will make:** one object multiplied into a grid, then a ring, then
 a wave of copies.
+
+![A ring of copies, each wearing the camera picture](img/tour-3d-cloner.jpg)
 
 **Starting point:** press **Load starting point**. A single icosahedron
 wearing the camera picture.
@@ -1264,6 +1288,8 @@ keys: Shift+S
 **What you will make:** a four-dimensional cube turning in front of you,
 and then cubes of five, six or more dimensions.
 
+![A wireframe hypercube](img/tour-hypercube.jpg)
+
 **Where it comes from.** In the 1960s, A. Michael Noll at Bell Labs made
 some of the first computer-animated films, among them projections of a
 four-dimensional hypercube turning. Nobody can see four dimensions, but a
@@ -1308,6 +1334,8 @@ keys: Shift+S
 **What you will make:** a picture in which red, green and blue each show a
 different moment, so anything that moves splits into coloured ghosts.
 
+![Red, green and blue copies a few frames apart](img/tour-rgb-delay.jpg)
+
 **Starting point:** press **Load starting point**. The Foreground is the
 **RGB Delay** source, reading the camera.
 
@@ -1341,6 +1369,8 @@ keys: Shift+S
 
 **What you will make:** a picture that is black wherever nothing changes,
 and glows wherever something moves.
+
+![Only the moving edges light up](img/tour-difference.jpg)
 
 **Starting point:** press **Load starting point**. The Foreground is the
 camera now; the Background is the same camera 15 frames ago; **Blend** is
@@ -1449,6 +1479,8 @@ keys: Shift+S
 
 **What you will make:** the time warp from Image/ine, the instrument ImWeb
 descends from: a picture whose left-to-right axis is time.
+
+![The camera picture sheared by the Warp Tape](img/tour-warp-tape.jpg)
 
 **Where it comes from.** Image/ine (Tom Demeyer and Steina Vasulka, STEIM,
 1997) had a warp built like a tape. Each frame, one column of video is

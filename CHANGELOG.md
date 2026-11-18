@@ -16,6 +16,11 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   Try This First each carry one or two. The in-app manual window shows them,
   and they print. The manual also gained sections for Shatter, SDF Looks,
   Splat World's Scatter and Surface, the SOLO pill and the Tutorials track.
+- **Pictures in the guided tour** — 15 tour steps now show a picture: the
+  window, a parameter row, the assignment menu, the Layers section, Rutt-Etra,
+  SDF Looks, and the result of nine tutorials (the kaleidoscope, the feedback
+  spiral, the 3D knot, relief, cloner and hypercube, RGB Delay, Difference and
+  the Warp Tape).
 - **A basic-shape state shows its shape** — recalling a state that was saved
   with a basic 3D shape now removes a model that is loaded, instead of leaving
   it on screen. States from before this flag existed are left alone.
