@@ -897,7 +897,7 @@ all assemble again when **Shatter** returns to 0. Panel: **3D Scene** workspace
 |-----------|-------|-------------|
 | `scene3d.shatter.look` | SELECT | **ShatterLook** — loads a tested setting: **Porcelain** (large turning pieces), **Dust storm** (single triangles blown to dust along the butterfly), **Limb from limb** (a figure comes apart at the joints), **Eaten by light** (the camera decides what dissolves). A Look sets every Shatter control and nothing else |
 | `scene3d.shatter` | 0–100 % | **Shatter** — how far the pieces have left. 0 = the object whole |
-| `scene3d.shatter.shape` | SELECT | **ShatterShape** — the form the pieces flow into: Thomas (a braided knot), Aizawa (a shell with a column through it), Lorenz (the butterfly), Rössler (a flat spiral that throws a loop straight up) |
+| `scene3d.shatter.shape` | SELECT | **ShatterShape** — the form the pieces flow into: Thomas (a braided knot), Aizawa (a shell with a column through it), Lorenz (the butterfly), Rössler (a flat spiral that throws a loop straight up), Lattice (a woven grid the pieces wander through), Rucklidge (two rounded lobes) |
 | `scene3d.shatter.size` | 10–200 % | **ShatterSize** — the size of that form against the object. Default 60 |
 | `scene3d.shatter.flow` | 0–200 % | **ShatterFlow** — how fast the pieces travel along the form |
 | `scene3d.shatter.piece` | 0–100 % | **PieceSize** — 0 = every triangle flies alone; higher gathers them into bigger pieces, so the object breaks like china |
@@ -1746,7 +1746,7 @@ Reimagine panel:
 | `splat.density` | SELECT Low/Mid/High | Number of points (Low if the frame rate drops) |
 | `splat.draw` | SELECT Points/Surface | **Draw** — Surface is the same world and camera as one closed skin with the image at full resolution, stretching over the holes Points leaves behind near things |
 | `splat.scatter` | CONTINUOUS 0–100 % | **Scatter** — releases the points into a strange attractor. Back at 0 they come home — to the *next* image if a fade ran while they were out, so one picture dissolves and another assembles |
-| `splat.shape` | SELECT | **Shape** — Thomas, Aizawa, Lorenz or Rössler (the same forms as 3D ▸ Shatter) |
+| `splat.shape` | SELECT | **Shape** — Thomas, Aizawa, Lorenz, Rössler, Lattice or Rucklidge (the same forms as 3D ▸ Shatter) |
 | `splat.flow` | CONTINUOUS 0–200 % | **Flow** — how fast the points travel along the form |
 | `splat.fadeScatter` | CONTINUOUS 0–100 % | **FadeScatter** — the fade itself scatters the points, out as one image leaves and home as the next arrives. It follows FrameBlend, so a FrameBlend held part-way holds the points out |
 
