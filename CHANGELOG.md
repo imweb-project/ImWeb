@@ -161,6 +161,24 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   GPU-checked against the spec formulas: 256 colour pairs within 1/255.
 
 ### Added
+- **Photo puppet** — a photograph of a person becomes a jointed, rounded
+  cut-out that performs a figure's movements. In M2–M4, **🧍 Photo puppet…**
+  takes one photo (whole body, facing the camera, arms away from the body):
+  the person is cut out, their 17 body joints found, and the cut-out takes the
+  place of the slot's figure. The figure still plays its clip — Clip, takes,
+  Speed, Loop, Follow and the rest apply unchanged — but only its skeleton is
+  used: each part keeps the person's own length, points the way the figure's
+  matching bone points, and turns as far as that bone has turned, so the
+  puppet turns in 3D with perspective. It has body: each part is rounded by
+  its distance inside the outline (limbs round, the torso flatter), and a back
+  surface closes it — the front's colours blurred, the face covered in the
+  hair's colour (after Photo Wake-Up, Weng et al. 2019). Mostly self-lit, as
+  the photo is already lit. Both models run in the browser (~2 s per photo on
+  the GPU after a first load of ~130 MB). Follows Poser skeletons (Haraldur6/12,
+  Tatto, gagaAction), 3ds Max Biped and Mixamo bone names. **✕ Photo** gives
+  the figure back. The photo is for the session — not saved with a project.
+  Models record each bone's rest orientation at import for this
+  (`pivot.userData.boneRestQ`). (`src/scene3d/PhotoPuppet.js`, `src/ai/PersonCutout.js`)
 - **A figure file can name its own takes** — a COLLADA file may now list where
   each small animation starts and ends, and the Segment menu uses that list
   instead of hunting for cuts. Two animations that begin from the same pose

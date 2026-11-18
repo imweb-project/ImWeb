@@ -1518,7 +1518,7 @@ function buildSegmentRow(ps, contextMenu, getClip, segId, startId, endId, clipId
 // is also where a plain file drop lands (selectedSlot(): -1 = M1).
 // onImport(i, files) does the slot loading (main.js owns ModelSlots and the
 // ModelStore); refresh() repaints after any load, clear or state recall.
-export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear, onImage, imageInfo }) {
+export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear, onImage, imageInfo, onPuppet }) {
   // Texture = Image: a picker (name + Load image) under the model's Texture
   // row, shown only while Image is chosen. i: 0 = M1, 1–3 = M2–M4.
   // imageInfo(i) → { name, missing }; onImage(i, file) loads and stores it.
@@ -1694,8 +1694,49 @@ export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear
     clr.textContent = '✕ Clear';
     clr.title = `Remove the model from Model ${i + 2}`;
     clr.addEventListener('click', () => { onClear(i); refresh(); });
-    btns.append(imp, clr);
+    // Photo puppet: a photograph of a person, cut out and jointed, takes the
+    // figure's place and performs its movements (PhotoPuppet).
+    const pup = document.createElement('button');
+    pup.className = 'import-btn';
+    pup.title = 'Photograph of a person — whole body, facing the camera, arms away from the body. ' +
+      'They are cut out and move with this model\'s animation.';
+    const unpup = document.createElement('button');
+    unpup.className = 'import-btn';
+    unpup.textContent = '✕ Photo';
+    unpup.title = 'Take the photo puppet away and show the figure again';
+    const pupNote = document.createElement('div');
+    pupNote.className = 'import-note';
+    const pupLabel = () => {
+      const has = !!slots.puppets?.[i];
+      pup.textContent = has ? '🧍 New photo…' : '🧍 Photo puppet…';
+      unpup.style.display = has ? '' : 'none';
+    };
+    pup.addEventListener('click', () => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*,.jpg,.jpeg,.png,.webp,.heic';
+      input.onchange = async e => {
+        const f = e.target.files?.[0];
+        if (!f) return;
+        pup.disabled = true;
+        pup.textContent = '⏳ Working…';
+        pupNote.style.color = '';
+        try {
+          await onPuppet?.(i, f, msg => { pupNote.textContent = msg; });
+          pupNote.textContent = slots.slots[i] && !slots.puppets[i]?.boundTo
+            ? '⚠ Load a rigged figure (DAE) here for the photo to follow' : '';
+        } catch (err) {
+          pupNote.textContent = `⚠ ${err.message}`;
+          pupNote.style.color = 'var(--red, #e05)';
+        } finally { pup.disabled = false; pupLabel(); refresh(); }
+      };
+      input.click();
+    });
+    unpup.addEventListener('click', async () => { await onPuppet?.(i, null); pupNote.textContent = ''; pupLabel(); refresh(); });
+    pupLabel();
+    btns.append(imp, clr, pup, unpup);
     body.appendChild(btns);
+    body.appendChild(pupNote);
 
     const rows = document.createElement('div');
     const mine = [];
