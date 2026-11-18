@@ -8,6 +8,10 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+---
+
+## [0.30.0] — 2026-11-18 — Coming Apart
+
 ### Added
 - **Pictures in the manual** — the Full Manual now has 16 screenshots: the
   window with its areas numbered, a parameter row, the controller menu, the
