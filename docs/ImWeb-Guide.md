@@ -753,6 +753,8 @@ keys: b, Shift+S
 **What you will make:** the picture inside itself, inside itself again,
 falling away into a tunnel.
 
+![Feedback trails streaming outwards from a moving shape on black](img/tour-feedback-tunnel.jpg)
+
 **Starting point:** press **Load starting point**. Camera on, everything at
 default.
 
@@ -835,6 +837,8 @@ keys: z, Shift+S
 
 **What you will make:** a picture that pushes itself around, flowing like
 liquid.
+
+![The camera picture pushed around by its own output, edges starting to flow](img/tour-feedback-melt.jpg)
 
 **Starting point:** press **Load starting point**.
 
@@ -967,6 +971,10 @@ keys: Shift+S
 **What you will make:** one picture played by three parts of the music at
 once: bass, middle and treble.
 
+![A kaleidoscope with its colours split apart by RGB Shift](img/tour-colour-organ.jpg)
+
+*One moment of it: the mandala turned, its colours pulled apart.*
+
 **Starting point:** press **Load starting point**. The camera is folded into
 a six-way kaleidoscope.
 
@@ -1005,6 +1013,8 @@ keys: Shift+S
 
 **What you will make:** a word whose letters move with the sound, each
 letter listening to its own part of the spectrum.
+
+![The word LISTEN with each letter lifted a different amount](img/tour-word-listens.jpg)
 
 **Starting point:** press **Load starting point**. The Foreground is the
 Text source, showing the word "ImWeb".
@@ -1046,6 +1056,8 @@ keys: q, z, Shift+S
 **What you will make:** the sound drawn as a picture, and then that picture
 used to bend the camera.
 
+![A sound drawn by the Vectorscope in Radial FFT mode](img/tour-vectorscope.jpg)
+
 **Starting point:** press **Load starting point**. The Foreground is the
 Vectorscope source. It stays dark until it hears something.
 
@@ -1084,6 +1096,8 @@ keys: Shift+S
 **What you will make:** a scan-line picture of the room whose lines jump with
 the sound, so that playing an instrument (or speaking, clapping, or putting a
 record on) deforms the picture.
+
+![A room drawn as sixty scan lines, lifted off the plane](img/tour-violin-power.jpg)
 
 **Where it comes from.** In *Violin Power* (1970–78), Steina played the violin
 and let the sound drive the video image. Much of it went through a Rutt/Etra
@@ -1408,6 +1422,10 @@ keys: Shift+S
 **What you will make:** a picture in which one side is now and the other
 side is two seconds ago, so you can be stretched across time.
 
+![A level white bar falling through the picture comes out slanted in Shear X and curved in Radial](img/tour-time-displace.jpg)
+
+*A level white bar is falling through this picture. Each part of the frame shows a different moment, so the bar comes out slanted, or curved.*
+
 **Starting point:** press **Load starting point**. The Foreground is
 **Time Displace**, recording the camera.
 
@@ -1443,6 +1461,8 @@ keys: Shift+S
 
 **What you will make:** a picture painted one thin line at a time, so that
 a moving body is smeared, folded or stretched across the screen.
+
+![A street painted by a slit scan, the house repeated and the ground drawn into waves](img/tour-slit-scan.jpg)
 
 **Starting point:** press **Load starting point**. The Foreground is
 **Slit Scan**: one narrow slit of the camera, painted across the screen
