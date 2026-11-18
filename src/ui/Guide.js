@@ -83,6 +83,50 @@ let _loadPromise = null;
 // ── Reveal ───────────────────────────────────────────────────────────────────
 
 /**
+ * Show a picture at its own size over the instrument. The tour panel is
+ * 340px wide and most pictures are twice that, so a click on one opens it
+ * here; the manual window uses the same function. A click anywhere, or
+ * Escape, closes it. Reads nothing and writes nothing — still pointing only.
+ */
+export function openPictureLightbox(src, alt = '') {
+  closePictureLightbox();
+  const box = document.createElement('div');
+  box.id = 'picture-lightbox';
+  box.setAttribute('role', 'dialog');
+  box.setAttribute('aria-label', alt || 'Picture');
+  const img = document.createElement('img');
+  img.src = src;
+  img.alt = alt;
+  box.appendChild(img);
+  if (alt) {
+    const cap = document.createElement('div');
+    cap.className = 'picture-lightbox-caption';
+    cap.textContent = alt;
+    box.appendChild(cap);
+  }
+  box.addEventListener('click', closePictureLightbox);
+  document.body.appendChild(box);
+  document.addEventListener('keydown', _lightboxKey, true);
+}
+
+export function closePictureLightbox() {
+  const box = document.getElementById('picture-lightbox');
+  if (box) box.remove();
+  document.removeEventListener('keydown', _lightboxKey, true);
+  return !!box;
+}
+
+// Escape closes the picture FIRST and nothing else: listened for in the capture
+// phase, and only while a picture is up, so the tour's and the manual's own
+// Escape handlers (which would close the whole window) never see that key.
+function _lightboxKey(e) {
+  if (e.key !== 'Escape') return;
+  closePictureLightbox();
+  e.stopImmediatePropagation();
+  e.preventDefault();
+}
+
+/**
  * Bring an element into view: workspace/tab, expand its section and
  * subsection, scroll, flash. Returns false if the element is not in the DOM.
  *
@@ -300,6 +344,10 @@ function buildPanel() {
   el.querySelector('#guide-themes').addEventListener('click', e => {
     const btn = e.target.closest('.guide-theme');
     if (btn) goTheme(btn.dataset.theme);
+  });
+  el.querySelector('#guide-body').addEventListener('click', e => {
+    const img = e.target.closest('img');
+    if (img) openPictureLightbox(img.currentSrc || img.src, img.alt);
   });
 
   // Arrow keys drive the tour while it is open. Deliberately NOT bound to the

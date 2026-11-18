@@ -13,16 +13,21 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [0.30.0] — 2026-11-18 — Coming Apart
 
 ### Added
-- **Pictures in the manual** — the Full Manual now has 16 screenshots: the
+- **Pictures in the manual** — the Full Manual now has 18 screenshots: the
   window with its areas numbered, a parameter row, the controller menu, the
   state bar, the Layers section, and example pictures of the new 3D shapes,
   Shatter, SDF Looks and Color 2 gradients. Quick Start, Quick Reference and
   Try This First each carry one or two. The in-app manual window shows them,
   and they print. The manual also gained sections for Shatter, SDF Looks,
   Splat World's Scatter and Surface, the SOLO pill and the Tutorials track.
-- **Pictures in the guided tour** — 23 tour steps now show a picture: the
+- **Pictures in the guided tour** — 24 tour steps now show a picture: the
   window, a parameter row, the assignment menu, the Layers section, Rutt-Etra,
-  SDF Looks, and the result of 17 of the 20 tutorials.
+  SDF Looks, and the result of 18 of the 20 tutorials. Click any picture, in
+  the tour or the manual, to see it at full size; click again or press Escape
+  to close it.
+- **Splat World and Reimagine in the manual** — the Reimagine panel, and one
+  still shown as its AI Depth map, as Splat World points, as a Surface and
+  beginning to Scatter. The README shows the window and four example pictures.
 - **A basic-shape state shows its shape** — recalling a state that was saved
   with a basic 3D shape now removes a model that is loaded, instead of leaving
   it on screen. States from before this flag existed are left alone.
@@ -121,6 +126,14 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   rounded lobes).
 
 ### Fixed
+- **3D Depth is no longer black** — in Distance mode the map came out one
+  grey level above black for anything more than a hand's width from the camera,
+  so it looked empty and displaced nothing; it had been that way since it
+  shipped. It now runs from white at the front of the scene to dark at the
+  back, whatever the camera distance. States that route 3D Depth into Displace
+  or a key will now visibly do something. Normals mode is unchanged.
+- **The printed manual keeps pictures whole** — a picture is no longer split
+  across two pages or allowed to fill one.
 - **Material: Normal no longer freezes the picture** — choosing the Normal
   material on a 3D shape threw an error on every frame and stopped the output.
 - **A bundled 3D model can be reloaded after Back to Geometry** — it used to

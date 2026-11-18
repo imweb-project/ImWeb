@@ -13,6 +13,10 @@
 
 💖 **[Support ImWeb on Open Collective](https://opencollective.com/imweb)**
 
+![The ImWeb window: the output in the middle, tabs and control panel on the right, saved States along the bottom](docs/img/interface-overview.jpg)
+
+![One camera picture four ways: untouched, Kaleidoscope, Rutt-Etra scan lines, and a 3D knot leaving feedback trails](docs/img/effects-examples.jpg)
+
 ---
 
 ## Contents

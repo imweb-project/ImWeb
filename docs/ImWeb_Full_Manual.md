@@ -931,7 +931,7 @@ automatically. A rigged GLB keeps its skeleton and plays, as a DAE figure does.
 | Parameter | Range | Description |
 |-----------|-------|-------------|
 | `scene3d.depth.active` | TOGGLE | Render depth map to DisplaceSrc |
-| `scene3d.depth.mode` | SELECT | 0=Depth / 1=Normals |
+| `scene3d.depth.mode` | SELECT | **DepthMode** — Distance (near bright, far dark) / Normals (which way each surface faces, as colour) |
 
 #### Parameters — Lighting
 
@@ -1612,7 +1612,7 @@ keying or the mix buses:
 
 | Source | Description |
 |--------|-------------|
-| **3D Depth** | Depth buffer of the 3D Scene |
+| **3D Depth** | Depth of the 3D Scene: near is bright, far is dark, the background black. The grey range is stretched over the scene's own depth, front to back, so it reads the same however far the camera stands. **DepthMode** Normals shows which way each surface faces instead |
 | **SDF Depth** | Depth of the SDF field, normalised by `sdf.depthRange` |
 
 ---
@@ -1723,6 +1723,10 @@ picture stalls for about a second while it works, because the model and the
 picture share the graphics chip. A Morph fade waits for the depth map (up to
 15 s on CPU, 4 s on GPU).
 
+![The Reimagine panel: prompt, model, Look menu, Send, Every, Fade, Morph, Depth, and Splat World below](img/reimagine-panel.png)
+
+*The Reimagine panel, here after loading the **Splat world** Look.*
+
 **Splat World** (source 37) turns the Stills Buffer image on show into a 3D
 world: every pixel becomes a soft point, pushed out to the distance its AI
 Depth map gives, and a camera drifts slowly through it. At rest the points
@@ -1754,6 +1758,11 @@ While points are out, the world is drawn as Points whatever **Draw** says. The
 form sits where the camera orbits, so Orbit, Dolly and Fly go around and
 through it. Two more Looks set these up: **Surface world** and **Dissolving
 world**.
+
+![One still four ways: its AI Depth map, Splat World as points seen from the side, the same as a Surface, and the points beginning to scatter](img/splat-world.jpg)
+
+*One camera still. Its depth map and Splat World need no paid AI request:
+the depth is made in the browser.*
 
 #### Mirroring
 

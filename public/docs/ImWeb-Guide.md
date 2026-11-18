@@ -1263,6 +1263,8 @@ keys: q, Shift+S
 **What you will make:** the camera picture bent around a 3D object you
 never actually see.
 
+![The camera picture bent into the shape of a knot it cannot see, with DepthMode on Normals](img/tour-3d-depth.jpg)
+
 **Starting point:** press **Load starting point**. A turning knot is set up
 in the 3D scene, but only its *depth* is used, as the displacement map. The
 picture still shows the camera.

@@ -20,7 +20,7 @@ import { clipSegments } from '../scene3d/ClipSegments.js';
 import { createClipStrip } from './components/ClipStrip.js';
 import { getModelSpeed, setModelSpeed } from '../state/ModelStore.js';
 import { favKey, getFavs, toggleFav } from '../state/TakeFavs.js';
-import { openGuide } from './Guide.js';
+import { openGuide, openPictureLightbox } from './Guide.js';
 import { setViewportPos } from './layout/LayoutManager.js';
 import { makeFloating } from './components/FloatingWindow.js';
 const DEFAULT_FX_ORDER_SP = DEFAULT_FX_ORDER;
@@ -4853,7 +4853,8 @@ function _printDocs(title, html) {
   table { border-collapse: collapse; margin: 8px 0; } th, td { border: 1px solid #999; padding: 3px 6px; text-align: left; vertical-align: top; }
   tr, pre, blockquote { break-inside: avoid; }
   blockquote { border-left: 3px solid #999; margin: 8px 0; padding-left: 10px; color: #333; }
-  a { color: #000; } img { max-width: 100%; }
+  a { color: #000; }
+  img { display: block; max-width: 100%; max-height: 150mm; width: auto; height: auto; margin: 6px 0; break-inside: avoid; }
   @page { margin: 16mm; }
 </style></head><body>${html}</body></html>`);
   doc.close();
@@ -4889,6 +4890,10 @@ export async function openDocsViewer(url, title) {
     };
     document.getElementById('docs-viewer-close')?.addEventListener('click', close);
     document.getElementById('docs-viewer-collapse')?.addEventListener('click', toggleCollapse);
+    contentEl.addEventListener('click', (e) => {
+      const img = e.target.closest('img');
+      if (img) openPictureLightbox(img.currentSrc || img.src, img.alt);
+    });
     document.getElementById('docs-viewer-print')?.addEventListener('click', () =>
       _printDocs(titleEl.textContent, contentEl.innerHTML));
     document.addEventListener('keydown', (e) => {
