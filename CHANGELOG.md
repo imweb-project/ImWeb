@@ -8,6 +8,12 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Added
+- **Link previews** — the page now carries a title, description and Open Graph
+  tags with a 1200×630 picture (`public/og-image.jpg`), so links to the site on
+  LinkedIn, Facebook, Hacker News and chat apps show ImWeb with a picture. Before,
+  scrapers picked a random panel heading ("Response Curves") and no image.
+
 ---
 
 ## [0.30.0] — 2026-11-18 — Coming Apart
