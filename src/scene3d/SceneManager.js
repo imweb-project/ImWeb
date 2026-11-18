@@ -90,6 +90,36 @@ export class SceneManager {
     this._depthMat = new THREE.MeshDepthMaterial({
       depthPacking: THREE.BasicDepthPacking,
     });
+    // Distance mode: brightness = how near, across the depth of the SCENE.
+    // three's stock output is 1 − window z, and with this camera (near 0.01,
+    // far 1000) an object 5 units away lands at 0.002: a map that reads 1/255,
+    // black to the eye, and displaces nothing. Measured 2026-11-18 — 3D Depth
+    // had been that way since it shipped. The same fragment depth is turned
+    // back into view distance and uDepthNear…uDepthFar (set each frame from
+    // the scene's bounds, in render()) is stretched over white…black. It is
+    // CLAMPED, never clipped: nothing can drop out of the map.
+    this._depthRange = { near: { value: 4 }, far: { value: 6 } };
+    this._depthBox = new THREE.Box3();
+    this._depthSphere = new THREE.Sphere();
+    this._depthCamPos = new THREE.Vector3();
+    this._depthMat.onBeforeCompile = (shader) => {
+      const stock = 'gl_FragColor = vec4( vec3( 1.0 - fragCoordZ ), opacity );';
+      if (!shader.fragmentShader.includes(stock)) {
+        // Say so: a silent skip here is 3D Depth going black again after a
+        // three.js upgrade, with nothing pointing at this line.
+        console.error('[Scene3D] depth shader anchor not found — 3D Depth (Distance) will read near black');
+        return;
+      }
+      shader.uniforms.uDepthNear = this._depthRange.near;
+      shader.uniforms.uDepthFar  = this._depthRange.far;
+      shader.uniforms.uCamNear   = { value: this.camera.near };
+      shader.uniforms.uCamFar    = { value: this.camera.far };
+      shader.fragmentShader =
+        'uniform float uDepthNear;\nuniform float uDepthFar;\nuniform float uCamNear;\nuniform float uCamFar;\n' +
+        shader.fragmentShader.replace(stock,
+          'float viewDist = - perspectiveDepthToViewZ( fragCoordZ, uCamNear, uCamFar );\n' +
+          '\t\tgl_FragColor = vec4( vec3( 1.0 - clamp( ( viewDist - uDepthNear ) / max( uDepthFar - uDepthNear, 1e-4 ), 0.0, 1.0 ) ), opacity );');
+    };
     this._normalMat = new THREE.MeshNormalMaterial();
 
     // Current mesh
@@ -1695,6 +1725,17 @@ export class SceneManager {
     if (params.get('scene3d.depth.active')?.value) {
       const mode = params.get('scene3d.depth.mode')?.value ?? 0;
       this.scene.overrideMaterial = (mode === 1) ? this._normalMat : this._depthMat;
+      if (mode !== 1) {
+        // The range the map spans: the scene's own bounding sphere, seen from
+        // the camera. An empty scene keeps the last range.
+        this._depthBox.setFromObject(this.scene);
+        if (!this._depthBox.isEmpty()) {
+          const s = this._depthBox.getBoundingSphere(this._depthSphere);
+          const d = this.camera.getWorldPosition(this._depthCamPos).distanceTo(s.center);
+          this._depthRange.near.value = Math.max(this.camera.near, d - s.radius);
+          this._depthRange.far.value  = d + s.radius;
+        }
+      }
       this.renderer.setRenderTarget(this.depthTarget);
       this.renderer.render(this.scene, this.camera);
       this.scene.overrideMaterial = null;
