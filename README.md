@@ -7,9 +7,12 @@
 [![Tests](https://github.com/imweb-project/ImWeb/actions/workflows/test.yml/badge.svg)](https://github.com/imweb-project/ImWeb/actions/workflows/test.yml)
 [![Open Collective](https://img.shields.io/badge/Open%20Collective-support-7FADF2?logo=opencollective&logoColor=white)](https://opencollective.com/imweb)
 [![Live Demo](https://img.shields.io/badge/demo-live-orange)](https://imweb.image-ine.org)
+[![YouTube](https://img.shields.io/badge/YouTube-%40imweb.instrument-red?logo=youtube&logoColor=white)](https://www.youtube.com/@imweb.instrument)
 
 **ImWeb is Image/ine — reimagined** — The legendary real-time video synthesis instrument created by Tom Demeyer and Steina Vasulka at STEIM Amsterdam, continued in the modern browser and pointed toward what comes next. Free, open source, no installation required.
 → **[Try it live → imweb.image-ine.org](https://imweb.image-ine.org)**
+
+▶ **[Watch the 77-second showreel](https://youtu.be/u24A9cMI2NY)**, and more clips on the [ImWeb YouTube channel](https://www.youtube.com/@imweb.instrument)
 
 💖 **[Support ImWeb on Open Collective](https://opencollective.com/imweb)**
 

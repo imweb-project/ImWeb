@@ -9,6 +9,9 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **YouTube links** — the About box links to the ImWeb YouTube channel
+  (@imweb.instrument), and the README gets a YouTube badge and a link to the
+  77-second showreel.
 - **Link previews** — the page now carries a title, description and Open Graph
   tags with a 1200×630 picture (`public/og-image.jpg`), so links to the site on
   LinkedIn, Facebook, Hacker News and chat apps show ImWeb with a picture. Before,
