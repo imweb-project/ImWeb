@@ -11,8 +11,9 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ### Added
 - **Colorizer** — a new effect (Effects → after Duotone) that cuts the picture's
   brightness into 2–16 bands and gives each band its own colour: the analog
-  video colorizer, and the alien point of view in *Liquid Sky*. Five palettes
-  (Liquid Sky neon, Thermal, Rainbow, Cosine, Duotone), Softness from hard steps
+  video colorizer, and the alien point of view in *Liquid Sky*. Seven palettes
+  (three Liquid Sky sets sampled from stills of the film, Thermal, Rainbow,
+  Cosine, Duotone), Softness from hard steps
   to a smooth gradient, Shift to move the colours through the bands (an LFO on
   it loops seamlessly) and Speed to cycle them on their own. Off by default.
 - **YouTube links** — the About box links to the ImWeb YouTube channel

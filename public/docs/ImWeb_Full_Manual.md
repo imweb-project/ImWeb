@@ -2178,7 +2178,7 @@ Remaps luminance through a two-colour ramp.
 |-----------|-------|-------------|
 | `effect.colorize` | 0–100% | **Colorize** — amount (0 = off) |
 | `effect.colorizebands` | 2–16 | **Col.Bands** — number of brightness steps |
-| `effect.colorizepal` | SELECT | **Col.Palette** — Liquid Sky, Thermal, Rainbow, Cosine, Duotone |
+| `effect.colorizepal` | SELECT | **Col.Palette** — Liquid Sky, Thermal, Rainbow, Cosine, Duotone, Liquid Sky 2, Liquid Sky 3 |
 | `effect.colorizesoft` | 0–100% | **Col.Soft** — hard steps at 0, one smooth gradient at 100 |
 | `effect.colorizeshift` | 0–100% | **Col.Shift** — moves the colours through the bands; 100% is one full cycle |
 | `effect.colorizespeed` | −2–2 Hz | **Col.Speed** — cycles the colours on its own |
@@ -2186,6 +2186,11 @@ Remaps luminance through a two-colour ramp.
 The classic analog video colorizer: brightness is cut into bands and each band
 gets its own colour — the alien point of view in *Liquid Sky* (1982). Put an LFO
 on Col.Shift (0–100%) for colour cycling that loops without a seam.
+
+The three Liquid Sky palettes are sampled from the film's alien-POV shots and
+all start from black, as the film does: **Liquid Sky** is blue, lavender, mint
+and orange; **2** is green, red, magenta and blue; **3** is deep red, pink and
+pale. Leave Col.Bands at 6 to land exactly on the film's colours.
 
 #### Lens & Twirl
 

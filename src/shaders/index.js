@@ -3887,11 +3887,26 @@ export const COLORIZE = /* glsl */ `
   }
   vec3 palette(float p) {
     p = fract(p);
+    // The three Liquid Sky palettes are sampled from stills of the film's
+    // alien-POV shots (seven frames, saturated pixels only). The darkest band
+    // is BLACK in every one of them — the shots sit on 40–60 % black — and
+    // each shot uses its own set, hence three: blue/lavender/mint/orange,
+    // red/blue/magenta/green, and deep red/pink/pale. Six stops each, so the
+    // default 6 bands land exactly on the film's colours.
     if (uPalette == 0) {
-      // Liquid Sky — neon on black: provisional, pending stills from the film.
-      return ramp6(p, vec3(0.08, 0.00, 0.30), vec3(0.00, 0.35, 1.00),
-                      vec3(0.00, 1.00, 0.90), vec3(0.55, 1.00, 0.00),
-                      vec3(1.00, 0.90, 0.00), vec3(1.00, 0.10, 0.75));
+      return ramp6(p, vec3(0.00, 0.00, 0.00), vec3(0.05, 0.13, 0.51),
+                      vec3(0.20, 0.33, 0.97), vec3(0.62, 0.47, 0.85),
+                      vec3(0.56, 0.73, 0.47), vec3(0.91, 0.25, 0.00));
+    }
+    if (uPalette == 5) {
+      return ramp6(p, vec3(0.00, 0.00, 0.00), vec3(0.11, 0.39, 0.20),
+                      vec3(0.75, 0.16, 0.04), vec3(0.73, 0.17, 0.61),
+                      vec3(0.23, 0.33, 0.90), vec3(0.91, 0.89, 0.94));
+    }
+    if (uPalette == 6) {
+      return ramp6(p, vec3(0.00, 0.00, 0.00), vec3(0.05, 0.13, 0.51),
+                      vec3(0.48, 0.04, 0.03), vec3(0.77, 0.46, 0.42),
+                      vec3(0.91, 0.66, 0.72), vec3(0.96, 0.93, 0.90));
     }
     if (uPalette == 1) {
       // Thermal (iron): cold to white-hot. The wrap back to black is the one

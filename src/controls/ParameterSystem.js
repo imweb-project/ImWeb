@@ -7003,7 +7003,8 @@ export function registerCoreParameters(ps) {
     label: "Col.Palette",
     group: "effect",
     type: PARAM_TYPE.SELECT,
-    options: ["Liquid Sky", "Thermal", "Rainbow", "Cosine", "Duotone"],
+    options: ["Liquid Sky", "Thermal", "Rainbow", "Cosine", "Duotone",
+              "Liquid Sky 2", "Liquid Sky 3"],
     value: 0,
   });
   ps.register({
