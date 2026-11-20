@@ -3847,6 +3847,87 @@ export const DUOTONE = /* glsl */ `
   }
 `;
 
+// ─── Colorizer ────────────────────────────────────────────────────────────────
+// The analog video colorizer (Vidiot, LZX Mapper, the alien POV in Liquid Sky):
+// cut luma into N brightness bands and give every band its own colour.
+//
+// Bands are centred, so with Softness 0 the step edges fall at l = k/N and the
+// whole range is covered by exactly N flat colours. Softness widens a
+// smoothstep across each edge until, at 1, the bands melt into one gradient.
+// The palette is read at the BAND's position, not the pixel's, so Softness
+// blends between neighbouring band colours rather than re-reading the palette.
+//
+// Every palette is sampled cyclically at fract(k/N + uShift), so Shift moves
+// each band's colour to the next band's — the classic colour-cycling look — and
+// a full turn of Shift is a seamless loop for an LFO.
+export const COLORIZE = /* glsl */ `
+  uniform sampler2D uTexture;
+  uniform float uAmount;
+  uniform float uBands;
+  uniform float uSoft;
+  uniform float uShift;
+  uniform int   uPalette;
+  varying vec2 vUv;
+  float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+
+  // Six-stop cyclic ramp: p in [0,1) runs a→b→c→d→e→f and back to a.
+  vec3 ramp6(float p, vec3 a, vec3 b, vec3 c, vec3 d, vec3 e, vec3 f) {
+    float t = fract(p) * 6.0;
+    float w = fract(t);
+    if (t < 1.0) return mix(a, b, w);
+    if (t < 2.0) return mix(b, c, w);
+    if (t < 3.0) return mix(c, d, w);
+    if (t < 4.0) return mix(d, e, w);
+    if (t < 5.0) return mix(e, f, w);
+    return mix(f, a, w);
+  }
+  vec3 hue2rgb(float h) {
+    vec3 k = abs(fract(h + vec3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
+    return clamp(k - 1.0, 0.0, 1.0);
+  }
+  vec3 palette(float p) {
+    p = fract(p);
+    if (uPalette == 0) {
+      // Liquid Sky — neon on black: provisional, pending stills from the film.
+      return ramp6(p, vec3(0.08, 0.00, 0.30), vec3(0.00, 0.35, 1.00),
+                      vec3(0.00, 1.00, 0.90), vec3(0.55, 1.00, 0.00),
+                      vec3(1.00, 0.90, 0.00), vec3(1.00, 0.10, 0.75));
+    }
+    if (uPalette == 1) {
+      // Thermal (iron): cold to white-hot. The wrap back to black is the one
+      // hard seam on purpose — a thermal ramp that cycles smoothly is not one.
+      return ramp6(p, vec3(0.00, 0.00, 0.00), vec3(0.15, 0.00, 0.55),
+                      vec3(0.75, 0.00, 0.55), vec3(1.00, 0.30, 0.00),
+                      vec3(1.00, 0.85, 0.00), vec3(1.00, 1.00, 1.00));
+    }
+    if (uPalette == 2) return hue2rgb(p);                       // Rainbow
+    if (uPalette == 3) {
+      // Cosine palette (Quilez): a + b·cos(2π(c·p + d)).
+      return clamp(vec3(0.5) + vec3(0.5) *
+        cos(6.28318530718 * (vec3(1.0, 1.0, 1.0) * p + vec3(0.0, 0.10, 0.20))), 0.0, 1.0);
+    }
+    // Duotone: a triangle between two neons, so the cycle has no seam.
+    float tri = 1.0 - abs(p * 2.0 - 1.0);
+    return mix(vec3(0.10, 0.05, 0.60), vec3(1.00, 0.35, 0.10), tri);
+  }
+
+  void main() {
+    vec4 c = texture2D(uTexture, vUv);
+    if (uAmount <= 0.0) { gl_FragColor = c; return; }
+    float n = max(uBands, 2.0);
+    float l = clamp(luma(c.rgb), 0.0, 1.0);
+    float t = l * n - 0.5;
+    float i = floor(t);
+    float f = t - i;
+    float k0 = clamp(i, 0.0, n - 1.0);
+    float k1 = clamp(i + 1.0, 0.0, n - 1.0);
+    float s = clamp(uSoft, 0.0, 1.0) * 0.5;
+    float w = s > 0.0 ? smoothstep(0.5 - s, 0.5 + s, f) : step(0.5, f);
+    vec3 mapped = mix(palette(k0 / n + uShift), palette(k1 / n + uShift), w);
+    gl_FragColor = vec4(mix(c.rgb, mapped, uAmount), c.a);
+  }
+`;
+
 // ─── Lens ─────────────────────────────────────────────────────────────────────
 // Barrel/pincushion on one signed control, plus twirl. With Scanlines it is a
 // CRT; with Halftone it is a printed page photographed off one.

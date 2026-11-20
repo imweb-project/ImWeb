@@ -2172,6 +2172,21 @@ rosette instead of beating into moiré.
 
 Remaps luminance through a two-colour ramp.
 
+#### Colorizer
+
+| Parameter | Range | Description |
+|-----------|-------|-------------|
+| `effect.colorize` | 0–100% | **Colorize** — amount (0 = off) |
+| `effect.colorizebands` | 2–16 | **Col.Bands** — number of brightness steps |
+| `effect.colorizepal` | SELECT | **Col.Palette** — Liquid Sky, Thermal, Rainbow, Cosine, Duotone |
+| `effect.colorizesoft` | 0–100% | **Col.Soft** — hard steps at 0, one smooth gradient at 100 |
+| `effect.colorizeshift` | 0–100% | **Col.Shift** — moves the colours through the bands; 100% is one full cycle |
+| `effect.colorizespeed` | −2–2 Hz | **Col.Speed** — cycles the colours on its own |
+
+The classic analog video colorizer: brightness is cut into bands and each band
+gets its own colour — the alien point of view in *Liquid Sky* (1982). Put an LFO
+on Col.Shift (0–100%) for colour cycling that loops without a seam.
+
 #### Lens & Twirl
 
 Two geometric warps sharing a centre and an edge mode.

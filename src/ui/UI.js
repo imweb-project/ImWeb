@@ -345,6 +345,8 @@ export function buildMappingPanels(ps, contextMenu) {
                                              'halftone', 'halfsize', 'halfangle',
                                              'halfmode',
                                              'duotone', 'duohue1', 'duohue2',
+                                             'colorize', 'colorizebands', 'colorizepal',
+                                             'colorizesoft', 'colorizeshift', 'colorizespeed',
                                              'outhue', 'outsat', 'outbright']),
     'effect-texture-params': [
       ...pick('effect', ['grain', 'scanlines', 'scancount']),
@@ -2227,6 +2229,7 @@ const _FX_NODE_INFO = {
   lens:        { label: 'lens',    isActive: p => (p.get('effect.lens')?.value ?? 0) !== 0 || (p.get('effect.twirl')?.value ?? 0) !== 0 },
   halftone:    { label: 'half',    isActive: p => (p.get('effect.halftone')?.value ?? 0) > 0 },
   duotone:     { label: 'duo',     isActive: p => (p.get('effect.duotone')?.value ?? 0) > 0 },
+  colorize:    { label: 'color',   isActive: p => (p.get('effect.colorize')?.value ?? 0) > 0 },
 };
 
 export class SignalPath {
@@ -2267,7 +2270,7 @@ export class SignalPath {
       'effect.enable',
       'effect.sharpen','effect.flip','effect.outhue','effect.outsat','effect.outbright','output.interlace',
       'effect.polar','effect.wavex','effect.wavey','effect.lens','effect.twirl',
-      'effect.halftone','effect.duotone',
+      'effect.halftone','effect.duotone','effect.colorize',
       'effect.vignette','effect.bloom','effect.pixelsort','effect.grain','effect.scanlines','effect.strobe',
       'effect.quadmirror','effect.lvblack','effect.lvwhite','effect.lvgamma',
       'effect.lutamount','effect.wbtemp','effect.wbtint',
