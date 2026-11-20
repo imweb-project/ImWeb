@@ -376,6 +376,8 @@ export function buildMappingPanels(ps, contextMenu) {
                                .map(id => ps.get(id)).filter(Boolean)),
     'global-params':       ps.getGroup('global').filter(p =>
       p.id !== 'glsl.preset' && p.id !== 'displace.warpSlot' && p.id !== 'growth.look' &&
+      // The Live strip's MIDI inlets — reached from the strip's slot numbers.
+      !p.id.startsWith('strip.') &&
       p.id !== 'sdf.look' &&
       p.id !== 'reimagine.auto' && p.id !== 'reimagine.look' && p.id !== 'scene3d.shatter.look' &&
       // Segment rows live in each model's animation block (buildSegmentRow).
@@ -2937,6 +2939,11 @@ export class ContextMenu {
           this.ps.dispatchEvent(new CustomEvent('feedbackToggled', { detail: this._currentParam }));
           this.hide();
         }
+        if (action === 'strip') {
+          // LiveStrip listens: unpin if it is there, else first empty slot.
+          this.ps.dispatchEvent(new CustomEvent('stripPin', { detail: this._currentParam }));
+          this.hide();
+        }
         if (action === 'table') {
           this._showTablePicker(btn);
         }
@@ -3189,7 +3196,10 @@ export class FeedbackOverlay {
   }
 
   _noteTouch(p) {
-    if (!this._touchedMode || p.id.startsWith('global.osd')) return;
+    // Detection runs in every OSD mode: the Live page listens through
+    // onTouch, and one definition of "a hand moved this" must serve both.
+    // strip.kN is an inlet: the parameter it forwards to is the touch.
+    if (p.id.startsWith('global.osd') || p.id.startsWith('strip.')) return;
     if (!this._pending) {
       this._pending = new Set();
       queueMicrotask(() => this._flushTouches());
@@ -3203,7 +3213,11 @@ export class FeedbackOverlay {
     const bulk = this._recallInTask || this._morphing || batch.size > TOUCH_MAX_BATCH;
     this._recallInTask = false;
     if (bulk) return;
-    for (const p of batch) if (!isMachineDriven(p)) this._showTouch(p);
+    for (const p of batch) {
+      if (isMachineDriven(p)) continue;
+      this.onTouch?.(p);
+      if (this._touchedMode) this._showTouch(p);
+    }
   }
 
   _showTouch(p) {

@@ -125,6 +125,7 @@
 #state-bar,
 #mobile-state-bar,
 #param-search,
+#source-router,
 #param-context-menu,
 #guide-panel,
 #capture-panel,
@@ -617,6 +618,144 @@ button {
 }
 .tab-content.active {
     display: block;
+}
+
+/* ── Live strip: eight pinned controls (LiveStrip.js) ──
+   Foot of the control panel: 2 × 4 in the ordinary panel (four across cut the
+   labels to seven letters), 8 × 1 in the wide
+   layout. The fill behind each cell is the parameter's position. */
+#live-strip {
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1px;
+    background: var(--border);
+    border-top: 1px solid var(--border);
+}
+.strip-cell {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    height: 24px;
+    padding: 0 4px;
+    background: var(--bg-1);
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-1);
+    overflow: hidden;
+    cursor: ew-resize;
+    user-select: none;
+    touch-action: none;
+}
+.strip-cell.empty {
+    cursor: default;
+    color: var(--text-2);
+}
+.strip-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 0;
+    background: var(--accent-dim);
+    opacity: 0.55;
+    pointer-events: none;
+}
+.strip-num,
+.strip-label,
+.strip-value,
+.strip-clear {
+    position: relative;
+}
+.strip-num {
+    flex: 0 0 auto;
+    min-width: 10px;
+    text-align: center;
+    color: var(--text-2);
+    cursor: context-menu;
+}
+.strip-num.mapped {
+    color: var(--green);
+}
+.strip-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.strip-value {
+    flex: 0 0 auto;
+    color: var(--text-0);
+}
+.strip-clear {
+    flex: 0 0 auto;
+    display: none;
+    padding: 0 2px;
+    border: 0;
+    background: none;
+    color: var(--text-2);
+    font-size: 9px;
+    cursor: pointer;
+}
+.strip-cell:not(.empty):hover .strip-clear {
+    display: block;
+}
+.strip-clear:hover {
+    color: var(--red);
+}
+@media (min-width: 1100px) {
+    body.ghost-mode.wide-layout:not(.fullscreen-output) #live-strip {
+        grid-row: 3;
+        grid-column: 1 / -1;
+        grid-template-columns: repeat(8, minmax(0, 1fr));
+    }
+    body.ghost-mode.wide-layout:not(.fullscreen-output) .strip-cell {
+        height: 30px;
+        font-size: 11px;
+        padding: 0 8px;
+    }
+}
+
+/* ── Live page: only what is in play (LivePage.js) ── */
+.live-header {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    color: var(--text-2);
+    padding: 6px 10px 5px;
+    background: var(--bg-1);
+    text-transform: uppercase;
+    user-select: none;
+    cursor: pointer;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+}
+.live-header:hover {
+    color: var(--text-1, var(--text-2));
+}
+.live-clear {
+    text-transform: lowercase;
+}
+.live-recent {
+    border-bottom: 1px solid var(--border-hi);
+}
+.live-where {
+    opacity: 0.5;
+    letter-spacing: 0.06em;
+}
+.live-empty {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-2);
+    padding: 14px 10px;
+    line-height: 1.5;
 }
 
 .tab-content::-webkit-scrollbar {
@@ -3780,12 +3919,338 @@ body.ghost-mode #ghost-label {
     border-color: var(--green) !important;
 }
 
+/* ── Wide controls ───────────────────────────────────────────────────────────
+   Ghost mode means the picture is on the second screen and #output-panel is an
+   empty rectangle. With `wide-layout` on, the panel takes that room: Sources,
+   Mix, Effects and Output stand side by side in signal-flow order, each
+   scrolling on its own, and the first column holds whichever OTHER tab is
+   active (Live, Audio, Project, a workspace) — Live when none is.
+   Every rule excludes fullscreen: F must still clear this window to the
+   picture, and these selectors would otherwise outrank the fullscreen ones.
+   The 1100px guard must agree with _wideMq in main.js. */
+@media (min-width: 1100px) {
+    body.ghost-mode.wide-layout:not(.fullscreen-output) #output-panel {
+        flex: 0 0 180px;
+    }
+    body.ghost-mode.wide-layout:not(.fullscreen-output) #ghost-label {
+        inset: 110px 0 0 0;
+        justify-content: flex-start;
+        padding-top: 12px;
+        text-align: center;
+        background: none;
+    }
+    /* The spy is the monitor here: shown even if it was never switched on. */
+    body.ghost-mode.wide-layout:not(.fullscreen-output) #video-spy,
+    body.ghost-mode.wide-layout:not(.fullscreen-output) #video-spy.hidden {
+        display: block !important;
+        top: 8px;
+        left: 8px;
+        right: auto;
+        bottom: auto;
+    }
+    body.ghost-mode.wide-layout:not(.fullscreen-output) #control-panel {
+        flex: 1 1 0;
+        width: auto;
+        min-width: 0;
+        display: grid;
+        grid-template-columns: repeat(5, minmax(280px, 1fr));
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        overflow-x: auto;
+    }
+    body.ghost-mode.wide-layout:not(.fullscreen-output) #tab-bar {
+        /* Only the first column switches, so the bar sits over it alone and
+           the four fixed columns run the full height beside it. */
+        grid-column: 1;
+        grid-row: 1;
+    }
+    body.ghost-mode.wide-layout:not(.fullscreen-output) #control-panel > .tab-content {
+        grid-row: 2;
+        grid-column: 1;
+        min-height: 0;
+        border-right: 1px solid var(--border);
+    }
+    body.ghost-mode.wide-layout:not(.fullscreen-output) #tab-sources,
+    body.ghost-mode.wide-layout:not(.fullscreen-output) #tab-mix,
+    body.ghost-mode.wide-layout:not(.fullscreen-output) #tab-effects,
+    body.ghost-mode.wide-layout:not(.fullscreen-output) #tab-output {
+        display: block;
+    }
+    body.ghost-mode.wide-layout:not(.fullscreen-output) #control-panel > #tab-sources { grid-column: 2; grid-row: 1 / 3; }
+    body.ghost-mode.wide-layout:not(.fullscreen-output) #control-panel > #tab-mix { grid-column: 3; grid-row: 1 / 3; }
+    body.ghost-mode.wide-layout:not(.fullscreen-output) #control-panel > #tab-effects { grid-column: 4; grid-row: 1 / 3; }
+    body.ghost-mode.wide-layout:not(.fullscreen-output) #control-panel > #tab-output { grid-column: 5; grid-row: 1 / 3; }
+    /* First column falls back to Live when the active tab is one of the four
+       that already have a column of their own. */
+    body.ghost-mode.wide-layout:not(.fullscreen-output) #control-panel:not(:has(> .tab-content.active:not(#tab-sources, #tab-mix, #tab-effects, #tab-output))) #tab-live {
+        display: block;
+    }
+    /* Their tab buttons would switch nothing. */
+    body.ghost-mode.wide-layout:not(.fullscreen-output) .tab[data-tab="sources"],
+    body.ghost-mode.wide-layout:not(.fullscreen-output) .tab[data-tab="mix"],
+    body.ghost-mode.wide-layout:not(.fullscreen-output) .tab[data-tab="effects"],
+    body.ghost-mode.wide-layout:not(.fullscreen-output) .tab[data-tab="output"] {
+        display: none;
+    }
+    body.ghost-mode.wide-layout:not(.fullscreen-output) #tab-sources::before,
+    body.ghost-mode.wide-layout:not(.fullscreen-output) #tab-mix::before,
+    body.ghost-mode.wide-layout:not(.fullscreen-output) #tab-effects::before,
+    body.ghost-mode.wide-layout:not(.fullscreen-output) #tab-output::before {
+        display: block;
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--accent, var(--text-2));
+        padding: 7px 10px 6px;
+        border-bottom: 1px solid var(--border);
+    }
+    body.ghost-mode.wide-layout:not(.fullscreen-output) #tab-sources::before { content: "Sources"; }
+    body.ghost-mode.wide-layout:not(.fullscreen-output) #tab-mix::before     { content: "Mix"; }
+    body.ghost-mode.wide-layout:not(.fullscreen-output) #tab-effects::before { content: "Effects"; }
+    body.ghost-mode.wide-layout:not(.fullscreen-output) #tab-output::before  { content: "Output"; }
+}
+/* ── Source router (SourceRouter.js) ── */
+#source-router {
+    position: fixed;
+    top: 70px;
+    left: 0;
+    width: 760px;
+    min-width: 360px;
+    max-width: calc(96 * var(--vw));
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-2);
+    border: 1px solid var(--accent-dim);
+    border-radius: 6px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+    z-index: 1900;
+    overflow: hidden;
+    resize: horizontal;
+}
+#source-router.hidden {
+    display: none;
+}
+#source-router-titlebar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 5px 8px 5px 12px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: var(--bg-3);
+    border-bottom: 1px solid var(--border);
+    cursor: move;
+    user-select: none;
+    touch-action: none;
+}
+#source-router-titlebar button {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 2px 7px;
+    color: var(--text-1);
+    background: var(--bg-1);
+    border: 1px solid var(--border-hi);
+    border-radius: 2px;
+    cursor: pointer;
+}
+#source-router-titlebar button.active {
+    color: var(--bg-0);
+    background: var(--accent);
+    border-color: var(--accent);
+}
+.router-targets {
+    display: flex;
+    gap: 3px;
+}
+.router-hint {
+    flex: 1 1 auto;
+    color: var(--text-2);
+    text-transform: none;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.router-body {
+    position: relative;
+    width: 100%;
+    background: var(--bg-0);
+}
+.router-body canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+.router-grid {
+    position: absolute;
+    inset: 0;
+    display: grid;
+}
+.router-tile {
+    position: relative;
+    min-width: 0;
+    padding: 0;
+    background: none;
+    border: 1px solid var(--bg-0);
+    cursor: pointer;
+    overflow: hidden;
+}
+.router-tile.idle {
+    background: rgba(10, 10, 11, 0.55);
+}
+.router-tile.blank {
+    background: var(--bg-1);
+}
+.router-tile:hover {
+    border-color: var(--text-1);
+}
+.router-tile.routed {
+    border-color: var(--accent);
+}
+.router-name {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 1px 4px;
+    font-family: var(--mono);
+    font-size: 9px;
+    text-align: left;
+    color: var(--text-0);
+    background: rgba(10, 10, 11, 0.7);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.router-marks {
+    position: absolute;
+    top: 2px;
+    right: 3px;
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--bg-0);
+    background: var(--accent);
+    padding: 0 3px;
+    border-radius: 2px;
+}
+.router-marks:empty {
+    display: none;
+}
+#btn-router.active {
+    color: var(--green) !important;
+    border-color: var(--green) !important;
+}
+
+/* ── Look pads (wide layout only; built in main.js) ── */
+#look-pads {
+    display: none;
+}
+@media (min-width: 1100px) {
+    body.ghost-mode.wide-layout:not(.fullscreen-output) #ghost-label {
+        display: none;
+    }
+    body.ghost-mode.wide-layout:not(.fullscreen-output) #look-pads {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        position: absolute;
+        top: 126px;
+        left: 8px;
+        right: 8px;
+        bottom: 8px;
+    }
+}
+#look-back {
+    flex: 0 0 auto;
+    height: 28px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-0);
+    background: var(--bg-3);
+    border: 1px solid var(--border-hi);
+    border-radius: 2px;
+    cursor: pointer;
+}
+#look-back:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+#look-back:disabled {
+    color: var(--text-2);
+    opacity: 0.5;
+    cursor: default;
+}
+#look-pad-grid {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.look-pad {
+    flex: 0 0 auto;
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    padding: 0;
+    background: var(--bg-3) center / cover no-repeat;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    cursor: pointer;
+    overflow: hidden;
+}
+.look-pad:hover {
+    border-color: var(--border-hi);
+}
+.look-pad.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+}
+.look-pad span {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 2px 5px;
+    font-family: var(--mono);
+    font-size: 10px;
+    text-align: left;
+    color: var(--text-0);
+    background: rgba(10, 10, 11, 0.7);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+#btn-wide-layout.active {
+    color: var(--green) !important;
+    border-color: var(--green) !important;
+}
+
 /* Fullscreen output mode */
 body.fullscreen-output #app {
     right: 0;
 }
 body.fullscreen-output #control-panel {
     display: none;
+}
+/* Live peek (Tab in fullscreen) — the panel lies OVER the picture instead of
+   beside it, so the output keeps its full size and nothing reflows. */
+body.fullscreen-output.live-peek #control-panel {
+    display: flex;
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 50;
+    opacity: 0.92;
+    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.5);
 }
 body.fullscreen-output #signal-path {
     display: none !important;

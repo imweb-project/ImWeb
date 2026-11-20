@@ -6086,6 +6086,25 @@ export function registerCoreParameters(ps) {
    * persisted by MappingAutosave, "mappings only, never values", and a captured
    * page index would fight that on every recall.
    */
+  /**
+   * The Live strip's MIDI inlets (LiveStrip.js). A knob mapped to strip.kN
+   * plays whatever parameter slot N holds. Group 'global' for the same reason
+   * as the page controls below: these carry a MAPPING, not a value worth
+   * recalling — a captured inlet value would be forwarded to whatever the
+   * slot holds after the recall. They have no row; UI.js keeps them out of
+   * the Global panel, and the strip's slot number opens their menu.
+   */
+  for (let i = 1; i <= 8; i++) {
+    ps.register({
+      id: `strip.k${i}`,
+      label: `Strip ${i}`,
+      group: "global",
+      min: 0,
+      max: 1,
+      value: 0,
+      step: 0.001,
+    });
+  }
   ps.register({
     id: "midi.page",
     label: "Map Page",
