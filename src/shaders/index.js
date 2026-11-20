@@ -3867,8 +3867,29 @@ export const COLORIZE = /* glsl */ `
   uniform float uSoft;
   uniform float uShift;
   uniform int   uPalette;
+  uniform float uRim;        // outline width in pixels, 0 = off
+  uniform vec2  uResolution;
   varying vec2 vUv;
   float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+
+  // Hard band index of the pixel at uv — what a band edge is measured in.
+  float bandAt(vec2 uv, float n) {
+    return clamp(floor(clamp(luma(texture2D(uTexture, uv).rgb), 0.0, 1.0) * n), 0.0, n - 1.0);
+  }
+  // Highest band among 8 neighbours at radius r (pixels).
+  float maxBand(float r, float n) {
+    vec2 px = r / uResolution;
+    float m = 0.0;
+    m = max(m, bandAt(vUv + vec2( px.x, 0.0), n));
+    m = max(m, bandAt(vUv + vec2(-px.x, 0.0), n));
+    m = max(m, bandAt(vUv + vec2(0.0,  px.y), n));
+    m = max(m, bandAt(vUv + vec2(0.0, -px.y), n));
+    m = max(m, bandAt(vUv + px * 0.7071, n));
+    m = max(m, bandAt(vUv - px * 0.7071, n));
+    m = max(m, bandAt(vUv + vec2(px.x, -px.y) * 0.7071, n));
+    m = max(m, bandAt(vUv + vec2(-px.x, px.y) * 0.7071, n));
+    return m;
+  }
 
   // Six-stop cyclic ramp: p in [0,1) runs a→b→c→d→e→f and back to a.
   vec3 ramp6(float p, vec3 a, vec3 b, vec3 c, vec3 d, vec3 e, vec3 f) {
@@ -3939,6 +3960,24 @@ export const COLORIZE = /* glsl */ `
     float s = clamp(uSoft, 0.0, 1.0) * 0.5;
     float w = s > 0.0 ? smoothstep(0.5 - s, 0.5 + s, f) : step(0.5, f);
     vec3 mapped = mix(palette(k0 / n + uShift), palette(k1 / n + uShift), w);
+
+    // Rims: the film's thin bright contours, two stripes hugging the outside
+    // of every brighter shape. Drawn on the DARKER side of an edge only, so a
+    // bright figure on black gets an outline instead of being eaten into.
+    // The stripes take the NEXT two palette colours above the shape they
+    // outline, so they are as saturated as the bands (halfway colours lifted
+    // toward white read as tan and grey, not as the film's neon) and they
+    // cycle with Shift like everything else.
+    if (uRim > 0.0) {
+      float kc = clamp(floor(l * n), 0.0, n - 1.0);
+      float kIn = maxBand(uRim * 0.5, n);
+      float kOut = maxBand(uRim, n);
+      if (kIn > kc) {
+        mapped = palette((kIn + 1.0) / n + uShift);
+      } else if (kOut > kc) {
+        mapped = palette((kOut + 2.0) / n + uShift);
+      }
+    }
     gl_FragColor = vec4(mix(c.rgb, mapped, uAmount), c.a);
   }
 `;

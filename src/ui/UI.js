@@ -346,7 +346,7 @@ export function buildMappingPanels(ps, contextMenu) {
                                              'halfmode',
                                              'duotone', 'duohue1', 'duohue2',
                                              'colorize', 'colorizebands', 'colorizepal',
-                                             'colorizesoft', 'colorizeshift', 'colorizespeed',
+                                             'colorizesoft', 'colorizeshift', 'colorizerim', 'colorizespeed',
                                              'outhue', 'outsat', 'outbright']),
     'effect-texture-params': [
       ...pick('effect', ['grain', 'scanlines', 'scancount']),

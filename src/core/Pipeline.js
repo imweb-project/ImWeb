@@ -499,6 +499,9 @@ const _FX = {
       uSoft:    (p.get('effect.colorizesoft')?.value ?? 0) / 100,
       uShift:   (p.get('effect.colorizeshift')?.value ?? 0) / 100 + pipe._colorizePhase,
       uPalette: p.get('effect.colorizepal')?.value ?? 0,
+      // 0–100 % → 0–6 px at 720p, scaled with the output so a rim is the same
+      // share of the picture at any resolution.
+      uRim:     (p.get('effect.colorizerim')?.value ?? 0) / 100 * 6 * pipe.height / 720,
     });
   },
 };
@@ -1451,6 +1454,7 @@ export class Pipeline {
       this.m.pixelsort.uniforms.uResolution.value.set(w, h);
       this.m.sharpen.uniforms.uResolution.value.set(w, h);
       this.m.halftone.uniforms.uResolution.value.set(w, h);
+      this.m.colorize.uniforms.uResolution.value.set(w, h);
       this.m.feedback.uniforms.uResolution.value.set(w, h);
       this.m.interp.uniforms.uResolution.value.set(w, h);
       this._lastResW = w;
@@ -1870,6 +1874,8 @@ export class Pipeline {
         uSoft:    { value: 0 },
         uShift:   { value: 0 },
         uPalette: { value: 0 },
+        uRim:     { value: 0 },
+        uResolution: { value: new THREE.Vector2(1280, 720) },
       }),
       sharpen: this._mat(SHARPEN, {
         uAmount:     { value: 0 },

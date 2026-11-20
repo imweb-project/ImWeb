@@ -2181,6 +2181,7 @@ Remaps luminance through a two-colour ramp.
 | `effect.colorizepal` | SELECT | **Col.Palette** — Liquid Sky, Thermal, Rainbow, Cosine, Duotone, Liquid Sky 2, Liquid Sky 3 |
 | `effect.colorizesoft` | 0–100% | **Col.Soft** — hard steps at 0, one smooth gradient at 100 |
 | `effect.colorizeshift` | 0–100% | **Col.Shift** — moves the colours through the bands; 100% is one full cycle |
+| `effect.colorizerim` | 0–100% | **Col.Rim** — thin bright outlines along the band edges, as in the film |
 | `effect.colorizespeed` | −2–2 Hz | **Col.Speed** — cycles the colours on its own |
 
 The classic analog video colorizer: brightness is cut into bands and each band

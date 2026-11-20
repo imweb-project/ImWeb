@@ -7027,6 +7027,17 @@ export function registerCoreParameters(ps) {
     value: 0,
     unit: "%",
   });
+  // Rim: the thin bright outlines along band edges in the film's alien-POV
+  // shots. 0 = off; 100 % is a 6 px pair of stripes at 720p.
+  ps.register({
+    id: "effect.colorizerim",
+    label: "Col.Rim",
+    group: "effect",
+    min: 0,
+    max: 100,
+    value: 0,
+    unit: "%",
+  });
   ps.register({
     id: "effect.colorizespeed",
     label: "Col.Speed",

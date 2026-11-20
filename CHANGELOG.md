@@ -15,7 +15,8 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   (three Liquid Sky sets sampled from stills of the film, Thermal, Rainbow,
   Cosine, Duotone), Softness from hard steps
   to a smooth gradient, Shift to move the colours through the bands (an LFO on
-  it loops seamlessly) and Speed to cycle them on their own. Off by default.
+  it loops seamlessly), Rim for the film's thin bright outlines along band
+  edges, and Speed to cycle them on their own. Off by default.
 - **YouTube links** — the About box links to the ImWeb YouTube channel
   (@imweb.instrument), and the README gets a YouTube badge and a link to the
   77-second showreel.
