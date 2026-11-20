@@ -796,14 +796,21 @@ export class SceneManager {
     // later, once it can see which bones the clip actually moves. Unrigged:
     // the mesh box centre is what it tracks.
     pivot.updateMatrixWorld(true);
-    const bones = [], boneRest = new Map();
+    const bones = [], boneRest = new Map(), boneRestQ = new Map();
+    const _toPivot = pivot.matrixWorld.clone().invert(), _bm = new THREE.Matrix4();
     model.traverse(o => {
       if (!o.isBone) return;
       bones.push(o);
       boneRest.set(o, pivot.worldToLocal(o.getWorldPosition(new THREE.Vector3())));
+      // Its orientation too, in the pivot's space — a photo puppet
+      // (PhotoPuppet.js) turns each of its parts by how far the matching bone
+      // has turned from here.
+      _bm.multiplyMatrices(_toPivot, o.matrixWorld).extractRotation(_bm);
+      boneRestQ.set(o, new THREE.Quaternion().setFromRotationMatrix(_bm));
     });
     pivot.userData.bones = bones;
     pivot.userData.boneRest = boneRest;
+    pivot.userData.boneRestQ = boneRestQ;
     pivot.userData.anchorRest = pivot.worldToLocal(new THREE.Box3().setFromObject(model).getCenter(new THREE.Vector3()));
     pivot.userData.anchorBase = model.position.clone();
     return pivot;

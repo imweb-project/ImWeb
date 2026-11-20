@@ -227,6 +227,7 @@ export class PresetManager extends EventTarget {
     this._fadeTimeoutId = null;
     this._mediaRefs  = { movie: null, scene3d: null, text: null, buffer: null };
     this._getExtra   = null; // () => extraData — callback to capture non-param state
+    this._back       = null; // what was live before the last recall (recallBack)
     this._firstLaunch = false; // true when IndexedDB was empty on init()
 
     // Morph animation state
@@ -523,11 +524,60 @@ export class PresetManager extends EventTarget {
     return idx;
   }
 
-  async recallState(stateIndex) {
+  /**
+   * Everything a stored state holds, taken from what is live right now — the
+   * same fields saveCurrentState() writes, without storing them anywhere.
+   */
+  _captureLive() {
+    return {
+      values:      this.ps.captureState(),
+      fxOrder:     this.pipeline ? [...this.pipeline.fxOrder] : null,
+      controllers: this.ps.serializeControllers(),
+      mediaRefs:   { ...this._mediaRefs },
+      pins:        this._getPins ? this._getPins() : null,
+      extra:       this._getExtra ? this._getExtra() : null,
+      name:        null,
+      thumbnail:   null,
+      // Where it came from, so going back can light the right tile again.
+      fromBank:    this.currentIdx,
+      fromIndex:   this.current?.activeState ?? null,
+    };
+  }
+
+  /** True when there is somewhere to go back to. */
+  get canGoBack() { return !!this._back; }
+
+  /**
+   * Back to where I was: the look that was live just before the last recall —
+   * unsaved tweaks, controllers and all — through the ordinary recall path, so
+   * it morphs like any other. What you leave becomes the new "back", so a
+   * second press returns: an A/B flip.
+   *
+   * The snapshot is taken at recall time and held in memory only. It is not a
+   * state: it has no tile, is never saved, and is gone on reload.
+   */
+  async recallBack() {
+    const back = this._back;
+    if (!back || !this.current) return;
+    this._back = this._captureLive();
+    // The tile it came from is only meaningful in the bank it came from.
+    const idx = back.fromBank === this.currentIdx ? back.fromIndex : null;
+    await this.recallState(idx, back);
+  }
+
+  /**
+   * @param {number|null} stateIndex tile to recall and mark active
+   * @param {object|null} snapshot   recallBack() only: recall THIS record
+   *   instead of the stored tile (stateIndex may then be null — no tile lit)
+   */
+  async recallState(stateIndex, snapshot = null) {
     const p = this.current;
     if (!p) return;
-    const ds = p.getState(stateIndex);
+    const ds = snapshot ?? p.getState(stateIndex);
     if (!ds) return;
+    // An ordinary recall remembers what it replaces. Decided by the argument,
+    // not a flag: recallBack() has already stored its own.
+    if (!snapshot) this._back = this._captureLive();
     p.activeState = stateIndex;
 
     const speed    = this.ps.get('global.morphspeed')?.value ?? 0;
@@ -603,7 +653,8 @@ export class PresetManager extends EventTarget {
     }
 
     const _statusState = document.getElementById('status-state');
-    if (_statusState) _statusState.textContent = ds.name || `State ${stateIndex}`;
+    if (_statusState) _statusState.textContent =
+      ds.name || (stateIndex == null ? 'Back' : `State ${stateIndex}`);
     this.dispatchEvent(new CustomEvent('stateRecalled',
       { detail: { presetIndex: this.currentIdx, stateIndex, state: ds } }));
   }

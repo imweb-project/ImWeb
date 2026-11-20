@@ -146,6 +146,18 @@
                     ◫
                 </button>
                 <button
+                    id="btn-wide-layout"
+                    title="Wide controls — while the output is on the second screen, show Sources, Mix, Effects and Output side by side"
+                >
+                    ▥
+                </button>
+                <button
+                    id="btn-router"
+                    title="Router — live pictures of every source; click one to send it to a layer (R)"
+                >
+                    ▦
+                </button>
+                <button
                     id="btn-keylock"
                     title="Keyboard lock — block letter/number shortcuts (so typing in fields works)"
                 >
@@ -230,6 +242,9 @@
                          DOM (main.js targets #tab-scene3d).
                          The active classes are a FIRST-PAINT HINT only — activateDefaultTab()
                          derives the real landing tab from data-default-open. -->
+                    <!-- Live: only what is in play right now (LivePage.js). A view
+                         of the same rows the other tabs hold, not a mode. -->
+                    <button class="tab" data-tab="live" title="Only what is in play right now">Live</button>
                     <button class="tab" data-tab="sources">Sources</button>
                     <button class="tab active" data-tab="mix">Mix</button>
                     <button class="tab" data-tab="effects">Effects</button>
@@ -244,6 +259,8 @@
                     <!-- Contextual workspace tab is injected here (workspace router, main.js). -->
                     <span id="tab-workspace-slot"></span>
                 </div>
+                <!-- LIVE TAB — filled at runtime by LivePage.js -->
+                <div id="tab-live" class="tab-content"></div>
                 <!-- SOURCES TAB -->
                 <div id="tab-sources" class="tab-content">
                     <div class="panel-group" id="group-live-in">
@@ -1568,6 +1585,9 @@ ImWeb</textarea
             <button class="menu-item" data-action="show">
                 Pin to OSD / unpin
             </button>
+            <button class="menu-item" data-action="strip">
+                Pin to strip / unpin
+            </button>
             <button class="menu-item" data-action="lock">Toggle Lock</button>
             <button class="menu-item" data-action="table">Assign Table…</button>
             <button class="menu-item" data-action="slew">Set Slew…</button>
@@ -1657,6 +1677,21 @@ ImWeb</textarea
                         <div class="kb-section">View</div>
                         <div class="kb-row">
                             <kbd>f</kbd><span>Fullscreen</span>
+                        </div>
+                        <div class="kb-row">
+                            <kbd>Tab</kbd><span>Live page — hold to peek in fullscreen</span>
+                        </div>
+                        <div class="kb-row">
+                            <kbd>⌫</kbd><span>Back to where you were before the last recall</span>
+                        </div>
+                        <div class="kb-row">
+                            <kbd>l</kbd><span>MIDI learn for the control under the pointer</span>
+                        </div>
+                        <div class="kb-row">
+                            <kbd>r</kbd><span>Router — live source pictures, click to route</span>
+                        </div>
+                        <div class="kb-row">
+                            <kbd>⌥ scroll</kbd><span>Change the control under the pointer (⇧ coarse)</span>
                         </div>
                         <div class="kb-row">
                             <kbd>⌘F</kbd><span>Fullscreen (layout only)</span>

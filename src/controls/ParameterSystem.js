@@ -6086,6 +6086,25 @@ export function registerCoreParameters(ps) {
    * persisted by MappingAutosave, "mappings only, never values", and a captured
    * page index would fight that on every recall.
    */
+  /**
+   * The Live strip's MIDI inlets (LiveStrip.js). A knob mapped to strip.kN
+   * plays whatever parameter slot N holds. Group 'global' for the same reason
+   * as the page controls below: these carry a MAPPING, not a value worth
+   * recalling — a captured inlet value would be forwarded to whatever the
+   * slot holds after the recall. They have no row; UI.js keeps them out of
+   * the Global panel, and the strip's slot number opens their menu.
+   */
+  for (let i = 1; i <= 8; i++) {
+    ps.register({
+      id: `strip.k${i}`,
+      label: `Strip ${i}`,
+      group: "global",
+      min: 0,
+      max: 1,
+      value: 0,
+      step: 0.001,
+    });
+  }
   ps.register({
     id: "midi.page",
     label: "Map Page",
@@ -6974,6 +6993,79 @@ export function registerCoreParameters(ps) {
     max: 360,
     value: 45,
     unit: "°",
+  });
+  // Colorizer — luma cut into bands, one colour per band (Vidiot / LZX Mapper /
+  // the Liquid Sky alien POV). Amount 0 is off, so existing patches are
+  // unchanged. Group 'effect' like every other effect row: the palette list is
+  // fixed in the shader (not user-editable), so a captured index means the same
+  // palette everywhere. Palette options are APPEND-ONLY for the same reason.
+  ps.register({
+    id: "effect.colorize",
+    label: "Colorize",
+    group: "effect",
+    min: 0,
+    max: 100,
+    value: 0,
+    unit: "%",
+  });
+  ps.register({
+    id: "effect.colorizebands",
+    label: "Col.Bands",
+    group: "effect",
+    min: 2,
+    max: 16,
+    value: 6,
+    step: 1,
+  });
+  ps.register({
+    id: "effect.colorizepal",
+    label: "Col.Palette",
+    group: "effect",
+    type: PARAM_TYPE.SELECT,
+    options: ["Liquid Sky", "Thermal", "Rainbow", "Cosine", "Duotone",
+              "Liquid Sky 2", "Liquid Sky 3"],
+    value: 0,
+  });
+  ps.register({
+    id: "effect.colorizesoft",
+    label: "Col.Soft",
+    group: "effect",
+    min: 0,
+    max: 100,
+    value: 0,
+    unit: "%",
+  });
+  // A full turn (100 %) moves every band one whole palette cycle, so an LFO
+  // sweeping 0–100 % loops seamlessly.
+  ps.register({
+    id: "effect.colorizeshift",
+    label: "Col.Shift",
+    group: "effect",
+    min: 0,
+    max: 100,
+    value: 0,
+    unit: "%",
+  });
+  // Rim: the thin bright outlines along band edges in the film's alien-POV
+  // shots. 0 = off; 100 % is a 6 px pair of stripes at 720p.
+  ps.register({
+    id: "effect.colorizerim",
+    label: "Col.Rim",
+    group: "effect",
+    min: 0,
+    max: 100,
+    value: 0,
+    unit: "%",
+  });
+  ps.register({
+    id: "effect.colorizespeed",
+    label: "Col.Speed",
+    group: "effect",
+    min: -2,
+    max: 2,
+    value: 0,
+    step: 0.01,
+    unit: "Hz",
   });
   // Signed: negative pincushion, positive barrel, 0 flat.
   ps.register({

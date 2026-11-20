@@ -25,7 +25,7 @@ import {
   BOKEH_COMPOSITE, BOKEH_MASK_SLEW, BOKEH_DOWNSAMPLE, KALEIDOSCOPE, PIXEL_SORT,
   FILM_GRAIN, FEEDBACK_ROTATE, QUAD_MIRROR, LEVELS, LUT3D, WHITE_BALANCE,
   SHARPEN, MIXBUS, CLIP_FADE,
-  POLAR, WAVE, HALFTONE, DUOTONE, LENS,
+  POLAR, WAVE, HALFTONE, DUOTONE, LENS, COLORIZE,
 } from '../shaders/index.js';
 import { SOURCE_KEYS } from '../controls/ParameterSystem.js';
 
@@ -35,7 +35,7 @@ const MIX_PREFIX = ['mix', 'mix2', 'mix3'];
 export const DEFAULT_FX_ORDER = [
   'pixelate','edge','sharpen','rgbshift',
   'wave','lens','polar','kaleidoscope','quadmirror','flip',
-  'posterize','solarize','halftone','duotone','vignette',
+  'posterize','solarize','halftone','duotone','colorize','vignette',
   // Bokeh sits immediately BEFORE bloom on purpose: defocus is a lens
   // phenomenon and bloom is the highlight half of the same lens, so blurring
   // first lets the boosted highlights feed bloom's threshold and the two
@@ -483,6 +483,26 @@ const _FX = {
     pipe.m.duotone.uniforms.uDark.value.setHSL(p.get('effect.duohue1').value / 360, 0.85, 0.18);
     pipe.m.duotone.uniforms.uLight.value.setHSL(p.get('effect.duohue2').value / 360, 0.85, 0.72);
     return pipe._pass(pipe.m.duotone, { uTexture: tex, uAmount: amt });
+  },
+  colorize: (pipe, tex, p) => {
+    const amt = (p.get('effect.colorize')?.value ?? 0) / 100;
+    if (amt <= 0) return tex;
+    // Speed cycles the palette on its own; Shift is the hand/LFO offset on
+    // top. The phase only runs while the pass does, and is kept in [0,1) so a
+    // long performance never loses float precision.
+    const speed = p.get('effect.colorizespeed')?.value ?? 0;
+    pipe._colorizePhase = ((pipe._colorizePhase ?? 0) + speed * (pipe._fxDt ?? 1 / 60)) % 1;
+    return pipe._pass(pipe.m.colorize, {
+      uTexture: tex,
+      uAmount:  amt,
+      uBands:   p.get('effect.colorizebands')?.value ?? 6,
+      uSoft:    (p.get('effect.colorizesoft')?.value ?? 0) / 100,
+      uShift:   (p.get('effect.colorizeshift')?.value ?? 0) / 100 + pipe._colorizePhase,
+      uPalette: p.get('effect.colorizepal')?.value ?? 0,
+      // 0–100 % → 0–6 px at 720p, scaled with the output so a rim is the same
+      // share of the picture at any resolution.
+      uRim:     (p.get('effect.colorizerim')?.value ?? 0) / 100 * 6 * pipe.height / 720,
+    });
   },
 };
 
@@ -1434,6 +1454,7 @@ export class Pipeline {
       this.m.pixelsort.uniforms.uResolution.value.set(w, h);
       this.m.sharpen.uniforms.uResolution.value.set(w, h);
       this.m.halftone.uniforms.uResolution.value.set(w, h);
+      this.m.colorize.uniforms.uResolution.value.set(w, h);
       this.m.feedback.uniforms.uResolution.value.set(w, h);
       this.m.interp.uniforms.uResolution.value.set(w, h);
       this._lastResW = w;
@@ -1846,6 +1867,15 @@ export class Pipeline {
         uAmount: { value: 0 },
         uDark:   { value: new THREE.Color(0, 0, 0) },
         uLight:  { value: new THREE.Color(1, 1, 1) },
+      }),
+      colorize: this._mat(COLORIZE, {
+        uAmount:  { value: 0 },
+        uBands:   { value: 6 },
+        uSoft:    { value: 0 },
+        uShift:   { value: 0 },
+        uPalette: { value: 0 },
+        uRim:     { value: 0 },
+        uResolution: { value: new THREE.Vector2(1280, 720) },
       }),
       sharpen: this._mat(SHARPEN, {
         uAmount:     { value: 0 },

@@ -166,6 +166,9 @@ import { AIDepth } from "./ai/AIDepth.js";
 import { SplatWorld } from "./ai/SplatWorld.js";
 import { estimateDepth } from "./ai/DepthEstimator.js";
 import { mkSelect } from "./ui/components/Select.js";
+import { LivePage } from "./ui/components/LivePage.js";
+import { LiveStrip } from "./ui/components/LiveStrip.js";
+import { SourceRouter } from "./ui/components/SourceRouter.js";
 import {
   initTabs,
   buildParamRow,
@@ -1138,6 +1141,9 @@ async function main() {
   // Wire extra non-param state (text content, imported 3D model flag) into state system
   presetMgr.setExtraCallback(() => ({
     glsl:             _glslStateHooks?.capture() ?? null,
+    // The eight Live-strip slots (param ids, null = empty). Read at save time,
+    // long after liveStrip is constructed further down this function.
+    strip:            liveStrip.ids(),
     textContent:      textLayer._contentList.length > 0
                         ? [...textLayer._contentList]
                         : (textLayer._text ? [textLayer._text] : []),
@@ -1502,6 +1508,17 @@ async function main() {
   const contextMenu = new ContextMenu(ps, ctrl, presetMgr, tableManager);
   buildLayerButtons(ps, contextMenu);
   buildMappingPanels(ps, contextMenu);
+  // Live page: only what is in play. It indexes the other tabs' rows lazily,
+  // on first show, so panels built later in this function are included.
+  const livePage = new LivePage(ps, contextMenu);
+  // Live strip: eight pinned controls at the foot of the panel. Its ids ride
+  // in each state's `extra.strip` (captured in the extra callback above) so a
+  // Look brings its own eight; a state without the key leaves the strip be.
+  const liveStrip = new LiveStrip(ps, contextMenu, { toast: (m) => showToast(m, 3000) });
+  presetMgr.addEventListener("stateRecalled", (e) => {
+    const ids = e.detail.state?.extra?.strip;
+    if (Array.isArray(ids)) liveStrip.set(ids);
+  });
 
   // Growth Advanced shows only the controls of the engine in use — Frost's
   // Fold/Heat mean nothing in Single, and showing all 30 at once was the
@@ -1780,6 +1797,20 @@ async function main() {
       }
     },
     imageInfo: (i) => ({ name: scene3d.imageNames()[i], missing: _imageMissing[i] }),
+    // Photo puppet for M2–M4 (index 0–2). file null takes it away. Not saved
+    // with a project or state: a visitor's photo is for the session.
+    onPuppet: async (i, file, onStatus) => {
+      if (!file) { modelSlots.setPuppet(i, null); return; }
+      const [{ snapPerson }, { PhotoPuppet }] = await Promise.all([
+        import('./ai/PersonCutout.js'), import('./scene3d/PhotoPuppet.js')]);
+      const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+      let snap;
+      try { snap = await snapPerson(bmp, onStatus); } finally { bmp.close?.(); }
+      onStatus?.('Jointing…');
+      modelSlots.setPuppet(i, new PhotoPuppet(snap));
+      ps.set(`${SLOT_PREFIXES[i]}.visible`, 1);
+      ps.set("scene3d.active", 1);
+    },
   });
 
   // ── Hypercube panel — appended as a section inside #tab-scene3d ───────────
@@ -2517,6 +2548,9 @@ async function main() {
     },
   });
   const feedbackOl = new FeedbackOverlay(ps, presetMgr);
+  // The Live page's Recent stack is the last eight controls a hand moved. It
+  // takes the OSD's own detection rather than a second one.
+  feedbackOl.onTouch = (p) => livePage.touch(p.id);
   const memoryPanel = new MemoryPanel(presetMgr, scene3d);
   const profiler = new Profiler();
   const debugOverlay = new DebugOverlay(ps);
@@ -3944,6 +3978,156 @@ async function main() {
         document.body.classList.contains("ghost-mode"),
       );
   });
+
+  // ── Wide controls ─────────────────────────────────────────────────────────
+  // While the output is on the second screen (ghost mode) the picture area of
+  // this window is empty, so the four signal-flow tabs are laid out side by
+  // side across it and the output spy becomes the monitor. All of it is CSS on
+  // `body.ghost-mode.wide-layout` — this only keeps the preference, so none of
+  // the four places that enter or leave ghost mode has to know about it.
+  // Per-origin localStorage, like UI scale: a layout is not part of a patch.
+  const WIDE_KEY = "imweb.wideLayout";
+  const _wideBtn = document.getElementById("btn-wide-layout");
+  const _setWide = (on) => {
+    document.body.classList.toggle("wide-layout", on);
+    _wideBtn?.classList.toggle("active", on);
+  };
+  let _widePref = true;
+  try { _widePref = localStorage.getItem(WIDE_KEY) !== "0"; } catch { /* private mode */ }
+  _setWide(_widePref);
+  _wideBtn?.addEventListener("click", () => {
+    const on = !document.body.classList.contains("wide-layout");
+    _setWide(on);
+    try { localStorage.setItem(WIDE_KEY, on ? "1" : "0"); } catch { /* private mode */ }
+  });
+  // Must agree with the @media guard on the wide rules in style.css.
+  const _wideMq = window.matchMedia("(min-width: 1100px)");
+  const _wideActive = () =>
+    _wideMq.matches &&
+    document.body.classList.contains("ghost-mode") &&
+    document.body.classList.contains("wide-layout") &&
+    !document.body.classList.contains("fullscreen-output");
+  livePage.isWide = _wideActive;
+
+  // ── Hover to play ─────────────────────────────────────────────────────────
+  // What the pointer is over, read from the DOM at the moment of asking — no
+  // tracked "current row" to go stale when a row is rebuilt under the cursor.
+  // A strip slot answers with its parameter, or with its MIDI inlet when the
+  // question is "what should learn".
+  const _hoverParamId = ({ forLearn = false } = {}) => {
+    const cell = document.querySelector(".strip-cell:hover");
+    if (cell) {
+      const slot = [...cell.parentElement.children].indexOf(cell);
+      return forLearn ? `strip.k${slot + 1}` : liveStrip.ids()[slot];
+    }
+    const rows = document.querySelectorAll(".param-row[data-param-id]:hover");
+    return rows.length ? rows[rows.length - 1].dataset.paramId : null;
+  };
+  // ⌥+scroll changes the control under the pointer. Slider rows have done this
+  // since they were built (ParamRow.js) and keep their own handler; this adds
+  // the controls that had none — lists, switches, and the Live strip — with
+  // the same modifier, for the same reason: an unmodified scroll must only
+  // ever scroll the panel.
+  //   slider (strip only): 1% of range per event, ⇧ ×5, up = more
+  //   list: one entry per notch, down = next    switch: up = on, down = off
+  let _hoverAcc = 0, _hoverAccId = null, _hoverAccT = 0;
+  document.addEventListener("wheel", (e) => {
+    if (!e.altKey) return;
+    const onStrip = !!e.target.closest?.(".strip-cell");
+    const id = _hoverParamId();
+    const p = id ? ps.get(id) : null;
+    if (!p) return;
+    if (p.type === PARAM_TYPE.CONTINUOUS && !onStrip) return; // the row's own
+    e.preventDefault();
+    if (p.locked) return;
+    // macOS sends a vertical wheel as deltaX while Shift is held.
+    const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    if (!delta) return;
+    if (p.type === PARAM_TYPE.CONTINUOUS) {
+      const step = (p.max - p.min) * 0.01 * (e.shiftKey ? 5 : 1);
+      p.value = p.value - Math.sign(delta) * step;
+      return;
+    }
+    if (p.type === PARAM_TYPE.TOGGLE) { p.value = delta < 0 ? 1 : 0; return; }
+    if (p.type !== PARAM_TYPE.SELECT || !p.options) return;
+    // A trackpad sends dozens of small events per gesture: one entry per
+    // 60px of travel, and a mouse notch (~100px) is one entry.
+    const now = performance.now();
+    if (_hoverAccId !== id || now - _hoverAccT > 300) _hoverAcc = 0;
+    _hoverAccId = id; _hoverAccT = now;
+    _hoverAcc += delta;
+    if (Math.abs(_hoverAcc) < 60) return;
+    const dir = Math.sign(_hoverAcc);
+    _hoverAcc = 0;
+    p.value = Math.max(0, Math.min(p.options.length - 1, p.value + dir));
+  }, { passive: false });
+
+  // ── Source router ─────────────────────────────────────────────────────────
+  // Floating grid of live source pictures; a click routes one to a layer.
+  // Its pictures are drawn from the render loop (sourceRouter.tick, after
+  // pipeline.render) and only while the window is open.
+  const sourceRouter = new SourceRouter(ps);
+  const _routerBtn = document.getElementById("btn-router");
+  const _toggleRouter = () => {
+    sourceRouter.toggle();
+    _routerBtn?.classList.toggle("active", sourceRouter.open);
+  };
+  _routerBtn?.addEventListener("click", _toggleRouter);
+  sourceRouter.el.querySelector(".router-close")
+    ?.addEventListener("click", () => _routerBtn?.classList.remove("active"));
+
+  // ── Look pads ─────────────────────────────────────────────────────────────
+  // The wide layout's left strip, under the monitor: every stored state of
+  // the bank as a large pad, and ↩ Back. A second VIEW of the state bar — a
+  // pad recalls through pm.recallState, the exact path a tile uses — shown
+  // only in the wide layout (CSS), where the strip is otherwise empty.
+  {
+    const host = document.getElementById("output-panel");
+    const pads = document.createElement("div");
+    pads.id = "look-pads";
+    const backBtn = document.createElement("button");
+    backBtn.id = "look-back";
+    backBtn.textContent = "↩ Back";
+    backBtn.title = "Back to where you were before the last recall (Backspace). Press again to return.";
+    backBtn.addEventListener("click", () => presetMgr.recallBack());
+    const grid = document.createElement("div");
+    grid.id = "look-pad-grid";
+    pads.append(backBtn, grid);
+    host?.appendChild(pads);
+
+    let _sig = "";
+    const paint = () => {
+      backBtn.disabled = !presetMgr.canGoBack;
+      const bank = presetMgr.current;
+      if (!bank || !_wideActive()) return;
+      // Rebuild only when something a pad shows has changed.
+      const sig = presetMgr.currentIdx + "|" + bank.activeState + "|" +
+        bank.states.map((s, i) => s ? `${i}:${s.name ?? ""}:${s.thumbnail?.length ?? 0}` : "").join(",");
+      if (sig === _sig) return;
+      _sig = sig;
+      grid.innerHTML = "";
+      bank.states.forEach((s, i) => {
+        if (!s) return;
+        const pad = document.createElement("button");
+        pad.className = "look-pad" + (bank.activeState === i ? " active" : "");
+        if (s.thumbnail) pad.style.backgroundImage = `url(${s.thumbnail})`;
+        const cap = document.createElement("span");
+        cap.textContent = `${i}  ${s.name || ""}`.trim();
+        pad.appendChild(cap);
+        pad.title = `${s.name || `State ${i}`} — click${i < 10 ? ` or press ${i}` : ""} to recall`;
+        pad.addEventListener("click", (e) => {
+          if (e.ctrlKey || e.metaKey) return; // same rule as the state tiles
+          presetMgr.recallState(i);
+        });
+        grid.appendChild(pad);
+      });
+    };
+    ["presetActivated", "stateSaved", "stateRecalled", "bankRenamed", "banksChanged", "morphEnded"]
+      .forEach((ev) => presetMgr.addEventListener(ev, paint));
+    // Thumbnails land after stateSaved, and entering the wide layout fires no
+    // event at all — a slow poll covers both, and the signature keeps it idle.
+    setInterval(paint, 1000);
+  }
 
   // ── Projection Mapping ────────────────────────────────────────────────────
   // Corner handles live on the second screen. It sends updates back here.
@@ -9678,7 +9862,7 @@ void main() {
     const isLocked = ps.get("global.keylock").value > 0.5;
     if (
       isLocked &&
-      (/^[vmcbskdxhtfqazgiu]$/i.test(e.key) || /^Digit[0-9]$/.test(e.code))
+      (/^[vmcbskdxhtfqazgiulr]$/i.test(e.key) || /^Digit[0-9]$/.test(e.code))
     )
       return;
 
@@ -9838,6 +10022,28 @@ void main() {
       e.preventDefault();
       const fadeP = ps.get("output.fade");
       fadeP.value = fadeP.value > 0 ? 0 : 100;
+    }
+    // r = Router (floating grid of live source pictures)
+    if (e.key === "r" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      _toggleRouter();
+    }
+    // l = MIDI learn for whatever the pointer is over — a parameter row, or a
+    // Live-strip slot (which learns the SLOT, so the knob follows the strip).
+    if (e.key === "l" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      const id = _hoverParamId({ forLearn: true });
+      if (id) {
+        e.preventDefault();
+        ctrl.startMIDILearn(id);
+        showToast(`MIDI learn: ${ps.get(id)?.label ?? id} — move a knob`, 2500);
+      }
+    }
+    // Backspace = back to where I was before the last state recall (and again
+    // to return — an A/B flip). Not behind keylock: it is not a letter.
+    if (e.key === "Backspace" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      if (presetMgr.canGoBack) presetMgr.recallBack();
+      else showToast("Nothing to go back to yet — recall a state first.", 2500);
     }
     // f = Fullscreen
     if (e.key === "f" && !e.metaKey) {
@@ -10035,6 +10241,77 @@ void main() {
   };
   document.addEventListener("fullscreenchange", _fsSync);
   document.addEventListener("webkitfullscreenchange", _fsSync);
+
+  // ── Tab = the Live page ───────────────────────────────────────────────────
+  // In fullscreen: HOLD Tab and the Live page lies over the picture, release
+  // and it is gone; a short TAP leaves it up until the next Tab. Out of
+  // fullscreen: Tab flips between the Live tab and the tab you were on.
+  //
+  // "Is the peek showing" is read from the two body classes, never from a
+  // flag: fullscreen can end four ways (F, Esc, the button, the browser) and
+  // none of them needs to know about this.
+  const PEEK_TAP_MS = 250;
+  let _peekDownAt = 0;
+  let _peekIgnoreUp = false;
+  let _liveReturnTab = null;
+  const _peekShowing = () =>
+    document.body.classList.contains("fullscreen-output") &&
+    document.body.classList.contains("live-peek");
+  const _toLiveTab = () => {
+    const cur = document.querySelector(".tab.active");
+    if (cur?.dataset.tab === "live") return;
+    _liveReturnTab = cur ?? null;
+    document.querySelector('.tab[data-tab="live"]')?.click();
+  };
+  const _fromLiveTab = () => {
+    const back = _liveReturnTab?.isConnected
+      ? _liveReturnTab
+      : document.querySelector('.tab[data-tab="mix"]');
+    _liveReturnTab = null;
+    back?.click();
+  };
+  const _endPeek = () => {
+    if (!document.body.classList.contains("live-peek")) return;
+    document.body.classList.remove("live-peek");
+    _fromLiveTab();
+  };
+  const _tabKeyOwned = (e) =>
+    e.key !== "Tab" || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey ||
+    // A text field or the shader editor owns Tab.
+    !!e.target.closest?.("input, textarea, select, [contenteditable], .cm-editor");
+  document.addEventListener("keydown", (e) => {
+    if (_tabKeyOwned(e)) return;
+    e.preventDefault();
+    if (e.repeat) return;
+    if (!document.body.classList.contains("fullscreen-output")) {
+      // A peek class left behind by a fullscreen that ended without us.
+      document.body.classList.remove("live-peek");
+      if (document.querySelector(".tab.active")?.dataset.tab === "live") _fromLiveTab();
+      else _toLiveTab();
+      _peekIgnoreUp = true;
+      return;
+    }
+    if (_peekShowing()) {
+      _endPeek();
+      _peekIgnoreUp = true;
+      return;
+    }
+    _toLiveTab();
+    document.body.classList.add("live-peek");
+    _peekDownAt = performance.now();
+    _peekIgnoreUp = false;
+  });
+  document.addEventListener("keyup", (e) => {
+    if (e.key !== "Tab") return;
+    if (_peekIgnoreUp) { _peekIgnoreUp = false; return; }
+    // Held: release closes. Tapped: it stays until the next Tab.
+    if (performance.now() - _peekDownAt >= PEEK_TAP_MS) _endPeek();
+  });
+  // A held key whose release goes to another window would never close it.
+  window.addEventListener("blur", () => {
+    if (_peekShowing() && !_peekIgnoreUp &&
+        performance.now() - _peekDownAt >= PEEK_TAP_MS) _endPeek();
+  });
 
   // ── Keyboard help overlay ─────────────────────────────────────────────────
 
@@ -10856,6 +11133,12 @@ void main() {
       _direct(i) ||
       _pullers.some((p) => _pulled.has(p.idx) && p.reads.includes(i));
     const _mixbusNeeded = MIXBUS_IDX.map((i) => _pulled.has(i));
+    // The Live page hides the panels of sources nothing routes. It reads the
+    // SAME fixpoint as the renderer — a view of _srcUsed, not a second copy —
+    // and only asks ~4×/s while its tab is showing.
+    if (livePage.wantsUsage(now)) {
+      livePage.setUsage(SOURCE_KEYS.map((_, i) => _srcUsed(i)), now);
+    }
 
     // ── Idle-deck upload gating (v0.12 Step 5) ──────────────────────────────
     // Skip the texImage2D upload for a deck that cannot contribute to this
@@ -11582,6 +11865,19 @@ void main() {
       pipeline.render(inputs, ps, dt);
     }
 
+    // Router thumbnails — a no-op unless its window is open. After the frame is
+    // drawn, so every picture is this frame's. A source with no texture this
+    // frame gets no picture (null) rather than _resolveSource's colour fallback,
+    // which would paint every idle tile as Color 1.
+    sourceRouter.tick(renderer, (i) => {
+      const key = SOURCE_KEYS[i];
+      if (key === "output") return pipeline.prev.texture;
+      const bus = MIXBUS_IDX.indexOf(i);
+      if (bus >= 0) return pipeline._mixRT[bus] ? pipeline.mixTextureAt(bus) : null;
+      if (key === "glsl") return pipeline._customActive ? pipeline.customSourceTexture : null;
+      return inputs[key] ?? null;
+    }, _srcUsed, now);
+
     // Capture output into video delay ring buffer
     // Video Delay records delay.source (Phase 25). "Output" — the default and the
     // old hardwiring — is an echo of the whole composite, which is why it reads
@@ -11689,9 +11985,12 @@ void main() {
     debugOverlay.tick(profiler._fps);
 
     // Video Out Spy + Second Screen — createImageBitmap shared path
+    // In the wide layout the spy is the only picture this window has, so it
+    // draws whether or not it was switched on by hand.
     const spyVisible =
       _spyCanvas &&
-      !document.getElementById("video-spy")?.classList.contains("hidden");
+      (_wideActive() ||
+        !document.getElementById("video-spy")?.classList.contains("hidden"));
     const outWinOpen = _outWin && !_outWin.closed && _outWinReady;
     // Second screen throttled to every _outWinEvery-th frame (2Disp rate row;
     // default every 2nd) to reduce GPU readback pressure

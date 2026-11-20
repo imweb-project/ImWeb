@@ -3847,6 +3847,141 @@ export const DUOTONE = /* glsl */ `
   }
 `;
 
+// ─── Colorizer ────────────────────────────────────────────────────────────────
+// The analog video colorizer (Vidiot, LZX Mapper, the alien POV in Liquid Sky):
+// cut luma into N brightness bands and give every band its own colour.
+//
+// Bands are centred, so with Softness 0 the step edges fall at l = k/N and the
+// whole range is covered by exactly N flat colours. Softness widens a
+// smoothstep across each edge until, at 1, the bands melt into one gradient.
+// The palette is read at the BAND's position, not the pixel's, so Softness
+// blends between neighbouring band colours rather than re-reading the palette.
+//
+// Every palette is sampled cyclically at fract(k/N + uShift), so Shift moves
+// each band's colour to the next band's — the classic colour-cycling look — and
+// a full turn of Shift is a seamless loop for an LFO.
+export const COLORIZE = /* glsl */ `
+  uniform sampler2D uTexture;
+  uniform float uAmount;
+  uniform float uBands;
+  uniform float uSoft;
+  uniform float uShift;
+  uniform int   uPalette;
+  uniform float uRim;        // outline width in pixels, 0 = off
+  uniform vec2  uResolution;
+  varying vec2 vUv;
+  float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+
+  // Hard band index of the pixel at uv — what a band edge is measured in.
+  float bandAt(vec2 uv, float n) {
+    return clamp(floor(clamp(luma(texture2D(uTexture, uv).rgb), 0.0, 1.0) * n), 0.0, n - 1.0);
+  }
+  // Highest band among 8 neighbours at radius r (pixels).
+  float maxBand(float r, float n) {
+    vec2 px = r / uResolution;
+    float m = 0.0;
+    m = max(m, bandAt(vUv + vec2( px.x, 0.0), n));
+    m = max(m, bandAt(vUv + vec2(-px.x, 0.0), n));
+    m = max(m, bandAt(vUv + vec2(0.0,  px.y), n));
+    m = max(m, bandAt(vUv + vec2(0.0, -px.y), n));
+    m = max(m, bandAt(vUv + px * 0.7071, n));
+    m = max(m, bandAt(vUv - px * 0.7071, n));
+    m = max(m, bandAt(vUv + vec2(px.x, -px.y) * 0.7071, n));
+    m = max(m, bandAt(vUv + vec2(-px.x, px.y) * 0.7071, n));
+    return m;
+  }
+
+  // Six-stop cyclic ramp: p in [0,1) runs a→b→c→d→e→f and back to a.
+  vec3 ramp6(float p, vec3 a, vec3 b, vec3 c, vec3 d, vec3 e, vec3 f) {
+    float t = fract(p) * 6.0;
+    float w = fract(t);
+    if (t < 1.0) return mix(a, b, w);
+    if (t < 2.0) return mix(b, c, w);
+    if (t < 3.0) return mix(c, d, w);
+    if (t < 4.0) return mix(d, e, w);
+    if (t < 5.0) return mix(e, f, w);
+    return mix(f, a, w);
+  }
+  vec3 hue2rgb(float h) {
+    vec3 k = abs(fract(h + vec3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
+    return clamp(k - 1.0, 0.0, 1.0);
+  }
+  vec3 palette(float p) {
+    p = fract(p);
+    // The three Liquid Sky palettes are sampled from stills of the film's
+    // alien-POV shots (seven frames, saturated pixels only). The darkest band
+    // is BLACK in every one of them — the shots sit on 40–60 % black — and
+    // each shot uses its own set, hence three: blue/lavender/mint/orange,
+    // red/blue/magenta/green, and deep red/pink/pale. Six stops each, so the
+    // default 6 bands land exactly on the film's colours.
+    if (uPalette == 0) {
+      return ramp6(p, vec3(0.00, 0.00, 0.00), vec3(0.05, 0.13, 0.51),
+                      vec3(0.20, 0.33, 0.97), vec3(0.62, 0.47, 0.85),
+                      vec3(0.56, 0.73, 0.47), vec3(0.91, 0.25, 0.00));
+    }
+    if (uPalette == 5) {
+      return ramp6(p, vec3(0.00, 0.00, 0.00), vec3(0.11, 0.39, 0.20),
+                      vec3(0.75, 0.16, 0.04), vec3(0.73, 0.17, 0.61),
+                      vec3(0.23, 0.33, 0.90), vec3(0.91, 0.89, 0.94));
+    }
+    if (uPalette == 6) {
+      return ramp6(p, vec3(0.00, 0.00, 0.00), vec3(0.05, 0.13, 0.51),
+                      vec3(0.48, 0.04, 0.03), vec3(0.77, 0.46, 0.42),
+                      vec3(0.91, 0.66, 0.72), vec3(0.96, 0.93, 0.90));
+    }
+    if (uPalette == 1) {
+      // Thermal (iron): cold to white-hot. The wrap back to black is the one
+      // hard seam on purpose — a thermal ramp that cycles smoothly is not one.
+      return ramp6(p, vec3(0.00, 0.00, 0.00), vec3(0.15, 0.00, 0.55),
+                      vec3(0.75, 0.00, 0.55), vec3(1.00, 0.30, 0.00),
+                      vec3(1.00, 0.85, 0.00), vec3(1.00, 1.00, 1.00));
+    }
+    if (uPalette == 2) return hue2rgb(p);                       // Rainbow
+    if (uPalette == 3) {
+      // Cosine palette (Quilez): a + b·cos(2π(c·p + d)).
+      return clamp(vec3(0.5) + vec3(0.5) *
+        cos(6.28318530718 * (vec3(1.0, 1.0, 1.0) * p + vec3(0.0, 0.10, 0.20))), 0.0, 1.0);
+    }
+    // Duotone: a triangle between two neons, so the cycle has no seam.
+    float tri = 1.0 - abs(p * 2.0 - 1.0);
+    return mix(vec3(0.10, 0.05, 0.60), vec3(1.00, 0.35, 0.10), tri);
+  }
+
+  void main() {
+    vec4 c = texture2D(uTexture, vUv);
+    if (uAmount <= 0.0) { gl_FragColor = c; return; }
+    float n = max(uBands, 2.0);
+    float l = clamp(luma(c.rgb), 0.0, 1.0);
+    float t = l * n - 0.5;
+    float i = floor(t);
+    float f = t - i;
+    float k0 = clamp(i, 0.0, n - 1.0);
+    float k1 = clamp(i + 1.0, 0.0, n - 1.0);
+    float s = clamp(uSoft, 0.0, 1.0) * 0.5;
+    float w = s > 0.0 ? smoothstep(0.5 - s, 0.5 + s, f) : step(0.5, f);
+    vec3 mapped = mix(palette(k0 / n + uShift), palette(k1 / n + uShift), w);
+
+    // Rims: the film's thin bright contours, two stripes hugging the outside
+    // of every brighter shape. Drawn on the DARKER side of an edge only, so a
+    // bright figure on black gets an outline instead of being eaten into.
+    // The stripes take the NEXT two palette colours above the shape they
+    // outline, so they are as saturated as the bands (halfway colours lifted
+    // toward white read as tan and grey, not as the film's neon) and they
+    // cycle with Shift like everything else.
+    if (uRim > 0.0) {
+      float kc = clamp(floor(l * n), 0.0, n - 1.0);
+      float kIn = maxBand(uRim * 0.5, n);
+      float kOut = maxBand(uRim, n);
+      if (kIn > kc) {
+        mapped = palette((kIn + 1.0) / n + uShift);
+      } else if (kOut > kc) {
+        mapped = palette((kOut + 2.0) / n + uShift);
+      }
+    }
+    gl_FragColor = vec4(mix(c.rgb, mapped, uAmount), c.a);
+  }
+`;
+
 // ─── Lens ─────────────────────────────────────────────────────────────────────
 // Barrel/pincushion on one signed control, plus twirl. With Scanlines it is a
 // CRT; with Halftone it is a printed page photographed off one.

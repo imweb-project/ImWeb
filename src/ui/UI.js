@@ -345,6 +345,8 @@ export function buildMappingPanels(ps, contextMenu) {
                                              'halftone', 'halfsize', 'halfangle',
                                              'halfmode',
                                              'duotone', 'duohue1', 'duohue2',
+                                             'colorize', 'colorizebands', 'colorizepal',
+                                             'colorizesoft', 'colorizeshift', 'colorizerim', 'colorizespeed',
                                              'outhue', 'outsat', 'outbright']),
     'effect-texture-params': [
       ...pick('effect', ['grain', 'scanlines', 'scancount']),
@@ -374,6 +376,8 @@ export function buildMappingPanels(ps, contextMenu) {
                                .map(id => ps.get(id)).filter(Boolean)),
     'global-params':       ps.getGroup('global').filter(p =>
       p.id !== 'glsl.preset' && p.id !== 'displace.warpSlot' && p.id !== 'growth.look' &&
+      // The Live strip's MIDI inlets — reached from the strip's slot numbers.
+      !p.id.startsWith('strip.') &&
       p.id !== 'sdf.look' &&
       p.id !== 'reimagine.auto' && p.id !== 'reimagine.look' && p.id !== 'scene3d.shatter.look' &&
       // Segment rows live in each model's animation block (buildSegmentRow).
@@ -1518,7 +1522,7 @@ function buildSegmentRow(ps, contextMenu, getClip, segId, startId, endId, clipId
 // is also where a plain file drop lands (selectedSlot(): -1 = M1).
 // onImport(i, files) does the slot loading (main.js owns ModelSlots and the
 // ModelStore); refresh() repaints after any load, clear or state recall.
-export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear, onImage, imageInfo }) {
+export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear, onImage, imageInfo, onPuppet }) {
   // Texture = Image: a picker (name + Load image) under the model's Texture
   // row, shown only while Image is chosen. i: 0 = M1, 1–3 = M2–M4.
   // imageInfo(i) → { name, missing }; onImage(i, file) loads and stores it.
@@ -1694,8 +1698,49 @@ export function buildModelSlotsPanel(ps, contextMenu, slots, { onImport, onClear
     clr.textContent = '✕ Clear';
     clr.title = `Remove the model from Model ${i + 2}`;
     clr.addEventListener('click', () => { onClear(i); refresh(); });
-    btns.append(imp, clr);
+    // Photo puppet: a photograph of a person, cut out and jointed, takes the
+    // figure's place and performs its movements (PhotoPuppet).
+    const pup = document.createElement('button');
+    pup.className = 'import-btn';
+    pup.title = 'Photograph of a person — whole body, facing the camera, arms away from the body. ' +
+      'They are cut out and move with this model\'s animation.';
+    const unpup = document.createElement('button');
+    unpup.className = 'import-btn';
+    unpup.textContent = '✕ Photo';
+    unpup.title = 'Take the photo puppet away and show the figure again';
+    const pupNote = document.createElement('div');
+    pupNote.className = 'import-note';
+    const pupLabel = () => {
+      const has = !!slots.puppets?.[i];
+      pup.textContent = has ? '🧍 New photo…' : '🧍 Photo puppet…';
+      unpup.style.display = has ? '' : 'none';
+    };
+    pup.addEventListener('click', () => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*,.jpg,.jpeg,.png,.webp,.heic';
+      input.onchange = async e => {
+        const f = e.target.files?.[0];
+        if (!f) return;
+        pup.disabled = true;
+        pup.textContent = '⏳ Working…';
+        pupNote.style.color = '';
+        try {
+          await onPuppet?.(i, f, msg => { pupNote.textContent = msg; });
+          pupNote.textContent = slots.slots[i] && !slots.puppets[i]?.boundTo
+            ? '⚠ Load a rigged figure (DAE) here for the photo to follow' : '';
+        } catch (err) {
+          pupNote.textContent = `⚠ ${err.message}`;
+          pupNote.style.color = 'var(--red, #e05)';
+        } finally { pup.disabled = false; pupLabel(); refresh(); }
+      };
+      input.click();
+    });
+    unpup.addEventListener('click', async () => { await onPuppet?.(i, null); pupNote.textContent = ''; pupLabel(); refresh(); });
+    pupLabel();
+    btns.append(imp, clr, pup, unpup);
     body.appendChild(btns);
+    body.appendChild(pupNote);
 
     const rows = document.createElement('div');
     const mine = [];
@@ -2186,6 +2231,7 @@ const _FX_NODE_INFO = {
   lens:        { label: 'lens',    isActive: p => (p.get('effect.lens')?.value ?? 0) !== 0 || (p.get('effect.twirl')?.value ?? 0) !== 0 },
   halftone:    { label: 'half',    isActive: p => (p.get('effect.halftone')?.value ?? 0) > 0 },
   duotone:     { label: 'duo',     isActive: p => (p.get('effect.duotone')?.value ?? 0) > 0 },
+  colorize:    { label: 'color',   isActive: p => (p.get('effect.colorize')?.value ?? 0) > 0 },
 };
 
 export class SignalPath {
@@ -2226,7 +2272,7 @@ export class SignalPath {
       'effect.enable',
       'effect.sharpen','effect.flip','effect.outhue','effect.outsat','effect.outbright','output.interlace',
       'effect.polar','effect.wavex','effect.wavey','effect.lens','effect.twirl',
-      'effect.halftone','effect.duotone',
+      'effect.halftone','effect.duotone','effect.colorize',
       'effect.vignette','effect.bloom','effect.pixelsort','effect.grain','effect.scanlines','effect.strobe',
       'effect.quadmirror','effect.lvblack','effect.lvwhite','effect.lvgamma',
       'effect.lutamount','effect.wbtemp','effect.wbtint',
@@ -2893,6 +2939,11 @@ export class ContextMenu {
           this.ps.dispatchEvent(new CustomEvent('feedbackToggled', { detail: this._currentParam }));
           this.hide();
         }
+        if (action === 'strip') {
+          // LiveStrip listens: unpin if it is there, else first empty slot.
+          this.ps.dispatchEvent(new CustomEvent('stripPin', { detail: this._currentParam }));
+          this.hide();
+        }
         if (action === 'table') {
           this._showTablePicker(btn);
         }
@@ -3145,7 +3196,10 @@ export class FeedbackOverlay {
   }
 
   _noteTouch(p) {
-    if (!this._touchedMode || p.id.startsWith('global.osd')) return;
+    // Detection runs in every OSD mode: the Live page listens through
+    // onTouch, and one definition of "a hand moved this" must serve both.
+    // strip.kN is an inlet: the parameter it forwards to is the touch.
+    if (p.id.startsWith('global.osd') || p.id.startsWith('strip.')) return;
     if (!this._pending) {
       this._pending = new Set();
       queueMicrotask(() => this._flushTouches());
@@ -3159,7 +3213,11 @@ export class FeedbackOverlay {
     const bulk = this._recallInTask || this._morphing || batch.size > TOUCH_MAX_BATCH;
     this._recallInTask = false;
     if (bulk) return;
-    for (const p of batch) if (!isMachineDriven(p)) this._showTouch(p);
+    for (const p of batch) {
+      if (isMachineDriven(p)) continue;
+      this.onTouch?.(p);
+      if (this._touchedMode) this._showTouch(p);
+    }
   }
 
   _showTouch(p) {

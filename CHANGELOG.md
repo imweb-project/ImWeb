@@ -9,6 +9,57 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Live tab** — a new first tab that shows only what is in play right now:
+  the three layer selectors, a Recent stack, and every parameter that has a
+  controller, grouped under the same section names as the other tabs and in
+  the same order. Recent holds the last eight controls you moved by hand,
+  newest on top; touching one that is already there does not move it, and it
+  stays through a state recall. Click its heading to clear it. Panels of sources that nothing routes are left out, and
+  so is anything whose own on-switch is off. The rows are the ordinary rows,
+  so a change here is a change there. Click a section name to go to its home
+  tab. A row stays for eight seconds after it stops qualifying, so a value
+  dragged back to its default does not disappear under your hand.
+- **Router** — a floating window (R, or ▦ in the top bar) with a small live
+  picture of every source and mix bus, in the same order as the Layers menu.
+  Click a picture to send it to the layer chosen at the top (FG, BG or DS);
+  Shift-click sends to Background and Option-click to DisplaceSrc. Tiles
+  show which layers they feed. A source that nothing uses is dimmed and shows
+  its last picture or none, because the instrument does not render it until it
+  is routed. The pictures cost nothing while the window is closed.
+- **Hover to play** — hold ⌥ (Option) and scroll to change the control under
+  the pointer without clicking. Sliders already did this; lists, switches and
+  the Live strip's slots now do too (a list moves one entry per notch, a
+  switch goes on with scroll-up and off with scroll-down). Press L to start
+  MIDI learn for the control under the pointer; over a Live-strip slot it
+  learns the slot, so the knob follows whatever the slot holds.
+- **Back to where I was** — Backspace returns to the look that was live just
+  before the last state recall, with your unsaved changes and controllers as
+  they were, morphing like any other recall. Press it again to return, so two
+  looks can be flipped between. The snapshot is kept in memory only: it is
+  not a state and is gone on reload.
+- **Look pads** — in the wide layout, the strip under the monitor shows every
+  stored state of the bank as a large pad with its picture and name, and a
+  ↩ Back button. A pad recalls exactly as its tile in the state bar does.
+- **Live strip** — eight slots at the foot of the control panel for the few
+  controls a patch is played by. Right-click any control and choose "Pin to
+  strip" to add it; drag a slot sideways to change the value (Shift for fine),
+  click to flip a switch or step a list, ✕ to clear. Each saved state keeps its
+  own eight, so recalling a Look brings its controls with it. Right-click a
+  slot's number to map a MIDI knob to the slot itself: that knob then plays
+  whatever the slot holds, in every state.
+- **Wide controls** — while the output is on the second screen (ghost mode),
+  the control window now uses its whole width: Sources, Mix, Effects and
+  Output stand side by side in signal-flow order, each scrolling on its own,
+  with Live (or Audio, Project, a workspace) in the first column and the
+  output spy as a small monitor on the left. A section opens by itself when
+  something in it comes into play; one you close by hand stays closed. The ▥
+  button in the top bar
+  turns this off and on; the choice is remembered. Needs a window at least
+  1100 pixels wide.
+- **Tab shows the Live page** — in fullscreen, hold Tab and the Live page lies
+  over the picture; release and it is gone. A short tap leaves it up until the
+  next Tab. Out of fullscreen, Tab flips between the Live tab and the tab you
+  were on. Tab still works as usual inside text fields and the shader editor.
 - **Pictures in the manual** — the Full Manual now has 18 screenshots: the
   window with its areas numbered, a parameter row, the controller menu, the
   state bar, the Layers section, and example pictures of the new 3D shapes,
@@ -134,17 +185,6 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   material on a 3D shape threw an error on every frame and stopped the output.
 - **A bundled 3D model can be reloaded after Back to Geometry** — it used to
   count as still loaded, so neither the button nor a state could bring it back.
-- **Pictures on GLB models are the right way up** — a movie, camera or layer used
-  as the texture of a GLB model was upside down against the same picture on a
-  DAE model. Texture = Image is unchanged.
-
-### Changed
-- **Color is now Color 1, and Col2 Type is now Gradient** — the source menus
-  list **Color 1** beside Color 2, and the row that turns Color 2 into a
-  gradient says so. Names only: saved states, banks and mappings are unchanged.
-- **The 3D plane takes the picture's shape** — new **PlaneShape** (Square /
-  Image, default Image): Basic: Plane keeps its width and takes the output's
-  aspect, so a texture is no longer squashed onto a square (Relief (3D)).
 - **Video covers the whole SDF shape** — with Tex Blend up, only one side of
   each shape showed the picture; the rest was smeared streaks. The picture now
   wraps all the way round, so existing looks with video on them change.
@@ -155,11 +195,11 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   surface, as the control always said; they used to carve into it.
 - **SDF Depth costs less** — it no longer shades anything it throws away, and
   it no longer runs while SDF is switched off.
-  PlaneShape and Scale now sit under Geometry; the Transform section lives in
-  Import Model ▸ M1, where a basic shape's size was hard to find.
-- **Hue, Saturation, Color and Luminosity blends follow Photoshop / W3C** —
-  luma is perceptual (0.3 / 0.59 / 0.11) and saturation is the channel
-  spread, replacing an HSL model that carried *relative* saturation. Faint
+- **Pictures on GLB models are the right way up** — a movie, camera or layer used
+  as the texture of a GLB model was upside down against the same picture on a
+  DAE model. Texture = Image is unchanged.
+
+### Changed
 - **The SDF panel opens on a short live set** — Look, SDF, Speed, Size,
   Variation, Morph, Separation, Hue and Glow; the other sections start
   collapsed below it. Nothing is renamed, so states, banks and mappings are
@@ -172,6 +212,17 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   outlines are no longer stair-stepped, and a tiled lattice dissolves at the far
   end instead of stopping at a wall. Existing Tile looks are fainter in the
   distance.
+- **Color is now Color 1, and Col2 Type is now Gradient** — the source menus
+  list **Color 1** beside Color 2, and the row that turns Color 2 into a
+  gradient says so. Names only: saved states, banks and mappings are unchanged.
+- **The 3D plane takes the picture's shape** — new **PlaneShape** (Square /
+  Image, default Image): Basic: Plane keeps its width and takes the output's
+  aspect, so a texture is no longer squashed onto a square (Relief (3D)).
+  PlaneShape and Scale now sit under Geometry; the Transform section lives in
+  Import Model ▸ M1, where a basic shape's size was hard to find.
+- **Hue, Saturation, Color and Luminosity blends follow Photoshop / W3C** —
+  luma is perceptual (0.3 / 0.59 / 0.11) and saturation is the channel
+  spread, replacing an HSL model that carried *relative* saturation. Faint
   tints (ink on rice paper) no longer go neon blue and red under a darker
   luma source. Saved states using these four modes look calmer than before.
   GPU-checked against the spec formulas: 256 colour pairs within 1/255.
