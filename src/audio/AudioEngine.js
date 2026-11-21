@@ -471,6 +471,19 @@ export class AudioEngine {
 
   cancelJob(jobId) { this._send(`/job/${jobId}/cancel`); }
 
+  /**
+   * Stretch one span of tape into another (PaulStretch). All absolute samples;
+   * `window` a power of two. Paced like a render and settled the same way:
+   * `done` resolves `{ ok }` or `{ ok: false, code, message }`.
+   */
+  stretch(srcStart, srcLen, dstStart, dstLen, window, amount, level) {
+    const jobId = this._nextJobId++;
+    const done = new Promise((resolve) => this._jobs.set(jobId, resolve));
+    this._send('/stretch/render',
+      srcStart | 0, srcLen | 0, dstStart | 0, dstLen | 0, window | 0, amount, level, jobId);
+    return { jobId, done };
+  }
+
   // ── the corpus index (§4.6) ───────────────────────────────────────────────
 
   /**

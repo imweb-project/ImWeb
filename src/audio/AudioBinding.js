@@ -52,6 +52,18 @@ const PARTITION_SLOTS = 4;
  * one region of the tape you could not see, although its own comment said the
  * render "lands exactly where the tape display says it will".
  */
+/**
+ * The Stretch window in samples: seconds → the nearest power of two the engine
+ * accepts (its transform is radix-2). Exported for the audit — the bounds here
+ * must stay inside the engine's, or every render at an end of the slider is
+ * refused.
+ */
+export function stretchWindow(seconds, sampleRate) {
+  const want = Math.max(1, seconds * sampleRate);
+  const pow = Math.pow(2, Math.round(Math.log2(want)));
+  return Math.min(65536, Math.max(1024, pow));
+}
+
 const VIEW_ZONES = Object.freeze([
   ['arec', 'rec', 'REC'],
   ['aplay', 'play', 'PLAY'],
@@ -145,7 +157,9 @@ export class AudioBinding {
       const pct = Math.round((done / total) * 100);
       if (id === this._corpusJobId) this._say(`corpus: analysing ${pct}%`);
       else if (id === this._specJobId) this._say(`spectral: rendering ${pct}%`);
+      else if (id === this._stretchJobId) this._say(`stretch: rendering ${pct}%`);
     };
+    this._stretchJobId = -1;
   }
 
   _say(msg) { this.onStatus?.(msg); }
@@ -1149,6 +1163,68 @@ export class AudioBinding {
     this.engine.cancelJob(this._specJobId);
   }
 
+  // ── the stretch (PaulStretch) ─────────────────────────────────────────────
+
+  /**
+   * Stretch what the Playback zone is reading into the Stretch zone.
+   *
+   * The SOURCE is the Playback zone's region on purpose: it is the one span of
+   * tape the performer already has a hand on and an ear in, so "stretch this"
+   * needs no second set of bounds to keep in step with the first. The
+   * destination is the Stretch zone, drawn and dragged on the tape like the
+   * others. Both go through the same `_zoneFracs` → `zoneSpan` → seam clamp
+   * as the display, so the job reads and writes exactly what the tape shows.
+   *
+   * The engine is told absolute samples and nothing about zones (see
+   * `_stretchRender`). The overlap is checked here as well as there, because
+   * this side can say WHICH two zones overlap and what to do about it.
+   */
+  async renderStretch() {
+    if (!this.running) return this._say('stretch needs the audio engine running');
+    if (this._stretchJobId >= 0) return this._say('stretch: already rendering');
+    if (this._specJobId >= 0) return this._say('stretch: wait for the spectral render to finish');
+    const g = (id) => this.ps.get(id).value;
+    const n = this._tapeLen;
+    const sr = this.engine.sampleRate;
+    const spanOf = (prefix) => {
+      const part = this._part(g(`${prefix}.part`));
+      const fr = this._zoneFracs(prefix);
+      return clampToPartition(zoneSpan(part, fr.start, fr.len), part, g(`${prefix}.unsafe`));
+    };
+    const src = spanOf('aplay');
+    const dst = spanOf('astretch');
+    const srcStart = Math.max(0, Math.round(src.start * n));
+    const srcLen = Math.min(n - srcStart, Math.floor((src.end - src.start) * n));
+    const dstStart = Math.max(0, Math.round(dst.start * n));
+    const dstLen = Math.min(n - dstStart, Math.floor((dst.end - dst.start) * n));
+    if (srcLen < 1) return this._say('stretch: the Playback zone is empty — it is the source');
+    if (dstLen < 1) return this._say('stretch: the Stretch zone is empty');
+    if (srcStart < dstStart + dstLen && dstStart < srcStart + srcLen) {
+      return this._say('stretch: the Stretch zone overlaps the Playback zone it reads from — '
+        + 'move one of them (another partition is the easy way)');
+    }
+    const amount = g('astretch.amount');
+    const window = stretchWindow(g('astretch.window'), sr);
+    const { jobId, done } = this.engine.stretch(
+      srcStart, srcLen, dstStart, dstLen, window, amount, g('astretch.level'));
+    this._stretchJobId = jobId;
+    const outSec = Math.min(dstLen, Math.ceil(srcLen * amount)) / sr;
+    this._say(`stretch: ${(srcLen / sr).toFixed(1)}s ×${amount} → ${outSec.toFixed(1)}s…`);
+    const res = await done;
+    this._stretchJobId = -1;
+    this._say(res.ok
+      ? `stretch: ${outSec.toFixed(1)}s written into P${g('astretch.part')}`
+        + (srcLen * amount > dstLen ? ' (the zone filled before the source ran out)' : '')
+      : `stretch refused (${res.code}): ${res.message}`);
+    return res;
+  }
+
+  /** Stop the stretch in flight. What was written stays, as with a render. */
+  cancelStretch() {
+    if (!(this._stretchJobId >= 0)) return this._say('stretch: nothing is rendering');
+    this.engine.cancelJob(this._stretchJobId);
+  }
+
   // ── the corpus index (§4.6) ───────────────────────────────────────────────
 
   attachCorpusView(canvas) {
@@ -1481,6 +1557,10 @@ export class AudioBinding {
       this.renderSpectral().catch((e) => this._say(`spectral render failed: ${e.message}`));
     });
     this._on('aspec.cancel', () => this.cancelSpectral());
+    this._on('astretch.render', () => {
+      this.renderStretch().catch((e) => this._say(`stretch failed: ${e.message}`));
+    });
+    this._on('astretch.cancel', () => this.cancelStretch());
 
     // The corpus (§4.6). Axis changes RE-PROJECT the measurements already held;
     // they never re-measure. That is the index paying for itself.

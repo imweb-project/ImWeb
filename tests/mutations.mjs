@@ -1995,4 +1995,81 @@ export const MUTATIONS = [
     find: "    if (prefix === 'aspec') len /= this._specSlow();",
     replace: '',
   },
+  // ═════════════════════════════════════════════════════════════════════════
+  // The stretch (audit-audio-stretch.mjs). Nearly every defect here still
+  // produces a long smeared wash — which is what the feature is for — so each
+  // of these is caught by a MEASUREMENT, never by "did the tape fill".
+  // ═════════════════════════════════════════════════════════════════════════
+  {
+    name: 'stretch: the input window is not accounted for in the gain',
+    audit: 'audit-audio-stretch.mjs',
+    file: 'src/audio/engine/tape-processor.js',
+    why: 'the published correction: the result comes out at about 0.6 of the level that went in',
+    find: '      hinv[n] = 1 / Math.sqrt(meanW2 * (win[n] * win[n] + win[n + half] * win[n + half]));',
+    replace: '      hinv[n] = 1 / Math.sqrt(win[n] * win[n] + win[n + half] * win[n + half]);',
+  },
+  {
+    name: 'stretch: overlapping frames are summed as amplitudes',
+    audit: 'audit-audio-stretch.mjs',
+    file: 'src/audio/engine/tape-processor.js',
+    why: 'the level pulses at the frame rate — a tremolo nobody asked for, at a rate set by the Window control',
+    find: '      hinv[n] = 1 / Math.sqrt(meanW2 * (win[n] * win[n] + win[n + half] * win[n + half]));',
+    replace: '      hinv[n] = 1 / (Math.sqrt(meanW2) * (win[n] + win[n + half]));',
+  },
+  {
+    name: 'stretch: the spectrum is not mirrored',
+    audit: 'audit-audio-stretch.mjs',
+    file: 'src/audio/engine/tape-processor.js',
+    why: 'the inverse transform is no longer real: half the energy goes to an imaginary part that is thrown away',
+    find: "            re0[k] = m0 * c; im0[k] = m0 * s; re0[W - k] = m0 * c; im0[W - k] = -m0 * s;",
+    replace: "            re0[k] = m0 * c; im0[k] = m0 * s; re0[W - k] = 0; im0[W - k] = 0;",
+  },
+  {
+    name: 'stretch: the paced FFT loses its place inside a block',
+    audit: 'audit-audio-stretch.mjs',
+    file: 'src/audio/engine/tape-processor.js',
+    why: 'the result depends on where the quantum boundaries fell — right on one machine and load, noise on another',
+    find: '        if (j < h) { job.fLen = len; job.fI = i; job.fJ = j; return 0; }',
+    replace: '        if (j < h) { job.fLen = len; job.fI = i; job.fJ = 0; return 0; }',
+  },
+  {
+    name: 'stretch: unseeded phases',
+    audit: 'audit-audio-stretch.mjs',
+    file: 'src/audio/engine/tape-processor.js',
+    why: 'the same stretch of the same material is a different sound every time — a take cannot be repeated',
+    find: '      seed: STRETCH_SEED,',
+    replace: '      seed: (Math.random() * 0x7fffffff) | 0,',
+  },
+  {
+    name: 'stretch: an overlapping destination is accepted',
+    audit: 'audit-audio-stretch.mjs',
+    file: 'src/audio/engine/tape-processor.js',
+    why: 'the job reads material it has itself already overwritten — the source is destroyed and the result is a stretch of a stretch',
+    find: "    if (srcStart < dstStart + dstLen && dstStart < srcStart + srcLen) {\n      return fail(REFUSE_BAD_RANGE, 'stretch source and destination overlap');\n    }\n",
+    replace: '',
+  },
+  {
+    name: 'stretch: the destination is padded past the end of the source',
+    audit: 'audit-audio-stretch.mjs',
+    file: 'src/audio/engine/tape-processor.js',
+    why: 'whatever was in the rest of the zone is overwritten with silence',
+    find: '    const len = Math.min(dstLen, Math.ceil(srcLen * stretch));',
+    replace: '    const len = dstLen;',
+  },
+  {
+    name: 'stretch: right channel reads the left',
+    audit: 'audit-audio-stretch.mjs',
+    file: 'src/audio/engine/tape-processor.js',
+    why: 'every stretch comes out mono',
+    find: '            re1[k] = inside ? R[at] * w : 0;',
+    replace: '            re1[k] = inside ? L[at] * w : 0;',
+  },
+  {
+    name: 'stretch: a realloc is allowed under a running job',
+    audit: 'audit-audio-stretch.mjs',
+    file: 'src/audio/engine/tape-processor.js',
+    why: 'the job goes on writing by absolute index into a tape of a different length',
+    find: "    if (this._stretchJob) {\n      return this._refuse(REFUSE_LAYOUT_LOCKED,\n        `cannot reallocate the tape while job ${this._stretchJob.id} is stretching`);\n    }\n",
+    replace: '',
+  },
 ];

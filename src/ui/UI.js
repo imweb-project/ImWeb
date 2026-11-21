@@ -538,6 +538,12 @@ export function buildMappingPanels(ps, contextMenu) {
       ps.get('acorp.hop'), ps.get('acorp.window'),
       ps.get('acorp.analyse'), ps.get('acorp.cancel'),
     ].filter(Boolean),
+    // The stretch: where it lands, how much, how grainy, then the verb. Its
+    // source is the Playback zone, so there are no source controls here.
+    'audio-stretch-params': [
+      ...pick('astretch', ['part', 'start', 'len', 'unsafe', 'amount', 'window', 'level']),
+      ps.get('astretch.render'), ps.get('astretch.cancel'),
+    ].filter(Boolean),
     // `pos` sits next to `part`: it is a POSITION within that partition, and it
     // is the control an LFO gets attached to for time stretch.
     'audio-grain-params': pick('agrain', ['part', 'pos', 'on', 'size', 'rate',

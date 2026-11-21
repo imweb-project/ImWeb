@@ -16,7 +16,7 @@
  * analysis, stretch).
  */
 
-const PROTO_VERSION = 6;
+const PROTO_VERSION = 7;
 const REFUSE_PROTO_MISMATCH = 1;
 const REFUSE_NO_TAPE = 2;
 const REFUSE_BAD_RANGE = 3;
@@ -217,6 +217,23 @@ const CORPUS_MIN_LAG = 8;
  * that is a fact about the constants rather than an assumption about material.
  */
 const CORPUS_OPS_PER_QUANTUM = 1 << 17;
+
+/**
+ * The stretch (PaulStretch). Budgeted in BUTTERFLIES — one complex
+ * multiply-add pair of the FFT — because that is what nearly all of it is: a
+ * frame is four transforms of `W log2 W / 2` butterflies each, and the loading,
+ * phase and output passes are charged per sample against the same number.
+ * 2^15 per quantum renders about four times faster than real time whatever the
+ * window, since the work per output sample grows only with log2 W.
+ *
+ * The window bounds are what the client's 0.05–2 s becomes at any sample rate;
+ * a power of two because the transform is radix-2.
+ */
+const STRETCH_OPS_PER_QUANTUM = 1 << 15;
+const MIN_STRETCH_WINDOW = 1024;
+const MAX_STRETCH_WINDOW = 65536;
+const MAX_STRETCH = 1000;
+const STRETCH_SEED = 0x51ed270b;
 
 /**
  * Concurrent grains per zone. Sixteen is rate × size = 160 grains/second at
@@ -606,6 +623,8 @@ class TapeProcessor extends AudioWorkletProcessor {
      * the result is then a description of what was there when it looked.
      */
     this._corpusJob = null;
+    /** The PaulStretch job, or null — see `_stretchRender`. */
+    this._stretchJob = null;
     /**
      * Decimated scratch for the pitch autocorrelation, allocated once at full
      * size. `_corpusStep` runs inside `process()` and may not allocate.
@@ -813,6 +832,8 @@ class TapeProcessor extends AudioWorkletProcessor {
       // reads. Nothing between them is in this file — the map is the client's.
       case '/corpus/analyse':
         return this._corpusAnalyse(v[0], v[1], v[2], v[3], v[4]);
+      case '/stretch/render':
+        return this._stretchRender(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7]);
       // `pos` and `level` go through the OWNERSHIP guard: both are single-float
       // addresses, so §8.7 makes them legal worklet-controller targets, and a
       // direct write to a target a controller drives is refused rather than
@@ -1491,6 +1512,10 @@ class TapeProcessor extends AudioWorkletProcessor {
       return this._refuse(REFUSE_LAYOUT_LOCKED,
         `cannot reallocate the tape while job ${this._specJob.id} is rendering`);
     }
+    if (this._stretchJob) {
+      return this._refuse(REFUSE_LAYOUT_LOCKED,
+        `cannot reallocate the tape while job ${this._stretchJob.id} is stretching`);
+    }
     // The corpus analysis is a READ, so unlike a render it does not block the
     // realloc — but its cursors index the tape that is about to be replaced, so
     // it is settled first, exactly as the envelope scans below are.
@@ -1512,6 +1537,7 @@ class TapeProcessor extends AudioWorkletProcessor {
     // ends the render and says why. A job left pointing into a freed tape would
     // index an empty array on the next quantum.
     this._specCancel(REFUSE_NO_TAPE, 'the tape was cleared by panic');
+    this._stretchCancel(REFUSE_NO_TAPE, 'the tape was cleared by panic');
     this._corpusCancel(REFUSE_NO_TAPE, 'the tape was cleared by panic');
     // Grains too. Panic is the one place a click is the correct outcome, so
     // in-flight windows are cut rather than allowed to finish.
@@ -1919,6 +1945,320 @@ class TapeProcessor extends AudioWorkletProcessor {
     this.port.postMessage({ a: `/job/${job.id}/progress`, t: 'ii', v: [job.g, job.count] });
   }
 
+  // ── the stretch (PaulStretch) ─────────────────────────────────────────────
+
+  /**
+   * Accept a stretch: read one span of tape, write a much longer version of it
+   * into another, pitch unchanged.
+   *
+   * The method is Nasca Octavian Paul's ("PaulStretch"), and it is the opposite
+   * of a phase vocoder on purpose. Take a long window of the source, keep each
+   * frequency's MAGNITUDE, throw its phase away and draw a new one at random,
+   * transform back, and overlap-add at half a window. Because nothing tries to
+   * keep phases coherent from frame to frame there is nothing to go wrong at
+   * 50× or 100× — no transient artefacts to manage, no "phasiness": the smear
+   * IS the sound. The source is stepped through at `half / stretch` per frame,
+   * so the window slides slowly over the material while the output advances at
+   * full speed.
+   *
+   * Spans are ABSOLUTE samples and the seam is the client's business (it clamps
+   * to the partition exactly as it does for the display) — the same division
+   * `/corpus/analyse` uses. What the engine insists on is what only it can
+   * know: both spans are on the tape, and they do not overlap. An overlap is
+   * REFUSED rather than handled with a scratch copy: the source is read
+   * progressively while the destination fills, so a shared sample would be
+   * stretched from material the job had itself already written.
+   *
+   * Everything is allocated HERE, in the message handler, and nothing in
+   * `_stretchStep`: the work buffers are sized by the window, which is fixed for
+   * the life of the job.
+   */
+  _stretchRender(srcStart, srcLen, dstStart, dstLen, window, stretch, level, jobId) {
+    const id = Number.isInteger(jobId) ? jobId : -1;
+    const fail = (code, msg) => {
+      if (id >= 0) this.port.postMessage({ a: `/job/${id}/error`, t: 'is', v: [code, msg] });
+      this._refuse(code, msg);
+    };
+    if (this._stretchJob) {
+      return fail(REFUSE_BUSY, `stretch job ${this._stretchJob.id} is still running`);
+    }
+    // One tape WRITER at a time. Both are budgeted to leave the quantum on
+    // time, and two budgets spent in one quantum is a promise broken quietly.
+    if (this._specJob) {
+      return fail(REFUSE_BUSY, `spectral job ${this._specJob.id} is still rendering`);
+    }
+    if (!this._length) return fail(REFUSE_NO_TAPE, 'no tape allocated');
+    for (const [name, v] of [['source start', srcStart], ['source length', srcLen],
+      ['destination start', dstStart], ['destination length', dstLen], ['window', window]]) {
+      if (!Number.isInteger(v)) return fail(REFUSE_BAD_RANGE, `stretch ${name} ${v} is not an integer`);
+    }
+    if (srcLen < 1 || srcStart < 0 || srcStart + srcLen > this._length) {
+      return fail(REFUSE_BAD_RANGE,
+        `stretch source ${srcStart}..${srcStart + srcLen} leaves the tape (0..${this._length})`);
+    }
+    if (dstLen < 1 || dstStart < 0 || dstStart + dstLen > this._length) {
+      return fail(REFUSE_BAD_RANGE,
+        `stretch destination ${dstStart}..${dstStart + dstLen} leaves the tape (0..${this._length})`);
+    }
+    if (srcStart < dstStart + dstLen && dstStart < srcStart + srcLen) {
+      return fail(REFUSE_BAD_RANGE, 'stretch source and destination overlap');
+    }
+    if (window < MIN_STRETCH_WINDOW || window > MAX_STRETCH_WINDOW || (window & (window - 1))) {
+      return fail(REFUSE_BAD_RANGE,
+        `stretch window ${window} is not a power of two in ${MIN_STRETCH_WINDOW}..${MAX_STRETCH_WINDOW}`);
+    }
+    if (!(stretch >= 1 && stretch <= MAX_STRETCH)) {
+      return fail(REFUSE_BAD_RANGE, `stretch amount ${stretch} outside 1..${MAX_STRETCH}`);
+    }
+    if (!(level >= 0 && level <= 4)) {
+      return fail(REFUSE_BAD_RANGE, `stretch level ${level} outside 0..4`);
+    }
+
+    const W = window;
+    const half = W >> 1;
+    // The output ends when the destination is full OR the source runs out,
+    // whichever is first — so a destination longer than the stretched source
+    // is left alone past that point instead of being padded with silence.
+    const len = Math.min(dstLen, Math.ceil(srcLen * stretch));
+
+    const win = new Float32Array(W);
+    for (let n = 0; n < W; n++) {
+      const x = (2 * n) / (W - 1) - 1;
+      win[n] = Math.pow(1 - x * x, 1.25);
+    }
+    // The gain that makes the output the level of the input, exactly. The
+    // window is applied twice: going in it scales a frame's power by the mean
+    // of w², and coming out two frames overlap at half a window. Those two
+    // frames are UNCORRELATED — each has its own random phases, which is the
+    // whole method — so their POWERS add, not their amplitudes, and the level
+    // at sample n is sqrt(mean(w²) · (w[n]² + w[n+half]²)). Dividing by that is
+    // unity at every n. The published algorithm's cosine correction is an
+    // approximation to the second factor and ignores the first: measured here
+    // it left the output at 0.59 of the input and pulsing by a quarter at the
+    // frame rate.
+    let meanW2 = 0;
+    for (let n = 0; n < W; n++) meanW2 += win[n] * win[n];
+    meanW2 /= W;
+    const hinv = new Float32Array(half);
+    for (let n = 0; n < half; n++) {
+      hinv[n] = 1 / Math.sqrt(meanW2 * (win[n] * win[n] + win[n + half] * win[n + half]));
+    }
+    const bits = Math.log2(W) | 0;
+    const rev = new Uint32Array(W);
+    for (let n = 0; n < W; n++) {
+      let r = 0;
+      for (let b = 0; b < bits; b++) r |= ((n >>> b) & 1) << (bits - 1 - b);
+      rev[n] = r >>> 0;
+    }
+    const cosT = new Float64Array(half);
+    const sinT = new Float64Array(half);
+    for (let n = 0; n < half; n++) {
+      cosT[n] = Math.cos((2 * Math.PI * n) / W);
+      sinT[n] = Math.sin((2 * Math.PI * n) / W);
+    }
+
+    this._stretchJob = {
+      id, src: srcStart, srcEnd: srcStart + srcLen, dst: dstStart, len, pos: 0, sent: -1,
+      W, half, level, inHop: half / stretch, frame: 0,
+      win, hinv, rev, cosT, sinT,
+      re: [new Float64Array(W), new Float64Array(W)],
+      im: [new Float64Array(W), new Float64Array(W)],
+      // The second half of the previous frame, already windowed, waiting to be
+      // overlapped with the first half of the next.
+      old: [new Float32Array(half), new Float32Array(half)],
+      seed: STRETCH_SEED,
+      // Where in the frame the work stopped last quantum: a stage, and a cursor
+      // inside it. The FFT cursor is (size, block, butterfly) so that a 65536-
+      // point transform — about a million butterflies — can stop ANYWHERE.
+      stage: 0, n: 0, fLen: 2, fI: 0, fJ: 0,
+    };
+  }
+
+  /**
+   * One resumable radix-2 FFT pass over `re`/`im`, which must already be in
+   * bit-reversed order. `sign` is −1 forward, +1 inverse (unscaled).
+   * Returns the budget left; the transform is finished when `job.fLen > W`.
+   */
+  _stretchFFT(job, re, im, sign, budget) {
+    const { W, cosT, sinT } = job;
+    let len = job.fLen, i = job.fI, j = job.fJ;
+    while (len <= W) {
+      const h = len >> 1;
+      const step = W / len;
+      while (i < W) {
+        const room = budget < h - j ? budget : h - j;
+        budget -= room;
+        for (const end = j + room; j < end; j++) {
+          const c = cosT[j * step];
+          const s = sign * sinT[j * step];
+          const a = i + j, b = a + h;
+          const tr = re[b] * c - im[b] * s;
+          const ti = re[b] * s + im[b] * c;
+          re[b] = re[a] - tr; im[b] = im[a] - ti;
+          re[a] += tr; im[a] += ti;
+        }
+        // Out of budget inside a block, or between two: either way the cursor
+        // says exactly where, and the next quantum carries on from it.
+        if (j < h) { job.fLen = len; job.fI = i; job.fJ = j; return 0; }
+        j = 0;
+        i += len;
+        if (budget <= 0 && i < W) { job.fLen = len; job.fI = i; job.fJ = 0; return 0; }
+      }
+      i = 0;
+      len <<= 1;
+    }
+    job.fLen = len; job.fI = 0; job.fJ = 0;
+    return budget;
+  }
+
+  /**
+   * One quantum's worth of stretching. A frame is eight stages, each of which
+   * can stop part-way and pick up next quantum:
+   *
+   *   0    load the source window (both channels), windowed, bit-reversed
+   *   1,2  forward FFT, left then right
+   *   3    magnitude kept, phase replaced at random — the same phase for both
+   *        channels, so what was centred stays centred
+   *   4    bit-reverse for the way back
+   *   5,6  inverse FFT, left then right
+   *   7    window again, overlap with the last frame's tail, write to the tape
+   */
+  _stretchStep() {
+    const job = this._stretchJob;
+    if (!job) return;
+    const { W, half, win, rev, re, im } = job;
+    const L = this._tape[0], R = this._tape[1];
+    let budget = STRETCH_OPS_PER_QUANTUM;
+
+    while (budget > 0) {
+      switch (job.stage) {
+        case 0: {
+          const base = job.src + Math.floor(job.frame * job.inHop);
+          const end = job.n + budget < W ? job.n + budget : W;
+          const re0 = re[0], re1 = re[1], im0 = im[0], im1 = im[1];
+          for (let n = job.n; n < end; n++) {
+            const at = base + n;
+            const w = win[n];
+            const k = rev[n];
+            // Past the end of the source is silence, not the next thing on the
+            // tape: the last frames fade out over the source's own tail.
+            const inside = at < job.srcEnd;
+            re0[k] = inside ? L[at] * w : 0;
+            re1[k] = inside ? R[at] * w : 0;
+            im0[k] = 0; im1[k] = 0;
+          }
+          budget -= end - job.n;
+          job.n = end;
+          if (end < W) return;
+          job.n = 0; job.fLen = 2; job.fI = 0; job.fJ = 0; job.stage = 1;
+          break;
+        }
+        case 1: case 2: case 5: case 6: {
+          const ch = job.stage === 1 || job.stage === 5 ? 0 : 1;
+          budget = this._stretchFFT(job, re[ch], im[ch], job.stage < 3 ? -1 : 1, budget);
+          if (job.fLen <= W) return;
+          job.fLen = 2;
+          job.stage++;
+          break;
+        }
+        case 3: {
+          // Bins 1..half-1 and their mirrors. Bin 0 and the Nyquist bin are
+          // their own mirrors and must stay real, so they keep phase 0.
+          const re0 = re[0], re1 = re[1], im0 = im[0], im1 = im[1];
+          if (job.n === 0) {
+            re0[0] = Math.abs(re0[0]); im0[0] = 0; re1[0] = Math.abs(re1[0]); im1[0] = 0;
+            re0[half] = Math.hypot(re0[half], im0[half]); im0[half] = 0;
+            re1[half] = Math.hypot(re1[half], im1[half]); im1[half] = 0;
+            job.n = 1;
+          }
+          // Charged four per bin: two magnitudes, a cosine and a sine.
+          const room = budget >> 2;
+          const end = job.n + room < half ? job.n + room : half;
+          let seed = job.seed;
+          for (let k = job.n; k < end; k++) {
+            // mulberry32, as in the spectral render — seeded, so the same
+            // stretch of the same material is the same sound every time.
+            seed = (seed + 0x6d2b79f5) | 0;
+            let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+            t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+            const ph = (((t ^ (t >>> 14)) >>> 0) / 4294967296) * 2 * Math.PI;
+            const c = Math.cos(ph), s = Math.sin(ph);
+            const m0 = Math.hypot(re0[k], im0[k]);
+            const m1 = Math.hypot(re1[k], im1[k]);
+            re0[k] = m0 * c; im0[k] = m0 * s; re0[W - k] = m0 * c; im0[W - k] = -m0 * s;
+            re1[k] = m1 * c; im1[k] = m1 * s; re1[W - k] = m1 * c; im1[W - k] = -m1 * s;
+          }
+          job.seed = seed;
+          budget -= (end - job.n) << 2;
+          job.n = end;
+          if (end < half) return;
+          job.n = 0; job.stage = 4;
+          break;
+        }
+        case 4: {
+          const end = job.n + budget < W ? job.n + budget : W;
+          for (let n = job.n; n < end; n++) {
+            const k = rev[n];
+            if (k > n) {
+              for (let ch = 0; ch < 2; ch++) {
+                const a = re[ch], b = im[ch];
+                const tr = a[n]; a[n] = a[k]; a[k] = tr;
+                const ti = b[n]; b[n] = b[k]; b[k] = ti;
+              }
+            }
+          }
+          budget -= end - job.n;
+          job.n = end;
+          if (end < W) return;
+          job.n = 0; job.fLen = 2; job.fI = 0; job.fJ = 0; job.stage = 5;
+          break;
+        }
+        default: {   // 7
+          const { hinv, old, level } = job;
+          const scale = 1 / W;
+          const at = job.dst + job.pos;
+          const count = half < job.len - job.pos ? half : job.len - job.pos;
+          for (let ch = 0; ch < 2; ch++) {
+            const out = ch === 0 ? L : R;
+            const x = re[ch], o = old[ch];
+            for (let n = 0; n < half; n++) {
+              if (n < count) out[at + n] = (x[n] * scale * win[n] + o[n]) * hinv[n] * level;
+              o[n] = x[n + half] * scale * win[n + half];
+            }
+          }
+          budget -= W;
+          this._markDirty(at, at + count);
+          job.pos += count;
+          job.frame++;
+          job.stage = 0;
+          if (job.pos >= job.len) return this._stretchDone();
+          break;
+        }
+      }
+    }
+  }
+
+  _stretchDone() {
+    const id = this._stretchJob.id;
+    this._stretchJob = null;
+    this.port.postMessage({ a: `/job/${id}/done`, t: '', v: [] });
+  }
+
+  /** What was written stays written — the same rule, for the same reason, as `_specCancel`. */
+  _stretchCancel(code, message) {
+    const job = this._stretchJob;
+    if (!job) return;
+    this._stretchJob = null;
+    this.port.postMessage({ a: `/job/${job.id}/error`, t: 'is', v: [code, message] });
+  }
+
+  _stretchFlush() {
+    const job = this._stretchJob;
+    if (!job || job.pos === job.sent) return;
+    job.sent = job.pos;
+    this.port.postMessage({ a: `/job/${job.id}/progress`, t: 'ii', v: [job.pos, job.len] });
+  }
+
   // ── the grain player (§4.6) ───────────────────────────────────────────────
 
   /**
@@ -2220,6 +2560,9 @@ class TapeProcessor extends AudioWorkletProcessor {
     if (this._specJob) {
       return fail(REFUSE_BUSY, `job ${this._specJob.id} is still rendering`);
     }
+    if (this._stretchJob) {
+      return fail(REFUSE_BUSY, `stretch job ${this._stretchJob.id} is still running`);
+    }
     if (!this._length) return fail(REFUSE_NO_TAPE, 'no tape allocated');
     if (!Number.isInteger(slot) || slot < 0 || slot >= MAX_SPEC_SLOTS) {
       return fail(REFUSE_BAD_RANGE, `spectral slot ${slot} out of range`);
@@ -2457,6 +2800,9 @@ class TapeProcessor extends AudioWorkletProcessor {
     if (this._corpusJob && this._corpusJob.id === id) {
       return this._corpusCancel(REFUSE_CANCELLED, 'cancelled by the client');
     }
+    if (this._stretchJob && this._stretchJob.id === id) {
+      return this._stretchCancel(REFUSE_CANCELLED, 'cancelled by the client');
+    }
     this._refuse(REFUSE_BAD_RANGE, `job ${id} is not running`);
   }
 
@@ -2505,6 +2851,12 @@ class TapeProcessor extends AudioWorkletProcessor {
     if (this._specJob && this._specJob.part === slot) {
       return this._refuse(REFUSE_LAYOUT_LOCKED,
         `partition ${slot} is being rendered by job ${this._specJob.id}`);
+    }
+    // A stretch holds two absolute spans and knows no partitions, so it locks
+    // the whole layout: any relayout could move material out from under either.
+    if (this._stretchJob) {
+      return this._refuse(REFUSE_LAYOUT_LOCKED,
+        `layout is fixed while job ${this._stretchJob.id} is stretching`);
     }
     this._parts[slot].start = start;
     this._parts[slot].len = len;
@@ -3303,6 +3655,8 @@ class TapeProcessor extends AudioWorkletProcessor {
     // both are somehow in flight, measuring after the write describes the
     // material that now exists rather than the material that is about to.
     if (this._corpusJob) this._corpusStep();
+    // The stretch, on the same terms as the render it cannot run beside.
+    if (this._stretchJob) this._stretchStep();
 
     if (++this._quanta >= this._quantaPerFlush) {
       this._quanta = 0;
@@ -3310,6 +3664,7 @@ class TapeProcessor extends AudioWorkletProcessor {
       this._ctrlFlush();
       this._specFlush();
       this._corpusFlush();
+      this._stretchFlush();
     }
     return true;
   }

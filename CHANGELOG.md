@@ -36,6 +36,13 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   and that many times shorter, so playing it back at Rate 1/× gives the full
   length at the pitch Root says. This is the "render high, then slow it down"
   trick as one control.
+- **Stretch** — a new section in the Audio tab. Makes what the Playback zone
+  is set to 2 to 100 times longer without changing its pitch, written into its
+  own zone on the tape (the PaulStretch method: long overlapping slices with
+  scrambled phases, so it stays smooth at any amount). **Window** sets the
+  grain — short keeps the rhythm, long is a wash. Renders about four times
+  faster than it plays, can be cancelled, and gives the same result every time.
+  The Stretch zone has its own handle on the Tape.
 - **Spectral Writer: Tilt.** Gives each row its own time. Above 0 the high
   rows play out slower than the low ones (up to 8× at 1), so the top of the
   picture trails behind the bottom; below 0 the low rows are the slow ones.

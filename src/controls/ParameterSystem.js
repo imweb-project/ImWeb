@@ -9588,6 +9588,61 @@ export function registerCoreParameters(ps) {
     type: PARAM_TYPE.TRIGGER,
   });
 
+  // ── The stretch (PaulStretch) ─────────────────────────────────────────────
+  //
+  // Reads the PLAYBACK zone's region and writes a much longer version of it,
+  // pitch unchanged, into the zone declared here. Same shape and the same
+  // group split as the spectral writer, for the same reasons: the zone and
+  // the settings are performance state ('astretch', captured — every value is
+  // a number or an index into a fixed list), and the two verbs are 'global',
+  // because Render overwrites tape and a State recall must never do that.
+  //
+  // Partition defaults to P1, not P0: the Playback zone starts out on P0 and
+  // the engine refuses a destination that overlaps its source, so P0 here
+  // would make the very first Render fail.
+  ps.register({
+    id: "astretch.part", label: "Partition Str", group: "astretch",
+    type: PARAM_TYPE.SELECT, value: 1,
+    options: Array.from({ length: PARTITION_SLOTS }, (_, i) => `P${i}`),
+  });
+  ps.register({
+    id: "astretch.start", label: "Start Str", group: "astretch",
+    min: 0, max: 1, value: 0, step: 0.001,
+  });
+  ps.register({
+    id: "astretch.len", label: "Length Str", group: "astretch",
+    min: 0, max: 1, value: 1, step: 0.001,
+  });
+  ps.register({
+    id: "astretch.unsafe", label: "Unsafe Str", group: "astretch",
+    type: PARAM_TYPE.TOGGLE, value: 0,
+  });
+  // How many times longer. The render stops when the zone is full or the
+  // source runs out, whichever comes first.
+  ps.register({
+    id: "astretch.amount", label: "Stretch ×", group: "astretch",
+    min: 2, max: 100, value: 8, step: 0.1,
+  });
+  // The grain of it. A short window follows the rhythm of the source and
+  // sounds granular; a long one loses every attack and becomes a smooth wash.
+  // Rounded to a power of two in samples by `stretchWindow`.
+  ps.register({
+    id: "astretch.window", label: "Window", group: "astretch",
+    min: 0.05, max: 1.5, value: 0.25, step: 0.01, unit: "s",
+  });
+  ps.register({
+    id: "astretch.level", label: "Level Str", group: "astretch",
+    min: 0, max: 1, value: 1, step: 0.01,
+  });
+  ps.register({
+    id: "astretch.render", label: "Stretch", group: "global",
+    type: PARAM_TYPE.TRIGGER,
+  });
+  ps.register({
+    id: "astretch.cancel", label: "Cancel Stretch", group: "global",
+    type: PARAM_TYPE.TRIGGER,
+  });
+
   // ── The corpus index (§4.6) ───────────────────────────────────────────────
   //
   // Two halves that are deliberately not one panel's worth of the same thing:

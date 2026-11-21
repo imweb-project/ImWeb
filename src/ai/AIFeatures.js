@@ -1078,7 +1078,7 @@ export function setVisionShader(on) {
  */
 const NON_VISUAL_PREFIXES = [
   // Audio engine internals — the Sound SOURCE is visual, its DSP guts are not.
-  'aspec', 'avoice', 'aplay', 'agrain', 'acorp', 'arec', 'audio',
+  'aspec', 'astretch', 'avoice', 'aplay', 'agrain', 'acorp', 'arec', 'audio',
   'apart0', 'apart1', 'apart2', 'apart3',
   // Hardware, input and plumbing: nothing here describes a look.
   'midi', 'touch', 'canvas', 'screen', 'clip', 'projmap',
