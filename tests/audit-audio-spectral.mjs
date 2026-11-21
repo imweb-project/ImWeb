@@ -23,8 +23,9 @@
 
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { PROTO_VERSION, REFUSE } from '../src/audio/protocol.js';
-import { SCALES, buildPitches, imageFromLuma, lumaFromRGBA } from '../src/audio/spectral-image.js';
+import { SCALES, buildPitches, imageFromLuma, lumaFromRGBA, tiltImage, TILT_OCTAVES } from '../src/audio/spectral-image.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -156,6 +157,95 @@ console.log('\nscales are a client-side idea (the engine is only told frequencie
   check('a low sample rate shortens the table further',
     buildPitches(0, 110, 200, 8000).length < tall.length,
     'the ceiling must depend on the sample rate, not be a constant');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// The scale list grew from ten to thirty-six (2026-11). Two things about a
+// longer list can go wrong without any error: an index that MOVED (a SELECT
+// stores an index, so every saved project is silently re-tuned), and a new
+// scale whose rows are not strictly rising (two rows on one pitch double its
+// level; a falling row puts the top of the picture below the bottom).
+console.log('\nthe scale list is append-only, and every scale is a rising table');
+{
+  const ORIGINAL = ['Chromatic', 'Major', 'Natural minor', 'Harmonic minor', 'Dorian',
+    'Pentatonic', 'Minor pentatonic', 'Whole tone', 'Octatonic', 'Harmonic series'];
+  check('the first ten scales are where saved projects left them',
+    ORIGINAL.every((n, i) => SCALES[i]?.name === n),
+    SCALES.slice(0, 10).map((s) => s.name).join(', '));
+  check('no two scales share a name', new Set(SCALES.map((s) => s.name)).size === SCALES.length);
+  const bad = [];
+  for (let i = 0; i < SCALES.length; i++) {
+    for (const [root, rows] of [[55, 64], [110, 128], [880, 48]]) {
+      const p = buildPitches(i, root, rows, SR);
+      let ok = p.length > 0 && Math.abs(p[0] - root) < root * 1e-6 && p[p.length - 1] < SR / 2;
+      for (let j = 1; j < p.length && ok; j++) if (!(p[j] > p[j - 1])) ok = false;
+      if (!ok) bad.push(`${SCALES[i].name}@${root}`);
+    }
+  }
+  check('every scale starts on the root, rises strictly and stays below Nyquist',
+    bad.length === 0, bad.join(', '));
+
+  const ix = (n) => SCALES.findIndex((s) => s.name === n);
+  const bp = buildPitches(ix('Bohlen-Pierce'), 100, 14, SR);
+  check('Bohlen-Pierce repeats at 3:1, not at the octave', Math.abs(bp[13] - 300) < 0.01, `${bp[13]}`);
+  const just = buildPitches(ix('Just major'), 200, 5, SR);
+  check('Just major has a pure 5:4 third and 3:2 fifth',
+    Math.abs(just[2] - 250) < 0.001 && Math.abs(just[4] - 300) < 0.001, [...just].join(' '));
+  const qt = buildPitches(ix('Quarter-tone'), 110, 3, SR);
+  check('a quarter-tone step is 50 cents', Math.abs(cents(qt[1], qt[0]) - 50) < 0.01);
+  const sub = buildPitches(ix('Subharmonic series'), 100, 4, SR);
+  check('the subharmonic series is integer DIVISIONS of its top row',
+    [4, 3, 2, 1].every((d, i) => Math.abs(sub[i] - 400 / d) < 0.001), [...sub].join(' '));
+  const odd = buildPitches(ix('Odd harmonics'), 100, 4, SR);
+  check('odd harmonics are 1, 3, 5, 7', [100, 300, 500, 700].every((h, i) => Math.abs(odd[i] - h) < 0.001));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Tilt: each row gets its own time. The engine has ONE playhead for all rows,
+// so this is done to the image before upload. What must hold: 0 changes
+// nothing at all (not even a copy), the row that is "left alone" really is,
+// and the slow rows are slow by exactly the stated amount.
+console.log('\ntilt stretches each row along time by its own amount');
+{
+  const rows = 5, frames = 64;
+  // Each row is a ramp along time, so a row's stretch can be read off its slope.
+  const ramp = new Float32Array(rows * frames);
+  for (let f = 0; f < frames; f++) for (let r = 0; r < rows; r++) ramp[f * rows + r] = f;
+  check('a tilt of 0 returns the very same image — bit-identical to having no Tilt',
+    tiltImage(ramp, rows, frames, 0) === ramp);
+  const up = tiltImage(ramp, rows, frames, 1);
+  check('tilt never touches its input', ramp[10 * rows + 4] === 10);
+  check('at +1 the bottom row is left exactly alone',
+    [0, 1, 17, 63].every((f) => up[f * rows + 0] === f));
+  const top = up[40 * rows + (rows - 1)];
+  check(`at +1 the top row runs 2^${TILT_OCTAVES} = ${2 ** TILT_OCTAVES} times slower`,
+    Math.abs(top - 40 / 2 ** TILT_OCTAVES) < 1e-4, `frame 40 reads source ${top}`);
+  const mid = up[40 * rows + 2];
+  check('and the rows between are slowed by pitch height, smoothly',
+    Math.abs(mid - 40 / 2 ** (TILT_OCTAVES / 2)) < 1e-3, `middle row reads ${mid}`);
+  const down = tiltImage(ramp, rows, frames, -1);
+  check('a negative tilt is the mirror: the LOW rows are the slow ones',
+    down[40 * rows + (rows - 1)] === 40 && Math.abs(down[40 * rows] - 40 / 2 ** TILT_OCTAVES) < 1e-4);
+  const half = tiltImage(ramp, rows, frames, 0.5);
+  check('half the tilt is half the octaves',
+    Math.abs(half[40 * rows + (rows - 1)] - 40 / 2 ** (TILT_OCTAVES / 2)) < 1e-3);
+  check('a null image stays null (pan Off)', tiltImage(null, rows, frames, 1) === null);
+
+  // Slow ×k is arithmetic in the binding, pinned at its source: pitches k times
+  // up, length 1/k — and the DISPLAY must divide by the same k, or the tape
+  // shows the render landing where it will not.
+  const ab = readFileSync(resolve(root, 'src/audio/AudioBinding.js'), 'utf8');
+  check('Slow × raises the root by k', /semitoneToHz\(g\('aspec\.root'\)\) \* slow/.test(ab));
+  check('and shortens the region by k, through the one function the display also uses',
+    /if \(prefix === 'aspec'\) len \/= this\._specSlow\(\)/.test(ab)
+    && (ab.match(/this\._zoneFracs\(/g) ?? []).length >= 2,
+    'two call sites: the render and the tape display');
+  check('the render is clamped to the partition seam unless Unsafe',
+    /clampToPartition\(zoneSpan\(part, fr\.start, fr\.len\), part, g\('aspec\.unsafe'\)\)/.test(ab),
+    'Length defaults to the whole partition, so any Start > 0 used to be refused');
+  const slowed = buildPitches(0, 110 * 4, 4, SR);
+  check('a ×4 table is two octaves up, interval for interval',
+    Math.abs(slowed[0] - 440) < 1e-3 && Math.abs(cents(slowed[1], slowed[0]) - 100) < 0.01);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

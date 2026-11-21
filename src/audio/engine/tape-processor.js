@@ -10,9 +10,10 @@
  * `tests/audit-audio-protocol.mjs`, which fails if this file and
  * `src/audio/protocol.js` disagree about what exists.
  *
- * Step 1 scope: the tape, its allocation, the bulk write path and the envelope
- * request/reply. No zones, no voices, no DSP — `process()` outputs silence.
- * Zones are step 2 (§4.4).
+ * Holds the tape, its partitions, the Rec / Play / Spectral / Grain zones, the
+ * voices, the audio-rate controllers, the limiter, and the paced jobs that run
+ * after the audio work in `process()` (envelope, spectral render, corpus
+ * analysis, stretch).
  */
 
 const PROTO_VERSION = 6;
@@ -2229,6 +2230,12 @@ class TapeProcessor extends AudioWorkletProcessor {
       return fail(REFUSE_BAD_RANGE, `render length ${lenSamples} is not a positive sample count`);
     }
 
+    // NaN passes BOTH range checks below — every comparison with it is false —
+    // and the render then "writes" to index NaN for its whole length, reports
+    // done, and has changed nothing.
+    if (!Number.isFinite(startRel)) {
+      return fail(REFUSE_BAD_RANGE, `render start ${startRel} is not a finite number`);
+    }
     const p = this._parts[z.part];
     const a = Math.round(p.start + startRel);
     const b = a + lenSamples;
@@ -2530,6 +2537,13 @@ class TapeProcessor extends AudioWorkletProcessor {
     const z = this._zone(type, i);
     if (!z) return;
     if (ctrlField && this._ctrlOwned(address, z[ctrlField])) return;
+    // The ImWeb client cannot send a NaN — `encode()` rejects non-finite
+    // floats — but the engine is client-agnostic by design (§4.1), and a NaN
+    // rate or level would not be refused by any later comparison: it would
+    // simply reach the slew and stay there, a zone that is on and silent.
+    if (typeof value === 'number' && !Number.isFinite(value)) {
+      return this._refuse(REFUSE_BAD_RANGE, `${address || field} is not a finite number`);
+    }
     z[field] = value;
   }
 
@@ -2576,9 +2590,7 @@ class TapeProcessor extends AudioWorkletProcessor {
      *
      * **Deferring until the zone stops would keep the lie, just shorter** — the
      * UI showing P3 while the take lands in P0 is exactly the property that made
-     * this reportable, merely bounded by take length instead of forever. And
-     * `_alloc` clears `pend` outright, so a parked change can be dropped rather
-     * than delayed.
+     * this reportable, merely bounded by take length instead of forever.
      *
      * So it is refused, which is the house rule for a message the engine cannot
      * honour as the client means it — the same rule as `_refuseRenderZone`, the
@@ -3145,7 +3157,10 @@ class TapeProcessor extends AudioWorkletProcessor {
       // gain × level: the ramp owns transitions, the fader owns loudness.
       const g = z.gainCur * z.levelCur;
       L[i] += l * g;
-      R[i] += r * g;
+      // Guarded as the grain and voice paths are: with a mono output R IS L,
+      // and adding twice would double the zone. Unreachable while the node is
+      // built with two output channels — which is exactly when a guard is cheap.
+      if (R !== L) R[i] += r * g;
 
       // Wrap SYMMETRICALLY, and by modulo rather than by one subtraction. A
       // single `+= room` bounds the negative side only while |rate| < room, so a

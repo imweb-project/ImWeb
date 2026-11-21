@@ -9,6 +9,36 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Audio: one switch.** Audio On now also opens the input. The Mic toggle is
+  armed by default and the device opens when you start the engine — nothing is
+  opened when the page loads. The input picker sits directly under Mic in the
+  Audio tab (it used to exist only in Sources › Sound) and the chosen input is
+  remembered. If the remembered input is not plugged in, the default is used and
+  the status line says so. The Tape, Audio On, Mic, Input and Monitoring are
+  pinned at the top of the Audio tab and are never folded away.
+- **A big Tape.** The Tape is 220 px tall instead of 84, and ⤢ opens it as a
+  window you can drag and resize as large as the screen allows. Scroll to zoom
+  at the pointer, drag the empty waveform to pan, double-click to see the whole
+  tape (or double-click a zone to zoom to it). A zoom asks the engine for new
+  detail rather than enlarging what it had. A time ruler runs along the bottom.
+- **Play the zones on the Tape.** Rec, Play and Spectral each have a handle in
+  their own lane along the top: drag the middle to move a zone, an edge to
+  resize it. The sliders follow, and controllers, MIDI and states still work,
+  because a drag writes the same parameters they do.
+- **Spectral Writer: 26 more scales** (36 in all) — the missing modes
+  (Phrygian, Lydian, Mixolydian, Locrian, Melodic minor), Blues, Hungarian
+  minor, Double harmonic, Phrygian dominant, Hirajoshi, In-sen, Messiaen 3,
+  Fifths, Octaves; microtonal Quarter-tone, 19- and 31-tone equal, Slendro,
+  Pelog, Just major, 7-limit just and Bohlen-Pierce; and four series —
+  Subharmonic, Odd harmonics, Stretched harmonics and Mel (spaced as the ear
+  hears). Added after the first ten, so saved projects keep their scale.
+- **Spectral Writer: Slow ×.** Renders the picture that many times too high
+  and that many times shorter, so playing it back at Rate 1/× gives the full
+  length at the pitch Root says. This is the "render high, then slow it down"
+  trick as one control.
+- **Spectral Writer: Tilt.** Gives each row its own time. Above 0 the high
+  rows play out slower than the low ones (up to 8× at 1), so the top of the
+  picture trails behind the bottom; below 0 the low rows are the slow ones.
 - **Live tab** — a new first tab that shows only what is in play right now:
   the three layer selectors, a Recent stack, and every parameter that has a
   controller, grouped under the same section names as the other tabs and in
@@ -173,6 +203,17 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   rounded lobes).
 
 ### Fixed
+- **The microphone was never released.** After ▶ Audio in Sources › Sound had
+  been used once, the mic stayed open for the rest of the session, through
+  Audio Off.
+- **Audio On could fail until a reload.** If the engine did not answer once,
+  every later Audio On failed the same way.
+- **Audio On / Off clicked quickly** could leave the engine running with the
+  switch off, or send every parameter change to the engine several times.
+- **The Tape did not show where the Spectral Writer would render.**
+- **Spectral Writer refused to render** whenever Start was above 0 with Length
+  at its default. The render is now shortened to fit its partition (Unsafe
+  still lets it cross).
 - **3D Depth is no longer black** — in Distance mode the map came out one
   grey level above black for anything more than a hand's width from the camera,
   so it looked empty and displaced nothing; it had been that way since it
@@ -200,6 +241,7 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   DAE model. Texture = Image is unchanged.
 
 ### Changed
+- The Mic toggle now means "input armed" and is on by default.
 - **The SDF panel opens on a short live set** — Look, SDF, Speed, Size,
   Variation, Morph, Separation, Hue and Glow; the other sections start
   collapsed below it. Nothing is renamed, so states, banks and mappings are

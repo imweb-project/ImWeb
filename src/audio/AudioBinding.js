@@ -25,7 +25,7 @@ import { AudioEngine, TAP } from './AudioEngine.js';
 import { SLEW_TABLE_BASE } from './protocol.js';
 import { TapeView } from './TapeView.js';
 import { partitionSpan, zoneSpan, clampToPartition } from './tape-geometry.js';
-import { buildPitches, imageFromLuma, buildPan, PAN } from './spectral-image.js';
+import { buildPitches, imageFromLuma, buildPan, tiltImage, PAN } from './spectral-image.js';
 import { CorpusView } from './CorpusView.js';
 import { DESCRIPTORS, buildIndex, nearest, grainTime } from './corpus-index.js';
 import { describeAudioGraph } from './graph-view.js';
@@ -46,6 +46,19 @@ import {
 
 const PARTITION_SLOTS = 4;
 
+/**
+ * The zones the tape display draws and lets you drag: [param prefix, region
+ * kind, label]. The spectral writer was missing from this — its target was the
+ * one region of the tape you could not see, although its own comment said the
+ * render "lands exactly where the tape display says it will".
+ */
+const VIEW_ZONES = Object.freeze([
+  ['arec', 'rec', 'REC'],
+  ['aplay', 'play', 'PLAY'],
+  ['aspec', 'spec', 'SPECTRAL'],
+  ['astretch', 'stretch', 'STRETCH'],
+]);
+
 export class AudioBinding {
   /**
    * @param {object} ps ParameterSystem
@@ -59,8 +72,13 @@ export class AudioBinding {
     this._unsubs = [];
     // True while a param is being written BECAUSE the engine said so. See _on().
     this._fromEngine = false;
-    /** How many analyser consumers hold the tap — see stop() and ensureTap(). */
-    this._tapConsumers = 0;
+    /**
+     * WHO holds the tap, by name — see stop(), ensureTap() and releaseTap().
+     * A set of owners rather than a count: the count only ever went up (nothing
+     * decremented it, and a device change counted the same consumer again), so
+     * after the first analyser attached the mic was never released.
+     */
+    this._tapOwners = new Set();
     /** Selected input device for the one microphone, or null for the default. */
     this._micDevice = null;
     /** Set by main.js to surface refusals and errors in the UI. */
@@ -142,7 +160,7 @@ export class AudioBinding {
    *
    * - **the engine is running** — nothing reaches the monitors otherwise, so an
    *   open mic with the engine stopped is an input, not a loop;
-   *   `_tapConsumers` can hold the mic open for the video controllers with no
+   *   `_tapOwners` can hold the mic open for the video controllers with no
    *   audio path in existence at all (§8.6's tap is a consumer, not a client);
    * - **the mic is open** — asked of the DEVICE rather than of `audio.mic`,
    *   because `_applyTap` opens it directly when the tap needs it and the param
@@ -221,7 +239,23 @@ export class AudioBinding {
    * stays suspended, and a suspended context is indistinguishable from a
    * working one over the message port (LEARNED 2026-08-13).
    */
-  async start() {
+  /**
+   * Start and stop are a QUEUE, not a pair of flags. `running` flips only
+   * after an await, so on/off/on in quick succession used to interleave: two
+   * starts at once, or a stop that returned early because nothing was running
+   * YET and left the engine up with the toggle reading off. Each call now
+   * waits for every call before it, in the order they were made, so the last
+   * click is always the state the engine ends in.
+   */
+  _serial(fn) {
+    const run = (this._chain ?? Promise.resolve()).catch(() => {}).then(fn);
+    this._chain = run;
+    return run;
+  }
+
+  start() { return this._serial(() => this._start()); }
+
+  async _start() {
     if (this.running) return;
     this.engine.onRefuse = (code, m) => this._say(`audio refused (${code}): ${m}`);
     // A dynamic recording resolves its own length; without this the engine
@@ -282,6 +316,13 @@ export class AudioBinding {
     this._pushLayout();
     this._pushAll();
     this._subscribe();
+    // Audio On is the ONE switch: an armed input opens with it. `audio.mic`
+    // used to reach the device only through its subscription, which exists
+    // only while running — so arming Mic first and then starting gave a
+    // recording zone that captured silence, and getting sound in meant a trip
+    // to another tab. Not awaited: a permission prompt must not hold up the
+    // liveness proof below, whose clock is already running.
+    if (this.ps.get('audio.mic').value && !this.engine.micOpen) this._openArmedMic();
 
     // The allocation's own dirty notification is consumed by the liveness proof
     // above — it is the proof — so the first envelope has to be asked for here.
@@ -307,7 +348,9 @@ export class AudioBinding {
     }
   }
 
-  async stop() {
+  stop() { return this._serial(() => this._stop()); }
+
+  async _stop() {
     if (!this.running) return;
     this._unsubs.forEach((u) => u());
     this._unsubs = [];
@@ -315,7 +358,7 @@ export class AudioBinding {
     // is listening. A sound-reactive controller tapping the mic is a consumer
     // that never asked for the engine and must not be silenced by it (§8.6:
     // the controller layer is a consumer of the tap, not a client of the tape).
-    if (!this._tapConsumers) this.engine.closeMic();
+    if (!this._tapOwners.size) this.engine.closeMic();
     // Audio Off used to throw the recordings away with the worklet. Copy the
     // tape out first; `start()` writes it back. Only from a LIVE engine — the
     // reads are answered by the message handler even when process() never
@@ -415,13 +458,79 @@ export class AudioBinding {
    */
   async ensureTap(opts = {}) {
     const ctx = this.engine.context();
-    this._tapConsumers = (this._tapConsumers || 0) + 1;
-    if (opts.deviceId && opts.deviceId !== this._micDevice) {
-      this._micDevice = opts.deviceId;
-      if (this.engine.micOpen) this.engine.closeMic();  // reopen on the new device
-    }
+    this._tapOwners.add(opts.owner ?? 'anonymous');
+    if (opts.deviceId) await this.setInputDevice(opts.deviceId);
     await this._applyTap();
     return { ctx, tap: this.engine.tap };
+  }
+
+  /**
+   * The other half of `ensureTap`, which did not exist: a consumer saying it
+   * is done. When the last one leaves and the engine is not running, nothing
+   * is listening to the microphone and the device is released. While the
+   * engine runs the mic is the ENGINE's (the Mic toggle), and stays.
+   */
+  releaseTap(owner = 'anonymous') {
+    if (!this._tapOwners.delete(owner)) return;
+    if (!this._tapOwners.size && !this.running && this.engine.micOpen) {
+      this.engine.closeMic();
+      this._refreshLoop();
+    }
+  }
+
+  /**
+   * Choose the input device for the one microphone. An open mic is reopened on
+   * the new device straight away; a closed one just remembers the choice for
+   * the next open. `''`/null means the system default.
+   */
+  async setInputDevice(deviceId) {
+    const id = deviceId || null;
+    if (id === this._micDevice) return;
+    this._micDevice = id;
+    if (!this.engine.micOpen) return;
+    this.engine.closeMic();
+    try { await this._openMic(); }
+    catch (e) { this._say(`mic denied: ${e.message}`); this.ps.set('audio.mic', 0); }
+    this._refreshLoop();
+  }
+
+  /**
+   * Open the one microphone. Every open goes through here, for two reasons.
+   * A REMEMBERED device may be gone — unplugged, or an id from another
+   * browser profile — and `{exact}` then fails outright (it has to be exact:
+   * `ideal` loses to the browser's own pick, LEARNED 2026-09-27). Falling back
+   * to the default and saying so beats an instrument that will not start
+   * because of an interface left at home. And `onInputOpen` is how the device
+   * picker learns that permission now exists and real labels can be listed.
+   */
+  async _openMic() {
+    try {
+      await this.engine.openMic(this._micConstraints());
+    } catch (e) {
+      const gone = e?.name === 'OverconstrainedError' || e?.name === 'NotFoundError';
+      if (!gone || !this._micDevice) throw e;
+      this._micDevice = null;
+      await this.engine.openMic(this._micConstraints());
+      this._say('saved input not found — using the default input');
+      this.onInputLost?.();
+    }
+    // False when the open was overtaken by a close (Audio Off mid-prompt).
+    if (this.engine.micOpen) this.onInputOpen?.();
+    return this.engine.micOpen;
+  }
+
+  /** Open the mic for the engine and say what that did — see `_start()`. */
+  async _openArmedMic() {
+    try {
+      if (!(await this._openMic())) return;
+      // Was an unconditional "USE HEADPHONES", which is advice rather than
+      // information and is wrong half the time — it fired at someone already
+      // wearing them, and said the same thing to someone on speakers who had
+      // just closed a real loop. §8.6's switch is what lets this report the
+      // state instead of guessing at it.
+      this._say(this._loopLive() ? 'mic open — the room loop is LIVE' : 'mic open');
+    } catch (e) { this._say(`mic denied: ${e.message}`); this.ps.set('audio.mic', 0); }
+    this._refreshLoop();
   }
 
   /** Constraints for the one microphone (§8.1: no processing in the path). */
@@ -450,7 +559,7 @@ export class AudioBinding {
     // when the value is already 1 because the device was reopened on another
     // input, the write fires nothing and the mic stays shut.
     if (!this.engine.micOpen) {
-      try { await this.engine.openMic(this._micConstraints()); }
+      try { await this._openMic(); }
       catch (e) { this._say(`mic denied: ${e.message}`); this.ps.set('audio.mic', 0); return; }
       // This path opens the DEVICE without going through the mic param's
       // subscription, so it has to publish the loop itself — the one place the
@@ -665,6 +774,8 @@ export class AudioBinding {
     // here plus a request over the matching sample range — the view already
     // places columns by position rather than by index, so it needs nothing new.
     this.view.setSpan(0, 1);
+    this.view.onSpanChange = () => this._refreshEnvelope();
+    this.view.onRegionDrag = (id, start, end, mode) => this._dragZone(id, start, end, mode);
     // The dirty notification is the engine saying "the tape changed here". It
     // arrives at frame cadence (rule 7) and `requestEnvelope` keeps one request
     // per view in flight, so this self-throttles without a timer.
@@ -694,10 +805,54 @@ export class AudioBinding {
   _viewParamIds() {
     const ids = ['audio.tapeSec'];
     for (let i = 0; i < PARTITION_SLOTS; i++) ids.push(`apart${i}.start`, `apart${i}.len`);
-    for (const prefix of ['arec', 'aplay']) {
+    for (const [prefix] of VIEW_ZONES) {
       ids.push(`${prefix}.part`, `${prefix}.start`, `${prefix}.len`, `${prefix}.unsafe`);
     }
+    ids.push('aspec.slow');
     return ids;
+  }
+
+  /**
+   * A zone's partition-relative start and length AS IT WILL LAND. For every
+   * zone but one that is just its two params. The spectral writer's Slow ×k
+   * renders into 1/k of its region, and the display and the render must agree
+   * about that — so both ask here, and neither divides for itself.
+   */
+  _zoneFracs(prefix) {
+    const start = this.ps.get(`${prefix}.start`).value;
+    let len = this.ps.get(`${prefix}.len`).value;
+    if (prefix === 'aspec') len /= this._specSlow();
+    return { start, len };
+  }
+
+  _specSlow() { return Math.max(1, this.ps.get('aspec.slow')?.value || 1); }
+
+  /**
+   * A zone handle was dragged on the tape. The view reports where the hand put
+   * it, in fractions of the tape; this turns that back into the zone's own
+   * partition-relative `start`/`len` — the exact inverse of `zoneSpan` — and
+   * writes the PARAMS. Nothing is sent to the engine from here: the params'
+   * own subscriptions do that, so a drag, a slider, a controller and a recalled
+   * state all travel one road and the engine's refusals apply to all of them.
+   */
+  _dragZone(prefix, start, end, mode) {
+    const g = (id) => this.ps.get(id).value;
+    const part = this._part(g(`${prefix}.part`));
+    if (!(part.len > 0)) return;
+    const clamp01 = (v) => Math.min(Math.max(v, 0), 1);
+    // The inverse of `_zoneFracs`: what is drawn for the spectral writer is
+    // 1/Slow of its Length, so a dragged length is multiplied back.
+    const scale = prefix === 'aspec' ? this._specSlow() : 1;
+    let relLen = clamp01(((end - start) / part.len) * scale);
+    let relStart = clamp01((start - part.start) / part.len);
+    // Inside the partition unless the zone is allowed across the seam — the
+    // same rule the display's clamp shows.
+    if (!g(`${prefix}.unsafe`)) {
+      if (mode === 'move') relStart = Math.min(relStart, Math.max(0, 1 - relLen / scale));
+      else relLen = Math.min(relLen, (1 - relStart) * scale);
+    }
+    if (mode !== 'r') this.ps.set(`${prefix}.start`, relStart);
+    if (mode !== 'move') this.ps.set(`${prefix}.len`, relLen);
   }
 
   _refreshEnvelope() {
@@ -705,7 +860,12 @@ export class AudioBinding {
     const n = this._tapeLen;
     if (!(n > 0)) return;
     this.view.setEmptyMessage('reading tape…');
-    this.engine.requestEnvelope(0, n, this.view.columns, 'main').then((r) => {
+    // Only what is being looked at, at one column per device pixel OF THAT —
+    // which is what makes a zoom show detail instead of bigger blocks.
+    const { start, end } = this.view.span;
+    const s0 = Math.max(0, Math.floor(start * n));
+    const s1 = Math.min(n, Math.max(s0 + 1, Math.ceil(end * n)));
+    this.engine.requestEnvelope(s0, s1, this.view.columns, 'main').then((r) => {
       // `null` means superseded or refused — both normal during a drag. Keep
       // what is on screen rather than blanking it, which would flicker the
       // waveform away every time a request was overtaken.
@@ -734,15 +894,20 @@ export class AudioBinding {
       const p = this._part(i);
       if (p.len > 0) regions.push({ kind: 'part', start: p.start, end: p.start + p.len, label: `P${i}` });
     }
-    for (const [prefix, kind] of [['arec', 'rec'], ['aplay', 'play']]) {
+    for (const [prefix, kind, label] of VIEW_ZONES) {
+      if (!this.ps.get(`${prefix}.part`)) continue;
       const part = this._part(g(`${prefix}.part`));
       // The SAME `zoneSpan` the engine push uses — that is the whole point of
       // the helper. The clamp is the display's own step because the engine
       // applies the seam itself, in `_computeSpan`.
+      const fr = this._zoneFracs(prefix);
       const span = clampToPartition(
-        zoneSpan(part, g(`${prefix}.start`), g(`${prefix}.len`)), part, g(`${prefix}.unsafe`));
-      regions.push({ kind, ...span, label: kind.toUpperCase() });
+        zoneSpan(part, fr.start, fr.len), part, g(`${prefix}.unsafe`));
+      // `id` is what makes a region a HANDLE: the view hands it back when the
+      // region is dragged, and `_dragZone` reads it as a param prefix.
+      regions.push({ kind, ...span, label, id: prefix });
     }
+    this.view.setSeconds(g('audio.tapeSec'));
     this.view.setRegions(regions);
   }
 
@@ -868,8 +1033,11 @@ export class AudioBinding {
      */
     if (this._specJobId >= 0) return this._say('spectral: already rendering');
     const g = (id) => this.ps.get(id).value;
+    // Slow ×k: every pitch k times higher, into 1/k of the region (see
+    // `_zoneFracs`), so that playback at Rate 1/k lands on Root.
+    const slow = Math.max(1, g('aspec.slow') || 1);
     const pitches = buildPitches(
-      g('aspec.scale'), semitoneToHz(g('aspec.root')), g('aspec.rows') | 0,
+      g('aspec.scale'), semitoneToHz(g('aspec.root')) * slow, g('aspec.rows') | 0,
       this.engine.sampleRate);
     if (!pitches.length) return this._say('spectral render: no pitch is below Nyquist');
     /**
@@ -908,14 +1076,17 @@ export class AudioBinding {
     if (!pic || !pic.width || !pic.height) {
       return this._say('spectral render: no picture to read');
     }
-    const mag = imageFromLuma(pic.luma, pic.width, pic.height, rows, frames, {
+    const tilt = g('aspec.tilt') || 0;
+    const mag = tiltImage(imageFromLuma(pic.luma, pic.width, pic.height, rows, frames, {
       gamma: g('aspec.gamma'), floor: g('aspec.floor'), gain: g('aspec.level'),
-    });
+    }), rows, frames, tilt);
     // Null for Off, for a width of 0, and for Colour with no colour to read.
     // Null means the render goes mono, which is what it did before §8.14 — so
     // the failure mode of every one of those is the previous behaviour rather
     // than a refusal.
-    const pan = buildPan(panMode, rows, frames, panWidth, pic);
+    // Tilted exactly as the magnitudes were: a position has to stay with the
+    // sound it places.
+    const pan = tiltImage(buildPan(panMode, rows, frames, panWidth, pic), rows, frames, tilt);
     if (panMode === PAN.COLOUR && !pan && panWidth > 0) {
       this._say('spectral: pan needs colour from the picture — rendering mono');
     }
@@ -925,7 +1096,13 @@ export class AudioBinding {
     // Through `zoneSpan` for the same reason `_pushRegion` is: one conversion
     // from fractions-of-a-partition to samples, so the render lands exactly
     // where the tape display says it will.
-    const span = zoneSpan(part, g('aspec.start'), g('aspec.len'));
+    // …and through the SAME `_zoneFracs` and seam clamp the display uses. The
+    // clamp is new, and it removes a trap: Length defaults to the whole
+    // partition, so moving Start off zero used to push the end past the seam,
+    // which the engine refuses rather than shortens — every render failed
+    // until Length was pulled back by hand. Unsafe still crosses, as it says.
+    const fr = this._zoneFracs('aspec');
+    const span = clampToPartition(zoneSpan(part, fr.start, fr.len), part, g('aspec.unsafe'));
     const startRel = (span.start - part.start) * n;
     const lengthSamples = Math.floor((span.end - span.start) * n);
     if (lengthSamples < 1) return this._say('spectral render: the region is empty');
@@ -1193,23 +1370,14 @@ export class AudioBinding {
 
     this._on('audio.mic', async (v) => {
       if (v) {
-        try {
-          await this.engine.openMic(this._micConstraints());
-          // Was an unconditional "USE HEADPHONES", which is advice rather than
-          // information and is wrong half the time — it fired at someone
-          // already wearing them, and said the same thing to someone on
-          // speakers who had just closed a real loop. §8.6's switch is what
-          // lets this report the state instead of guessing at it.
-          this._say(this._loopLive() ? 'mic open — the room loop is LIVE' : 'mic open');
-        } catch (e) { this._say(`mic denied: ${e.message}`); this.ps.set('audio.mic', 0); }
-        this._refreshLoop();
+        await this._openArmedMic();
       } else {
         this.engine.closeMic();
         this._refreshLoop();
         // Closing the mic while the tap points at it deafens every analyser
         // consumer — the sound controllers stop moving. Say so: a controller
         // that has quietly stopped reads as a broken controller.
-        if (this._tapConsumers && this.ps.get('audio.tapSrc').value === TAP.MIC) {
+        if (this._tapOwners.size && this.ps.get('audio.tapSrc').value === TAP.MIC) {
           this._say('mic closed — sound controllers have no input while the tap is Mic');
         }
       }
@@ -1306,7 +1474,12 @@ export class AudioBinding {
     // setting: it is arithmetic that produces the frequencies and the image.
     this._on('aspec.part', (v) => this.engine.zonePart('spectral', 0, v));
     this._on('aspec.unsafe', (v) => this.engine.zoneUnsafe('spectral', 0, !!v));
-    this._on('aspec.render', () => { this.renderSpectral(); });
+    // Caught: `imageSource` reads the output canvas and can throw (a tainted
+    // canvas, a lost context), and an unhandled rejection is a Render button
+    // that does nothing and says nothing.
+    this._on('aspec.render', () => {
+      this.renderSpectral().catch((e) => this._say(`spectral render failed: ${e.message}`));
+    });
     this._on('aspec.cancel', () => this.cancelSpectral());
 
     // The corpus (§4.6). Axis changes RE-PROJECT the measurements already held;

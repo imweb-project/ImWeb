@@ -6334,11 +6334,78 @@ body.fullscreen-output #app {
 .tape-view {
     display: block;
     width: 100%;
-    height: 84px;
+    height: 220px;
+    touch-action: none;
     background: var(--bg-0);
     border-top: 1px solid var(--border);
     border-bottom: 1px solid var(--border);
 }
+
+/* The deck: Tape + the switches that start it, pinned above the sections. */
+.audio-deck { border-bottom: 1px solid var(--border); padding-bottom: 2px; }
+.audio-deck-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 10px;
+    font: 10px/1.6 var(--mono);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--text-1);
+}
+.audio-deck-hint {
+    flex: 1;
+    color: var(--text-2);
+    opacity: .6;
+    text-transform: none;
+    letter-spacing: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.audio-deck-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-1);
+    font-size: 12px;
+    line-height: 1;
+    padding: 2px 6px;
+    cursor: pointer;
+}
+.audio-deck-btn:hover, .audio-deck-btn.active { color: var(--accent); border-color: var(--accent); }
+/* Where the canvas lives when it is not floating. Keeps its height while the
+   canvas is away so the deck does not jump. */
+.tape-home { min-height: 28px; }
+.tape-home.away {
+    display: flex; align-items: center; justify-content: center;
+    font: 10px/1 var(--mono); color: var(--text-2);
+}
+/* The Tape as a window. Here — and only here — the canvas takes its height
+   from the window instead of the fixed 220px, so dragging the corner is how
+   the display is made as large as the screen allows. */
+.tape-float {
+    position: fixed;
+    z-index: 900;
+    left: 80px; top: 80px;
+    width: min(1100px, 80vw); height: 420px;
+    min-width: 320px; min-height: 160px;
+    display: flex; flex-direction: column;
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    box-shadow: 0 8px 32px rgba(0,0,0,.6);
+    resize: both; overflow: hidden;
+}
+.tape-float-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 10px;
+    font: 10px/1.6 var(--mono); letter-spacing: .08em; text-transform: uppercase;
+    color: var(--text-1);
+    cursor: move; user-select: none;
+    border-bottom: 1px solid var(--border);
+}
+.tape-float-head span { flex: 1; }
+.tape-float[hidden] { display: none; }
+.tape-float .tape-view { flex: 1; height: auto; min-height: 0; border: 0; }
 
 /* §8.6's loop, drawn. Deliberately louder than the status line beside it: this
    is the one message in the audio panel that is about the performer's ears

@@ -149,6 +149,10 @@ export function snapshotToJSON(snap) {
 
 export function snapshotFromJSON(obj) {
   if (!obj || obj.format !== 'pcm16le' || !Array.isArray(obj.runs)) return null;
+  // A missing rate makes the resample ratio NaN in `restoreSnapshot`, and every
+  // run then lands at index NaN: nothing is written and nothing is reported, so
+  // the project opens with a silent tape. No recording beats a silent lie.
+  if (!(obj.sampleRate > 0)) return null;
   return {
     sampleRate: obj.sampleRate, length: obj.length, channels: obj.channels ?? CHANNELS,
     runs: obj.runs.map(({ start, data }) => {

@@ -9265,9 +9265,14 @@ export function registerCoreParameters(ps) {
     id: "audio.tapeSec", label: "Tape", group: "global",
     min: 5, max: 600, value: 60, step: 1, unit: "s",
   });
+  // ARMED, not "open". On by default so that Audio On is the one switch: the
+  // binding opens the device when the engine starts (`_start`), and nothing
+  // opens it before then — the engine still never takes a device on load. Turn
+  // it off to run the instrument with no input at all. Still 'global': a
+  // Display State must not be able to open a permissioned device.
   ps.register({
     id: "audio.mic", label: "Mic", group: "global",
-    type: PARAM_TYPE.TOGGLE, value: 0,
+    type: PARAM_TYPE.TOGGLE, value: 1,
   });
   /**
    * How the performer is listening (§8.6) — the one thing that decides whether
@@ -9494,7 +9499,26 @@ export function registerCoreParameters(ps) {
     id: "aspec.unsafe", label: "Unsafe Spec", group: "aspec",
     type: PARAM_TYPE.TOGGLE, value: 0,
   });
-  // The musical decision (§4.5). Ten scales, and the engine knows none of them
+  // Two ways of stretching, both resolved on the client before upload — the
+  // engine gains no vocabulary for either (the §4.5 split, again).
+  //
+  // Slow ×k makes a render that is MEANT to be played back slow: pitches k
+  // times too high, squeezed into 1/k of the region. Play it at Rate 1/k and
+  // it comes out the full length at the pitch Root says — with the grain of
+  // varispeed in it, which is the sound the owner was getting by hand
+  // (rendering high, then slowing the Playback zone). 1 = off.
+  ps.register({
+    id: "aspec.slow", label: "Slow ×", group: "aspec",
+    min: 1, max: 16, value: 1, step: 0.01,
+  });
+  // Tilt gives each ROW its own time: above 0 the high rows play out slower
+  // than the low ones (up to 8× at 1), below 0 the low rows are the slow
+  // ones. See `tiltImage`. 0 = off, and bit-identical to having no Tilt.
+  ps.register({
+    id: "aspec.tilt", label: "Tilt", group: "aspec",
+    min: -1, max: 1, value: 0, step: 0.01,
+  });
+  // The musical decision (§4.5). The engine knows none of the scales
   // — AudioBinding turns this index plus the root into a list of frequencies.
   ps.register({
     id: "aspec.scale", label: "Scale", group: "aspec",

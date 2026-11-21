@@ -24,8 +24,62 @@
  */
 
 /** Region kinds, in draw order — later ones are drawn on top. */
-export const REGION_KINDS = Object.freeze(['part', 'rec', 'play']);
+export const REGION_KINDS = Object.freeze(['part', 'rec', 'play', 'spec', 'stretch']);
 
+/**
+ * The kinds that are ZONES — things you do to the tape, as opposed to the
+ * partition layout it sits on. Each gets its own lane along the top, in this
+ * order, because zones overlap by default (every one starts out covering its
+ * whole partition) and a handle you cannot reach under another handle is not a
+ * handle. The lane is where a zone is grabbed; its tint runs the full height.
+ */
+export const ZONE_KINDS = Object.freeze(['rec', 'play', 'spec', 'stretch']);
+
+/** CSS px. Lane height, edge grab width, bottom ruler height. */
+const LANE_H = 14;
+const EDGE_GRAB = 6;
+const RULER_H = 13;
+/** The closest zoom, as a fraction of the tape. */
+const MIN_SPAN = 1 / 4096;
+const TICK_STEPS = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 30, 60, 120, 300];
+
+/**
+ * Move one edge or the whole of a region by a drag. Pure, and exported so the
+ * arithmetic is tested without a pointer: `mode` is 'move', 'l' or 'r', `from`
+ * the region when the drag began, `d` how far the pointer has travelled (same
+ * units as the region — fractions of the tape). A move keeps the length and
+ * stops at the ends of the tape; an edge stops `min` short of the other edge,
+ * so a region can be made small but never inverted.
+ */
+export function dragRegion(from, mode, d, min = 1e-4) {
+  const len = from.end - from.start;
+  if (mode === 'move') {
+    const start = Math.min(Math.max(from.start + d, 0), Math.max(0, 1 - len));
+    return { start, end: start + len };
+  }
+  if (mode === 'l') {
+    return { start: Math.min(Math.max(from.start + d, 0), from.end - min), end: from.end };
+  }
+  return { start: from.start, end: Math.max(Math.min(from.end + d, 1), from.start + min) };
+}
+
+/**
+ * Zoom a view span about a fixed point. `factor` > 1 zooms out. The point under
+ * the pointer stays under the pointer, which is the whole feel of it; the span
+ * is then slid back inside [0, 1] rather than squeezed, so zooming out near an
+ * end does not also change the zoom level.
+ */
+export function zoomSpan(start, end, at, factor, minSpan = MIN_SPAN) {
+  const span = Math.min(1, Math.max(minSpan, (end - start) * factor));
+  const t = end > start ? (at - start) / (end - start) : 0.5;
+  let s = at - t * span;
+  s = Math.min(Math.max(s, 0), 1 - span);
+  return { start: s, end: s + span };
+}
+
+// Zone tints are faint on purpose: zones overlap by default, and three stacked
+// washes at the old 0.18 turned the waveform under them to mud. The lane handle
+// and the two edge lines are what say where a zone is; the tint only hints.
 const STYLE = {
   bg: '#0a0a0b',
   grid: '#2a2a34',
@@ -33,10 +87,14 @@ const STYLE = {
   waveDim: '#4a4a5c',
   part: 'rgba(64, 128, 232, 0.10)',
   partEdge: '#4080e8',
-  rec: 'rgba(232, 64, 64, 0.18)',
+  rec: 'rgba(232, 64, 64, 0.07)',
   recEdge: '#e84040',
-  play: 'rgba(64, 200, 120, 0.18)',
+  play: 'rgba(64, 200, 120, 0.07)',
   playEdge: '#40c878',
+  spec: 'rgba(232, 176, 64, 0.07)',
+  specEdge: '#e8b040',
+  stretch: 'rgba(176, 96, 232, 0.07)',
+  stretchEdge: '#b060e8',
   text: '#a6a6c0',
 };
 
@@ -50,16 +108,144 @@ export class TapeView {
     /** The span the envelope covers, in samples. */
     this._envStart = 0;
     this._envEnd = 0;
-    /** The span being VIEWED, in samples. Whole tape for now — zoom is later. */
+    /** The span being VIEWED, as fractions of the tape. */
     this._viewStart = 0;
     this._viewEnd = 0;
-    /** Overlay rectangles in SAMPLES: { kind, start, end, label }. */
+    /** Overlay rectangles, fractions of the tape: { kind, start, end, label, id? }. */
     this._regions = [];
     this._pending = false;
     this._empty = 'no tape';
     /** Device pixels per CSS pixel, refreshed on every resize. */
     this._dpr = 1;
+    /** Tape length in seconds, for the ruler. 0 = unknown, no ruler. */
+    this._seconds = 0;
+    /**
+     * Set by the binding. The view still knows nothing: it reports what the
+     * hand did, in fractions of the tape, and the binding decides what that
+     * means for a parameter.
+     *   onSpanChange(start, end)            the view was zoomed or panned
+     *   onRegionDrag(id, start, end, mode)  a zone handle was dragged
+     */
+    this.onSpanChange = null;
+    this.onRegionDrag = null;
+    this._drag = null;
     this.resize();
+    this._attachPointer();
+  }
+
+  /** Tape length in seconds — only the ruler wants it. */
+  setSeconds(sec) {
+    if (this._seconds === sec) return;
+    this._seconds = sec;
+    this.invalidate();
+  }
+
+  get span() { return { start: this._viewStart, end: this._viewEnd }; }
+
+  // ── the hand ──────────────────────────────────────────────────────────────
+
+  /** Client x → device-pixel x. Through the rect, so CSS zoom cannot skew it. */
+  _px(e) {
+    const r = this.canvas.getBoundingClientRect();
+    return {
+      x: ((e.clientX - r.left) / (r.width || 1)) * this.canvas.width,
+      y: ((e.clientY - r.top) / (r.height || 1)) * this.canvas.height,
+    };
+  }
+
+  /** Device-pixel x → fraction of the tape. */
+  _frac(x) {
+    return this._viewStart + (x / (this.canvas.width || 1)) * (this._viewEnd - this._viewStart);
+  }
+
+  _laneOf(kind) { return ZONE_KINDS.indexOf(kind); }
+
+  /** Which zone handle is under this device-pixel point, and which part of it. */
+  hit(x, y) {
+    const lane = Math.floor(y / (LANE_H * this._dpr));
+    const grab = EDGE_GRAB * this._dpr;
+    for (let i = this._regions.length - 1; i >= 0; i--) {
+      const r = this._regions[i];
+      if (!r.id || this._laneOf(r.kind) !== lane) continue;
+      const x0 = this._x(r.start), x1 = this._x(r.end);
+      if (x < x0 - grab || x > x1 + grab) continue;
+      // A zone narrower than two grab widths is all "move" in the middle third
+      // — otherwise a short zone could be resized but never picked up.
+      const narrow = x1 - x0 < grab * 3;
+      let mode = 'move';
+      if (!narrow || x < x0 || x > x1) {
+        if (Math.abs(x - x0) <= grab) mode = 'l';
+        else if (Math.abs(x - x1) <= grab) mode = 'r';
+      }
+      return { region: r, mode };
+    }
+    return null;
+  }
+
+  _attachPointer() {
+    const c = this.canvas;
+    if (typeof c.addEventListener !== 'function') return;   // a stub, in tests
+    c.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      const { x, y } = this._px(e);
+      const h = this.hit(x, y);
+      this._drag = h
+        ? { kind: 'region', id: h.region.id, mode: h.mode, x0: x,
+            from: { start: h.region.start, end: h.region.end } }
+        : { kind: 'pan', x0: x, from: { start: this._viewStart, end: this._viewEnd } };
+      try { c.setPointerCapture(e.pointerId); } catch { /* synthetic event */ }
+      e.preventDefault();
+    });
+    c.addEventListener('pointermove', (e) => {
+      const { x, y } = this._px(e);
+      const d = this._drag;
+      if (!d) {
+        const h = this.hit(x, y);
+        c.style.cursor = !h ? '' : h.mode === 'move' ? 'grab' : 'ew-resize';
+        return;
+      }
+      const w = this.canvas.width || 1;
+      if (d.kind === 'region') {
+        // Distance in fractions of the tape AT THE CURRENT ZOOM, so a drag is
+        // as fine as the view is close.
+        const df = ((x - d.x0) / w) * (this._viewEnd - this._viewStart);
+        const next = dragRegion(d.from, d.mode, df);
+        this.onRegionDrag?.(d.id, next.start, next.end, d.mode);
+      } else {
+        const span = d.from.end - d.from.start;
+        if (span >= 1) return;
+        const s = Math.min(Math.max(d.from.start - ((x - d.x0) / w) * span, 0), 1 - span);
+        this.setSpan(s, s + span);
+      }
+    });
+    const end = () => { this._drag = null; };
+    c.addEventListener('pointerup', end);
+    c.addEventListener('pointercancel', end);
+    c.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const { x } = this._px(e);
+      const span = this._viewEnd - this._viewStart;
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        if (span >= 1) return;
+        const s = Math.min(Math.max(this._viewStart + (e.deltaX / (this.canvas.width || 1)) * span * this._dpr, 0), 1 - span);
+        this.setSpan(s, s + span);
+        return;
+      }
+      const z = zoomSpan(this._viewStart, this._viewEnd, this._frac(x), Math.exp(e.deltaY * 0.0015));
+      this.setSpan(z.start, z.end);
+    }, { passive: false });
+    c.addEventListener('dblclick', (e) => {
+      const { x, y } = this._px(e);
+      const h = this.hit(x, y);
+      // On a zone handle: zoom to that zone with a little air round it.
+      // Anywhere else: the whole tape.
+      if (h) {
+        const pad = (h.region.end - h.region.start) * 0.08;
+        const s = Math.max(0, h.region.start - pad), en = Math.min(1, h.region.end + pad);
+        if (en - s >= MIN_SPAN) { this.setSpan(s, en); return; }
+      }
+      this.setSpan(0, 1);
+    });
   }
 
   /**
@@ -87,9 +273,13 @@ export class TapeView {
   get columns() { return this.canvas.width; }
 
   setSpan(start, end) {
+    if (start === this._viewStart && end === this._viewEnd) return;
     this._viewStart = start;
     this._viewEnd = end;
     this.invalidate();
+    // A zoom ASKS for a new envelope (§6 item 6) — what is held is redrawn in
+    // place at the wrong resolution until the right one arrives.
+    this.onSpanChange?.(start, end);
   }
 
   /** @param {{start:number,end:number,columns:number,data:Float32Array}} r */
@@ -165,9 +355,38 @@ export class TapeView {
     ctx.stroke();
 
     for (const r of this._regions) {
-      if (r.kind === 'rec') this._fill(r, STYLE.rec, STYLE.recEdge);
-      else if (r.kind === 'play') this._fill(r, STYLE.play, STYLE.playEdge);
+      if (r.kind === 'part') continue;
+      const fill = STYLE[r.kind], edge = STYLE[`${r.kind}Edge`];
+      if (fill) this._fill(r, fill, edge);
     }
+    this._drawRuler();
+  }
+
+  /** Seconds along the bottom. Only when the tape's length is known. */
+  _drawRuler() {
+    const sec = this._seconds;
+    const span = this._viewEnd - this._viewStart;
+    if (!(sec > 0) || !(span > 0)) return;
+    const { ctx } = this;
+    const w = this.canvas.width, h = this.canvas.height;
+    const visible = span * sec;
+    const want = (70 * this._dpr * visible) / w;          // seconds per ~70px
+    const step = TICK_STEPS.find((s) => s >= want) ?? TICK_STEPS[TICK_STEPS.length - 1];
+    const t0 = this._viewStart * sec;
+    ctx.fillStyle = STYLE.text;
+    ctx.strokeStyle = STYLE.grid;
+    ctx.font = `${Math.round(9 * this._dpr)}px "IBM Plex Mono", monospace`;
+    ctx.beginPath();
+    for (let t = Math.ceil(t0 / step) * step; t <= t0 + visible + 1e-9; t += step) {
+      const x = Math.round(this._x(t / sec)) + 0.5;
+      ctx.moveTo(x, h - RULER_H * this._dpr);
+      ctx.lineTo(x, h);
+      const label = step >= 1
+        ? (t >= 60 ? `${Math.floor(t / 60)}:${String(Math.round(t % 60)).padStart(2, '0')}` : `${Math.round(t)}s`)
+        : `${t.toFixed(step >= 0.1 ? 1 : step >= 0.01 ? 2 : 3)}s`;
+      ctx.fillText(label, x + 3 * this._dpr, h - 3 * this._dpr);
+    }
+    ctx.stroke();
   }
 
   _drawEnvelope() {
@@ -211,10 +430,23 @@ export class TapeView {
     ctx.moveTo(Math.round(x1) - 0.5, 0);
     ctx.lineTo(Math.round(x1) - 0.5, h);
     ctx.stroke();
-    if (r.label) {
+    const lane = this._laneOf(r.kind);
+    // Zones sit in their lanes; a partition's name goes just under the lanes,
+    // where no handle can cover it.
+    const ly = (lane >= 0 ? lane : ZONE_KINDS.length) * LANE_H * this._dpr;
+    if (lane >= 0 && r.id) {
+      // The handle: a solid bar in this zone's own lane. This is what the hand
+      // takes hold of — see ZONE_KINDS for why each kind has its own.
+      ctx.globalAlpha = 0.55;
       ctx.fillStyle = edge;
+      ctx.fillRect(x0, ly + 1, w, LANE_H * this._dpr - 2);
+      ctx.globalAlpha = 1;
+    }
+    if (r.label) {
+      ctx.fillStyle = lane >= 0 && r.id ? STYLE.bg : edge;
       ctx.font = `${Math.round(9 * this._dpr)}px "IBM Plex Mono", monospace`;
-      ctx.fillText(r.label, x0 + 3 * this._dpr, 10 * this._dpr);
+      // Clamped to the left edge so a zone that starts off-screen keeps its name.
+      ctx.fillText(r.label, Math.max(x0, 0) + 3 * this._dpr, ly + 10 * this._dpr);
     }
   }
 }

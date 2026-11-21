@@ -1899,7 +1899,7 @@ export class ControllerManager {
       return;
     }
     try {
-      const { ctx, tap } = await this.audioHost.ensureTap();
+      const { ctx, tap } = await this.audioHost.ensureTap({ owner: 'sound-ctrl' });
       const source = tap;
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 512; // 256 bins

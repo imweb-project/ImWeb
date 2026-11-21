@@ -1856,4 +1856,143 @@ export const MUTATIONS = [
     find: '  if (!Object.keys(rates).length) return;  // a malformed list must not wipe good rates\n',
     replace: '',
   },
+  // ═════════════════════════════════════════════════════════════════════════
+  // Audio start-up (audit-audio-setup.mjs) — one switch, a mic that is let go,
+  // a start that can be retried. Two of these (`_serial`, the in-flight open)
+  // guard defects the audit found IN THE FIX, on its first run.
+  // ═════════════════════════════════════════════════════════════════════════
+  {
+    name: 'setup: releasing the tap does nothing',
+    audit: 'audit-audio-setup.mjs',
+    file: 'src/audio/AudioBinding.js',
+    why: 'the original bug: once anything has used the mic it stays open for the rest of the session, through Audio Off, with the device light on',
+    find: '    if (!this._tapOwners.delete(owner)) return;',
+    replace: '    return;',
+  },
+  {
+    name: 'setup: Audio On does not open an armed mic',
+    audit: 'audit-audio-setup.mjs',
+    file: 'src/audio/AudioBinding.js',
+    why: 'the three-switch start comes back: the engine runs, the Mic toggle reads on, and the recording zone captures silence',
+    find: "    if (this.ps.get('audio.mic').value && !this.engine.micOpen) this._openArmedMic();",
+    replace: '',
+  },
+  {
+    name: 'setup: start and stop are not queued',
+    audit: 'audit-audio-setup.mjs',
+    file: 'src/audio/AudioBinding.js',
+    why: 'on/off/on in quick succession ends with the engine off and the toggle on, or two nodes built',
+    find: '    const run = (this._chain ?? Promise.resolve()).catch(() => {}).then(fn);',
+    replace: '    const run = Promise.resolve().then(fn);',
+  },
+  {
+    name: 'setup: a failed handshake leaves its node behind',
+    audit: 'audit-audio-setup.mjs',
+    file: 'src/audio/AudioEngine.js',
+    why: 'Audio On fails once and then fails forever — every retry is handed the same rejected promise until the page is reloaded',
+    find: '      await this.close();\n      throw e;',
+    replace: '      throw e;',
+  },
+  {
+    name: 'setup: a mic open overtaken by a close is kept',
+    audit: 'audit-audio-setup.mjs',
+    file: 'src/audio/AudioEngine.js',
+    why: 'Audio Off during the permission prompt leaves the device open with nothing holding it',
+    find: '    if (gen !== this._micGen) {',
+    replace: '    if (false) {',
+  },
+  {
+    name: 'setup: a missing saved input is not retried on the default',
+    audit: 'audit-audio-setup.mjs',
+    file: 'src/audio/AudioBinding.js',
+    why: 'an interface left at home means the instrument will not take any input at all',
+    find: '      if (!gone || !this._micDevice) throw e;',
+    replace: '      throw e;',
+  },
+  // ═════════════════════════════════════════════════════════════════════════
+  // The tape as a playing surface (audit-audio-view.mjs)
+  // ═════════════════════════════════════════════════════════════════════════
+  {
+    name: 'tape: the spectral writer is not drawn',
+    audit: 'audit-audio-view.mjs',
+    file: 'src/audio/AudioBinding.js',
+    why: 'the render lands on a part of the tape nothing marks — the defect this list was introduced to fix',
+    find: "  ['aspec', 'spec', 'SPECTRAL'],\n",
+    replace: '',
+  },
+  {
+    name: 'tape: a moved region can run off the end',
+    audit: 'audit-audio-view.mjs',
+    file: 'src/audio/TapeView.js',
+    why: 'dragging a zone right pushes its end past the tape; the engine refuses and the handle sits where the zone is not',
+    find: '    const start = Math.min(Math.max(from.start + d, 0), Math.max(0, 1 - len));',
+    replace: '    const start = Math.max(from.start + d, 0);',
+  },
+  {
+    name: 'tape: an edge can cross the other edge',
+    audit: 'audit-audio-view.mjs',
+    file: 'src/audio/TapeView.js',
+    why: 'a region dragged through itself has a negative length',
+    find: '    return { start: Math.min(Math.max(from.start + d, 0), from.end - min), end: from.end };',
+    replace: '    return { start: Math.max(from.start + d, 0), end: from.end };',
+  },
+  {
+    name: 'tape: zoom is centred on the view, not the pointer',
+    audit: 'audit-audio-view.mjs',
+    file: 'src/audio/TapeView.js',
+    why: 'the thing being looked at slides away on every wheel click — zooming into a transient means chasing it',
+    find: '  const t = end > start ? (at - start) / (end - start) : 0.5;',
+    replace: '  const t = 0.5;',
+  },
+  {
+    name: 'tape: zones share one lane',
+    audit: 'audit-audio-view.mjs',
+    file: 'src/audio/TapeView.js',
+    why: 'zones overlap by default, so only the top one can ever be grabbed',
+    find: '  _laneOf(kind) { return ZONE_KINDS.indexOf(kind); }',
+    replace: '  _laneOf(kind) { return ZONE_KINDS.includes(kind) ? 0 : -1; }',
+  },
+  // ═════════════════════════════════════════════════════════════════════════
+  // Scales and Tilt (audit-audio-spectral.mjs)
+  // ═════════════════════════════════════════════════════════════════════════
+  {
+    name: 'scales: the repeat interval is always the octave',
+    audit: 'audit-audio-spectral.mjs',
+    file: 'src/audio/spectral-image.js',
+    why: 'Bohlen-Pierce folds back on itself — rows stop rising and two of them land on one pitch',
+    find: '(scale.period ?? 12) * Math.floor(r / n)',
+    replace: '12 * Math.floor(r / n)',
+  },
+  {
+    name: 'scales: a new scale inserted in the middle',
+    audit: 'audit-audio-spectral.mjs',
+    file: 'src/audio/spectral-image.js',
+    why: 'a SELECT stores an index, so every saved project from Dorian onward is silently re-tuned',
+    find: "  { name: 'Dorian',         kind: 'steps',    steps: [0, 2, 3, 5, 7, 9, 10] },",
+    replace: "  { name: 'Phrygian 2',     kind: 'steps',    steps: [0, 1, 3, 5, 7, 8, 10] },\n  { name: 'Dorian',         kind: 'steps',    steps: [0, 2, 3, 5, 7, 9, 10] },",
+  },
+  {
+    name: 'tilt: the wrong end is the slow one',
+    audit: 'audit-audio-spectral.mjs',
+    file: 'src/audio/spectral-image.js',
+    why: 'Tilt up slows the bass instead of the treble — the control works, backwards',
+    find: 'amt * (tilt > 0 ? h : 1 - h)',
+    replace: 'amt * (tilt > 0 ? 1 - h : h)',
+  },
+  {
+    name: 'tilt: zero makes a copy',
+    audit: 'audit-audio-spectral.mjs',
+    file: 'src/audio/spectral-image.js',
+    why: 'harmless today, and the first step to a Tilt of 0 that is nearly but not exactly the old render',
+    find: '  if (!tilt || !img || rows < 1 || frames < 2) return img;',
+    replace: '  if (!img || rows < 1 || frames < 2) return img;',
+  },
+  {
+    name: 'slow: the display does not shorten with the render',
+    audit: 'audit-audio-spectral.mjs',
+    file: 'src/audio/AudioBinding.js',
+    why: 'the tape shows the spectral zone k times longer than what will be written',
+    find: "    if (prefix === 'aspec') len /= this._specSlow();",
+    replace: '',
+  },
 ];
