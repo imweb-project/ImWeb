@@ -28,6 +28,7 @@ import { GROWTH_PATTERNS, GROWTH_MODES, GROWTH_LOOKS, NCA_MODELS } from '../inpu
 import { SDF_LOOKS } from '../inputs/SDFLooks.js';
 import { REIMAGINE_LOOKS } from '../ai/ReimagineLooks.js';
 import { SPLAT_ATTRACTORS } from '../ai/SplatAttractors.js';
+import { SCOPE_LOOKS } from '../inputs/ScopeLooks.js';
 import { SHATTER_LOOKS } from '../scene3d/ShatterLooks.js';
 
 /**
@@ -8624,9 +8625,47 @@ export function registerCoreParameters(ps) {
     label: "VScope Color",
     group: "vectorscope",
     type: PARAM_TYPE.SELECT,
-    options: ["Green", "Cyan", "Orange", "Gold", "Violet", "Hot Pink", "White", "Aqua"],
+    // APPEND-ONLY (persisted as an index). Level and Pitch are not fixed
+    // colours: the hue follows the sound's loudness / brightness each frame.
+    options: ["Green", "Cyan", "Orange", "Gold", "Violet", "Hot Pink", "White", "Aqua", "Level", "Pitch"],
     value: 0,
   });
+  // Phosphor Beam. All three are group 'vectorscope' and so captured by
+  // Display States like their siblings: they are the scope's look, not a
+  // view setting. Freeze included — a state that holds a figure still is a
+  // look worth recalling, and Looks always set it back to 0.
+  ps.register({
+    id: "vectorscope.beam",
+    label: "VScope Beam",
+    group: "vectorscope",
+    min: 0,
+    max: 100,
+    value: 70,
+    unit: "%",
+  });
+  ps.register({
+    id: "vectorscope.spin",
+    label: "VScope Spin",
+    group: "vectorscope",
+    min: -360,
+    max: 360,
+    value: 0,
+    unit: "°/s",
+  });
+  ps.register({
+    id: "vectorscope.freeze",
+    label: "VScope Freeze",
+    group: "vectorscope",
+    type: PARAM_TYPE.TOGGLE,
+    value: 0,
+  });
+  // Look: a LOADER, not a state — the scene3d.shatter.look pattern. Choosing
+  // one writes every Vectorscope control. Group 'global' so Display States
+  // capture the real values, not an index that would re-apply over them on
+  // recall. SCOPE_LOOKS (append-only); index 0 is a heading.
+  ps.register({ id: "vectorscope.look", label: "VScope Look", group: "global",
+    type: PARAM_TYPE.SELECT, options: SCOPE_LOOKS.map((l) => l.name), value: 0,
+    select: true, reselect: true });
 
   // ── GLSL custom shader param slots ────────────────────────────────────────
   ps.register({
