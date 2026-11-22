@@ -140,6 +140,21 @@ console.log('\nnormalize scales a selection, and only the selection');
   check('the samples either side are untouched',
     Math.abs(t.l[A - 1] - 0.3) < 1e-7 && Math.abs(t.l[B] - 0.3) < 1e-7);
   check('it reads in chunks, never the whole span', t.maxRead <= CHUNK_SECONDS * SR, `${t.maxRead}`);
+  // The level is the performer's (`aplay.normTo`, default 0.9), not a constant.
+  const half = await normalizeSpan(t.read, t.write, A, B, SR, 0.5);
+  let ph = 0; for (let i = A; i < B; i++) ph = Math.max(ph, Math.abs(t.l[i]));
+  check('a target of 0.5 lands the peak on 0.5 — it turns a loud zone DOWN', half.ok && Math.abs(ph - 0.5) < 1e-4, `peak ${ph}`);
+  await normalizeSpan(t.read, t.write, A, B, SR);
+  check('the default target is 0.9', NORMALIZE_PEAK === 0.9);
+  {
+    const ab = readFileSync(new URL('../src/audio/AudioBinding.js', import.meta.url), 'utf8');
+    const psSrc = readFileSync(new URL('../src/controls/ParameterSystem.js', import.meta.url), 'utf8');
+    check('Normalize reads its level from the Normalize To control',
+      /const target = g\('aplay\.normTo'\);/.test(ab) && /this\.engine\.sampleRate, target\);/.test(ab));
+    check('which runs 0 to 1 and starts at 0.9',
+      /key: "normTo", label: "Normalize To", min: 0, max: 1, value: 0\.9/.test(psSrc));
+    check('and a target of 0 is refused rather than erasing the zone', /if \(!\(target > 0\.001\)\) return this\._say/.test(ab));
+  }
   const again = await normalizeSpan(t.read, t.write, A, B, SR);
   check('a second pass changes nothing', again.ok && again.gain === 1);
 

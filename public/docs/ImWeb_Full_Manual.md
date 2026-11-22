@@ -3230,7 +3230,8 @@ the whole tape instead.
 | **Rate** | Playback | −4 … 4; negative plays backwards |
 | **Pos** | Playback | Jump the playhead to a point in the region (a seek, not a slide) |
 | **Level** | Playback | The zone's fader |
-| **Normalize** | Playback | Rewrites the zone's stretch of tape so its loudest point sits just under full level. One gain for the whole zone and both channels, so dynamics and stereo balance are kept; silence is left alone. Drag the PLAY handle on the Tape to choose what gets normalized |
+| **Normalize To** | Playback | 0–1 (default 0.9). How high Normalize takes the loudest point; 1 is full level. Lower it to leave room for layering. At 0 Normalize refuses |
+| **Normalize** | Playback | Rewrites the zone's stretch of tape so its loudest point sits at **Normalize To**. One gain for the whole zone and both channels, so dynamics and stereo balance are kept; silence is left alone. Drag the PLAY handle on the Tape to choose what gets normalized |
 | **CueSlot** / **CueStore** | Playback | Eight stored regions, the same eight-cue scheme the movie decks have |
 
 The Recording zone records the microphone. Mic is armed by default, so it is

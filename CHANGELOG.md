@@ -91,7 +91,7 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   faster than it plays, can be cancelled, and gives the same result every time.
   The Stretch zone has its own handle on the Tape.
 - **Normalize** (Playback Zone) — brings the Playback zone's stretch of tape
-  to just under full level. One gain for the whole zone and both channels, so
+  to the level set by **Normalize To** (0 to 1, default 0.9). One gain for the whole zone and both channels, so
   the dynamics and the stereo balance are kept. Silence is left alone.
 - **Spectral Writer: Tilt.** Gives each row its own speed. Above 0 the high
   rows play the picture once across the zone while the lower rows run faster

@@ -1381,17 +1381,21 @@ export class AudioBinding {
     const a = Math.max(0, Math.round(span.start * n));
     const b = Math.min(n, Math.round(span.end * n));
     if (b - a < 1) return this._say('normalize: the Playback zone is empty');
+    // The level the loudest point is taken to. At 0 there is nothing to aim
+    // for — it would be an erase by another name — so it is refused.
+    const target = g('aplay.normTo');
+    if (!(target > 0.001)) return this._say('normalize: Normalize To is 0 — raise it first');
     if (this._tapeBusy) return this._say('normalize: the tape is busy');
     this._normBusy = true;
     try {
       await this._keepUndo('normalize', a, b);
       const res = await normalizeSpan(
         (s, e) => this.engine.readTape(s, e), (at, ch, data) => this.engine.write(at, ch, data),
-        a, b, this.engine.sampleRate);
+        a, b, this.engine.sampleRate, target);
       const db = (20 * Math.log10(res.gain)).toFixed(1);
       this._say(!res.ok ? `normalize: ${res.reason}`
-        : res.gain === 1 ? 'normalize: already at full level'
-          : `normalize: ${db > 0 ? '+' : ''}${db} dB over ${((b - a) / this.engine.sampleRate).toFixed(1)} s`);
+        : res.gain === 1 ? `normalize: already peaking at ${target.toFixed(2)}`
+          : `normalize: ${db > 0 ? '+' : ''}${db} dB, peak now ${target.toFixed(2)}, over ${((b - a) / this.engine.sampleRate).toFixed(1)} s`);
       return res;
     } finally { this._normBusy = false; }
   }

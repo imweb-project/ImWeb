@@ -516,7 +516,9 @@ export function buildMappingPanels(ps, contextMenu) {
     // stages at all.
     // ...plus cueSlot/cueStore, appended by id for the same stated reason the
     // decks' are: they are group 'global', so pick() cannot reach them.
-    'audio-play-params': [...pick('aplay', ['part', 'start', 'len', 'pos', 'rate', 'level', 'unsafe', 'on']),
+    // `normTo` last of the picked ones so it sits directly above the Normalize
+    // button it belongs to.
+    'audio-play-params': [...pick('aplay', ['part', 'start', 'len', 'pos', 'rate', 'level', 'unsafe', 'on', 'normTo']),
       ps.get('aplay.normalize'), ps.get('aplay.cueSlot'), ps.get('aplay.cueStore')].filter(Boolean),
     // Signal order, not registration order: source → its own controls → filter
     // → saturator → level, so the row list reads as the chain it is.

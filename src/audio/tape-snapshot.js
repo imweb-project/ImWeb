@@ -140,8 +140,8 @@ export function restoreSpan(saved, write) {
   for (const p of saved.parts) write(p.at, p.channels, Float32Array.from(p.data));
 }
 
-/** Where Normalize puts the loudest sample: −1 dBFS, a hair under full scale. */
-export const NORMALIZE_PEAK = 0.891;
+/** The default for where Normalize puts the loudest sample (`aplay.normTo`). */
+export const NORMALIZE_PEAK = 0.9;
 
 /**
  * Normalize a span of tape: one gain for the whole span and both channels, so
