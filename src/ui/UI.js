@@ -380,7 +380,7 @@ export function buildMappingPanels(ps, contextMenu) {
       // The Live strip's MIDI inlets — reached from the strip's slot numbers.
       !p.id.startsWith('strip.') &&
       p.id !== 'sdf.look' &&
-      p.id !== 'reimagine.auto' && p.id !== 'reimagine.look' && p.id !== 'scene3d.shatter.look' &&
+      p.id !== 'reimagine.auto' && p.id !== 'reimagine.look' && p.id !== 'scene3d.shatter.look' && p.id !== 'vectorscope.look' &&
       // Segment rows live in each model's animation block (buildSegmentRow).
       !/^(scene3d\.anim\.segment|model[234]\.animSegment)$/.test(p.id) &&
       p.id !== 'noise.recipe' &&
@@ -463,7 +463,15 @@ export function buildMappingPanels(ps, contextMenu) {
     'vol-cut-params':      VOL_CUT.map(id => ps.get(id)).filter(Boolean),
     'vol-cam-params':      VOL_CAM.map(id => ps.get(id)).filter(Boolean),
     'vol-adv-params':      ps.getGroup('vol').filter(p => ![...VOL_LIVE, ...VOL_CUT, ...VOL_KEY, ...VOL_CAM].includes(p.id)),
-    'vectorscope-params':  ps.getGroup('vectorscope'),
+    // Look first (group 'global', a loader — appended by id), then what you
+    // play, then the trace's finish. Any later vectorscope param lands last.
+    'vectorscope-params':  (() => {
+      const order = ['vectorscope.look', 'vectorscope.mode', 'vectorscope.color', 'vectorscope.beam',
+        'vectorscope.spin', 'vectorscope.freeze', 'vectorscope.gain', 'vectorscope.decay',
+        'vectorscope.glow', 'vectorscope.linewidth'];
+      return order.map(id => ps.get(id)).filter(Boolean)
+        .concat(ps.getGroup('vectorscope').filter(p => !order.includes(p.id)));
+    })(),
     'slitscan-params':     ps.getGroup('slitscan'),
     // Warp Tape (Phase 24 Step 4) — source 22 is routable and its render path
     // is live, so it gets a panel. Still experimental.

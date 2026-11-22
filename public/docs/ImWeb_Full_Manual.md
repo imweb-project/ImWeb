@@ -1217,16 +1217,31 @@ Three independent sequencers (seq1, seq2, seq3). Each frame is a full-resolution
 
 ### 4.13 Vectorscope (Audio Visualiser)
 
-Real-time audio visualisation as a source texture.
+Real-time audio visualisation as a source texture (source **Scope**). Start it
+with **▶ Audio** in Sources › Sound; its controls are in Sources › From the
+Signal › Vectorscope. Set **Tap** to Master Out to draw ImWeb's own sound
+instead of the microphone.
+
+**Phosphor Beam.** In the line modes (Lissajous, Goniometer, Polar, Phase Space)
+the trace behaves like a real tube's beam: slow parts burn bright, fast parts
+go faint. Speed is judged against the figure's own average, so a bass figure
+and a treble one get the same contrast. Trails fade all the way to black.
 
 | Parameter | Range | Description |
 |-----------|-------|-------------|
-| `vectorscope.mode` | SELECT | Lissajous / Waveform / FFT |
-| `vectorscope.gain` | 0.1–5 | Amplitude scaling |
-| `vectorscope.decay` | 0–1 sec | Trail decay |
-| `vectorscope.color` | 0–360° | Display hue |
+| `vectorscope.look` | SELECT | **VScope Look** — Phosphor, Rosette, Ember, Mandala. Sets every control below. A loader: not itself saved in Display States (the values it sets are) |
+| `vectorscope.mode` | SELECT | Lissajous, Waveform, Goniometer, Polar, FFT, Radial FFT, Spectrogram, Scatter Cloud, Phase Space, 3D Waterfall, Warp Starfield, Oscilloscope |
+| `vectorscope.color` | SELECT | Green … Aqua (fixed), **Level** (quiet blue → loud red), **Pitch** (low red → high violet) |
+| `vectorscope.beam` | 0–100 % | **VScope Beam** — how much beam speed sets brightness; 0 = the old flat line |
+| `vectorscope.spin` | −360–360 °/s | **VScope Spin** — turns the picture (not Spectrogram / 3D Waterfall) |
+| `vectorscope.freeze` | toggle | **VScope Freeze** — holds the last sound; Spin and Trail keep going |
+| `vectorscope.gain` | 1–200 % | Amplitude scaling (100 % = 4×) |
+| `vectorscope.decay` | 0–99 % | **VScope Trail** — trail length |
+| `vectorscope.glow` | 0–50 px | **VScope Glow** — bloom around the trace (on the bright parts of the beam) |
 | `vectorscope.linewidth` | 0.5–15 px | **VScope Width** — trace thickness |
-| `vectorscope.glow` | 0–50 px | **VScope Glow** — bloom around the trace |
+
+To play it: put an LFO or the Step Sequencer on Spin, or a MIDI button on
+Freeze — freeze a figure, spin it, release.
 
 ---
 

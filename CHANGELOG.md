@@ -20,6 +20,19 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   too, holding only this item. `tests/audit-explain.mjs` fails if a written
   explanation names a control that does not exist, or if an Audio control has
   none.
+- **Vectorscope: Phosphor Beam** (Sources › From the Signal › Vectorscope).
+  The trace now behaves like a real tube's beam: where it moves slowly it
+  burns bright, where it races it goes faint, so a figure gets depth and
+  glowing turning points. **VScope Beam** sets how strong that is (0 is the
+  old flat line). Works in Lissajous, Goniometer, Polar and Phase Space.
+- **VScope Spin** turns the whole picture (degrees per second, either way);
+  with a long Trail the turning figure paints rosettes. **VScope Freeze**
+  holds the figure still while Spin and Trail keep moving. Both can take a
+  controller — an LFO or the Step Sequencer can play them.
+- **Two sound colours** in VScope Color: **Level** (quiet blue, loud red) and
+  **Pitch** (low red, high violet), gliding with the sound.
+- **VScope Look** — four named starting points: Phosphor, Rosette, Ember,
+  Mandala. A Look sets every Vectorscope control.
 - **Playheads on the Tape.** A line shows where the Playback zone is reading,
   and a yellow mark shows where the Grain Player is pointed.
 - **Three more playheads** (Audio › Playheads). Heads 2, 3 and 4 read the same
@@ -150,6 +163,11 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   over the picture; release and it is gone. A short tap leaves it up until the
   next Tab. Out of fullscreen, Tab flips between the Live tab and the tab you
   were on. Tab still works as usual inside text fields and the shader editor.
+
+### Fixed
+- **Vectorscope trails now fade all the way to black.** Long trails used to
+  leave a permanent grey ghost of everything ever drawn, and silence burned a
+  bright dot into the centre.
 
 ---
 

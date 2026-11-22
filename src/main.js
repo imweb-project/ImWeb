@@ -99,6 +99,7 @@ import { MotionExtract } from "./inputs/MotionExtract.js";
 import { GrowthRD } from "./inputs/GrowthRD.js";
 import { GROWTH_RES, GROWTH_LOOKS } from "./inputs/GrowthPatterns.js";
 import { SHATTER_LOOKS, resolveShatterLook } from "./scene3d/ShatterLooks.js";
+import { SCOPE_LOOKS, resolveScopeLook } from "./inputs/ScopeLooks.js";
 import { SDF_LOOKS } from "./inputs/SDFLooks.js";
 import { TimeDisplaceEngine } from "./inputs/TimeDisplaceEngine.js";
 import { SpacetimeRing } from "./inputs/SpacetimeRing.js";
@@ -5459,16 +5460,12 @@ async function main() {
 
   btnAudioIn.addEventListener("click", async () => {
     if (btnAudioIn.classList.contains("active")) {
-      if (ctrl.sound) {
-        vectorscope.connectSource(
-          ctrl.sound.ctx.createMediaStreamSource
-            ? (vectorscope._source ?? ctrl.sound.analyser)
-            : ctrl.sound.analyser,
-          ctrl.sound.ctx,
-        );
-      } else {
-        vectorscope.stop();
-      }
+      // Always stop. This used to call connectSource() instead whenever the
+      // sound controllers were running — a no-op on a scope already running,
+      // so the button flipped to ▶ while the scope kept drawing. stop() only
+      // takes down the scope's own branch (and releases the tap only if the
+      // scope took it), so the sound controllers are untouched.
+      vectorscope.stop();
       btnAudioIn.textContent = "▶ Audio";
       btnAudioIn.classList.remove("active");
       return;
@@ -6902,6 +6899,24 @@ async function main() {
     if (want === ps.get("scene3d.shatter.look").value) return;
     _shatterLookSyncing = true;
     try { ps.set("scene3d.shatter.look", want); } finally { _shatterLookSyncing = false; }
+  });
+  // Vectorscope Look: the same loader, the same after-recall sync — the menu
+  // shows the Look the recalled values ARE, or the heading.
+  let _scopeLookSyncing = false;
+  const applyScopeLook = (i) => {
+    if (_scopeLookSyncing) return;
+    for (const [id, v] of resolveScopeLook(ps, SCOPE_LOOKS[Math.round(i)]).values) ps.set(id, v);
+  };
+  ps.get("vectorscope.look").onChange(applyScopeLook);
+  ps.get("vectorscope.look").onReselect(applyScopeLook);
+  ps.addEventListener("stateRestored", (e) => {
+    const st = e.detail ?? {};
+    const is = SCOPE_LOOKS.findIndex((look, i) => i > 0 &&
+      resolveScopeLook(ps, look).values.every(([id, v]) => (st[id] ?? ps.get(id)?.value) === v));
+    const want = Math.max(is, 0);
+    if (want === ps.get("vectorscope.look").value) return;
+    _scopeLookSyncing = true;
+    try { ps.set("vectorscope.look", want); } finally { _scopeLookSyncing = false; }
   });
   // A Display State stores a Look's VALUES, not the menu (growth.look is a
   // loader, group 'global'), so after a recall the menu kept showing whatever
