@@ -5460,16 +5460,12 @@ async function main() {
 
   btnAudioIn.addEventListener("click", async () => {
     if (btnAudioIn.classList.contains("active")) {
-      if (ctrl.sound) {
-        vectorscope.connectSource(
-          ctrl.sound.ctx.createMediaStreamSource
-            ? (vectorscope._source ?? ctrl.sound.analyser)
-            : ctrl.sound.analyser,
-          ctrl.sound.ctx,
-        );
-      } else {
-        vectorscope.stop();
-      }
+      // Always stop. This used to call connectSource() instead whenever the
+      // sound controllers were running — a no-op on a scope already running,
+      // so the button flipped to ▶ while the scope kept drawing. stop() only
+      // takes down the scope's own branch (and releases the tap only if the
+      // scope took it), so the sound controllers are untouched.
+      vectorscope.stop();
       btnAudioIn.textContent = "▶ Audio";
       btnAudioIn.classList.remove("active");
       return;

@@ -105,6 +105,16 @@ check("the color-burn fill is near-white (#fdfdfd)", /fillStyle\s*=\s*'#fdfdfd'/
 check('initMic takes the tap as owner vectorscope', src.includes("ensureTap({ owner: 'vectorscope'"));
 check('stop releases it', src.includes("releaseTap('vectorscope')"));
 
+// ── ■ Audio stops the scope, whatever else is running ──────────────────────
+// Its stop branch once called connectSource() while the sound controllers ran
+// — a no-op on a running scope, so the button said ▶ and the scope drew on.
+const mainSrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+const clickAt = mainSrc.indexOf('btnAudioIn.addEventListener("click"');
+const stopBranch = clickAt < 0 ? '' : strip(mainSrc.slice(clickAt, mainSrc.indexOf('return;', clickAt)));
+check('the ■ Audio click handler is found', clickAt >= 0 && stopBranch.length > 0);
+check('its stop branch calls vectorscope.stop()', stopBranch.includes('vectorscope.stop()'));
+check('its stop branch does not reconnect the scope', !stopBranch.includes('connectSource'));
+
 if (fails.length) {
   console.error(`audit-scope: FAIL (${fails.length} of ${checks})`);
   for (const f of fails) console.error('  ✗ ' + f);
