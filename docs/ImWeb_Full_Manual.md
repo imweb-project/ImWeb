@@ -2059,8 +2059,8 @@ bypassed would look like the reset had failed.
 
 | Parameter | Range | Description |
 |-----------|-------|-------------|
-| `effect.kaleidoscope` | 0–1 | Intensity |
-| `effect.kalerot` | 0–360° | Pattern rotation |
+| `effect.kaleidoscope` | 0–16 | **Segments** — how many mirrored wedges the picture is folded into, in whole steps. 0 and 1 are off; 2–16 turn it on (6 gives a six-way pattern) |
+| `effect.kalerot` | 0–100% | Pattern rotation — 100% is one full turn |
 | `effect.kalecx` | 0–100% | **Kale.CenterX** — mirror origin |
 | `effect.kalecy` | 0–100% | **Kale.CenterY** |
 | `effect.kaleedge` | SELECT | **Kale.Edge** — Clamp / Mirror / Wrap / Black. Defaults to Mirror (seamless); Wrap reproduces the old behaviour |
