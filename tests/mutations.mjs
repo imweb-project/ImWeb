@@ -2096,4 +2096,20 @@ export const MUTATIONS = [
     find: "  if (!(peak > 1e-5)) return { ok: false, peak, gain: 1, reason: 'the selection is silent' };",
     replace: '  if (!(peak > 0)) peak = 1e-9;',
   },
+  {
+    name: 'setup: a refused reallocation is believed anyway',
+    audit: 'audit-audio-setup.mjs',
+    file: 'src/audio/AudioBinding.js',
+    why: 'the engine keeps the old tape and the client converts against the new length — the fault the owner reported, back through the fix',
+    find: "    if (!ok) {\n      return this._say(ok === false",
+    replace: "    if (false) {\n      return this._say(ok === false",
+  },
+  {
+    name: 'setup: tape length is reallocated under a running zone',
+    audit: 'audit-audio-setup.mjs',
+    file: 'src/audio/AudioBinding.js',
+    why: 'a copy-out and a refused request on every nudge of the slider while recording, and a status line that blames the engine',
+    find: "    if (busy) {\n      return this._say(`${keep} — stop ${busy}",
+    replace: "    if (false) {\n      return this._say(`${keep} — stop ${busy}",
+  },
 ];

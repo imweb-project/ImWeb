@@ -931,12 +931,83 @@ export class AudioBinding {
   // ── translation ───────────────────────────────────────────────────────────
 
   /**
+   * Change the length of a RUNNING tape and keep what is on it.
+   *
+   * This used to wait for the next Audio On, because reallocating discards the
+   * recording. It no longer has to: the recording is copied out, the tape is
+   * reallocated, and the recording is written back — the same three steps Audio
+   * Off / On have always performed, without the Off. A shorter tape keeps what
+   * fits (`restoreSnapshot` drops the rest).
+   *
+   * The engine refuses to reallocate under a running zone or a render, and it
+   * is right to: the zone is reading the buffer that is about to be replaced.
+   * So the same things are checked here first, to say WHICH one to stop — and
+   * the engine's own answer is still awaited, because a zone's gain takes a few
+   * milliseconds to reach zero after it is stopped and only the engine knows
+   * when it has. Until the engine says the new tape exists, `_allocSec` keeps
+   * the old length, so nothing is ever converted against a tape that is not
+   * there (the fault this replaced).
+   *
+   * Queued with start and stop (`_serial`), so it cannot interleave with them.
+   */
+  async _applyTapeLength() {
+    if (!this.running) return;
+    const g = (id) => this.ps.get(id).value;
+    const want = g('audio.tapeSec');
+    if (want === this._allocSec) return;
+    const keep = `tape stays ${this._allocSec} s`;
+    const busy = g('arec.on') ? 'Recording' : g('aplay.on') ? 'Playback' : g('agrain.on') ? 'the Grain Player'
+      : this._specJobId >= 0 || this._stretchJobId >= 0 ? 'the render' : this._normBusy ? 'Normalize' : null;
+    if (busy) {
+      return this._say(`${keep} — stop ${busy} to change it (or it applies on the next Audio On)`);
+    }
+    let snap = null;
+    if (this._alive) {
+      try { snap = await this._captureSnapshot(); }
+      catch (e) { return this._say(`${keep} — the recording could not be read (${e.message})`); }
+    }
+    // Ask, and wait for the engine's own answer: the allocation's dirty
+    // notification, or a refusal. Messages are answered in order, so the first
+    // of the two to arrive after the request is the reply to it.
+    const ok = await new Promise((resolve) => {
+      const prevDirty = this.engine.onDirty, prevRefuse = this.engine.onRefuse;
+      let settled = false;
+      const done = (v) => {
+        if (settled) return;
+        settled = true;
+        this.engine.onDirty = prevDirty; this.engine.onRefuse = prevRefuse;
+        resolve(v);
+      };
+      this.engine.onDirty = (a, b) => { done(true); prevDirty?.(a, b); };
+      this.engine.onRefuse = (code, m) => { done(false); prevRefuse?.(code, m); };
+      setTimeout(() => done(null), 2000);
+      this.engine.allocTape(want);
+    });
+    if (!ok) {
+      return this._say(ok === false
+        ? `${keep} — the engine would not change it just now; try again in a moment`
+        : `${keep} — the engine did not answer`);
+    }
+    this._allocSec = want;
+    const restored = snap ? this._writeSnapshot(snap, false) : 0;
+    this._pushLayout();
+    this._pushAll();
+    // The corpus indexed the old tape by sample; it has to be measured again.
+    this._corpusRaw = null; this._corpus = null;
+    this._refreshCorpusLabels();
+    this._pushRegionsToView();
+    this._refreshEnvelope();
+    this._say(`tape is now ${want} s`
+      + (restored ? ` — ${(restored / this.engine.sampleRate).toFixed(1)} s of recording kept` : ''));
+  }
+
+  /**
    * How long the tape IS, in seconds — not how long the slider says.
    *
-   * A new Tape length applies on the next Audio On (reallocating would discard
-   * the recording). But every conversion from a fraction to a sample used to
-   * read the PARAM, so the moment the slider moved the client and the engine
-   * disagreed about the tape: zones, renders and the display were all computed
+   * A new Tape length is applied by `_applyTapeLength`, a moment after the
+   * slider moves and only if the engine agrees. But every conversion from a
+   * fraction to a sample used to read the PARAM, so the moment the slider moved
+   * the client and the engine disagreed about the tape: zones, renders and the display were all computed
    * against a length the engine did not have. Made longer, a Spectral render
    * was aimed past the end and refused; and everything drawn was in the wrong
    * place until Audio was switched off and on. While the engine runs, the
@@ -1657,8 +1728,11 @@ export class AudioBinding {
     // it applies on the next enable. Reflected here rather than silently
     // ignored, because a slider that appears to do nothing is worse than one
     // that says why.
-    this._on('audio.tapeSec', (v) => this._say(
-      `tape stays ${this._allocSec} s for now — ${v} s applies on the next Audio On `
-      + '(the recording is kept across it)'));
+    // Applied at once, a moment after the slider comes to rest — a drag fires a
+    // change per pixel and each one would be a full copy-out of the tape.
+    this._on('audio.tapeSec', () => {
+      clearTimeout(this._tapeSecTimer);
+      this._tapeSecTimer = setTimeout(() => this._serial(() => this._applyTapeLength()), 350);
+    });
   }
 }

@@ -3143,7 +3143,7 @@ time ruler, and every zone.
 
 | Parameter | Range | Description |
 |-----------|-------|-------------|
-| `audio.tapeSec` | 5–600 s (default 60) | **Tape** length. A new length applies the next time you click Audio On (the status line says so); the recording is kept across it, cut off if the new tape is shorter |
+| `audio.tapeSec` | 5–600 s (default 60) | **Tape** length. Changes the running tape a moment after you let go, and keeps what is recorded (a shorter tape keeps what fits). It waits while Recording, Playback, the Grain Player or a render is running — the status line says which to stop. Partitions are fractions of the tape, so they stretch with it while the recording stays where it was in time |
 | `audio.tapSrc` | Mic / Master Out | **Tap** — what the sound-reactive controllers and the Vectorscope listen to |
 | `audio.outGain` | 0–1 | **Out Gain** |
 | `audio.glide` | 0–50 ms | **Glide** — how long a zone's Start/Length takes to reach a new value. 0 = exact, best for scrubbing by hand |

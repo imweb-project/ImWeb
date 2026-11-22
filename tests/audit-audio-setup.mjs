@@ -49,7 +49,7 @@ const check = (label, cond, detail = '') => {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ── a Web Audio that counts ────────────────────────────────────────────────
-const world = { nodes: 0, liveNodes: 0, streams: [], gumCalls: 0, gumConstraints: [], answerHello: true };
+const world = { nodes: 0, liveNodes: 0, streams: [], gumCalls: 0, gumConstraints: [], answerHello: true, allocs: [], refuseAlloc: false };
 
 class FakeNode { connect() {} disconnect() {} }
 class FakeWorkletNode extends FakeNode {
@@ -62,7 +62,10 @@ class FakeWorkletNode extends FakeNode {
       postMessage(m) {
         const reply = (a, ...v) => queueMicrotask(() => self.port.onmessage?.({ data: { a, v } }));
         if (m.a === '/engine/hello') { if (world.answerHello) reply('/engine/ready', m.v[0], 48000, 600); }
-        else if (m.a === '/engine/tape/alloc') reply('/tape/env/dirty', 0, 1);      // the liveness proof
+        else if (m.a === '/engine/tape/alloc') {
+          if (world.refuseAlloc) reply('/engine/refuse', 4, 'cannot reallocate the tape while a zone is running');
+          else { world.allocs.push(m.v[0]); reply('/tape/env/dirty', 0, 1); }   // also the liveness proof
+        }
         else if (m.a === '/tape/read') reply('/tape/read/err', m.v[2]);             // nothing recorded
         else if (m.a === '/tape/env/req') reply('/tape/env/err', m.v[3]);
       },
@@ -99,7 +102,7 @@ const { ParameterSystem, registerCoreParameters } = await import('../src/control
 const { AudioBinding } = await import('../src/audio/AudioBinding.js');
 
 function fresh() {
-  Object.assign(world, { nodes: 0, liveNodes: 0, streams: [], gumCalls: 0, gumConstraints: [], answerHello: true });
+  Object.assign(world, { nodes: 0, liveNodes: 0, streams: [], gumCalls: 0, gumConstraints: [], answerHello: true, allocs: [], refuseAlloc: false });
   const ps = new ParameterSystem();
   registerCoreParameters(ps);
   const audio = new AudioBinding(ps);
@@ -232,26 +235,51 @@ console.log('\none node, whatever the order of the clicks');
   check('and no device held', openStreams() === 0, `${openStreams()} open`);
 }
 
-console.log('\nthe tape is as long as it was allocated, not as long as the slider says');
+console.log('\nthe tape is as long as the ENGINE says, and a new length is applied at once');
 {
   // Reported by the owner, 2026-11-22: "when I make the number bigger, Spectral
   // Writer won't write … ruins the tape, audio engine off and on again fixes
-  // it." A new length applies on the next Audio On, but every fraction→sample
-  // conversion read the PARAM, so the client and the engine disagreed about the
-  // tape from the moment the slider moved.
+  // it." Every fraction→sample conversion read the PARAM, so the client and the
+  // engine disagreed about the tape from the moment the slider moved. Two rules
+  // came out of it: conversions use the length that was actually allocated, and
+  // a new length is applied to the running tape — but only once the engine has
+  // confirmed the new tape exists.
   const { ps, audio, said } = fresh();
   await audio.start(); await sleep(20);
   const before = audio._tapeLen;
   check('60 s at 48 kHz to begin with', before === 60 * 48000, `${before}`);
+  ps.set('audio.tapeSec', 90);
   ps.set('audio.tapeSec', 120);
-  check('moving Tape length while running does not move the tape', audio._tapeLen === before,
-    `conversions now use ${audio._tapeLen} samples against an engine holding ${before}`);
-  check('and the status line says when it will apply', /120 s applies on the next Audio On/.test(said.at(-1) ?? ''), said.at(-1));
+  check('the instant the slider moves, conversions still use the tape that exists',
+    audio._tapeLen === before,
+    `conversions use ${audio._tapeLen} samples against an engine holding ${before}`);
+  await sleep(600);
+  check('a moment later the tape is reallocated — once, for where the slider came to rest',
+    world.allocs.length === 2 && world.allocs[1] === 120, `allocations: ${world.allocs.join(', ')}`);
+  check('and conversions follow it', audio._tapeLen === 120 * 48000, `${audio._tapeLen}`);
+  check('it says so', /tape is now 120 s/.test(said.at(-1) ?? ''), said.at(-1));
+
+  ps.set('arec.on', 1);
+  ps.set('audio.tapeSec', 30); await sleep(600);
+  check('a running zone blocks it, and the length in use does not move',
+    world.allocs.length === 2 && audio._tapeLen === 120 * 48000, `allocations: ${world.allocs.join(', ')}`);
+  check('and the status line names what to stop', /tape stays 120 s — stop Recording/.test(said.at(-1) ?? ''), said.at(-1));
+  ps.set('arec.on', 0);
+
+  world.refuseAlloc = true;
+  ps.set('audio.tapeSec', 45); await sleep(600);
+  check('if the ENGINE refuses, the old length stays in use', audio._tapeLen === 120 * 48000,
+    `${audio._tapeLen} — believing the request rather than the reply is the original bug`);
+  check('and it says the tape stayed', /tape stays 120 s/.test(said.at(-1) ?? ''), said.at(-1));
+  world.refuseAlloc = false;
+
   await audio.stop(); await audio.start(); await sleep(20);
-  check('the next Audio On takes the new length', audio._tapeLen === 120 * 48000, `${audio._tapeLen}`);
+  check('the next Audio On takes whatever the slider says', audio._tapeLen === 45 * 48000, `${audio._tapeLen}`);
   await audio.stop();
   ps.set('audio.tapeSec', 30);
   check('with the engine off the layout follows the slider', audio._tapeLen === 30 * 48000);
+  await sleep(500);
+  check('and nothing is allocated while it is off', world.allocs.at(-1) === 45, `${world.allocs.join(', ')}`);
 }
 
 console.log('\na failed start can be tried again');

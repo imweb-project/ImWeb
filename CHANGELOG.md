@@ -215,9 +215,10 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ### Fixed
 - **Changing Tape length while audio was running broke the tape** until Audio
   was switched off and on: the Spectral Writer stopped writing and zones were
-  drawn in the wrong place. The new length still applies on the next Audio On,
-  and the status line now says so; until then everything keeps using the
-  length the tape really has.
+  drawn in the wrong place. Tape length now changes the running tape a moment
+  after you let go of the slider and keeps what is recorded on it (a shorter
+  tape keeps what fits). It waits while Recording, Playback, the Grain Player
+  or a render is running, and the status line says which one to stop.
 - **The microphone was never released.** After ▶ Audio in Sources › Sound had
   been used once, the mic stayed open for the rest of the session, through
   Audio Off.
