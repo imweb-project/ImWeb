@@ -49,6 +49,13 @@ export const MIDI_LOG_MAX = 16;
 export const PICKUP_EPS = 0.004;
 
 /**
+ * Seconds between MIDI feedback passes (~30 Hz). Fast enough that a Look
+ * morph reads as motion on the surface; slow enough that a desk of 64 bound
+ * controls under a morph stays well inside what Network MIDI carries.
+ */
+export const FEEDBACK_INTERVAL = 1 / 30;
+
+/**
  * Map an X-map controller's 0–1 output to an LFO rate, LOGARITHMICALLY.
  *
  * Rate is perceived in octaves, not in Hz, so a linear map wastes almost all of
@@ -118,6 +125,10 @@ export class ControllerManager {
     this.modifiers = { capsLock: false, shift: false, ctrl: false, alt: false, meta: false };
 
     this._gamepadPrev = null; // last frame's pad reading — see _tickGamepad
+    // MIDI feedback state — see _tickFeedback.
+    this._fbLast    = new Map();   // control key → 0–127 the surface is believed to show
+    this._fbTouched = new Set();   // control keys that spoke since the last pass
+    this._fbAcc     = 0;
     /**
      * Last value seen per `channel:cc`, for rising-edge detection.
      *
@@ -480,6 +491,9 @@ export class ControllerManager {
 
     // Poll gamepads
     this._tickGamepad(dt);
+
+    // Last, so it sees every value this frame settled on.
+    this._tickFeedback(dt);
   }
 
   // ── External Mapping helpers ──────────────────────────────────────────────
@@ -1009,6 +1023,8 @@ export class ControllerManager {
         if (e.port.type === 'input' && e.port.state === 'connected') {
           this._attachMIDIInput(e.port);
         }
+        // A surface that just appeared shows nothing we sent: dump the desk.
+        if (e.port.type === 'output' && e.port.state === 'connected') this._fbLast.clear();
       };
       document.getElementById('status-midi')?.classList.add('active');
     } catch (err) {
@@ -1032,15 +1048,111 @@ export class ControllerManager {
   }
 
   /**
-   * Send the current normalized value of a MIDI-CC-mapped parameter back
-   * to its assigned CC (for motorized faders / LED feedback).
+   * Force this parameter's surface controls to be re-sent on the next feedback
+   * pass, even if the surface is believed to show them already. Display State
+   * recall calls it for every param: a recall is the moment to re-assert the
+   * whole desk, including a control left behind while pickup held it.
    */
   sendParamFeedback(param) {
-    if (!param.controller || param.controller.type !== 'midi-cc') return;
-    const cc      = param.controller.cc;
-    const channel = param.controller.channel ?? 1;
-    const val127  = Math.round(param.normalized * 127);
-    this.sendCC(channel, cc, val127);
+    for (const [key] of this._feedbackTargets(param)) this._fbLast.delete(key);
+  }
+
+  /**
+   * Where a parameter's value should appear on the surface: the controls it is
+   * bound to and the 0–127 each should show, as [key, value] pairs. Keys are
+   * `c:<ch>:<cc>` or `n:<ch>:<note>` — the same physical-control identity the
+   * input side uses — so input and output agree about which control is which.
+   *
+   * The value is the INVERSE of what input does (controlInput / setNormalized):
+   * honours ctrlMin/ctrlMax, curve and invert, and reads the slew TARGET rather
+   * than the gliding value, or a slewed knob would be dragged back toward the
+   * glide while the finger is still on it. Response tables are not inverted —
+   * they need not be invertible — which is why the echo rule in
+   * `_tickFeedback` compares against what the param SETTLED on, not against
+   * the incoming CC.
+   */
+  _feedbackTargets(p) {
+    const c = p.controller;
+    if (!c) return [];
+    const ch = c.channel || 1;   // 0 = "any" on input; output needs one
+    const out = [];
+    if (c.type === 'midi-cc' || c.type === 'midi-note') {
+      if (p.type === PARAM_TYPE.TRIGGER) return out;   // a trigger has no state to show
+      // A note binding on a continuous param is velocity-driven; the pad has no
+      // position to be told about.
+      if (c.type === 'midi-note' && p.type !== PARAM_TYPE.TOGGLE) return out;
+      let n;
+      if (p.type === PARAM_TYPE.TOGGLE) n = p.value ? 1 : 0;
+      else if (p.type === PARAM_TYPE.SELECT) {
+        const last = (p.options?.length ?? 1) - 1;
+        const lo = Math.max(0, Math.min(last, Math.round(p.ctrlMin ?? 0)));
+        const hi = Math.max(lo, Math.min(last, Math.round(p.ctrlMax ?? last)));
+        n = hi > lo ? (p.value - lo) / (hi - lo) : 0;
+      } else {
+        const v = p.slew > 0 ? p._target : p.value;
+        n = p.toNorm(v, p.ctrlMin ?? p.min, p.ctrlMax ?? p.max);
+      }
+      if (p.invert) n = 1 - n;
+      const v127 = Math.round(Math.max(0, Math.min(1, n)) * 127);
+      out.push([c.type === 'midi-cc' ? `c:${ch}:${c.cc}` : `n:${ch}:${c.note}`, v127]);
+    } else if (c.type === 'midi-cc-map') {
+      // One button per option: the selected one lit, the rest dark.
+      const cur = Math.round(p.value);
+      (c.ccs   ?? []).forEach((cc, i) => { if (cc != null) out.push([`c:${ch}:${cc}`, i === cur ? 127 : 0]); });
+      (c.notes ?? []).forEach((nn, i) => { if (nn != null) out.push([`n:${ch}:${nn}`, i === cur ? 127 : 0]); });
+    }
+    return out;
+  }
+
+  /**
+   * Two-way sync: tell the surface (MIDI Designer, a motorised desk, LED rings)
+   * where every MIDI-bound parameter is, whatever moved it — a Look, a Display
+   * State, the AI, a page switch, a file load.
+   *
+   * Change-only. `_fbLast` holds the value each physical control is believed to
+   * show; a control is sent only when its wanted value differs. An empty map
+   * (first run, a page switch, a new output port) therefore dumps the whole
+   * desk once and then goes quiet.
+   *
+   * Echo rule, value-based rather than timed: a control that just SPOKE is
+   * marked in `_fbTouched`, and on the next pass its wanted value is adopted as
+   * shown without being sent. So the surface is never answered with its own
+   * move — even when a table, a SELECT detent or 7-bit rounding means the param
+   * landed somewhere the CC did not say — but anything that moves the param
+   * AFTER that is sent as usual.
+   *
+   * First binding wins per control: two params on one CC would otherwise send
+   * alternating values on every pass for ever.
+   */
+  _tickFeedback(dt) {
+    if (!this.midi || !this.midi.outputs?.size) return;
+    if (!this.ps.get('midi.feedback')?.value) return;
+    this._fbAcc += dt;
+    if (this._fbAcc < FEEDBACK_INTERVAL) return;
+    this._fbAcc = 0;
+    const want = new Map();
+    for (const p of this.ps.getAll()) {
+      if (!p.controller) continue;
+      for (const [key, v] of this._feedbackTargets(p)) if (!want.has(key)) want.set(key, v);
+    }
+    for (const [key, v] of want) {
+      if (this._fbTouched.has(key)) { this._fbLast.set(key, v); continue; }
+      if (this._fbLast.get(key) === v) continue;
+      this._fbLast.set(key, v);
+      const [kind, ch, num] = key.split(':');
+      if (kind === 'c') this.sendCC(+ch, +num, v);
+      else this._sendNote(+ch, +num, v);
+    }
+    this._fbTouched.clear();
+  }
+
+  /** Note-on with velocity; velocity 0 is note-off by the MIDI spec. */
+  _sendNote(channel, note, velocity) {
+    if (!this.midi) return;
+    const data = [0x90 | ((channel - 1) & 0x0F), note & 0x7F, Math.round(velocity) & 0x7F];
+    this.midi.outputs.forEach(port => {
+      try { port.send(data); } catch (_) { /* ignore disconnected */ }
+    });
   }
 
   // ── MIDI Learn ────────────────────────────────────────────────────────────
@@ -1193,7 +1305,7 @@ export class ControllerManager {
    * too: a preference about how bindings behave cannot sensibly differ per page.
    */
   static PAGE_EXEMPT = new Set([
-    'midi.page', 'midi.pagePrev', 'midi.pageNext', 'midi.pickup',
+    'midi.page', 'midi.pagePrev', 'midi.pageNext', 'midi.pickup', 'midi.feedback',
   ]);
 
   get mapPage() { return this._mapPage; }
@@ -1290,6 +1402,8 @@ export class ControllerManager {
     if (n === this._mapPage) return;
     this._mapPage = n;
     this._pickup.clear();
+    // Every control now means a different param: re-send the whole desk.
+    this._fbLast.clear();
     for (const p of this.ps.getAll()) {
       if (ControllerManager.PAGE_EXEMPT.has(p.id) || !this._isPaged(p)) continue;
       // Optional-chained: `_isPaged` already guarantees the array exists, but a
@@ -1682,6 +1796,11 @@ export class ControllerManager {
 
       // AFTER the dispatch loop, so every param above saw the same edge.
       if (type === 0xB0) this._ccPrev.set(ccKey, data2);
+
+      // Feedback echo rule: this control just spoke, so the next feedback pass
+      // adopts whatever its param settled on instead of answering it.
+      if (type === 0xB0) this._fbTouched.add(`c:${ccKey}`);
+      else if (type === 0x90 || type === 0x80) this._fbTouched.add(`n:${channel}:${data1}`);
 
       // Global MIDI PC callback (fires for any PC message regardless of param mapping)
       if (type === 0xC0 && this.onMIDIPC) {

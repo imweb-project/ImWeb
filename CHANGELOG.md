@@ -9,6 +9,15 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **MIDI Feedback** (Sources › Live In, beside Pickup; on by default). ImWeb
+  now sends every MIDI-bound control's value back to the surface, so MIDI
+  Designer, motorised faders and LED rings follow whatever moved it: a Look, a
+  Display State, the AI, a file load, a page switch. Toggles light their pad,
+  option buttons light the selected one, and a fresh surface gets the whole
+  desk the moment it connects. It sends only what changed, about 30 times a
+  second, and never answers a control with its own move, so a knob is not
+  pulled under your finger. Before this, only Display State recall sent
+  feedback, and only for plain CC faders. `tests/audit-midi-feedback.mjs`.
 - **Explain this** — on every control's right-click menu. A small window says in
   plain language what the control does, with an example in real values, what
   to expect and what it does not affect, plus its current value. Every Audio

@@ -6148,6 +6148,21 @@ export function registerCoreParameters(ps) {
     type: PARAM_TYPE.TOGGLE,
     value: 1,
   });
+  /**
+   * Two-way MIDI: send every MIDI-bound parameter's value back out to its
+   * control, so a surface that can be told where to be (MIDI Designer, TouchOSC
+   * over MIDI, motorised faders, LED rings) follows Looks, Display States, the
+   * AI and page switches. Change-only and ~30 Hz — see _tickFeedback in
+   * ControllerManager. On by default; off for a controller that misbehaves
+   * when it receives MIDI. Group 'global': a preference, not part of a look.
+   */
+  ps.register({
+    id: "midi.feedback",
+    label: "Feedback",
+    group: "global",
+    type: PARAM_TYPE.TOGGLE,
+    value: 1,
+  });
 
   /**
    * Slew given to a CONTINUOUS parameter the moment MIDI is learned onto it.
