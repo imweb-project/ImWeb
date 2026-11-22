@@ -273,7 +273,8 @@ export const TILT_OCTAVES = 3;
  * `tilt` > 0 the HIGHEST row is the slow one: it plays the picture once across
  * the whole zone, exactly as with no Tilt. Every row below it runs faster, by
  * pitch height, and REPEATS the picture to fill the time — the bottom row up
- * to 2^3 = eight times at a tilt of 1. `tilt` < 0 is the mirror: the low rows
+ * to 2^3 = eight times at a tilt of 1, always a whole number of times (see
+ * `tiltSpeed`). `tilt` < 0 is the mirror: the low rows
  * play once and the high rows repeat. The result is a canon, the same picture
  * at every speed between one and eight at once, and relative to its neighbours
  * the slow end is stretched.
@@ -295,20 +296,42 @@ export const TILT_OCTAVES = 3;
  * be equal — so a project that never touches Tilt renders bit-for-bit as before.
  * Used for the pan image too: a position must stay with the magnitude it places.
  */
+/**
+ * How many times a row plays the picture: a WHOLE number, 1 at the slow end.
+ *
+ * `h` is the row's height, 0 at the bottom and 1 at the top. The speed follows
+ * pitch height exponentially (two rows an equal distance apart differ by an
+ * equal ratio) and is then rounded, so the rows fall into bands — 1×, 2×, 3× …
+ * up to 8× at a tilt of ±1.
+ *
+ * Whole, so that EVERY row finishes a pass exactly at the end of the zone. With
+ * fractional speeds each row was cut off wherever it happened to be, and the
+ * zone ended on a ragged edge; looped, it clicked. Whole repeats make the
+ * rendered zone a true loop — every row arrives back at the left edge of the
+ * picture at the same instant — and turn the canon into rhythm: 2 against 3
+ * against 4, rather than 2.83 against 1.68.
+ *
+ * The cost is that Tilt moves in steps. Nothing happens until the fast end
+ * rounds up to 2 (a tilt of about ±0.2), and new bands appear as it rises.
+ */
+export function tiltSpeed(tilt, h) {
+  if (!tilt) return 1;
+  const amt = Math.min(Math.abs(tilt), 1) * TILT_OCTAVES;
+  return Math.max(1, Math.round(Math.pow(2, amt * (tilt > 0 ? 1 - h : h))));
+}
+
 export function tiltImage(img, rows, frames, tilt) {
   if (!tilt || !img || rows < 1 || frames < 2) return img;
   const out = new Float32Array(img.length);
-  const amt = Math.min(Math.abs(tilt), 1) * TILT_OCTAVES;
   for (let r = 0; r < rows; r++) {
     const h = rows > 1 ? r / (rows - 1) : 0;           // 0 bottom … 1 top
-    // How many times this row plays the picture. 1 at the slow end.
-    const speed = Math.pow(2, amt * (tilt > 0 ? 1 - h : h));
+    const speed = tiltSpeed(tilt, h);
     // One output column on this row covers `speed` source columns, so it is
     // their AVERAGE, not a sample of one of them — the same reason `boxAverage`
     // exists. Point-sampled, a row at eight repeats read every eighth column
     // and stepped clean over a thin bright stroke, which then sounded on some
     // rows and not on others depending on where the steps happened to fall.
-    const n = Math.ceil(speed - 1e-9);
+    const n = speed;
     for (let f = 0; f < frames; f++) {
       let sum = 0;
       for (let k = 0; k < n; k++) {
