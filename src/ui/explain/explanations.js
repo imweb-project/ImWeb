@@ -252,9 +252,15 @@ export const EXPLANATIONS = {
     expect: 'Build up to eight regions before a performance and switch between them by slot.',
     not: 'The tape, or any other slot.',
   },
+  'aplay.normTo': {
+    does: 'Sets how high Normalize takes the loudest point of the zone. 1 is full level.',
+    example: 'At the default 0.9 a take peaking at 0.2 is turned up 4.5×. At 0.5 the same take is turned up 2.5×, leaving room to layer other sounds over it.',
+    expect: 'Nothing changes until you press Normalize. Above the take’s own peak it turns the zone up, below it turns it down.',
+    not: 'The tape by itself — this is only the target. At 0 Normalize refuses, because that would erase the zone.',
+  },
   'aplay.normalize': {
-    does: 'Rewrites the Playback zone’s stretch of tape so its loudest point sits just under full level.',
-    example: 'A quiet take peaking at 0.2 is turned up about 4.5×, so its peak lands at 0.891 (−1 dB). One gain for the whole zone and both channels.',
+    does: 'Rewrites the Playback zone’s stretch of tape so its loudest point sits at Normalize To.',
+    example: 'With Normalize To at 0.9, a quiet take peaking at 0.2 is turned up 4.5×, so its peak lands at 0.9. One gain for the whole zone and both channels.',
     expect: 'Quiet recordings become usable without changing their dynamics or stereo balance. Undo Tape takes it back.',
     not: 'Anything outside the zone, and silence is left alone.',
   },

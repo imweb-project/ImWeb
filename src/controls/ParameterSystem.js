@@ -9510,6 +9510,10 @@ export function registerCoreParameters(ps) {
       // Rewrites the zone's stretch of tape so its peak sits just under full
       // scale. 'global' for the reason every tape-writing verb is: a State
       // recall must never be able to alter a recording.
+      // How high Normalize takes the loudest point: 1 is full scale, 0.9 leaves
+      // a little air. An ordinary captured setting — it is the trigger beside
+      // it that writes tape, not this.
+      { key: "normTo", label: "Normalize To", min: 0, max: 1, value: 0.9, step: 0.01 },
       { key: "normalize", label: "Normalize", type: PARAM_TYPE.TRIGGER, group: "global" },
     ] },
   ].forEach(({ prefix, suffix, extra }) => {
