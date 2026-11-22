@@ -105,6 +105,42 @@ const melToHz = (mel) => 700 * (Math.pow(10, mel / 2595) - 1);
 export const SCALE_NAMES = Object.freeze(SCALES.map((s) => s.name));
 
 /**
+ * How the scale dropdown is laid out: grouped, and in an order that reads —
+ * which is NOT the order of `SCALES`, and must not become it. `SCALES` is
+ * append-only because its index is what a project stores; this is only what
+ * the menu looks like, so it can be rearranged freely. Each entry is a header
+ * or an INDEX into `SCALES` (the dropdown reports the true index whatever
+ * position an item is shown at).
+ *
+ * Built from names, and anything in `SCALES` that no group mentions lands
+ * under "More" — a scale appended later is then visible in the menu the day
+ * it is added, instead of selectable only by a controller that happens to
+ * reach its index.
+ */
+const SCALE_GROUPS = [
+  ['Major & minor', ['Major', 'Natural minor', 'Harmonic minor', 'Melodic minor', 'Chromatic']],
+  ['Modes', ['Dorian', 'Phrygian', 'Lydian', 'Mixolydian', 'Locrian']],
+  ['Five & six notes', ['Pentatonic', 'Minor pentatonic', 'Blues', 'Whole tone', 'Hirajoshi', 'In-sen', 'Slendro']],
+  ['Coloured', ['Octatonic', 'Messiaen 3', 'Hungarian minor', 'Double harmonic', 'Phrygian dominant', 'Pelog']],
+  ['Intervals', ['Octaves', 'Fifths']],
+  ['Microtonal & just', ['Quarter-tone', '19-tone equal', '31-tone equal', 'Just major', '7-limit just', 'Bohlen-Pierce']],
+  ['Series', ['Harmonic series', 'Subharmonic series', 'Odd harmonics', 'Stretched harmonics', 'Mel (by ear)']],
+];
+export const SCALE_DISPLAY_ORDER = Object.freeze((() => {
+  const out = [];
+  const used = new Set();
+  for (const [header, names] of SCALE_GROUPS) {
+    const idx = names.map((n) => SCALE_NAMES.indexOf(n)).filter((i) => i >= 0);
+    if (!idx.length) continue;
+    out.push({ header });
+    for (const i of idx) { out.push(i); used.add(i); }
+  }
+  const rest = SCALE_NAMES.map((_, i) => i).filter((i) => !used.has(i));
+  if (rest.length) { out.push({ header: 'More' }); out.push(...rest); }
+  return out;
+})());
+
+/**
  * Frequencies for `rows` scale degrees upward from `rootHz`, in Hz.
  *
  * **May return FEWER than `rows` entries.** Anything at or above Nyquist

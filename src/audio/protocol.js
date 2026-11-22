@@ -56,7 +56,12 @@
 // 7 adds `/stretch/render`: the PaulStretch job. A new address, and a client
 // one version behind would wait on a `/job/<n>/done` that an `unknown address`
 // refusal is never going to send.
-export const PROTO_VERSION = 7;
+//
+// 8 adds `/play/heads` (engine → client: where the playheads are, for the tape
+// display) and gives `/stretch/render` a meaning for an amount of 0 (freeze).
+// The second is a changed SIGNATURE in the sense that matters: an older engine
+// refuses 0 as out of range.
+export const PROTO_VERSION = 8;
 
 /** The complete permitted argument-type set. Rule 1 — do not extend casually. */
 export const TYPE_TAGS = Object.freeze(['i', 'f', 's', 'b', 'T', 'F']);
@@ -371,6 +376,9 @@ export const ENGINE_TO_CLIENT = Object.freeze({
   // MAPPED value, ImWeb wants the RAW 0..1 so it can feed it back through
   // `setNormalized` instead of inverting its own unit conversions.
   '/ctrl/echo/data': 'b',
+  // Where the playheads are: flat [zone, fractionOfTape] pairs, one message per
+  // frame while anything plays and one empty one when the last head stops.
+  '/play/heads': 'b',
   // Paced-job replies (§8.3). Exactly one terminal message per accepted job —
   // `/done` or `/error`, never both and never neither — because the client
   // holds a promise per job and an unterminated one wedges the surface that

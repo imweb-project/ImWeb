@@ -16,7 +16,7 @@
  * analysis, stretch).
  */
 
-const PROTO_VERSION = 7;
+const PROTO_VERSION = 8;
 const REFUSE_PROTO_MISMATCH = 1;
 const REFUSE_NO_TAPE = 2;
 const REFUSE_BAD_RANGE = 3;
@@ -234,6 +234,15 @@ const MIN_STRETCH_WINDOW = 1024;
 const MAX_STRETCH_WINDOW = 65536;
 const MAX_STRETCH = 1000;
 const STRETCH_SEED = 0x51ed270b;
+/** Where the stretch output's soft ceiling starts to act. */
+const STRETCH_KNEE = 0.7;
+
+/**
+ * How many playback zones report their playhead to the display. The client
+ * drives four (the Playback zone and three extra heads); eight leaves room
+ * without making the per-frame message grow with ZONES_PER_TYPE.
+ */
+const HEAD_REPORT = 8;
 
 /**
  * Concurrent grains per zone. Sixteen is rate × size = 160 grains/second at
@@ -1468,6 +1477,37 @@ class TapeProcessor extends AudioWorkletProcessor {
     this.port.postMessage({ a: '/ctrl/echo/data', t: 'b', v: [out.buffer] }, [out.buffer]);
   }
 
+  /**
+   * Where the playheads are, for the tape display — observational, at frame
+   * cadence (rule 7), and only while something is playing: [zone, position]
+   * pairs with the position as a FRACTION OF THE TAPE, which is the one unit
+   * the display already works in. One empty message when the last head stops,
+   * so the display can take its lines down; nothing at all after that.
+   *
+   * Allocates per flush, as `_ctrlFlush` does and for the same reason: it is
+   * reached at ~60 Hz, not per sample, and the buffer is transferred.
+   */
+  _headsFlush() {
+    if (!this._length) return;
+    let live = 0;
+    for (let i = 0; i < HEAD_REPORT; i++) {
+      const z = this._play[i];
+      if (z.on || z.gainCur > 0) live++;
+    }
+    if (!live && !this._headsSent) return;
+    this._headsSent = live > 0;
+    const out = new Float32Array(live * 2);
+    let w = 0;
+    for (let i = 0; i < HEAD_REPORT; i++) {
+      const z = this._play[i];
+      if (!(z.on || z.gainCur > 0)) continue;
+      this._computeSpan(z);
+      out[w++] = i;
+      out[w++] = (this._sa + z.phase) / this._length;
+    }
+    this.port.postMessage({ a: '/play/heads', t: 'b', v: [out.buffer] }, [out.buffer]);
+  }
+
   _hello(proto) {
     if (proto !== PROTO_VERSION) {
       // Refuse rather than degrade: a half-understood protocol is worse than
@@ -2007,8 +2047,13 @@ class TapeProcessor extends AudioWorkletProcessor {
       return fail(REFUSE_BAD_RANGE,
         `stretch window ${window} is not a power of two in ${MIN_STRETCH_WINDOW}..${MAX_STRETCH_WINDOW}`);
     }
-    if (!(stretch >= 1 && stretch <= MAX_STRETCH)) {
-      return fail(REFUSE_BAD_RANGE, `stretch amount ${stretch} outside 1..${MAX_STRETCH}`);
+    // 0 is FREEZE: the window does not move at all. Every frame is then the
+    // same slice of the source with new random phases — one moment of sound
+    // held for as long as the destination is. It is the limit of the same
+    // method (an infinite stretch), so it is the same job and not a second one.
+    const freeze = stretch === 0;
+    if (!freeze && !(stretch >= 1 && stretch <= MAX_STRETCH)) {
+      return fail(REFUSE_BAD_RANGE, `stretch amount ${stretch} outside 1..${MAX_STRETCH} (0 = freeze)`);
     }
     if (!(level >= 0 && level <= 4)) {
       return fail(REFUSE_BAD_RANGE, `stretch level ${level} outside 0..4`);
@@ -2019,7 +2064,7 @@ class TapeProcessor extends AudioWorkletProcessor {
     // The output ends when the destination is full OR the source runs out,
     // whichever is first — so a destination longer than the stretched source
     // is left alone past that point instead of being padded with silence.
-    const len = Math.min(dstLen, Math.ceil(srcLen * stretch));
+    const len = freeze ? dstLen : Math.min(dstLen, Math.ceil(srcLen * stretch));
 
     const win = new Float32Array(W);
     for (let n = 0; n < W; n++) {
@@ -2059,7 +2104,7 @@ class TapeProcessor extends AudioWorkletProcessor {
 
     this._stretchJob = {
       id, src: srcStart, srcEnd: srcStart + srcLen, dst: dstStart, len, pos: 0, sent: -1,
-      W, half, level, inHop: half / stretch, frame: 0,
+      W, half, level, inHop: freeze ? 0 : half / stretch, frame: 0,
       win, hinv, rev, cosT, sinT,
       re: [new Float64Array(W), new Float64Array(W)],
       im: [new Float64Array(W), new Float64Array(W)],
@@ -2222,7 +2267,21 @@ class TapeProcessor extends AudioWorkletProcessor {
             const out = ch === 0 ? L : R;
             const x = re[ch], o = old[ch];
             for (let n = 0; n < half; n++) {
-              if (n < count) out[at + n] = (x[n] * scale * win[n] + o[n]) * hinv[n] * level;
+              if (n < count) {
+                // A soft ceiling. Random phases give this signal the peaks of
+                // noise — three or four times its RMS — where the source it
+                // was made from may have been a tone at twice its RMS. So a
+                // loud source, stretched at exactly its own level, lands well
+                // over full scale. Untouched below STRETCH_KNEE; above it the
+                // excess is folded smoothly toward 1 and never reaches it.
+                let v = (x[n] * scale * win[n] + o[n]) * hinv[n] * level;
+                const m = v < 0 ? -v : v;
+                if (m > STRETCH_KNEE) {
+                  const t = STRETCH_KNEE + (1 - STRETCH_KNEE) * Math.tanh((m - STRETCH_KNEE) / (1 - STRETCH_KNEE));
+                  v = v < 0 ? -t : t;
+                }
+                out[at + n] = v;
+              }
               o[n] = x[n + half] * scale * win[n + half];
             }
           }
@@ -3665,6 +3724,7 @@ class TapeProcessor extends AudioWorkletProcessor {
       this._specFlush();
       this._corpusFlush();
       this._stretchFlush();
+      this._headsFlush();
     }
     return true;
   }

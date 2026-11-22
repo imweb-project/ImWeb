@@ -11,9 +11,10 @@
  * Run:  node tests/audit-tape-snapshot.mjs
  */
 
+import { readFileSync } from 'node:fs';
 import {
   captureSnapshot, restoreSnapshot, snapshotToJSON, snapshotFromJSON, CHUNK_SECONDS,
-  normalizeSpan, NORMALIZE_PEAK,
+  normalizeSpan, NORMALIZE_PEAK, captureSpan, restoreSpan,
 } from '../src/audio/tape-snapshot.js';
 
 let failures = 0;
@@ -150,6 +151,42 @@ console.log('\nnormalize scales a selection, and only the selection');
   for (let i = 0; i < SR; i++) loud.l[i] = 1.5 * Math.sin(i * 0.01);
   const r3 = await normalizeSpan(loud.read, loud.write, 0, SR, SR);
   check('an over-full selection is brought DOWN', r3.ok && r3.gain < 1 && Math.max(...loud.l.subarray(0, SR)) <= NORMALIZE_PEAK + 1e-4);
+}
+
+// Undo (2026-11-22). The copy an undo keeps is NOT a snapshot: a snapshot
+// skips silence and rounds to 16 bits, and an undo that did either would give
+// back a tape that only resembles the one that was overwritten.
+console.log('\nundo puts back exactly what was there');
+{
+  const t = fakeTape(LEN);
+  const A = 3 * SR, B = 24 * SR;
+  for (let i = 0; i < LEN; i++) { t.l[i] = Math.fround(0.3 * Math.sin(i * 0.0137) + 1e-7 * i); t.r[i] = Math.fround(0.2 * Math.cos(i * 0.021)); }
+  for (let i = 10 * SR; i < 12 * SR; i++) { t.l[i] = 0; t.r[i] = 0; }      // a silence inside the span
+  const before = { l: Float32Array.from(t.l), r: Float32Array.from(t.r) };
+  const saved = await captureSpan(t.read, A, B, SR);
+  check('it reads in chunks', t.maxRead <= CHUNK_SECONDS * SR);
+  for (let i = A; i < B; i++) { t.l[i] = 0.9; t.r[i] = -0.9; }             // the render
+  restoreSpan(saved, t.write);
+  let exact = true;
+  for (let i = 0; i < LEN; i++) if (t.l[i] !== before.l[i] || t.r[i] !== before.r[i]) { exact = false; break; }
+  check('every sample comes back bit for bit — not rounded to 16 bits', exact);
+  check('including the silence the render wrote over', t.l[11 * SR] === 0 && t.r[11 * SR] === 0);
+  restoreSpan(saved, t.write);
+  check('the saved copy survives being used (Undo, Redo, Undo)', t.l[A + 5] === before.l[A + 5]);
+  const dead = await captureSpan(async () => null, A, B, SR);
+  check('an unreadable tape gives no undo rather than a broken one', dead === null);
+
+  // The copy must be taken BEFORE the write is sent, in every verb that writes.
+  const ab = readFileSync(new URL('../src/audio/AudioBinding.js', import.meta.url), 'utf8');
+  const order = (keep, write) => { const k = ab.indexOf(keep), w = ab.indexOf(write); return k > 0 && w > k; };
+  check('Render copies out before it renders',
+    order("await this._keepUndo('spectral render'", "this.engine.render('spectral', 0, 0, startRel, lengthSamples)"));
+  check('Stretch and Freeze copy out before they render',
+    order("await this._keepUndo(freeze ? 'freeze' : 'stretch'", 'this.engine.stretch('));
+  check('Normalize copies out before it scales',
+    order("await this._keepUndo('normalize', a, b)", 'await normalizeSpan('));
+  const verbs = (ab.match(/await this\._keepUndo\(/g) ?? []).length;
+  check('three writers, three copies', verbs === 3, `${verbs}`);
 }
 
 if (failures) { console.error(`\n${failures} tape-snapshot check(s) FAILED`); process.exit(1); }

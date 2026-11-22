@@ -2758,6 +2758,7 @@ async function main() {
       "sound-fft": "Sound FFT",
       key: "Key",
       random: "Random",
+      seq: "Step Seq",
       expr: "Expr",
       fixed: "Fixed",
     };

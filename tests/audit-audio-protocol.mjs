@@ -310,7 +310,11 @@ const HOT_ROOTS = ['process', '_renderPlay', '_renderRec', '_renderVoice', '_lim
 // BUILDS the message it posts, and it runs once per frame-cadence flush rather
 // than per sample. The per-sample controller work is `_ctrlStep`, which is not
 // exempt and must stay allocation-free like everything else in the render.
-const HOT_EXEMPT = new Set(['_flushDirty', '_ctrlFlush', '_send', '_refuse']);
+// `_headsFlush` (2026-11-22) is the third of the kind: the playhead positions
+// for the tape display, one transferred buffer per FRAME while something plays.
+// Exempt on exactly the terms above — it builds the message it posts, at frame
+// cadence — and it calls only `_computeSpan`, which is covered on its own.
+const HOT_EXEMPT = new Set(['_flushDirty', '_ctrlFlush', '_headsFlush', '_send', '_refuse']);
 
 const HOT = (() => {
   const seen = new Set(HOT_ROOTS);

@@ -9,6 +9,27 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Playheads on the Tape.** A line shows where the Playback zone is reading,
+  and a yellow mark shows where the Grain Player is pointed.
+- **Three more playheads** (Audio › Playheads). Heads 2, 3 and 4 read the same
+  Playback zone, each with its own Run switch, Rate (−4 to 4, so its own speed
+  and direction) and Level. They start at half speed, backwards and double
+  speed. Each has its own numbered line on the Tape. This is LiSa's idea of
+  several hands on one stretch of buffer.
+- **Freeze** (Audio › Stretch). Holds one moment — the start of the Playback
+  zone, one Window long — as a steady drone that fills the Stretch zone.
+- **Undo Tape** (under the Tape). Takes back the last Render, Stretch, Freeze
+  or Normalize, exactly. Press it again to redo. One level; spans longer than
+  four minutes are not kept.
+- **Step Sequencer** — a new controller type, in the controller menu beside
+  Random. Up to 16 steps drive any parameter. Right-click its SEQ badge to
+  edit: draw the steps with the pointer, click a dot to skip a step (a skipped
+  step holds the value before it), and set Steps, Rate or Sync to BPM, Chance,
+  Glide, Direction (Forward, Reverse, Ping-pong, Random) and Evolve, which
+  lets the row drift a little each time round. It is saved with states, banks
+  and projects like any controller.
+- **The scale menu is grouped** — Major & minor, Modes, Five & six notes,
+  Coloured, Intervals, Microtonal & just, Series.
 - **Colorizer** — a new effect (Effects → after Duotone) that cuts the picture's
   brightness into 2–16 bands and gives each band its own colour: the analog
   video colorizer, and the alien point of view in *Liquid Sky*. Seven palettes
@@ -281,6 +302,8 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   DAE model. Texture = Image is unchanged.
 
 ### Changed
+- Stretch and Freeze now have a soft ceiling, so a loud source can no longer
+  leave the tape over full scale.
 - The Mic toggle now means "input armed" and is on by default.
 - **The SDF panel opens on a short live set** — Look, SDF, Speed, Size,
   Variation, Morph, Separation, Hue and Glow; the other sections start

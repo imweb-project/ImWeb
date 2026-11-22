@@ -95,6 +95,9 @@ const STYLE = {
   specEdge: '#e8b040',
   stretch: 'rgba(176, 96, 232, 0.07)',
   stretchEdge: '#b060e8',
+  head: '#eafff2',
+  headExtra: '#40c878',
+  grainMark: '#e8d040',
   text: '#a6a6c0',
 };
 
@@ -128,9 +131,33 @@ export class TapeView {
      */
     this.onSpanChange = null;
     this.onRegionDrag = null;
+    /** Playheads: flat [zone, fractionOfTape] pairs from the engine, or null. */
+    this._heads = null;
+    /** Point marks: { kind, at } in fractions of the tape. */
+    this._marks = [];
     this._drag = null;
     this.resize();
     this._attachPointer();
+  }
+
+  /**
+   * Where the playheads are — flat [zone, fraction] pairs, straight from the
+   * engine's per-frame message. Empty or null takes them down. This is the
+   * only thing that repaints the display every frame, and only while
+   * something is playing.
+   */
+  setPlayheads(pairs) {
+    const next = pairs && pairs.length ? pairs : null;
+    if (!next && !this._heads) return;
+    this._heads = next;
+    this.invalidate();
+  }
+
+  /** @param {{kind:string, at:number}[]} marks point marks, fractions of the tape */
+  setMarks(marks) {
+    if (!marks.length && !this._marks.length) return;
+    this._marks = marks;
+    this.invalidate();
   }
 
   /** Tape length in seconds — only the ruler wants it. */
@@ -359,7 +386,33 @@ export class TapeView {
       const fill = STYLE[r.kind], edge = STYLE[`${r.kind}Edge`];
       if (fill) this._fill(r, fill, edge);
     }
+    this._drawHeads();
     this._drawRuler();
+  }
+
+  /** Playheads and marks: full-height lines over everything but the ruler. */
+  _drawHeads() {
+    const { ctx } = this;
+    const h = this.canvas.height, w = this.canvas.width;
+    const line = (frac, colour, width, label) => {
+      const x = this._x(frac);
+      if (x < -1 || x > w + 1) return;
+      ctx.fillStyle = colour;
+      ctx.fillRect(Math.round(x - width / 2), 0, width, h);
+      if (label) {
+        ctx.font = `${Math.round(9 * this._dpr)}px "IBM Plex Mono", monospace`;
+        ctx.fillText(label, x + 3 * this._dpr, h - (RULER_H + 4) * this._dpr);
+      }
+    };
+    for (const m of this._marks) line(m.at, STYLE.grainMark, Math.max(1, this._dpr), 'GRAIN');
+    if (!this._heads) return;
+    for (let i = 0; i + 1 < this._heads.length; i += 2) {
+      const zone = this._heads[i];
+      // Head 1 (the Playback zone) is the bright one; the extra heads are
+      // thinner and numbered, so four lines are four things and not a blur.
+      line(this._heads[i + 1], zone === 0 ? STYLE.head : STYLE.headExtra,
+        (zone === 0 ? 2 : 1) * this._dpr, zone === 0 ? '' : String(zone + 1));
+    }
   }
 
   /** Seconds along the bottom. Only when the tape's length is known. */

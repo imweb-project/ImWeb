@@ -637,6 +637,9 @@ export class AudioEngine {
         this._jobData.set(jobId, { start, hop, count, raw: new Float32Array(blob) });
         return;
       }
+      case '/play/heads':
+        this.onHeads?.(new Float32Array(m.v[0]));
+        return;
       case '/ctrl/echo/data': {
         // One message per frame carrying every live slot (rule 7). Handed over
         // as the flat [slot, value, …] pairs it arrived as: the consumer knows

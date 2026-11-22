@@ -9,6 +9,7 @@
  */
 
 import { PARAM_TYPE, MIDI_PAGES, gamepadControlName } from './ParameterSystem.js';
+import { SeqController, seqNormalize } from './SeqController.js';
 import { LFOController } from './LFO.js';
 import { BeatDetector }  from './BeatDetector.js';
 import { compileExpression } from './ExprCompiler.js';
@@ -96,6 +97,7 @@ export class ControllerManager {
     this.ps      = ps;          // ParameterSystem
     this.lfos    = new Map();   // paramId → LFOController (for LFO-assigned params)
     this.randoms = new Map();   // paramId → { hz, lastTick, value }
+    this.seqs = new Map();      // paramId → SeqController (the playhead only — see that file)
     this.midi    = null;
     this.sound   = null;
     /**
@@ -408,6 +410,16 @@ export class ControllerManager {
       }
     });
 
+    // Tick step sequencers. The configuration is read off the PARAMETER on
+    // every tick — the popover edits it in place, and a controller object that
+    // kept its own copy would go on playing the row as it was when assigned.
+    this.seqs.forEach((seq, paramId) => {
+      const c = this.ps.get(paramId)?.controller;
+      if (c?.type !== 'seq') return;
+      const v = seq.tick(c, dt, beatPhase);
+      if (v !== null && v !== seq._wrote) { seq._wrote = v; this.ps.setNormalized(paramId, v); }
+    });
+
     // Tick global rand oscillators (Phase 3)
     this.rand.forEach(r => {
       if (Math.random() < 0.05) r.target = Math.random();
@@ -688,6 +700,13 @@ export class ControllerManager {
         value: Math.random(),
       });
 
+    } else if (t === 'seq') {
+      // Fill in the defaults and give the row its own arrays, on the live
+      // config — `p.controller` is what the sequencer reads and the popover
+      // edits, and a row restored from a state must not share the state's.
+      seqNormalize(p.controller);
+      this.seqs.set(paramId, new SeqController());
+
     } else if (t === 'fixed') {
       p.setNormalized(controllerConfig.value ?? 0);
     } else if (t === 'expr') {
@@ -725,6 +744,7 @@ export class ControllerManager {
   _removeController(paramId) {
     this.lfos.delete(paramId);
     this.randoms.delete(paramId);
+    this.seqs.delete(paramId);
     this.exprs.delete(paramId);
     this.strokes.delete(paramId);
   }

@@ -395,7 +395,12 @@ console.log('\nthe client reverts a refused partition rather than showing a lie'
     /this\._recPart = 0;/.test(src),
     'undefined would be reverted INTO the param before the first send');
   check('and the writer sits on the call that sends the value',
-    /_sendZonePart\(type, slot\) \{\s*this\.engine\.zonePart\(type, 0, slot\);\s*if \(type === 'rec'\) this\._recPart = slot;/.test(src));
+    // The send became a loop when the extra playheads arrived (2026-11-22): a
+    // play partition goes to every head, a rec one still to zone 0 alone. What
+    // is pinned is unchanged — the mirror is written in the SAME function as
+    // the send, immediately after it — so the pattern allows either form of
+    // the send rather than its exact text.
+    /_sendZonePart\(type, slot\) \{\s*(?:for \([^)]*\) )?this\.engine\.zonePart\(type, \w+, slot\);\s*if \(type === 'rec'\) this\._recPart = slot;/.test(src));
   // A second rec/play send site would move the engine without the mirror.
   const sends = [...src.matchAll(/this\.engine\.zonePart\((.+?),/g)].map((m) => m[1]);
   check('every zonePart send is either the helper or an explicit render zone',

@@ -226,7 +226,9 @@ console.log('\nstereo survives');
 console.log('\namount, level and the end of the source');
 {
   const e = makeEngine();
-  sine(e.p._tape[0], SRC, SRC_LEN, 440); sine(e.p._tape[1], SRC, SRC_LEN, 440);
+  // Quiet on purpose: this block checks exact scaling, which only holds below
+  // the soft ceiling.
+  sine(e.p._tape[0], SRC, SRC_LEN, 440, 0.15); sine(e.p._tape[1], SRC, SRC_LEN, 440, 0.15);
   // ×2 into a 6 s destination: only 2 s of it should be written. The rest of
   // the zone holds a recognisable value first — on an empty tape "left alone"
   // and "overwritten with silence" are the same zeros, and this check passed
@@ -236,17 +238,54 @@ console.log('\namount, level and the end of the source');
   e.runJob(2);
   const t = e.p._tape[0];
   check('the job stops when the source runs out, not when the destination is full',
-    rms(t.subarray(DST + SR, DST + SR + 4096)) > 0.05
+    rms(t.subarray(DST + SR, DST + SR + 4096)) > 0.01
       && t.subarray(DST + 3 * SR, DST + 6 * SR).every((v) => v === 0.25),
     'material in the rest of the zone must survive');
   // Against the same job at Level 1 — the phases are seeded, so the two runs
   // differ by exactly the factor and nothing else.
   const f = makeEngine();
-  sine(f.p._tape[0], SRC, SRC_LEN, 440); sine(f.p._tape[1], SRC, SRC_LEN, 440);
+  sine(f.p._tape[0], SRC, SRC_LEN, 440, 0.15); sine(f.p._tape[1], SRC, SRC_LEN, 440, 0.15);
   f.send('/stretch/render', SRC, SRC_LEN, DST, 6 * SR, 4096, 2, 1, 2);
   f.runJob(2);
   const lvl = rms(t.subarray(DST + 8192, DST + SR)) / rms(f.p._tape[0].subarray(DST + 8192, DST + SR));
   check('Level scales the result', Math.abs(lvl - 0.5) < 1e-4, `×0.5 gave ${lvl.toFixed(5)}`);
+}
+
+console.log('\na loud source cannot leave the tape over full scale');
+{
+  // A full-scale tone has peaks of 1 at an RMS of 0.7. The same RMS with random
+  // phases has peaks three or four times that. Seen in the browser as a frozen
+  // beep whose waveform filled the display top to bottom.
+  const e = makeEngine();
+  for (const ch of e.p._tape) sine(ch, SRC, SRC_LEN, 440, 1);
+  e.send('/stretch/render', SRC, SRC_LEN, DST, 4 * SR, 8192, 4, 1, 8);
+  e.runJob(8);
+  const out = e.p._tape[0].subarray(DST, DST + 4 * SR);
+  let peak = 0; for (let i = 0; i < out.length; i++) peak = Math.max(peak, Math.abs(out[i]));
+  check('a stretched full-scale tone stays under full scale', peak < 1, `peak ${peak.toFixed(4)}`);
+  check('and is still loud — a ceiling, not a level change', rms(out.subarray(8192, out.length - 8192)) > 0.3,
+    `RMS ${rms(out.subarray(8192, out.length - 8192)).toFixed(3)}`);
+}
+
+console.log('\nfreeze holds one moment');
+{
+  // An amount of 0 is the limit of the method: the window does not move. The
+  // source is 440 Hz for its first half second and 880 Hz after; a freeze must
+  // sound the first and never reach the second, however long it runs.
+  const e = makeEngine();
+  for (const ch of e.p._tape) { sine(ch, SRC, SR / 2, 440); for (let i = 0; i < SR / 2; i++) ch[SRC + SR / 2 + i] = 0.5 * Math.sin((2 * Math.PI * 880 * i) / SR); }
+  e.send('/stretch/render', SRC, 8192, DST, 5 * SR, 8192, 0, 1, 6);
+  check('an amount of 0 is accepted', e.refusals().length === 0, JSON.stringify(e.refusals()[0]?.v));
+  e.runJob(6);
+  const end = e.p._tape[0].subarray(DST + 4 * SR, DST + 5 * SR - 8192);
+  const start = e.p._tape[0].subarray(DST + 8192, DST + SR);
+  check('it fills the whole destination', rms(end) > 0.05, `RMS at the end ${rms(end).toFixed(3)}`);
+  check('with the first moment, start to finish',
+    blockEnergy(start, 440) > 0.1 && blockEnergy(end, 440) > 0.1,
+    `440 Hz at the start ${blockEnergy(start, 440).toFixed(3)}, at the end ${blockEnergy(end, 440).toFixed(3)}`);
+  check('and never moves on to what came after it',
+    blockEnergy(end, 880) < blockEnergy(end, 440) * 0.05, `880 Hz at the end ${blockEnergy(end, 880).toFixed(4)}`);
+  check('at a steady level', Math.abs(rms(end) / rms(start) - 1) < 0.25, `${(rms(end) / rms(start)).toFixed(3)}`);
 }
 
 console.log('\nwhat the engine refuses');
