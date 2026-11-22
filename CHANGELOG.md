@@ -46,9 +46,12 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 - **Normalize** (Playback Zone) — brings the Playback zone's stretch of tape
   to just under full level. One gain for the whole zone and both channels, so
   the dynamics and the stereo balance are kept. Silence is left alone.
-- **Spectral Writer: Tilt.** Gives each row its own time. Above 0 the high
-  rows play out slower than the low ones (up to 8× at 1), so the top of the
-  picture trails behind the bottom; below 0 the low rows are the slow ones.
+- **Spectral Writer: Tilt.** Gives each row its own speed. Above 0 the high
+  rows play the picture once across the zone while the lower rows run faster
+  and repeat it — the lowest up to 8 times at 1 — so you hear the same picture
+  as a canon at every speed in between. Below 0 it is the other way up: the low
+  rows play once and the high rows repeat. Nothing is cut off and the zone is
+  full from start to end.
 - **Live tab** — a new first tab that shows only what is in play right now:
   the three layer selectors, a Recent stack, and every parameter that has a
   controller, grouped under the same section names as the other tabs and in

@@ -9515,9 +9515,10 @@ export function registerCoreParameters(ps) {
     id: "aspec.slow", label: "Slow ×", group: "aspec",
     min: 1, max: 16, value: 1, step: 0.01,
   });
-  // Tilt gives each ROW its own time: above 0 the high rows play out slower
-  // than the low ones (up to 8× at 1), below 0 the low rows are the slow
-  // ones. See `tiltImage`. 0 = off, and bit-identical to having no Tilt.
+  // Tilt gives each ROW its own speed: above 0 the high rows play the picture
+  // once while the low rows repeat it (up to 8 times at 1); below 0 the low
+  // rows play once and the high rows repeat. See `tiltImage`. 0 = off, and
+  // bit-identical to having no Tilt.
   ps.register({
     id: "aspec.tilt", label: "Tilt", group: "aspec",
     min: -1, max: 1, value: 0, step: 0.01,

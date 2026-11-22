@@ -226,23 +226,34 @@ export function boxAverage(src, width, height, rows, frames, weight = null) {
   return out;
 }
 
-/** How many octaves of slowing Tilt reaches at ±1: 2^3 = eight times. */
+/** How many octaves of speed Tilt spans at ±1: 2^3 = eight times. */
 export const TILT_OCTAVES = 3;
 
 /**
- * Tilt: stretch each ROW of a frame-major image along time by its own amount.
+ * Tilt: give each ROW of a frame-major image its own speed along time.
  *
  * The engine's time axis is one playhead for every row — at a given sample all
- * oscillators read the same column. Tilt is what happens when they do not: at
- * `tilt` > 0 a row plays out slower the HIGHER it is (the top row up to 2^3 =
- * eight times slower than the bottom, which is left alone), so the top of the
- * picture trails behind the bottom and only its first eighth is reached by the
- * end. `tilt` < 0 is the mirror: the low rows are the slow ones.
+ * oscillators read the same column. Tilt is what happens when they do not. At
+ * `tilt` > 0 the HIGHEST row is the slow one: it plays the picture once across
+ * the whole zone, exactly as with no Tilt. Every row below it runs faster, by
+ * pitch height, and REPEATS the picture to fill the time — the bottom row up
+ * to 2^3 = eight times at a tilt of 1. `tilt` < 0 is the mirror: the low rows
+ * play once and the high rows repeat. The result is a canon, the same picture
+ * at every speed between one and eight at once, and relative to its neighbours
+ * the slow end is stretched.
+ *
+ * **Repeat, not truncate.** The first version stretched the slow rows from the
+ * left edge and let the zone run out on them, so at a tilt of 1 the top row got
+ * through an eighth of the picture and most of the picture was never played —
+ * with a subject in the middle of the frame, the upper two-thirds of the rows
+ * were silent and what remained piled up at the right-hand end of the zone
+ * (the owner's report, 2026-11-22). Nothing is dropped now: every row plays
+ * the whole picture at least once and the zone is full from start to end.
  *
  * Done here, to the image, so it costs no engine or protocol change: the
  * engine still crossfades between neighbouring columns, and is simply handed
- * columns in which each row has already been resampled. Linear interpolation
- * between source columns, matching what the engine does between the results.
+ * columns in which each row has already been resampled — averaged over the
+ * source columns each output column covers, wrapping from the last to the first.
  *
  * `tilt === 0` returns the SAME array, untouched — not a copy that happens to
  * be equal — so a project that never touches Tilt renders bit-for-bit as before.
@@ -254,13 +265,24 @@ export function tiltImage(img, rows, frames, tilt) {
   const amt = Math.min(Math.abs(tilt), 1) * TILT_OCTAVES;
   for (let r = 0; r < rows; r++) {
     const h = rows > 1 ? r / (rows - 1) : 0;           // 0 bottom … 1 top
-    const k = Math.pow(2, amt * (tilt > 0 ? h : 1 - h)); // this row's slowing
+    // How many times this row plays the picture. 1 at the slow end.
+    const speed = Math.pow(2, amt * (tilt > 0 ? 1 - h : h));
+    // One output column on this row covers `speed` source columns, so it is
+    // their AVERAGE, not a sample of one of them — the same reason `boxAverage`
+    // exists. Point-sampled, a row at eight repeats read every eighth column
+    // and stepped clean over a thin bright stroke, which then sounded on some
+    // rows and not on others depending on where the steps happened to fall.
+    const n = Math.ceil(speed - 1e-9);
     for (let f = 0; f < frames; f++) {
-      const pos = f / k;
-      const c = pos | 0;
-      const c1 = c + 1 < frames ? c + 1 : c;
-      const a = img[c * rows + r];
-      out[f * rows + r] = a + (img[c1 * rows + r] - a) * (pos - c);
+      let sum = 0;
+      for (let k = 0; k < n; k++) {
+        const pos = (f * speed + (k * speed) / n) % frames;
+        const c = pos | 0;
+        const c1 = c + 1 < frames ? c + 1 : 0;         // wraps: the picture repeats
+        const a = img[c * rows + r];
+        sum += a + (img[c1 * rows + r] - a) * (pos - c);
+      }
+      out[f * rows + r] = sum / n;
     }
   }
   return out;

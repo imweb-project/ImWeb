@@ -201,34 +201,74 @@ console.log('\nthe scale list is append-only, and every scale is a rising table'
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Tilt: each row gets its own time. The engine has ONE playhead for all rows,
+// Tilt: each row gets its own speed. The engine has ONE playhead for all rows,
 // so this is done to the image before upload. What must hold: 0 changes
-// nothing at all (not even a copy), the row that is "left alone" really is,
-// and the slow rows are slow by exactly the stated amount.
-console.log('\ntilt stretches each row along time by its own amount');
+// nothing at all (not even a copy); the slow end plays the picture exactly
+// once; the fast end repeats it the stated number of times; and NOTHING is
+// dropped — the first version truncated the slow rows instead, so at full Tilt
+// most of the picture was never played and the sound piled up at the end of
+// the zone (reported by the owner, 2026-11-22).
+console.log('\ntilt gives each row its own speed, and drops nothing');
 {
   const rows = 5, frames = 64;
-  // Each row is a ramp along time, so a row's stretch can be read off its slope.
+  // Each row is a ramp along time, so a row's speed can be read off its slope.
   const ramp = new Float32Array(rows * frames);
   for (let f = 0; f < frames; f++) for (let r = 0; r < rows; r++) ramp[f * rows + r] = f;
   check('a tilt of 0 returns the very same image — bit-identical to having no Tilt',
     tiltImage(ramp, rows, frames, 0) === ramp);
   const up = tiltImage(ramp, rows, frames, 1);
+  const top = rows - 1;
   check('tilt never touches its input', ramp[10 * rows + 4] === 10);
-  check('at +1 the bottom row is left exactly alone',
-    [0, 1, 17, 63].every((f) => up[f * rows + 0] === f));
-  const top = up[40 * rows + (rows - 1)];
-  check(`at +1 the top row runs 2^${TILT_OCTAVES} = ${2 ** TILT_OCTAVES} times slower`,
-    Math.abs(top - 40 / 2 ** TILT_OCTAVES) < 1e-4, `frame 40 reads source ${top}`);
-  const mid = up[40 * rows + 2];
-  check('and the rows between are slowed by pitch height, smoothly',
-    Math.abs(mid - 40 / 2 ** (TILT_OCTAVES / 2)) < 1e-3, `middle row reads ${mid}`);
+  check('at +1 the TOP row is the slow one: the picture once, exactly as without Tilt',
+    [0, 1, 17, 63].every((f) => up[f * rows + top] === f));
+  const N = 2 ** TILT_OCTAVES;
+  // An output column on a fast row is the AVERAGE of the source columns it
+  // covers. On a ramp, the mean of `n` evenly spaced reads starting at
+  // f·speed is f·speed + speed·(n−1)/2n.
+  const mean = (f, speed) => { const n = Math.ceil(speed - 1e-9); return f * speed + (speed * (n - 1)) / (2 * n); };
+  check(`at +1 the bottom row runs ${N} times faster`,
+    Math.abs(up[3 * rows] - mean(3, N)) < 1e-4 && Math.abs(up[7 * rows] - mean(7, N)) < 1e-4,
+    `frame 3 reads source ${up[3 * rows]}, expected ${mean(3, N)}`);
+  check(`and REPEATS: it starts the picture again ${N} times`,
+    Array.from({ length: N }, (_, k) => up[((k * frames) / N) * rows]).every((v) => Math.abs(v - mean(0, N)) < 1e-4),
+    'a row that runs out instead of wrapping is the truncation this replaced');
+  // The property the owner's report was about. Put ONE bright column in the
+  // middle of the picture: every row must still sound it, somewhere.
+  const spot = new Float32Array(rows * frames);
+  for (let r = 0; r < rows; r++) spot[32 * rows + r] = 1;
+  const tilted = tiltImage(spot, rows, frames, 1);
+  const heard = Array.from({ length: rows }, (_, r) => {
+    let m = 0; for (let f = 0; f < frames; f++) m = Math.max(m, tilted[f * rows + r]); return m;
+  });
+  // At least 1/N: on the fastest row the stroke is averaged with the N−1 dark
+  // columns that share its output column. Zero is the failure — not reached.
+  check('a subject in the middle of the picture is played by EVERY row', heard.every((m) => m >= 1 / N - 1e-6),
+    `per-row peak ${heard.map((m) => m.toFixed(2)).join(' ')}`);
+  const firstHalf = (r) => { let m = 0; for (let f = 0; f < frames / 2; f++) m = Math.max(m, tilted[f * rows + r]); return m; };
+  check('and the fast rows reach it early — the zone is not empty until the end',
+    firstHalf(0) > 0 && firstHalf(1) > 0);
+  // Averaged, not point-sampled: a one-column stroke must carry the same total
+  // energy on every row however fast that row runs, instead of being stepped
+  // over by rows whose steps happen to miss it.
+  // A stroke one column wide lasts 1/speed of a column on a fast row, which is
+  // less than the grid can show — so it comes out as one column at 1/speed of
+  // the level, `speed` times over. Amplitude × time is the same on every row.
+  const weight = Array.from({ length: rows }, (_, r) => {
+    let sum = 0; for (let f = 0; f < frames; f++) sum += tilted[f * rows + r];
+    return sum;
+  });
+  check('a thin stroke keeps its weight on every row — none steps over it',
+    weight.every((v) => Math.abs(v - weight[rows - 1]) < 0.3 * weight[rows - 1]),
+    `total per row: ${weight.map((v) => v.toFixed(3)).join(' ')}`);
+  const mid = up[10 * rows + 2];
+  check('the rows between are sped up by pitch height, smoothly',
+    Math.abs(mid - mean(10, 2 ** (TILT_OCTAVES / 2))) < 1e-3, `middle row reads ${mid}`);
   const down = tiltImage(ramp, rows, frames, -1);
-  check('a negative tilt is the mirror: the LOW rows are the slow ones',
-    down[40 * rows + (rows - 1)] === 40 && Math.abs(down[40 * rows] - 40 / 2 ** TILT_OCTAVES) < 1e-4);
+  check('a negative tilt is the mirror: the LOW rows play once and the high rows repeat',
+    down[40 * rows] === 40 && Math.abs(down[3 * rows + top] - mean(3, N)) < 1e-4);
   const half = tiltImage(ramp, rows, frames, 0.5);
   check('half the tilt is half the octaves',
-    Math.abs(half[40 * rows + (rows - 1)] - 40 / 2 ** (TILT_OCTAVES / 2)) < 1e-3);
+    Math.abs(half[10 * rows] - mean(10, 2 ** (TILT_OCTAVES / 2))) < 1e-3);
   check('a null image stays null (pan Off)', tiltImage(null, rows, frames, 1) === null);
 
   // Slow ×k is arithmetic in the binding, pinned at its source: pitches k times
