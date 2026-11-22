@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { PROTO_VERSION, REFUSE } from '../src/audio/protocol.js';
-import { SCALES, SCALE_DISPLAY_ORDER, buildPitches, imageFromLuma, lumaFromRGBA, tiltImage, TILT_OCTAVES } from '../src/audio/spectral-image.js';
+import { SCALES, SCALE_DISPLAY_ORDER, buildPitches, imageFromLuma, lumaFromRGBA, tiltImage, tiltSpeed, TILT_OCTAVES } from '../src/audio/spectral-image.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -235,7 +235,7 @@ console.log('\ntilt gives each row its own speed, and drops nothing');
   // An output column on a fast row is the AVERAGE of the source columns it
   // covers. On a ramp, the mean of `n` evenly spaced reads starting at
   // f·speed is f·speed + speed·(n−1)/2n.
-  const mean = (f, speed) => { const n = Math.ceil(speed - 1e-9); return f * speed + (speed * (n - 1)) / (2 * n); };
+  const mean = (f, sp) => { const speed = Math.max(1, Math.round(sp)); return f * speed + (speed - 1) / 2; };
   check(`at +1 the bottom row runs ${N} times faster`,
     Math.abs(up[3 * rows] - mean(3, N)) < 1e-4 && Math.abs(up[7 * rows] - mean(7, N)) < 1e-4,
     `frame 3 reads source ${up[3 * rows]}, expected ${mean(3, N)}`);
@@ -271,7 +271,7 @@ console.log('\ntilt gives each row its own speed, and drops nothing');
     weight.every((v) => Math.abs(v - weight[rows - 1]) < 0.3 * weight[rows - 1]),
     `total per row: ${weight.map((v) => v.toFixed(3)).join(' ')}`);
   const mid = up[10 * rows + 2];
-  check('the rows between are sped up by pitch height, smoothly',
+  check('the rows between are sped up by pitch height, in whole steps',
     Math.abs(mid - mean(10, 2 ** (TILT_OCTAVES / 2))) < 1e-3, `middle row reads ${mid}`);
   const down = tiltImage(ramp, rows, frames, -1);
   check('a negative tilt is the mirror: the LOW rows play once and the high rows repeat',
@@ -279,6 +279,31 @@ console.log('\ntilt gives each row its own speed, and drops nothing');
   const half = tiltImage(ramp, rows, frames, 0.5);
   check('half the tilt is half the octaves',
     Math.abs(half[10 * rows] - mean(10, 2 ** (TILT_OCTAVES / 2))) < 1e-3);
+  // Whole repeats (2026-11-22, the owner's choice). Every row must finish a
+  // pass exactly at the end of the zone, or the zone ends on a ragged edge and
+  // clicks when it is looped.
+  const sweep = [];
+  for (let t = -1; t <= 1.0001; t += 0.05) for (let hh = 0; hh <= 1.0001; hh += 0.1) sweep.push(tiltSpeed(t, hh));
+  check('every row repeats a whole number of times, at any Tilt',
+    sweep.every((v) => Number.isInteger(v) && v >= 1 && v <= 2 ** TILT_OCTAVES),
+    [...new Set(sweep)].sort((a, b) => a - b).join(' '));
+  check('the slow end is always exactly once', tiltSpeed(1, 1) === 1 && tiltSpeed(-1, 0) === 1 && tiltSpeed(0.6, 1) === 1);
+  check(`and the fast end reaches ${N} at full Tilt`, tiltSpeed(1, 0) === N && tiltSpeed(-1, 1) === N);
+  check('speed never falls as a row gets further from the slow end',
+    [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9].every((hh) => tiltSpeed(1, hh) >= tiltSpeed(1, hh + 0.1)));
+  // The loop property itself: one step past the last column is the first column again.
+  const loopRows = 9, loopFrames = 120;
+  const pic = new Float32Array(loopRows * loopFrames);
+  for (let f = 0; f < loopFrames; f++) for (let r = 0; r < loopRows; r++) pic[f * loopRows + r] = Math.sin((f / loopFrames) * 2 * Math.PI * 3 + r);
+  const lp = tiltImage(pic, loopRows, loopFrames, 0.7);
+  let seam = 0, inside = 0;
+  for (let r = 0; r < loopRows; r++) {
+    seam = Math.max(seam, Math.abs(lp[(loopFrames - 1) * loopRows + r] - lp[r]));
+    for (let f = 1; f < loopFrames; f++) inside = Math.max(inside, Math.abs(lp[f * loopRows + r] - lp[(f - 1) * loopRows + r]));
+  }
+  check('the end of the zone joins its beginning no more roughly than any two neighbouring columns',
+    seam <= inside + 1e-6, `step across the loop point ${seam.toFixed(3)}, largest step inside ${inside.toFixed(3)}`);
+
   check('a null image stays null (pan Off)', tiltImage(null, rows, frames, 1) === null);
 
   // Slow ×k is arithmetic in the binding, pinned at its source: pitches k times

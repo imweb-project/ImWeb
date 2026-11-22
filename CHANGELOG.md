@@ -302,6 +302,11 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   DAE model. Texture = Image is unchanged.
 
 ### Changed
+- **Spectral Writer: Tilt repeats are whole numbers.** Each row now plays the
+  picture 1, 2, 3 … up to 8 times, never a fraction, so every row finishes
+  exactly at the end of the zone and a looped render joins cleanly. Tilt
+  therefore moves in steps: nothing changes until about ±0.2, where the fast
+  end goes to 2 repeats, and more bands appear as it rises.
 - Stretch and Freeze now have a soft ceiling, so a loud source can no longer
   leave the tape over full scale.
 - The Mic toggle now means "input armed" and is on by default.
