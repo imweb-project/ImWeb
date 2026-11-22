@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { PROTO_VERSION, REFUSE } from '../src/audio/protocol.js';
-import { SCALES, buildPitches, imageFromLuma, lumaFromRGBA, tiltImage, TILT_OCTAVES } from '../src/audio/spectral-image.js';
+import { SCALES, SCALE_DISPLAY_ORDER, buildPitches, imageFromLuma, lumaFromRGBA, tiltImage, TILT_OCTAVES } from '../src/audio/spectral-image.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -184,6 +184,16 @@ console.log('\nthe scale list is append-only, and every scale is a rising table'
   }
   check('every scale starts on the root, rises strictly and stays below Nyquist',
     bad.length === 0, bad.join(', '));
+
+  // The menu is grouped and reordered; the stored value is not. A scale left
+  // out of the menu can still be recalled by a state, but never chosen.
+  const shown = SCALE_DISPLAY_ORDER.filter((e) => typeof e === 'number');
+  check('the grouped menu shows every scale exactly once',
+    shown.length === SCALES.length && new Set(shown).size === SCALES.length,
+    `${shown.length} items for ${SCALES.length} scales`);
+  check('and it has headers', SCALE_DISPLAY_ORDER.filter((e) => e && e.header).length >= 5);
+  check('nothing has fallen into "More"', !SCALE_DISPLAY_ORDER.some((e) => e && e.header === 'More'),
+    'a scale that no group names — add it to SCALE_GROUPS');
 
   const ix = (n) => SCALES.findIndex((s) => s.name === n);
   const bp = buildPitches(ix('Bohlen-Pierce'), 100, 14, SR);

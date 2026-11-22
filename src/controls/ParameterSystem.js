@@ -16,7 +16,7 @@
 // else — silently, and only on the degrees where the two scales differ. This is
 // the SOURCE_DEFS lesson (CLAUDE.md) applied before there is a second copy to
 // regret. `spectral-image.js` imports nothing itself, so this adds no weight.
-import { SCALE_NAMES, PAN_MODES } from '../audio/spectral-image.js';
+import { SCALE_NAMES, SCALE_DISPLAY_ORDER, PAN_MODES } from '../audio/spectral-image.js';
 // Which controller types live in a mapping page. The saved-file migration below
 // has to agree with the page writer and the page projection, so it reads the
 // same predicate rather than re-deriving one. `controlInput.js` imports nothing.
@@ -789,6 +789,7 @@ export class Parameter {
       "sound-mid": "MID",
       "sound-high": "HIG",
       random: "RND",
+      seq: "SEQ",
       fixed: "FXD",
       key: `KEY:${c.key ?? "?"}`,
       "movie-pos": "MVP",
@@ -9261,6 +9262,12 @@ export function registerCoreParameters(ps) {
     id: "audio.enable", label: "Audio On", group: "global",
     type: PARAM_TYPE.TOGGLE, value: 0,
   });
+  // One level of undo for the verbs that overwrite tape (Render, Stretch,
+  // Freeze, Normalize). 'global': a State recall must not rewrite a recording.
+  ps.register({
+    id: "audio.undo", label: "Undo Tape", group: "global",
+    type: PARAM_TYPE.TRIGGER,
+  });
   ps.register({
     id: "audio.tapeSec", label: "Tape", group: "global",
     min: 5, max: 600, value: 60, step: 1, unit: "s",
@@ -9528,6 +9535,8 @@ export function registerCoreParameters(ps) {
   ps.register({
     id: "aspec.scale", label: "Scale", group: "aspec",
     type: PARAM_TYPE.SELECT, value: 1, options: [...SCALE_NAMES],
+    // Grouped in the menu; the stored value is still the index into SCALES.
+    displayOrder: SCALE_DISPLAY_ORDER,
   });
   // Semitones, not Hz, for the same reason `avoice.pitch` is (LEARNED
   // 2026-08-08): pitch is heard as a ratio. 45 = A2, 110 Hz.
@@ -9593,6 +9602,32 @@ export function registerCoreParameters(ps) {
     type: PARAM_TYPE.TRIGGER,
   });
 
+  // ── Extra playheads (LiSa's voices) ───────────────────────────────────────
+  //
+  // Three more readers of the SAME Playback zone: its partition, its region,
+  // its Unsafe. What each has of its own is what makes it a voice — whether it
+  // runs, how fast and which way, and how loud. That is LiSa's model: one
+  // stretch of buffer, several hands on it at once. Head 1 is the Playback
+  // zone itself.
+  //
+  // Group 'aheads', captured: all numbers and switches, like `aplay`. The
+  // defaults are chosen so that switching the three on is already a chord of
+  // speeds — half, backwards, double — rather than three unisons.
+  [[2, 0.5], [3, -1], [4, 2]].forEach(([n, rate]) => {
+    ps.register({
+      id: `aheads.on${n}`, label: `Run Head ${n}`, group: "aheads",
+      type: PARAM_TYPE.TOGGLE, value: 0,
+    });
+    ps.register({
+      id: `aheads.rate${n}`, label: `Rate ${n}`, group: "aheads",
+      min: -4, max: 4, value: rate, step: 0.01,
+    });
+    ps.register({
+      id: `aheads.level${n}`, label: `Level ${n}`, group: "aheads",
+      min: 0, max: 1, value: 0.7, step: 0.01,
+    });
+  });
+
   // ── The stretch (PaulStretch) ─────────────────────────────────────────────
   //
   // Reads the PLAYBACK zone's region and writes a much longer version of it,
@@ -9641,6 +9676,12 @@ export function registerCoreParameters(ps) {
   });
   ps.register({
     id: "astretch.render", label: "Stretch", group: "global",
+    type: PARAM_TYPE.TRIGGER,
+  });
+  // Freeze: the same job with the window standing still — one moment of the
+  // source (the START of the Playback zone) held for the length of the zone.
+  ps.register({
+    id: "astretch.freeze", label: "Freeze", group: "global",
     type: PARAM_TYPE.TRIGGER,
   });
   ps.register({

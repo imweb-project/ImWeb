@@ -29,7 +29,9 @@ import { buildPitches, imageFromLuma, buildPan, tiltImage, PAN } from './spectra
 import { CorpusView } from './CorpusView.js';
 import { DESCRIPTORS, buildIndex, nearest, grainTime } from './corpus-index.js';
 import { describeAudioGraph } from './graph-view.js';
-import { captureSnapshot, restoreSnapshot, normalizeSpan } from './tape-snapshot.js';
+import {
+  captureSnapshot, restoreSnapshot, normalizeSpan, captureSpan, restoreSpan,
+} from './tape-snapshot.js';
 import {
   AUDIO_TARGETS, describeController, describeSlew, descDiff, semitoneToHz,
   sampleSlewCurve, slewStrength, SLEW_MECHANISM, SLEW_SEGMENT,
@@ -63,6 +65,23 @@ export function stretchWindow(seconds, sampleRate) {
   const pow = Math.pow(2, Math.round(Math.log2(want)));
   return Math.min(65536, Math.max(1024, pow));
 }
+
+/**
+ * The playback heads: engine play-zone index → nothing more than that. Zone 0
+ * is the Playback zone; 1..3 are the extra heads (`aheads.*2..4`), which read
+ * the SAME partition, region and Unsafe. Everything that sets one of those
+ * three goes to every index in this list, so a head can never be reading a
+ * region the Playback zone is not showing.
+ */
+const HEADS = Object.freeze([0, 1, 2, 3]);
+
+/**
+ * The longest span an undo will hold, in seconds. It is kept as floats, so
+ * four minutes of stereo is about 90 MB — past that the verb still runs, and
+ * says there is no undo for it, rather than quietly holding a quarter of a
+ * gigabyte for a button that may never be pressed.
+ */
+export const UNDO_MAX_SECONDS = 240;
 
 const VIEW_ZONES = Object.freeze([
   ['arec', 'rec', 'REC'],
@@ -286,9 +305,15 @@ export class AudioBinding {
     // in the param, with a guard: writing it fires onChange, which would send
     // the state straight back and make an engine-side fact into a round trip.
     this.engine.onZoneState = (type, i, running) => {
+      // An extra head the engine stopped (or started) reads so on its switch.
+      if (type === 'play' && i > 0 && i < HEADS.length) {
+        return this._applyFromEngine(`aheads.on${i + 1}`, running ? 1 : 0);
+      }
       if (i !== 0) return;
       this._applyFromEngine(type === 'rec' ? 'arec.on' : 'aplay.on', running ? 1 : 0);
     };
+    // Where the heads are, straight to the display. Nothing else wants it.
+    this.engine.onHeads = (pairs) => this.view?.setPlayheads(pairs);
     // §8.7's inversion, arriving: the worklet is authoritative for anything it
     // drives, and ParameterSystem follows it a frame later. Display may lag a
     // frame; display is allowed to.
@@ -401,7 +426,9 @@ export class AudioBinding {
     // The tape survives a suspend, but nothing can be asked about it while the
     // engine is stopped, so the waveform would silently go stale. Say which it
     // is — the layout stays drawn, because that is still true.
+    this._undo = null;
     this.view?.clearEnvelope('audio off');
+    this.view?.setPlayheads(null);
     // The corpus is tape-derived too, and it goes with the tape. `start()`
     // re-allocates, which ZEROES it, so a cloud that survived the restart would
     // sit there confidently plotting material that no longer exists and point
@@ -825,7 +852,7 @@ export class AudioBinding {
     for (const [prefix] of VIEW_ZONES) {
       ids.push(`${prefix}.part`, `${prefix}.start`, `${prefix}.len`, `${prefix}.unsafe`);
     }
-    ids.push('aspec.slow');
+    ids.push('aspec.slow', 'agrain.on', 'agrain.part', 'agrain.pos');
     return ids;
   }
 
@@ -925,6 +952,12 @@ export class AudioBinding {
       regions.push({ kind, ...span, label, id: prefix });
     }
     this.view.setSeconds(this._tapeSec);
+    // Where the grain player is pointed — a mark, not a zone: it has a position
+    // and no length. Drawn only while it runs.
+    if (g('agrain.on')) {
+      const gp = this._part(g('agrain.part'));
+      this.view.setMarks([{ kind: 'grain', at: gp.start + g('agrain.pos') * gp.len }]);
+    } else this.view.setMarks([]);
     this.view.setRegions(regions);
   }
 
@@ -956,7 +989,9 @@ export class AudioBinding {
     const want = g('audio.tapeSec');
     if (want === this._allocSec) return;
     const keep = `tape stays ${this._allocSec} s`;
-    const busy = g('arec.on') ? 'Recording' : g('aplay.on') ? 'Playback' : g('agrain.on') ? 'the Grain Player'
+    const busy = this._tapeBusy ? 'the tape write' : g('arec.on') ? 'Recording' : g('aplay.on') ? 'Playback'
+      : HEADS.slice(1).some((i) => g(`aheads.on${i + 1}`)) ? 'the extra playheads'
+      : g('agrain.on') ? 'the Grain Player'
       : this._specJobId >= 0 || this._stretchJobId >= 0 ? 'the render' : this._normBusy ? 'Normalize' : null;
     if (busy) {
       return this._say(`${keep} — stop ${busy} to change it (or it applies on the next Audio On)`);
@@ -989,6 +1024,7 @@ export class AudioBinding {
         : `${keep} — the engine did not answer`);
     }
     this._allocSec = want;
+    this._undo = null;            // it indexed the tape that was just replaced
     const restored = snap ? this._writeSnapshot(snap, false) : 0;
     this._pushLayout();
     this._pushAll();
@@ -1072,7 +1108,9 @@ export class AudioBinding {
     // in partition-relative SAMPLES while the view is shown absolute fractions.
     const span = zoneSpan(part, this.ps.get(`${prefix}.start`).value,
       this.ps.get(`${prefix}.len`).value);
-    this.engine.zoneRegion(type, 0, (span.start - part.start) * n, (span.end - span.start) * n);
+    for (const i of type === 'play' ? HEADS : [0]) {
+      this.engine.zoneRegion(type, i, (span.start - part.start) * n, (span.end - span.start) * n);
+    }
   }
 
   _pushAll() {
@@ -1083,7 +1121,14 @@ export class AudioBinding {
     for (const [prefix, type] of [['arec', 'rec'], ['aplay', 'play']]) {
       this._sendZonePart(type, g(`${prefix}.part`));
       this._pushRegion(prefix, type);
-      this.engine.zoneUnsafe(type, 0, !!g(`${prefix}.unsafe`));
+      for (const i of type === 'play' ? HEADS : [0]) {
+        this.engine.zoneUnsafe(type, i, !!g(`${prefix}.unsafe`));
+      }
+    }
+    for (const i of HEADS.slice(1)) {
+      this.engine.playRate(i, g(`aheads.rate${i + 1}`));
+      this.engine.playLevel(i, g(`aheads.level${i + 1}`));
+      if (g(`aheads.on${i + 1}`)) this.engine.zoneOn('play', i);
     }
     this.engine.playRate(0, g('aplay.rate'));
     this.engine.playLevel(0, g('aplay.level'));
@@ -1210,6 +1255,11 @@ export class AudioBinding {
     const startRel = (span.start - part.start) * n;
     const lengthSamples = Math.floor((span.end - span.start) * n);
     if (lengthSamples < 1) return this._say('spectral render: the region is empty');
+    if (this._tapeBusy) return this._say('spectral: the tape is busy');
+    // The same arithmetic the engine does to place the render: its partition
+    // start is the floor `_pushLayout` sent, and it rounds the sum.
+    const absStart = Math.round(Math.floor(part.start * n) + startRel);
+    await this._keepUndo('spectral render', absStart, absStart + lengthSamples);
 
     const secs = (lengthSamples / this.engine.sampleRate).toFixed(1);
     this.engine.specPitches(0, pitches);
@@ -1253,6 +1303,58 @@ export class AudioBinding {
     this.engine.cancelJob(this._specJobId);
   }
 
+  // ── undo, for the verbs that write tape ───────────────────────────────────
+
+  /**
+   * Copy out what a tape-writing verb is about to overwrite. Render, Stretch,
+   * Freeze and Normalize all call this FIRST, with the exact span they will
+   * write, and await it — the copy has to be of the tape as it was.
+   *
+   * One level. A second write replaces the first undo, which is the honest
+   * amount for an instrument: enough to take back the thing you just did.
+   * `_tapeBusy` is held across the copy so a second click cannot start another
+   * writer in the gap before the first one's job id exists.
+   */
+  async _keepUndo(label, start, end) {
+    this._undo = null;
+    const sr = this.engine.sampleRate;
+    if ((end - start) / sr > UNDO_MAX_SECONDS) {
+      this._say(`${label}: longer than ${UNDO_MAX_SECONDS} s — no undo will be kept for this one`);
+      return;
+    }
+    this._tapeBusy = true;
+    try {
+      const saved = await captureSpan((a, b) => this.engine.readTape(a, b), start, end, sr);
+      if (saved) this._undo = { ...saved, label };
+    } finally { this._tapeBusy = false; }
+  }
+
+  /**
+   * Put back what the last tape-writing verb overwrote. What is there NOW is
+   * copied out first, so Undo again is Redo — one press each way, and no state
+   * in which the button has destroyed the thing it was meant to protect.
+   */
+  async undoTape() {
+    if (!this.running) return this._say('undo needs the audio engine running');
+    if (!this._undo) return this._say('undo: nothing to undo');
+    if (this._tapeBusy || this._normBusy || this._specJobId >= 0 || this._stretchJobId >= 0) {
+      return this._say('undo: wait for the render to finish (or cancel it)');
+    }
+    const back = this._undo;
+    this._tapeBusy = true;
+    try {
+      const now = await captureSpan((a, b) => this.engine.readTape(a, b),
+        back.start, back.end, this.engine.sampleRate);
+      restoreSpan(back, (at, ch, data) => this.engine.write(at, ch, data));
+      const redo = back.label.startsWith('redo ') ? back.label.slice(5) : `redo ${back.label}`;
+      this._undo = now ? { ...now, label: redo } : null;
+      const secs = ((back.end - back.start) / this.engine.sampleRate).toFixed(1);
+      this._say(back.label.startsWith('redo ')
+        ? `redo: ${back.label.slice(5)} is back (${secs} s) — Undo takes it away again`
+        : `undo: ${back.label} taken back (${secs} s) — Undo again to redo`);
+    } finally { this._tapeBusy = false; }
+  }
+
   // ── normalize ─────────────────────────────────────────────────────────────
 
   /**
@@ -1279,8 +1381,10 @@ export class AudioBinding {
     const a = Math.max(0, Math.round(span.start * n));
     const b = Math.min(n, Math.round(span.end * n));
     if (b - a < 1) return this._say('normalize: the Playback zone is empty');
+    if (this._tapeBusy) return this._say('normalize: the tape is busy');
     this._normBusy = true;
     try {
+      await this._keepUndo('normalize', a, b);
       const res = await normalizeSpan(
         (s, e) => this.engine.readTape(s, e), (at, ch, data) => this.engine.write(at, ch, data),
         a, b, this.engine.sampleRate);
@@ -1308,7 +1412,7 @@ export class AudioBinding {
    * `_stretchRender`). The overlap is checked here as well as there, because
    * this side can say WHICH two zones overlap and what to do about it.
    */
-  async renderStretch() {
+  async renderStretch({ freeze = false } = {}) {
     if (!this.running) return this._say('stretch needs the audio engine running');
     if (this._stretchJobId >= 0) return this._say('stretch: already rendering');
     if (this._specJobId >= 0) return this._say('stretch: wait for the spectral render to finish');
@@ -1322,8 +1426,13 @@ export class AudioBinding {
     };
     const src = spanOf('aplay');
     const dst = spanOf('astretch');
+    const window = stretchWindow(g('astretch.window'), sr);
     const srcStart = Math.max(0, Math.round(src.start * n));
-    const srcLen = Math.min(n - srcStart, Math.floor((src.end - src.start) * n));
+    // A freeze reads ONE window, at the start of the Playback zone — so that is
+    // all of the source it needs, and all that has to stay clear of the
+    // destination.
+    const srcLen = freeze ? Math.min(n - srcStart, window)
+      : Math.min(n - srcStart, Math.floor((src.end - src.start) * n));
     const dstStart = Math.max(0, Math.round(dst.start * n));
     const dstLen = Math.min(n - dstStart, Math.floor((dst.end - dst.start) * n));
     if (srcLen < 1) return this._say('stretch: the Playback zone is empty — it is the source');
@@ -1332,19 +1441,23 @@ export class AudioBinding {
       return this._say('stretch: the Stretch zone overlaps the Playback zone it reads from — '
         + 'move one of them (another partition is the easy way)');
     }
-    const amount = g('astretch.amount');
-    const window = stretchWindow(g('astretch.window'), sr);
+    const amount = freeze ? 0 : g('astretch.amount');
+    if (this._tapeBusy) return this._say('stretch: the tape is busy');
+    await this._keepUndo(freeze ? 'freeze' : 'stretch', dstStart,
+      dstStart + (freeze ? dstLen : Math.min(dstLen, Math.ceil(srcLen * amount))));
     const { jobId, done } = this.engine.stretch(
       srcStart, srcLen, dstStart, dstLen, window, amount, g('astretch.level'));
     this._stretchJobId = jobId;
-    const outSec = Math.min(dstLen, Math.ceil(srcLen * amount)) / sr;
-    this._say(`stretch: ${(srcLen / sr).toFixed(1)}s ×${amount} → ${outSec.toFixed(1)}s…`);
+    const outSec = (freeze ? dstLen : Math.min(dstLen, Math.ceil(srcLen * amount))) / sr;
+    this._say(freeze ? `freeze: holding ${(window / sr).toFixed(2)}s for ${outSec.toFixed(1)}s…`
+      : `stretch: ${(srcLen / sr).toFixed(1)}s ×${amount} → ${outSec.toFixed(1)}s…`);
     const res = await done;
     this._stretchJobId = -1;
+    const name = freeze ? 'freeze' : 'stretch';
     this._say(res.ok
-      ? `stretch: ${outSec.toFixed(1)}s written into P${g('astretch.part')}`
-        + (srcLen * amount > dstLen ? ' (the zone filled before the source ran out)' : '')
-      : `stretch refused (${res.code}): ${res.message}`);
+      ? `${name}: ${outSec.toFixed(1)}s written into P${g('astretch.part')}`
+        + (!freeze && srcLen * amount > dstLen ? ' (the zone filled before the source ran out)' : '')
+      : `${name} refused (${res.code}): ${res.message}`);
     return res;
   }
 
@@ -1553,7 +1666,7 @@ export class AudioBinding {
    * to anything else would put the two back out of step in the other direction.
    */
   _sendZonePart(type, slot) {
-    this.engine.zonePart(type, 0, slot);
+    for (const i of type === 'play' ? HEADS : [0]) this.engine.zonePart(type, i, slot);
     if (type === 'rec') this._recPart = slot;
   }
 
@@ -1663,10 +1776,20 @@ export class AudioBinding {
       });
       this._on(`${prefix}.start`, () => this._pushRegion(prefix, type));
       this._on(`${prefix}.len`, () => this._pushRegion(prefix, type));
-      this._on(`${prefix}.unsafe`, (v) => this.engine.zoneUnsafe(type, 0, !!v));
+      this._on(`${prefix}.unsafe`, (v) => {
+        for (const i of type === 'play' ? HEADS : [0]) this.engine.zoneUnsafe(type, i, !!v);
+      });
       this._on(`${prefix}.on`, (v) => {
         if (v) this.engine.zoneOn(type, 0); else this.engine.zoneOff(type, 0);
       });
+    }
+    for (const i of HEADS.slice(1)) {
+      const n = i + 1;
+      this._on(`aheads.on${n}`, (v) => {
+        if (v) this.engine.zoneOn('play', i); else this.engine.zoneOff('play', i);
+      });
+      this._on(`aheads.rate${n}`, (v) => this.engine.playRate(i, v));
+      this._on(`aheads.level${n}`, (v) => this.engine.playLevel(i, v));
     }
     this._on('aplay.rate', (v) => this.engine.playRate(0, v));
     this._on('aplay.level', (v) => this.engine.playLevel(0, v));
@@ -1689,7 +1812,13 @@ export class AudioBinding {
     this._on('astretch.render', () => {
       this.renderStretch().catch((e) => this._say(`stretch failed: ${e.message}`));
     });
+    this._on('astretch.freeze', () => {
+      this.renderStretch({ freeze: true }).catch((e) => this._say(`freeze failed: ${e.message}`));
+    });
     this._on('astretch.cancel', () => this.cancelStretch());
+    this._on('audio.undo', () => {
+      this.undoTape().catch((e) => this._say(`undo failed: ${e.message}`));
+    });
     this._on('aplay.normalize', () => {
       this.normalizePlay().catch((e) => this._say(`normalize failed: ${e.message}`));
     });

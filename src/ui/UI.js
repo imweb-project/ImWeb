@@ -497,6 +497,9 @@ export function buildMappingPanels(ps, contextMenu) {
     // only meaningful as a pair. All 'global', so listed by id, not picked.
     'audio-setup-params': [
       ps.get('audio.enable'), ps.get('audio.mic'), ps.get('audio.monitor'),
+      // In the deck, under the tape it acts on — not in the section of whichever
+      // verb was last used, where it would have to be hunted for.
+      ps.get('audio.undo'),
     ].filter(Boolean),
     'audio-engine-params': [
       ps.get('audio.tapeSec'),
@@ -538,11 +541,16 @@ export function buildMappingPanels(ps, contextMenu) {
       ps.get('acorp.hop'), ps.get('acorp.window'),
       ps.get('acorp.analyse'), ps.get('acorp.cancel'),
     ].filter(Boolean),
+    // The extra playheads: three more readers of the Playback zone. Head by
+    // head, because a head is what you reach for — its switch, then its speed.
+    'audio-heads-params': [2, 3, 4].flatMap(n => [
+      ps.get(`aheads.on${n}`), ps.get(`aheads.rate${n}`), ps.get(`aheads.level${n}`),
+    ]).filter(Boolean),
     // The stretch: where it lands, how much, how grainy, then the verb. Its
     // source is the Playback zone, so there are no source controls here.
     'audio-stretch-params': [
       ...pick('astretch', ['part', 'start', 'len', 'unsafe', 'amount', 'window', 'level']),
-      ps.get('astretch.render'), ps.get('astretch.cancel'),
+      ps.get('astretch.render'), ps.get('astretch.freeze'), ps.get('astretch.cancel'),
     ].filter(Boolean),
     // `pos` sits next to `part`: it is a POSITION within that partition, and it
     // is the control an LFO gets attached to for time stretch.

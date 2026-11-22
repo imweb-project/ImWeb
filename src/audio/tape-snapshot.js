@@ -114,6 +114,32 @@ export function restoreSnapshot(snap, write, sampleRate, tapeLen, { clear = fals
   return written;
 }
 
+/**
+ * Copy a span of tape out, exactly — every sample, as floats — so it can be
+ * put back. This is the undo for the tape-writing verbs, and it is NOT
+ * `captureSnapshot`: that one is for keeping a recording across Audio Off and
+ * in a project file, so it skips silence and rounds to 16 bits. An undo that
+ * came back 16-bit, or with its silences untouched while the render it was
+ * undoing had written into them, would not be an undo.
+ *
+ * @returns {Promise<null | {start:number, end:number, parts:{at:number, channels:number, data:Float32Array}[]}>}
+ */
+export async function captureSpan(read, start, end, sampleRate) {
+  const chunk = Math.max(1, Math.floor(CHUNK_SECONDS * sampleRate));
+  const parts = [];
+  for (let at = start; at < end; at += chunk) {
+    const got = await read(at, Math.min(end, at + chunk));
+    if (!got) return null;
+    parts.push({ at, channels: got.channels ?? CHANNELS, data: Float32Array.from(got.data) });
+  }
+  return { start, end, parts };
+}
+
+/** Put a `captureSpan` back. Copies on the way out: the engine takes the buffer. */
+export function restoreSpan(saved, write) {
+  for (const p of saved.parts) write(p.at, p.channels, Float32Array.from(p.data));
+}
+
 /** Where Normalize puts the loudest sample: −1 dBFS, a hair under full scale. */
 export const NORMALIZE_PEAK = 0.891;
 

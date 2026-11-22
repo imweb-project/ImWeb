@@ -4,6 +4,7 @@
  */
 
 import { setViewportPos } from '../layout/LayoutManager.js';
+import { SEQ_MAX_STEPS, SEQ_DIRECTIONS } from '../../controls/SeqController.js';
 
 // ── Controller badge popover ──────────────────────────────────────────────────
 
@@ -282,6 +283,125 @@ export function openCtrlPopover(param, anchorEl, ctrl, tables) {
       v  => { v = Math.max(0.001, v); c.hz = v; if (rndState) rndState.hz = v; },
       { decimals: 3, fineStep: 0.005, coarseStep: 0.25 }
     )));
+
+  } else if (t === 'seq') {
+    // The step sequencer. Everything here edits `c` IN PLACE — it is the
+    // parameter's own controller object, the one the sequencer reads on every
+    // tick, so a change is heard on the next step with nothing to commit.
+    const live = ctrl?.seqs?.get(param.id);
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display:flex;gap:2px;height:64px;margin:4px 0 2px;touch-action:none;';
+    const dots = document.createElement('div');
+    dots.style.cssText = 'display:flex;gap:2px;margin-bottom:4px;';
+    const bars = [], pips = [];
+    const paint = () => {
+      for (let i = 0; i < SEQ_MAX_STEPS; i++) {
+        const used = i < c.count;
+        bars[i].style.display = pips[i].style.display = used ? '' : 'none';
+        bars[i].firstChild.style.height = `${Math.round(c.steps[i] * 100)}%`;
+        bars[i].firstChild.style.background =
+          i === live?.index ? 'var(--accent)' : c.on[i] ? 'var(--text-1)' : 'var(--border-hi)';
+        pips[i].style.background = c.on[i] ? 'var(--accent)' : 'transparent';
+      }
+    };
+    for (let i = 0; i < SEQ_MAX_STEPS; i++) {
+      const bar = document.createElement('div');
+      bar.style.cssText = 'flex:1;min-width:8px;background:var(--bg-4);border:1px solid var(--border);'
+        + 'display:flex;align-items:flex-end;cursor:ns-resize;';
+      bar.title = `Step ${i + 1} — drag to set its value`;
+      const fill = document.createElement('div');
+      fill.style.cssText = 'width:100%;pointer-events:none;';
+      bar.appendChild(fill);
+      const pip = document.createElement('div');
+      pip.style.cssText = 'flex:1;min-width:8px;height:7px;border:1px solid var(--border-hi);cursor:pointer;';
+      pip.title = `Step ${i + 1} on / skipped — a skipped step holds the value before it`;
+      pip.addEventListener('click', () => { c.on[i] = c.on[i] ? 0 : 1; paint(); });
+      bars.push(bar); pips.push(pip);
+      grid.appendChild(bar); dots.appendChild(pip);
+    }
+    // One drag paints across bars, like drawing the row with a pencil.
+    const setAt = (e) => {
+      const r = grid.getBoundingClientRect();
+      const shown = Math.max(1, c.count);
+      const i = Math.min(shown - 1, Math.max(0, Math.floor(((e.clientX - r.left) / r.width) * shown)));
+      c.steps[i] = Math.min(1, Math.max(0, 1 - (e.clientY - r.top) / r.height));
+      paint();
+    };
+    let drawing = false;
+    grid.addEventListener('pointerdown', (e) => {
+      drawing = true;
+      try { grid.setPointerCapture(e.pointerId); } catch { /* synthetic */ }
+      setAt(e); e.preventDefault();
+    });
+    grid.addEventListener('pointermove', (e) => { if (drawing) setAt(e); });
+    const stop = () => { drawing = false; };
+    grid.addEventListener('pointerup', stop);
+    grid.addEventListener('pointercancel', stop);
+    popover.appendChild(grid);
+    popover.appendChild(dots);
+    // Follows the playhead while the popover is open, and stops with it.
+    const follow = () => { if (!popover.isConnected) return; paint(); requestAnimationFrame(follow); };
+    requestAnimationFrame(follow);
+
+    popover.appendChild(makeRow('Steps', makeDragNum(
+      () => c.count,
+      v  => { c.count = Math.round(Math.max(1, Math.min(SEQ_MAX_STEPS, v))); paint(); },
+      { decimals: 0, fineStep: 1, coarseStep: 4 }
+    )));
+    popover.appendChild(makeRow('Rate (steps/s)', makeDragNum(
+      () => c.hz,
+      v  => { c.hz = Math.max(0.01, v); },
+      { decimals: 2, fineStep: 0.05, coarseStep: 1 }
+    )));
+    popover.appendChild(makeRow('Sync to BPM', makeCheck(() => !!c.beatSync, v => { c.beatSync = !!v; })));
+    popover.appendChild(makeRow('Beats / step', makeDragNum(
+      () => c.beatDiv,
+      v  => { c.beatDiv = Math.max(1 / 32, Math.min(16, v)); },
+      { decimals: 3, fineStep: 0.0625, coarseStep: 0.25 }
+    )));
+    popover.appendChild(makeRow('Chance', makeDragNum(
+      () => c.chance,
+      v  => { c.chance = Math.max(0, Math.min(1, v)); },
+      { decimals: 2, fineStep: 0.01, coarseStep: 0.1 }
+    )));
+    popover.appendChild(makeRow('Glide', makeDragNum(
+      () => c.glide,
+      v  => { c.glide = Math.max(0, Math.min(1, v)); },
+      { decimals: 2, fineStep: 0.01, coarseStep: 0.1 }
+    )));
+    popover.appendChild(makeRow('Evolve', makeDragNum(
+      () => c.evolve,
+      v  => { c.evolve = Math.max(0, Math.min(1, v)); },
+      { decimals: 2, fineStep: 0.01, coarseStep: 0.1 }
+    )));
+    const dirSel = document.createElement('select');
+    dirSel.style.cssText = 'font-size:10px;font-family:var(--mono);background:var(--bg-4);border:1px solid var(--border);color:var(--text-1);padding:1px 2px;border-radius:2px;';
+    SEQ_DIRECTIONS.forEach((name, i) => {
+      const o = document.createElement('option');
+      o.value = String(i); o.textContent = name;
+      if ((c.dir | 0) === i) o.selected = true;
+      dirSel.appendChild(o);
+    });
+    dirSel.addEventListener('change', () => { c.dir = Number(dirSel.value); });
+    popover.appendChild(makeRow('Direction', dirSel));
+
+    const tools = document.createElement('div');
+    tools.style.cssText = 'display:flex;gap:4px;padding:3px 0;';
+    const tool = (label, title, fn) => {
+      const b = document.createElement('button');
+      b.textContent = label; b.title = title;
+      b.style.cssText = 'flex:1;font:10px var(--mono);background:var(--bg-4);border:1px solid var(--border);color:var(--text-1);padding:2px 0;cursor:pointer;';
+      b.addEventListener('click', () => { fn(); paint(); });
+      tools.appendChild(b);
+    };
+    tool('Random', 'A new random row', () => { for (let i = 0; i < SEQ_MAX_STEPS; i++) c.steps[i] = Math.random(); });
+    tool('Ramp', 'A rising staircase over the steps in use', () => {
+      for (let i = 0; i < SEQ_MAX_STEPS; i++) c.steps[i] = c.count > 1 ? (i % c.count) / (c.count - 1) : 0;
+    });
+    tool('Flip', 'Turn the row upside down', () => { for (let i = 0; i < SEQ_MAX_STEPS; i++) c.steps[i] = 1 - c.steps[i]; });
+    tool('All on', 'Un-skip every step', () => { c.on.fill(1); });
+    popover.appendChild(tools);
+    paint();
 
   } else if (t.startsWith('lfo-')) {
     const lfoCtrl = ctrl?.lfos?.get(param.id);

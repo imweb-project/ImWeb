@@ -2464,6 +2464,35 @@ Generates a uniformly random value at a specified rate.
 
 ---
 
+#### Step Sequencer
+
+A row of up to 16 values, stepped through by a clock, driving one parameter.
+Where an LFO gives you a fixed shape, this is a shape you draw. Choose **Step
+Sequencer** from the controller menu; the badge reads **SEQ**. Right-click the
+badge to edit.
+
+- **The bars** are the steps. Drag up and down on a bar to set its value, or
+  drag across the row to draw several. The step that is sounding is lit.
+- **The dots** under the bars switch a step on or off. A step that is off is a
+  rest: the value stays where the last step left it.
+
+| Setting | Range | Description |
+|---------|-------|-------------|
+| Steps | 1–16 | How many of the bars are in use |
+| Rate | steps per second | How fast it steps, when not synced |
+| Sync to BPM / Beats per step | | Lock the steps to the tempo. 0.25 beats per step is sixteenth notes, 1 is one step per beat |
+| Chance | 0–1 | How likely each step is to sound. Below 1, steps drop out at random and hold the value before them |
+| Glide | 0–1 | How much of each step is spent sliding to its value. 0 jumps, 1 slides the whole way |
+| Direction | Forward / Reverse / Ping-pong / Random | The order the steps are played in |
+| Evolve | 0–1 | Each time the row comes round, every step drifts a little. The bars move as it does — what you see is what plays. 0 leaves the row alone |
+
+**Random**, **Ramp**, **Flip** and **All on** rewrite the row in one click.
+
+The parameter's range fields set how far the steps reach, as with any
+controller, and the row is saved with states, banks and projects.
+
+---
+
 #### Sound Level
 
 Audio-reactive controllers from microphone input (requires browser permission on first use).
@@ -3124,6 +3153,8 @@ is nothing to set up first in another tab.
 | **Input** | Which input the microphone opens on. Remembered for next time. If the remembered input is not plugged in, the default is used and the status line says so. The same list is shown in Sources › Sound |
 | `audio.monitor` **Monitoring** | Headphones / Speakers — how you are listening. Changes no level and no routing; it tells the instrument whether a mic → speakers → mic loop is physically possible, so it can warn you. Default is Speakers, the cautious assumption |
 
+| `audio.undo` **Undo Tape** | Takes back the last thing that overwrote tape — a Spectral Render, a Stretch, a Freeze or a Normalize — exactly as it was. Press it again to redo. One level. A span longer than four minutes is not kept, and the status line says so before the write |
+
 A status line reports what the engine last did (or refused), and a separate
 warning line appears while a feedback loop is possible.
 
@@ -3136,6 +3167,9 @@ time ruler, and every zone.
   their own lane along the top. Drag the middle of a handle to move the zone,
   drag an end to resize it. Double-click a handle to zoom to that zone. The
   Start and Length sliders follow, and controllers still drive them.
+- **Playheads:** a bright line shows where the Playback zone is reading; the
+  extra playheads are thinner green lines numbered 2, 3 and 4. A yellow line
+  marked GRAIN shows where the Grain Player is pointed while it runs.
 - **Big:** ⤢ opens the Tape as its own window. Drag it by its title bar and
   resize it from the corner, as large as the screen allows; ✕ puts it back.
 
@@ -3177,6 +3211,21 @@ the whole tape instead.
 
 The Recording zone records the microphone. Mic is armed by default, so it is
 open as soon as Audio is on.
+
+#### Playheads
+
+Three more readers of the **same** Playback zone — its partition, its Start and
+Length, its Unsafe. What each has of its own is what makes it a voice.
+
+| Parameter | Range | Description |
+|-----------|-------|-------------|
+| **Run Head 2 / 3 / 4** | TOGGLE | Start or stop that playhead |
+| **Rate 2 / 3 / 4** | −4 … 4 | Its speed; negative plays backwards. Defaults are 0.5, −1 and 2, so switching all three on gives the zone at half speed, backwards and double speed at once |
+| **Level 2 / 3 / 4** | 0–1 | Its fader |
+
+Head 1 is the Playback zone itself. Move or resize the PLAY handle on the Tape
+and all four follow. Every one of these is a controller target — an LFO or a
+Step Sequencer on a Rate is the quickest way to hear what they are for.
 
 #### Spectral Writer
 
@@ -3227,8 +3276,10 @@ It reads **what the Playback zone is set to** and writes into its own zone.
 | **Window** | 0.05–1.5 s (default 0.25) | The grain of it. Short keeps the rhythm of the source and sounds granular; long loses every attack and becomes a smooth wash |
 | **Level Str** | 0–1 | Level of the result |
 | **Stretch** / **Cancel Stretch** | | Write it — this **overwrites** that region. It stops when the zone is full or the source runs out, whichever comes first |
+| **Freeze** | | Holds one moment instead of moving through the sound: the first **Window** of the Playback zone, as a steady drone that fills the whole Stretch zone. Move the PLAY handle's left edge to choose the moment |
 
-A stretch renders about four times faster than it plays. The same stretch of the
+A loud source cannot push the result over full level: the top of the range is
+rounded off softly. A stretch renders about four times faster than it plays. The same stretch of the
 same material gives the same sound every time. A steady tone comes out with a
 slow shimmer; that is the character of the method.
 
