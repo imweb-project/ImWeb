@@ -131,8 +131,13 @@ console.log('\nit is a setup act: not captured, and never a controller target');
     'updateDisplay() would drop it on the first refresh');
 
   const ui = read('src/ui/UI.js');
-  check('the context menu does not open for a setup act',
-    /show\(param, x, y\) \{[\s\S]{0,400}?if \(param\?\.setup\) return;/.test(ui),
+  // The menu DOES open for a setup act now — "Explain this" is for every
+  // control — but with nothing in it except the label and that item. The rule
+  // is unchanged: no controller types that would all silently no-op.
+  const css = read('src/style.css');
+  check('the context menu offers a setup act no controller items',
+    /show\(param, x, y\) \{[\s\S]{0,700}?classList\.toggle\('setup-only', !!param\?\.setup\)/.test(ui)
+      && /#param-context-menu\.setup-only > :not\(\.menu-header\):not\(\.ctx-explain\)\s*\{\s*display: none !important;/.test(css),
     'a menu of controller types that all silently no-op reads as a broken feature');
 }
 

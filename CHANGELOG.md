@@ -9,6 +9,17 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Explain this** — on every control's right-click menu. A small window says in
+  plain language what the control does, with an example in real values, what
+  to expect and what it does not affect, plus its current value. Every Audio
+  control and the core video controls have a written explanation (100 in all,
+  offline). Any other control gets one from the AI provider, if one is set up,
+  built only from the control's own range, default, panel and manual text,
+  marked as AI-generated, and kept so it is asked once. With no provider it says
+  so and sends nothing. Monitoring, which takes no controller, now has a menu
+  too, holding only this item. `tests/audit-explain.mjs` fails if a written
+  explanation names a control that does not exist, or if an Audio control has
+  none.
 - **Playheads on the Tape.** A line shows where the Playback zone is reading,
   and a yellow mark shows where the Grain Player is pointed.
 - **Three more playheads** (Audio › Playheads). Heads 2, 3 and 4 read the same

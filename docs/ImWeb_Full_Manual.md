@@ -240,6 +240,30 @@ random, gamepad and the rest are described in §6:
 
 ![The controller menu opened on Blend Amt](img/controller-menu.jpg)
 
+#### Explain this
+
+The first item in that menu, **Explain this**, opens a small window that says in
+plain language what the control does: what it changes in the picture or the
+sound, an example with real values, what to expect, and what it does not
+affect. Underneath is the control's current value and its default. Drag the
+window by its title bar; `Esc` or × closes it.
+
+- **Written explanations** cover every control in the Audio tab and the core
+  video controls (the three layer sources, Blend Amount, the Keyer thresholds
+  and softness, Feedback zoom / rotate / decay, Displace, Hue 1). They work
+  offline.
+- **Every other control** gets an explanation written by the AI provider you
+  have set up (⚙ in the top bar). It is built only from what ImWeb knows about
+  the control — its range, default, panel and what this manual says about it —
+  and is always marked **AI-generated — may be wrong**. Each answer is kept, so
+  opening the same control again costs nothing; **Ask again** writes a fresh
+  one. It is one answer, not a conversation.
+- **With no provider set up**, the window shows the control's range and says
+  there is no written explanation yet. Nothing is sent anywhere.
+
+Setup controls that take no controller (Monitoring) have a menu with only
+**Explain this** in it.
+
 ---
 
 ## 4. Input Sources
