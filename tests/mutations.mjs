@@ -2072,4 +2072,28 @@ export const MUTATIONS = [
     find: "    if (this._stretchJob) {\n      return this._refuse(REFUSE_LAYOUT_LOCKED,\n        `cannot reallocate the tape while job ${this._stretchJob.id} is stretching`);\n    }\n",
     replace: '',
   },
+  {
+    name: 'setup: sample conversions follow the Tape length slider',
+    audit: 'audit-audio-setup.mjs',
+    file: 'src/audio/AudioBinding.js',
+    why: 'reported by the owner: lengthen the tape while running and the Spectral Writer stops writing and the display is wrong until Audio is switched off and on',
+    find: "    return this.running && this._allocSec != null ? this._allocSec : this.ps.get('audio.tapeSec').value;",
+    replace: "    return this.ps.get('audio.tapeSec').value;",
+  },
+  {
+    name: 'normalize: one gain per chunk instead of one for the selection',
+    audit: 'audit-tape-snapshot.mjs',
+    file: 'src/audio/tape-snapshot.js',
+    why: 'every ten seconds of the selection is brought to full level separately — the quiet passages jump up and the dynamics are gone',
+    find: '    for (let i = 0; i < out.length; i++) out[i] = got.data[i] * gain;',
+    replace: '    let pk = 1e-9; for (let i = 0; i < out.length; i++) pk = Math.max(pk, Math.abs(got.data[i]));\n    for (let i = 0; i < out.length; i++) out[i] = got.data[i] * (target / pk);',
+  },
+  {
+    name: 'normalize: silence is amplified',
+    audit: 'audit-tape-snapshot.mjs',
+    file: 'src/audio/tape-snapshot.js',
+    why: 'normalizing an empty zone fills it with the noise floor at full scale',
+    find: "  if (!(peak > 1e-5)) return { ok: false, peak, gain: 1, reason: 'the selection is silent' };",
+    replace: '  if (!(peak > 0)) peak = 1e-9;',
+  },
 ];

@@ -9461,6 +9461,10 @@ export function registerCoreParameters(ps) {
       { key: "cueSlot", label: "CueSlot", type: PARAM_TYPE.SELECT, value: 0, group: "global",
         options: ["1", "2", "3", "4", "5", "6", "7", "8"] },
       { key: "cueStore", label: "CueStore", type: PARAM_TYPE.TRIGGER, group: "global" },
+      // Rewrites the zone's stretch of tape so its peak sits just under full
+      // scale. 'global' for the reason every tape-writing verb is: a State
+      // recall must never be able to alter a recording.
+      { key: "normalize", label: "Normalize", type: PARAM_TYPE.TRIGGER, group: "global" },
     ] },
   ].forEach(({ prefix, suffix, extra }) => {
     [...ZONE_COMMON, ...extra].forEach(({ key, label, ...rest }) => {

@@ -232,6 +232,28 @@ console.log('\none node, whatever the order of the clicks');
   check('and no device held', openStreams() === 0, `${openStreams()} open`);
 }
 
+console.log('\nthe tape is as long as it was allocated, not as long as the slider says');
+{
+  // Reported by the owner, 2026-11-22: "when I make the number bigger, Spectral
+  // Writer won't write … ruins the tape, audio engine off and on again fixes
+  // it." A new length applies on the next Audio On, but every fraction→sample
+  // conversion read the PARAM, so the client and the engine disagreed about the
+  // tape from the moment the slider moved.
+  const { ps, audio, said } = fresh();
+  await audio.start(); await sleep(20);
+  const before = audio._tapeLen;
+  check('60 s at 48 kHz to begin with', before === 60 * 48000, `${before}`);
+  ps.set('audio.tapeSec', 120);
+  check('moving Tape length while running does not move the tape', audio._tapeLen === before,
+    `conversions now use ${audio._tapeLen} samples against an engine holding ${before}`);
+  check('and the status line says when it will apply', /120 s applies on the next Audio On/.test(said.at(-1) ?? ''), said.at(-1));
+  await audio.stop(); await audio.start(); await sleep(20);
+  check('the next Audio On takes the new length', audio._tapeLen === 120 * 48000, `${audio._tapeLen}`);
+  await audio.stop();
+  ps.set('audio.tapeSec', 30);
+  check('with the engine off the layout follows the slider', audio._tapeLen === 30 * 48000);
+}
+
 console.log('\na failed start can be tried again');
 {
   const { audio } = fresh();

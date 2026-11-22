@@ -43,6 +43,9 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   grain — short keeps the rhythm, long is a wash. Renders about four times
   faster than it plays, can be cancelled, and gives the same result every time.
   The Stretch zone has its own handle on the Tape.
+- **Normalize** (Playback Zone) — brings the Playback zone's stretch of tape
+  to just under full level. One gain for the whole zone and both channels, so
+  the dynamics and the stereo balance are kept. Silence is left alone.
 - **Spectral Writer: Tilt.** Gives each row its own time. Above 0 the high
   rows play out slower than the low ones (up to 8× at 1), so the top of the
   picture trails behind the bottom; below 0 the low rows are the slow ones.
@@ -210,6 +213,11 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   rounded lobes).
 
 ### Fixed
+- **Changing Tape length while audio was running broke the tape** until Audio
+  was switched off and on: the Spectral Writer stopped writing and zones were
+  drawn in the wrong place. The new length still applies on the next Audio On,
+  and the status line now says so; until then everything keeps using the
+  length the tape really has.
 - **The microphone was never released.** After ▶ Audio in Sources › Sound had
   been used once, the mic stayed open for the rest of the session, through
   Audio Off.

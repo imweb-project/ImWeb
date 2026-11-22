@@ -29,7 +29,7 @@ import { buildPitches, imageFromLuma, buildPan, tiltImage, PAN } from './spectra
 import { CorpusView } from './CorpusView.js';
 import { DESCRIPTORS, buildIndex, nearest, grainTime } from './corpus-index.js';
 import { describeAudioGraph } from './graph-view.js';
-import { captureSnapshot, restoreSnapshot } from './tape-snapshot.js';
+import { captureSnapshot, restoreSnapshot, normalizeSpan } from './tape-snapshot.js';
 import {
   AUDIO_TARGETS, describeController, describeSlew, descDiff, semitoneToHz,
   sampleSlewCurve, slewStrength, SLEW_MECHANISM, SLEW_SEGMENT,
@@ -320,7 +320,10 @@ export class AudioBinding {
       setTimeout(() => resolve(false), 3000);
     });
 
-    this.engine.allocTape(this.ps.get('audio.tapeSec').value);
+    // Remembered, because the PARAM can move while the engine runs and the
+    // tape does not move with it — see `_tapeSec`.
+    this._allocSec = this.ps.get('audio.tapeSec').value;
+    this.engine.allocTape(this._allocSec);
     // A recording held across Audio Off, or loaded from a project while audio
     // was off, goes back in right after the allocation — messages arrive in
     // order, so the writes land on the fresh tape and not the old one.
@@ -921,13 +924,29 @@ export class AudioBinding {
       // region is dragged, and `_dragZone` reads it as a param prefix.
       regions.push({ kind, ...span, label, id: prefix });
     }
-    this.view.setSeconds(g('audio.tapeSec'));
+    this.view.setSeconds(this._tapeSec);
     this.view.setRegions(regions);
   }
 
   // ── translation ───────────────────────────────────────────────────────────
 
-  get _tapeLen() { return Math.floor(this.ps.get('audio.tapeSec').value * this.engine.sampleRate); }
+  /**
+   * How long the tape IS, in seconds — not how long the slider says.
+   *
+   * A new Tape length applies on the next Audio On (reallocating would discard
+   * the recording). But every conversion from a fraction to a sample used to
+   * read the PARAM, so the moment the slider moved the client and the engine
+   * disagreed about the tape: zones, renders and the display were all computed
+   * against a length the engine did not have. Made longer, a Spectral render
+   * was aimed past the end and refused; and everything drawn was in the wrong
+   * place until Audio was switched off and on. While the engine runs, the
+   * allocated length is the truth and the param is only a request.
+   */
+  get _tapeSec() {
+    return this.running && this._allocSec != null ? this._allocSec : this.ps.get('audio.tapeSec').value;
+  }
+
+  get _tapeLen() { return Math.floor(this._tapeSec * this.engine.sampleRate); }
 
   /**
    * Is a zone bound to this partition running? Mirrors the engine's own refusal
@@ -1161,6 +1180,45 @@ export class AudioBinding {
   cancelSpectral() {
     if (!(this._specJobId >= 0)) return this._say('spectral: nothing is rendering');
     this.engine.cancelJob(this._specJobId);
+  }
+
+  // ── normalize ─────────────────────────────────────────────────────────────
+
+  /**
+   * Bring the Playback zone's region up (or down) so its loudest sample sits
+   * just under full scale. The Playback zone is "the selection" here for the
+   * reason it is the Stretch's source: it is the span the performer already has
+   * a hand on, on the tape, with a handle to drag.
+   *
+   * Done from this side with the tape's own read and write — the engine needs
+   * no new verb to multiply samples. It rewrites tape, so it is a trigger in
+   * group 'global' and never part of a State.
+   */
+  async normalizePlay() {
+    if (!this.running) return this._say('normalize needs the audio engine running');
+    if (this._normBusy) return this._say('normalize: already working');
+    if (this._specJobId >= 0 || this._stretchJobId >= 0) {
+      return this._say('normalize: wait for the render to finish');
+    }
+    const g = (id) => this.ps.get(id).value;
+    const n = this._tapeLen;
+    const part = this._part(g('aplay.part'));
+    const fr = this._zoneFracs('aplay');
+    const span = clampToPartition(zoneSpan(part, fr.start, fr.len), part, g('aplay.unsafe'));
+    const a = Math.max(0, Math.round(span.start * n));
+    const b = Math.min(n, Math.round(span.end * n));
+    if (b - a < 1) return this._say('normalize: the Playback zone is empty');
+    this._normBusy = true;
+    try {
+      const res = await normalizeSpan(
+        (s, e) => this.engine.readTape(s, e), (at, ch, data) => this.engine.write(at, ch, data),
+        a, b, this.engine.sampleRate);
+      const db = (20 * Math.log10(res.gain)).toFixed(1);
+      this._say(!res.ok ? `normalize: ${res.reason}`
+        : res.gain === 1 ? 'normalize: already at full level'
+          : `normalize: ${db > 0 ? '+' : ''}${db} dB over ${((b - a) / this.engine.sampleRate).toFixed(1)} s`);
+      return res;
+    } finally { this._normBusy = false; }
   }
 
   // ── the stretch (PaulStretch) ─────────────────────────────────────────────
@@ -1561,6 +1619,9 @@ export class AudioBinding {
       this.renderStretch().catch((e) => this._say(`stretch failed: ${e.message}`));
     });
     this._on('astretch.cancel', () => this.cancelStretch());
+    this._on('aplay.normalize', () => {
+      this.normalizePlay().catch((e) => this._say(`normalize failed: ${e.message}`));
+    });
 
     // The corpus (§4.6). Axis changes RE-PROJECT the measurements already held;
     // they never re-measure. That is the index paying for itself.
@@ -1596,7 +1657,8 @@ export class AudioBinding {
     // it applies on the next enable. Reflected here rather than silently
     // ignored, because a slider that appears to do nothing is worse than one
     // that says why.
-    this._on('audio.tapeSec', () => this._say(
-      'tape length applies on the next Audio On — reallocating would discard the tape'));
+    this._on('audio.tapeSec', (v) => this._say(
+      `tape stays ${this._allocSec} s for now — ${v} s applies on the next Audio On `
+      + '(the recording is kept across it)'));
   }
 }

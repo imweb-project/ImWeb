@@ -3143,7 +3143,7 @@ time ruler, and every zone.
 
 | Parameter | Range | Description |
 |-----------|-------|-------------|
-| `audio.tapeSec` | 5–600 s (default 60) | **Tape** length. Changing it reallocates the tape, which **erases everything recorded on it** |
+| `audio.tapeSec` | 5–600 s (default 60) | **Tape** length. A new length applies the next time you click Audio On (the status line says so); the recording is kept across it, cut off if the new tape is shorter |
 | `audio.tapSrc` | Mic / Master Out | **Tap** — what the sound-reactive controllers and the Vectorscope listen to |
 | `audio.outGain` | 0–1 | **Out Gain** |
 | `audio.glide` | 0–50 ms | **Glide** — how long a zone's Start/Length takes to reach a new value. 0 = exact, best for scrubbing by hand |
@@ -3172,9 +3172,11 @@ the whole tape instead.
 | **Rate** | Playback | −4 … 4; negative plays backwards |
 | **Pos** | Playback | Jump the playhead to a point in the region (a seek, not a slide) |
 | **Level** | Playback | The zone's fader |
+| **Normalize** | Playback | Rewrites the zone's stretch of tape so its loudest point sits just under full level. One gain for the whole zone and both channels, so dynamics and stereo balance are kept; silence is left alone. Drag the PLAY handle on the Tape to choose what gets normalized |
 | **CueSlot** / **CueStore** | Playback | Eight stored regions, the same eight-cue scheme the movie decks have |
 
-The Recording zone records the microphone, so turn **Mic** on first.
+The Recording zone records the microphone. Mic is armed by default, so it is
+open as soon as Audio is on.
 
 #### Spectral Writer
 
