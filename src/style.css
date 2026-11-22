@@ -126,6 +126,7 @@
 #mobile-state-bar,
 #param-search,
 #source-router,
+#explain-window,
 #param-context-menu,
 #guide-panel,
 #capture-panel,
@@ -4029,6 +4030,87 @@ body.ghost-mode #ghost-label {
 }
 #source-router.hidden {
     display: none;
+}
+
+/* ── Explain this (src/ui/explain/Explain.js) ─────────────────────────────── */
+/* A setup act's menu holds only the label and "Explain this". !important
+   because the LFO preview canvas carries an inline display. */
+#param-context-menu.setup-only > :not(.menu-header):not(.ctx-explain) {
+    display: none !important;
+}
+#explain-window {
+    position: fixed;
+    top: 90px;
+    left: 0;
+    width: 380px;
+    min-width: 260px;
+    max-width: calc(96 * var(--vw));
+    max-height: calc(90 * var(--vh));
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-2);
+    border: 1px solid var(--accent-dim);
+    border-radius: 6px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+    z-index: 1950;
+    overflow: hidden;
+    resize: both;
+}
+#explain-window.hidden { display: none; }
+#explain-titlebar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 8px 5px 12px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    color: var(--accent);
+    background: var(--bg-3);
+    border-bottom: 1px solid var(--border);
+    cursor: move;
+    user-select: none;
+    touch-action: none;
+}
+#explain-titlebar .explain-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#explain-titlebar button {
+    font-size: 13px; line-height: 1; padding: 1px 6px;
+    color: var(--text-1); background: var(--bg-1);
+    border: 1px solid var(--border-hi); border-radius: 2px; cursor: pointer;
+}
+#explain-body {
+    padding: 8px 12px 10px;
+    overflow-y: auto;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--text-1);
+    user-select: text;
+}
+#explain-body .explain-h {
+    margin-top: 8px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+}
+#explain-body .explain-h:first-child { margin-top: 0; }
+#explain-body .explain-p { margin: 2px 0 0; }
+#explain-body .explain-now {
+    margin-top: 10px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-2);
+}
+#explain-body .explain-foot { margin-top: 6px; font-size: 10px; color: var(--text-2); }
+#explain-body .explain-ai { color: #e0b050; }
+#explain-body .explain-none { color: var(--text-1); }
+#explain-body .explain-again {
+    font-size: 10px; padding: 0 5px; margin-left: 4px;
+    color: var(--text-1); background: var(--bg-1);
+    border: 1px solid var(--border-hi); border-radius: 2px; cursor: pointer;
 }
 #source-router-titlebar {
     display: flex;

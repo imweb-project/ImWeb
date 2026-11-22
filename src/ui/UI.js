@@ -23,6 +23,7 @@ import { favKey, getFavs, toggleFav } from '../state/TakeFavs.js';
 import { openGuide, openPictureLightbox } from './Guide.js';
 import { setViewportPos } from './layout/LayoutManager.js';
 import { makeFloating } from './components/FloatingWindow.js';
+import { openExplain } from './explain/Explain.js';
 const DEFAULT_FX_ORDER_SP = DEFAULT_FX_ORDER;
 
 // ── Tab switching ──────────────────────────────────────────────────────────────
@@ -2630,7 +2631,9 @@ export class ContextMenu {
     // assigning one. `assign()` refuses regardless, but offering a menu of
     // controller types that all silently do nothing is worse than offering no
     // menu — it reads as the feature being broken rather than absent.
-    if (param?.setup) return;
+    // ...except "Explain this", which every control has: a setup act gets the
+    // menu with ONLY that item (CSS hides the rest under .setup-only).
+    this.el.classList.toggle('setup-only', !!param?.setup);
     this._currentParam = param;
     document.getElementById('ctx-param-label').textContent = param.label;
 
@@ -2942,6 +2945,12 @@ export class ContextMenu {
       btn.addEventListener('click', () => {
         if (!this._currentParam) return;
         const action = btn.dataset.action;
+        if (action === 'explain') {
+          const p = this._currentParam;
+          this.hide();
+          openExplain(this.ps, p);
+          return;
+        }
         if (action === 'invert') {
           this._currentParam.invert = !this._currentParam.invert;
           this.hide();

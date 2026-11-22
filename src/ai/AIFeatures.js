@@ -1138,6 +1138,41 @@ export function allowedParamIds(ps) {
   return ids;
 }
 
+// ── Explain this (src/ui/explain/Explain.js) ──────────────────────────────────
+
+/** The legal-values text for one parameter — the same text the preset prompt uses. */
+export function paramRangeText(p) { return _paramRange(p); }
+
+/**
+ * Who would answer, or null when nobody can. Same test `_callRaw` makes before
+ * it throws 'no-key', asked first so the panel can say so without a request.
+ */
+export function aiReady() {
+  const cfg = _config();
+  const id = cfg.activeProvider;
+  const pcfg = cfg.providers[id];
+  const prov = PROVIDERS[id];
+  if (!pcfg || !prov) return null;
+  if (prov.needsKey && !pcfg.apiKey) return null;
+  return { id, name: prov.name, model: pcfg.model ?? prov.defaultModel ?? '?' };
+}
+
+const EXPLAIN_SYSTEM = `You explain one control of ImWeb, a live video-and-sound instrument, to a performer who is not a programmer.
+Use ONLY the facts you are given. Never invent behaviour, numbers, or other controls. If the facts do not say something, write "Not stated."
+Plain language, no code, no parameter ids, at most 120 words in total.
+Answer in exactly these four labelled lines and nothing else:
+WHAT IT DOES: what moving it changes in the picture or the sound.
+EXAMPLE: two or three settings from its real range, and what each gives.
+WHAT TO EXPECT: what typical material does with it.
+DOESN'T AFFECT: what it leaves alone.`;
+
+/** One answer, no conversation. Throws on an empty reply — a blank is not an explanation. */
+export async function explainParam(facts) {
+  const text = (await _call(EXPLAIN_SYSTEM, facts, 700))?.trim();
+  if (!text) throw new Error('the provider returned an empty answer');
+  return text;
+}
+
 function presetSystem(paramReference) {
   return `You are an ImWeb parameter designer. ImWeb is a real-time video synthesis instrument.
 
