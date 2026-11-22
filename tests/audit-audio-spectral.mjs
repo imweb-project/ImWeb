@@ -23,8 +23,9 @@
 
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { PROTO_VERSION, REFUSE } from '../src/audio/protocol.js';
-import { SCALES, buildPitches, imageFromLuma, lumaFromRGBA } from '../src/audio/spectral-image.js';
+import { SCALES, buildPitches, imageFromLuma, lumaFromRGBA, tiltImage, TILT_OCTAVES } from '../src/audio/spectral-image.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -156,6 +157,135 @@ console.log('\nscales are a client-side idea (the engine is only told frequencie
   check('a low sample rate shortens the table further',
     buildPitches(0, 110, 200, 8000).length < tall.length,
     'the ceiling must depend on the sample rate, not be a constant');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// The scale list grew from ten to thirty-six (2026-11). Two things about a
+// longer list can go wrong without any error: an index that MOVED (a SELECT
+// stores an index, so every saved project is silently re-tuned), and a new
+// scale whose rows are not strictly rising (two rows on one pitch double its
+// level; a falling row puts the top of the picture below the bottom).
+console.log('\nthe scale list is append-only, and every scale is a rising table');
+{
+  const ORIGINAL = ['Chromatic', 'Major', 'Natural minor', 'Harmonic minor', 'Dorian',
+    'Pentatonic', 'Minor pentatonic', 'Whole tone', 'Octatonic', 'Harmonic series'];
+  check('the first ten scales are where saved projects left them',
+    ORIGINAL.every((n, i) => SCALES[i]?.name === n),
+    SCALES.slice(0, 10).map((s) => s.name).join(', '));
+  check('no two scales share a name', new Set(SCALES.map((s) => s.name)).size === SCALES.length);
+  const bad = [];
+  for (let i = 0; i < SCALES.length; i++) {
+    for (const [root, rows] of [[55, 64], [110, 128], [880, 48]]) {
+      const p = buildPitches(i, root, rows, SR);
+      let ok = p.length > 0 && Math.abs(p[0] - root) < root * 1e-6 && p[p.length - 1] < SR / 2;
+      for (let j = 1; j < p.length && ok; j++) if (!(p[j] > p[j - 1])) ok = false;
+      if (!ok) bad.push(`${SCALES[i].name}@${root}`);
+    }
+  }
+  check('every scale starts on the root, rises strictly and stays below Nyquist',
+    bad.length === 0, bad.join(', '));
+
+  const ix = (n) => SCALES.findIndex((s) => s.name === n);
+  const bp = buildPitches(ix('Bohlen-Pierce'), 100, 14, SR);
+  check('Bohlen-Pierce repeats at 3:1, not at the octave', Math.abs(bp[13] - 300) < 0.01, `${bp[13]}`);
+  const just = buildPitches(ix('Just major'), 200, 5, SR);
+  check('Just major has a pure 5:4 third and 3:2 fifth',
+    Math.abs(just[2] - 250) < 0.001 && Math.abs(just[4] - 300) < 0.001, [...just].join(' '));
+  const qt = buildPitches(ix('Quarter-tone'), 110, 3, SR);
+  check('a quarter-tone step is 50 cents', Math.abs(cents(qt[1], qt[0]) - 50) < 0.01);
+  const sub = buildPitches(ix('Subharmonic series'), 100, 4, SR);
+  check('the subharmonic series is integer DIVISIONS of its top row',
+    [4, 3, 2, 1].every((d, i) => Math.abs(sub[i] - 400 / d) < 0.001), [...sub].join(' '));
+  const odd = buildPitches(ix('Odd harmonics'), 100, 4, SR);
+  check('odd harmonics are 1, 3, 5, 7', [100, 300, 500, 700].every((h, i) => Math.abs(odd[i] - h) < 0.001));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Tilt: each row gets its own speed. The engine has ONE playhead for all rows,
+// so this is done to the image before upload. What must hold: 0 changes
+// nothing at all (not even a copy); the slow end plays the picture exactly
+// once; the fast end repeats it the stated number of times; and NOTHING is
+// dropped — the first version truncated the slow rows instead, so at full Tilt
+// most of the picture was never played and the sound piled up at the end of
+// the zone (reported by the owner, 2026-11-22).
+console.log('\ntilt gives each row its own speed, and drops nothing');
+{
+  const rows = 5, frames = 64;
+  // Each row is a ramp along time, so a row's speed can be read off its slope.
+  const ramp = new Float32Array(rows * frames);
+  for (let f = 0; f < frames; f++) for (let r = 0; r < rows; r++) ramp[f * rows + r] = f;
+  check('a tilt of 0 returns the very same image — bit-identical to having no Tilt',
+    tiltImage(ramp, rows, frames, 0) === ramp);
+  const up = tiltImage(ramp, rows, frames, 1);
+  const top = rows - 1;
+  check('tilt never touches its input', ramp[10 * rows + 4] === 10);
+  check('at +1 the TOP row is the slow one: the picture once, exactly as without Tilt',
+    [0, 1, 17, 63].every((f) => up[f * rows + top] === f));
+  const N = 2 ** TILT_OCTAVES;
+  // An output column on a fast row is the AVERAGE of the source columns it
+  // covers. On a ramp, the mean of `n` evenly spaced reads starting at
+  // f·speed is f·speed + speed·(n−1)/2n.
+  const mean = (f, speed) => { const n = Math.ceil(speed - 1e-9); return f * speed + (speed * (n - 1)) / (2 * n); };
+  check(`at +1 the bottom row runs ${N} times faster`,
+    Math.abs(up[3 * rows] - mean(3, N)) < 1e-4 && Math.abs(up[7 * rows] - mean(7, N)) < 1e-4,
+    `frame 3 reads source ${up[3 * rows]}, expected ${mean(3, N)}`);
+  check(`and REPEATS: it starts the picture again ${N} times`,
+    Array.from({ length: N }, (_, k) => up[((k * frames) / N) * rows]).every((v) => Math.abs(v - mean(0, N)) < 1e-4),
+    'a row that runs out instead of wrapping is the truncation this replaced');
+  // The property the owner's report was about. Put ONE bright column in the
+  // middle of the picture: every row must still sound it, somewhere.
+  const spot = new Float32Array(rows * frames);
+  for (let r = 0; r < rows; r++) spot[32 * rows + r] = 1;
+  const tilted = tiltImage(spot, rows, frames, 1);
+  const heard = Array.from({ length: rows }, (_, r) => {
+    let m = 0; for (let f = 0; f < frames; f++) m = Math.max(m, tilted[f * rows + r]); return m;
+  });
+  // At least 1/N: on the fastest row the stroke is averaged with the N−1 dark
+  // columns that share its output column. Zero is the failure — not reached.
+  check('a subject in the middle of the picture is played by EVERY row', heard.every((m) => m >= 1 / N - 1e-6),
+    `per-row peak ${heard.map((m) => m.toFixed(2)).join(' ')}`);
+  const firstHalf = (r) => { let m = 0; for (let f = 0; f < frames / 2; f++) m = Math.max(m, tilted[f * rows + r]); return m; };
+  check('and the fast rows reach it early — the zone is not empty until the end',
+    firstHalf(0) > 0 && firstHalf(1) > 0);
+  // Averaged, not point-sampled: a one-column stroke must carry the same total
+  // energy on every row however fast that row runs, instead of being stepped
+  // over by rows whose steps happen to miss it.
+  // A stroke one column wide lasts 1/speed of a column on a fast row, which is
+  // less than the grid can show — so it comes out as one column at 1/speed of
+  // the level, `speed` times over. Amplitude × time is the same on every row.
+  const weight = Array.from({ length: rows }, (_, r) => {
+    let sum = 0; for (let f = 0; f < frames; f++) sum += tilted[f * rows + r];
+    return sum;
+  });
+  check('a thin stroke keeps its weight on every row — none steps over it',
+    weight.every((v) => Math.abs(v - weight[rows - 1]) < 0.3 * weight[rows - 1]),
+    `total per row: ${weight.map((v) => v.toFixed(3)).join(' ')}`);
+  const mid = up[10 * rows + 2];
+  check('the rows between are sped up by pitch height, smoothly',
+    Math.abs(mid - mean(10, 2 ** (TILT_OCTAVES / 2))) < 1e-3, `middle row reads ${mid}`);
+  const down = tiltImage(ramp, rows, frames, -1);
+  check('a negative tilt is the mirror: the LOW rows play once and the high rows repeat',
+    down[40 * rows] === 40 && Math.abs(down[3 * rows + top] - mean(3, N)) < 1e-4);
+  const half = tiltImage(ramp, rows, frames, 0.5);
+  check('half the tilt is half the octaves',
+    Math.abs(half[10 * rows] - mean(10, 2 ** (TILT_OCTAVES / 2))) < 1e-3);
+  check('a null image stays null (pan Off)', tiltImage(null, rows, frames, 1) === null);
+
+  // Slow ×k is arithmetic in the binding, pinned at its source: pitches k times
+  // up, length 1/k — and the DISPLAY must divide by the same k, or the tape
+  // shows the render landing where it will not.
+  const ab = readFileSync(resolve(root, 'src/audio/AudioBinding.js'), 'utf8');
+  check('Slow × raises the root by k', /semitoneToHz\(g\('aspec\.root'\)\) \* slow/.test(ab));
+  check('and shortens the region by k, through the one function the display also uses',
+    /if \(prefix === 'aspec'\) len \/= this\._specSlow\(\)/.test(ab)
+    && (ab.match(/this\._zoneFracs\(/g) ?? []).length >= 2,
+    'two call sites: the render and the tape display');
+  check('the render is clamped to the partition seam unless Unsafe',
+    /clampToPartition\(zoneSpan\(part, fr\.start, fr\.len\), part, g\('aspec\.unsafe'\)\)/.test(ab),
+    'Length defaults to the whole partition, so any Start > 0 used to be refused');
+  const slowed = buildPitches(0, 110 * 4, 4, SR);
+  check('a ×4 table is two octaves up, interval for interval',
+    Math.abs(slowed[0] - 440) < 1e-3 && Math.abs(cents(slowed[1], slowed[0]) - 100) < 0.01);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

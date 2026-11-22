@@ -114,6 +114,52 @@ export function restoreSnapshot(snap, write, sampleRate, tapeLen, { clear = fals
   return written;
 }
 
+/** Where Normalize puts the loudest sample: −1 dBFS, a hair under full scale. */
+export const NORMALIZE_PEAK = 0.891;
+
+/**
+ * Normalize a span of tape: one gain for the whole span and both channels, so
+ * that its loudest sample lands on `target`.
+ *
+ * ONE gain, never one per channel — a quiet right channel is part of the
+ * stereo image, and scaling the two sides separately would drag everything
+ * toward the centre.
+ *
+ * Two passes of chunked reads (find the peak, then scale and write back)
+ * rather than holding the span: a ten-minute stereo tape is 230 MB as floats.
+ * Like `captureSnapshot` it goes through `read`/`write` callbacks and knows
+ * nothing of the engine, which is what lets it be tested without one.
+ *
+ * Silence is left as silence and reported — dividing by a peak of nothing
+ * would turn the noise floor into the signal.
+ *
+ * @returns {Promise<{ok:boolean, peak:number, gain:number, reason?:string}>}
+ */
+export async function normalizeSpan(read, write, start, end, sampleRate, target = NORMALIZE_PEAK) {
+  const chunk = Math.max(1, Math.floor(CHUNK_SECONDS * sampleRate));
+  let peak = 0;
+  for (let at = start; at < end; at += chunk) {
+    const got = await read(at, Math.min(end, at + chunk));
+    if (!got) return { ok: false, peak: 0, gain: 1, reason: 'the tape could not be read' };
+    const d = got.data;
+    for (let i = 0; i < d.length; i++) {
+      const v = d[i] < 0 ? -d[i] : d[i];
+      if (v > peak) peak = v;
+    }
+  }
+  if (!(peak > 1e-5)) return { ok: false, peak, gain: 1, reason: 'the selection is silent' };
+  const gain = target / peak;
+  if (Math.abs(gain - 1) < 1e-4) return { ok: true, peak, gain: 1 };
+  for (let at = start; at < end; at += chunk) {
+    const got = await read(at, Math.min(end, at + chunk));
+    if (!got) return { ok: false, peak, gain, reason: 'the tape could not be read' };
+    const out = new Float32Array(got.data.length);
+    for (let i = 0; i < out.length; i++) out[i] = got.data[i] * gain;
+    write(at, got.channels ?? CHANNELS, out);
+  }
+  return { ok: true, peak, gain };
+}
+
 // ── JSON form, for the .imweb file ──────────────────────────────────────────
 
 function toB64(bytes) {
@@ -149,6 +195,10 @@ export function snapshotToJSON(snap) {
 
 export function snapshotFromJSON(obj) {
   if (!obj || obj.format !== 'pcm16le' || !Array.isArray(obj.runs)) return null;
+  // A missing rate makes the resample ratio NaN in `restoreSnapshot`, and every
+  // run then lands at index NaN: nothing is written and nothing is reported, so
+  // the project opens with a silent tape. No recording beats a silent lie.
+  if (!(obj.sampleRate > 0)) return null;
   return {
     sampleRate: obj.sampleRate, length: obj.length, channels: obj.channels ?? CHANNELS,
     runs: obj.runs.map(({ start, data }) => {

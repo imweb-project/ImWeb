@@ -52,7 +52,11 @@
 //
 // 6 adds `/tape/read`: the raw samples back out, so a recording can outlive
 // Audio Off and travel in a project file. Same step-8 reason for the bump.
-export const PROTO_VERSION = 6;
+//
+// 7 adds `/stretch/render`: the PaulStretch job. A new address, and a client
+// one version behind would wait on a `/job/<n>/done` that an `unknown address`
+// refusal is never going to send.
+export const PROTO_VERSION = 7;
 
 /** The complete permitted argument-type set. Rule 1 — do not extend casually. */
 export const TYPE_TAGS = Object.freeze(['i', 'f', 's', 'b', 'T', 'F']);
@@ -204,6 +208,14 @@ export const CLIENT_TO_ENGINE = Object.freeze({
   // the grain density to the descriptor resolution for no reason beyond having
   // typed one number instead of two.
   '/corpus/analyse': 'iiiii',
+
+  // The stretch (PaulStretch): read one span, write a longer one elsewhere.
+  // srcStart, srcLen, dstStart, dstLen, window, stretch, level, jobId. Spans
+  // are absolute samples for the reason `/corpus/analyse`'s are — the seam is a
+  // client decision. `stretch` travels as its own number rather than being
+  // implied by dstLen / srcLen, so a destination too short for the whole
+  // result cuts the result off instead of quietly changing the amount.
+  '/stretch/render': 'iiiiiffi',
 
   // The grain player (§4.6) — the reader that makes a descriptor space mean
   // something. Navigating a corpus yields timestamps, and a single playhead

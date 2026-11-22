@@ -18,7 +18,7 @@ Six tabs: **Sources · Mix · Effects · Output · Audio · Project**.
 | **Mix** | Layers, Layer Color, Mix 1–3, Keyer, Displacement, Displacement Map Editor |
 | **Effects** | Blend & Feedback, the post-FX chain, LUT / Colour Grade, Shader Code (GLSL) |
 | **Output** | Projection Mapping, Global / BPM / Morph |
-| **Audio** | Tape, Engine, Partitions, Recording / Playback Zone, Spectral Writer, Corpus, Grain Player, Voice |
+| **Audio** | Tape and Audio On (pinned), Engine, Partitions, Recording / Playback Zone, Spectral Writer, Stretch, Corpus, Grain Player, Voice |
 | **Project** | Project files, AI, Banks, States, State Step Sequencer, Response Curves (tables) |
 
 **Workspaces** — 3D Scene, Analog TV, Draw (with Growth) and Shader Code (GLSL)

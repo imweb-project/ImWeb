@@ -156,7 +156,7 @@ alongside.
 | **Mix** | Layers, Layer Color, Mix 1 / Mix 2 / Mix 3, Keyer, Displacement, Displacement Map Editor |
 | **Effects** | Blend & Feedback, the post-FX chain and its ordering, LUT / Colour Grade, Shader Code (GLSL) |
 | **Output** | Display & Record (display and record resolution, UI size, second-display window and its rate), Projection Mapping, Global / BPM / Morph |
-| **Audio** | Tape, Engine, Partitions, Recording Zone, Playback Zone, Spectral Writer, Corpus, Grain Player, Voice — see §9 *Audio* |
+| **Audio** | Tape and start-up switches (pinned), Engine, Partitions, Recording Zone, Playback Zone, Spectral Writer, Stretch, Corpus, Grain Player, Voice — see §9 *Audio* |
 | **Project** | Project save/load, AI, Banks, States, State Step Sequencer, Response Curves (tables) |
 
 ![The Sources tab with every section closed: Live In, Media, Generators, From the Signal](img/sources-tab.png)
@@ -3109,19 +3109,41 @@ The **Audio** tab is the sound half of the instrument. Everything is built
 around one **tape**: a buffer that is recorded into, played back, written from
 pictures and granulated. The tab's sections, top to bottom:
 
-#### Tape
+#### Tape and starting the sound
 
-A drawing of the whole tape — its waveform (peaks, not averages) with the four
-partitions and the recording / playback regions marked on it.
+The top of the tab is pinned and never folds away: the **Tape**, and under it
+the switches that start it.
+
+**To start: click Audio On.** That starts the engine and opens the input. There
+is nothing to set up first in another tab.
+
+| Control | Description |
+|---------|-------------|
+| `audio.enable` **Audio On** | Starts the engine and, if Mic is armed, opens the input. The browser only allows audio to start from a click, so nothing starts when the page loads |
+| `audio.mic` **Mic** | *Armed*, on by default: the input opens when Audio On is clicked. Turn it off to play with no input at all (the browser asks for permission the first time) |
+| **Input** | Which input the microphone opens on. Remembered for next time. If the remembered input is not plugged in, the default is used and the status line says so. The same list is shown in Sources › Sound |
+| `audio.monitor` **Monitoring** | Headphones / Speakers — how you are listening. Changes no level and no routing; it tells the instrument whether a mic → speakers → mic loop is physically possible, so it can warn you. Default is Speakers, the cautious assumption |
+
+A status line reports what the engine last did (or refused), and a separate
+warning line appears while a feedback loop is possible.
+
+**The Tape** shows the waveform (peaks, not averages), the four partitions, a
+time ruler, and every zone.
+
+- **Zoom:** scroll on the tape; it zooms at the pointer. Scroll sideways, or
+  drag the empty waveform, to move along it. Double-click to see the whole tape.
+- **Zones:** Rec, Play, Spectral and Stretch each have a coloured handle in
+  their own lane along the top. Drag the middle of a handle to move the zone,
+  drag an end to resize it. Double-click a handle to zoom to that zone. The
+  Start and Length sliders follow, and controllers still drive them.
+- **Big:** ⤢ opens the Tape as its own window. Drag it by its title bar and
+  resize it from the corner, as large as the screen allows; ✕ puts it back.
 
 #### Engine
 
 | Parameter | Range | Description |
 |-----------|-------|-------------|
-| `audio.enable` | TOGGLE | **Audio On** — starts the engine. The browser only allows audio to start from a click, so the engine never starts on load |
-| `audio.tapeSec` | 5–600 s (default 60) | **Tape** length. Changing it reallocates the tape, which **erases everything recorded on it** |
-| `audio.mic` | TOGGLE | **Mic** — opens the microphone (the browser asks for permission) |
-| `audio.monitor` | Headphones / Speakers | **Monitoring** — how you are listening. Changes no level and no routing; it tells the instrument whether a mic → speakers → mic loop is physically possible, so it can warn you. Default is Speakers, the cautious assumption |
+| `audio.tapeSec` | 5–600 s (default 60) | **Tape** length. Changes the running tape a moment after you let go, and keeps what is recorded (a shorter tape keeps what fits). It waits while Recording, Playback, the Grain Player or a render is running — the status line says which to stop. Partitions are fractions of the tape, so they stretch with it while the recording stays where it was in time |
 | `audio.tapSrc` | Mic / Master Out | **Tap** — what the sound-reactive controllers and the Vectorscope listen to |
 | `audio.outGain` | 0–1 | **Out Gain** |
 | `audio.glide` | 0–50 ms | **Glide** — how long a zone's Start/Length takes to reach a new value. 0 = exact, best for scrubbing by hand |
@@ -3129,9 +3151,7 @@ partitions and the recording / playback regions marked on it.
 | `audio.limitRel` | 0.01–2 s | **Limit Rel** — limiter release |
 
 The output limiter cannot be switched off — only its Ceiling and Release are
-adjustable. A status line under the Engine section reports what the engine last
-did (or refused), and a separate warning line appears while a feedback loop is
-possible.
+adjustable.
 
 #### Partitions
 
@@ -3152,9 +3172,11 @@ the whole tape instead.
 | **Rate** | Playback | −4 … 4; negative plays backwards |
 | **Pos** | Playback | Jump the playhead to a point in the region (a seek, not a slide) |
 | **Level** | Playback | The zone's fader |
+| **Normalize** | Playback | Rewrites the zone's stretch of tape so its loudest point sits just under full level. One gain for the whole zone and both channels, so dynamics and stereo balance are kept; silence is left alone. Drag the PLAY handle on the Tape to choose what gets normalized |
 | **CueSlot** / **CueStore** | Playback | Eight stored regions, the same eight-cue scheme the movie decks have |
 
-The Recording zone records the microphone, so turn **Mic** on first.
+The Recording zone records the microphone. Mic is armed by default, so it is
+open as soon as Audio is on.
 
 #### Spectral Writer
 
@@ -3166,14 +3188,49 @@ become time.
 | Parameter | Description |
 |-----------|-------------|
 | **Partition Spec** / **Start Spec** / **Length Spec** / **Unsafe Spec** | Where on the tape the render lands |
-| **Scale** | Chromatic, Major, Natural minor, Harmonic minor, Dorian, Pentatonic, Minor pentatonic, Whole tone, Octatonic, Harmonic series |
+| **Scale** | 36 to choose from — see the list below |
 | **Root** | Lowest pitch, in semitones (45 = A2, 110 Hz) |
 | **Rows** | How many pitches (4–128). A request, not a promise: rows that would land above the highest frequency the tape can hold are dropped |
 | **Columns** | How many time steps the picture is read as (2–1024) |
+| **Slow ×** | 1–16. Renders the picture that many times too high and that many times shorter, made to be played back slow: set the Playback zone's **Rate** to 1 ÷ this number and it comes out the full length, at the pitch Root says, with the grain of slowed tape in it. The Tape shows the shortened zone |
+| **Tilt** | −1 to 1. Gives each row its own speed. Above 0 the high rows play the picture once across the zone, and the lower a row is the faster it runs and the more often it repeats the picture — the lowest up to 8 times at 1. You hear the same picture as a canon at every speed in between, with the high end the slow, stretched one. Below 0 it is the other way up. Nothing is cut off. 0 = off |
 | **Contrast** / **Floor** | How brightness becomes loudness; Floor silences the faint rows so the render is not a wash of every pitch at once |
 | **Pan Image** / **Pan Width** | Off / Colour / Spread / Sweep — how the picture becomes stereo position; Width 0 = mono |
 | **Level Spec** | Render level |
 | **Render** / **Cancel** | Write the picture into the tape — this **overwrites** that region |
+
+**Scales.** *Twelve-tone:* Chromatic, Major, Natural minor, Harmonic minor,
+Melodic minor, Dorian, Phrygian, Lydian, Mixolydian, Locrian, Pentatonic,
+Minor pentatonic, Blues, Whole tone, Octatonic, Hungarian minor, Double
+harmonic, Phrygian dominant, Hirajoshi, In-sen, Messiaen 3, Fifths, Octaves.
+*Microtonal:* Quarter-tone, 19-tone equal, 31-tone equal, Slendro, Pelog
+(an approximation), Just major, 7-limit just, Bohlen-Pierce (repeats at 3:1,
+not at the octave). *Series:* Harmonic series, Subharmonic series, Odd
+harmonics, Stretched harmonics (bell-like), Mel (spaced as the ear hears
+pitch, from Root to about 12 kHz).
+
+If Start is above 0 and the zone would run past the end of its partition, the
+render is shortened to fit. Turn **Unsafe Spec** on to let it cross.
+
+#### Stretch
+
+Makes a sound on the tape many times longer without changing its pitch — the
+PaulStretch method: long, overlapping slices whose phases are scrambled, so the
+result is a smooth wash at any amount instead of a slowed-down recording.
+
+It reads **what the Playback zone is set to** and writes into its own zone.
+
+| Parameter | Range | Description |
+|-----------|-------|-------------|
+| **Partition Str** / **Start Str** / **Length Str** / **Unsafe Str** | | Where the result is written. Starts on P1, because it may not overlap the Playback zone it reads from |
+| **Stretch ×** | 2–100 (default 8) | How many times longer |
+| **Window** | 0.05–1.5 s (default 0.25) | The grain of it. Short keeps the rhythm of the source and sounds granular; long loses every attack and becomes a smooth wash |
+| **Level Str** | 0–1 | Level of the result |
+| **Stretch** / **Cancel Stretch** | | Write it — this **overwrites** that region. It stops when the zone is full or the source runs out, whichever comes first |
+
+A stretch renders about four times faster than it plays. The same stretch of the
+same material gives the same sound every time. A steady tone comes out with a
+slow shimmer; that is the character of the method.
 
 #### Corpus
 

@@ -128,7 +128,8 @@ export class VectorscopeInput {
       return false;
     }
     try {
-      const { ctx, tap } = await this.audioHost.ensureTap({ deviceId });
+      const { ctx, tap } = await this.audioHost.ensureTap({ owner: 'vectorscope', deviceId });
+      this._heldTap = true;
       this._audioCtx = ctx;
       this._source   = tap;
       this._setup();
@@ -155,6 +156,11 @@ export class VectorscopeInput {
     if (!this._active) return;
     try { this._source?.disconnect(this._splitter); } catch (_) { /* already gone */ }
     this._splitter?.disconnect();
+    // Say so. The tap is shared, and the host only releases the microphone
+    // once every consumer has let go — a detach that told nobody left the
+    // device open for the rest of the session. Only when THIS node took the
+    // tap itself: `connectSource` borrows someone else's and owns nothing.
+    if (this._heldTap) { this._heldTap = false; this.audioHost?.releaseTap('vectorscope'); }
     this._active   = false;
     this._stream   = null;
     this._source   = null;

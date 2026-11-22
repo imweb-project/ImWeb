@@ -23,7 +23,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { TapeView } from '../src/audio/TapeView.js';
+import { TapeView, REGION_KINDS, ZONE_KINDS, dragRegion, zoomSpan } from '../src/audio/TapeView.js';
 import { partitionSpan, zoneSpan, clampToPartition } from '../src/audio/tape-geometry.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -132,7 +132,7 @@ console.log('the tape view draws what it was given');
     .filter((c) => c.op === 'fillRect' && c.a[3] === 100 && !/^#0a0a0b$/.test(c.fill))
     .map((c) => c.fill);
   check('partitions are drawn under zones regardless of list order',
-    order.length === 2 && /0\.10/.test(order[0]) && /0\.18/.test(order[1]),
+    order.length === 2 && /64, 128, 232/.test(order[0]) && /64, 200, 120/.test(order[1]),
     `fills in order: ${order.join(' then ')}`);
 }
 
@@ -192,6 +192,81 @@ console.log('\nthe shared geometry itself');
   check('a clamp never inverts a region',
     clampToPartition(zoneSpan(p, 2, 1), p, 0).end >= clampToPartition(zoneSpan(p, 2, 1), p, 0).start,
     'a start past the seam must collapse to zero width, not to a negative one');
+}
+
+// ── the tape as a playing surface (2026-11) ────────────────────────────────
+//
+// The display was 84px of read-only picture. It is now what LiSa's buffer view
+// was: where zones are seen, zoomed into and moved by hand. Three things can go
+// quietly wrong with that, and each has a check:
+//  - a zone that is not drawn at all (the spectral writer's target was the one
+//    region you could not see — its render landed somewhere invisible);
+//  - a zoom that stretches the envelope it holds instead of asking for a new
+//    one, which shows bigger blocks rather than more detail;
+//  - a drag that inverts a region or walks it off the tape.
+console.log('\nthe tape is a playing surface');
+{
+  check('the spectral writer and the stretch are region kinds',
+    REGION_KINDS.includes('spec') && REGION_KINDS.includes('stretch'));
+  check('every zone kind has its own lane', new Set(ZONE_KINDS).size === ZONE_KINDS.length
+    && ['rec', 'play', 'spec', 'stretch'].every((k) => ZONE_KINDS.includes(k)));
+
+  const ab = readFileSync(resolve(root, 'src/audio/AudioBinding.js'), 'utf8');
+  const zones = /const VIEW_ZONES = Object\.freeze\(\[([\s\S]*?)\]\);/.exec(ab)?.[1] ?? '';
+  check('the binding shows the spectral writer\'s target on the tape', /'aspec', 'spec'/.test(zones), zones.trim());
+  check('and the display redraws when it moves',
+    /_viewParamIds\(\) \{[\s\S]*?VIEW_ZONES[\s\S]*?\$\{prefix\}\.start/.test(ab));
+
+  // Lanes: three zones covering the same span must each be reachable.
+  const el = stubCanvas(400, 200);
+  const v = new TapeView(el);
+  v.setSpan(0, 1);
+  v.setRegions([
+    { kind: 'part', start: 0, end: 0.5, label: 'P0' },
+    { kind: 'rec', start: 0, end: 0.5, id: 'arec' },
+    { kind: 'play', start: 0, end: 0.5, id: 'aplay' },
+    { kind: 'spec', start: 0, end: 0.5, id: 'aspec' },
+  ]);
+  const at = (y) => v.hit(100, y)?.region.id;
+  check('three zones over the same span are three separate handles',
+    at(7) === 'arec' && at(21) === 'aplay' && at(35) === 'aspec', `${at(7)}, ${at(21)}, ${at(35)}`);
+  check('a partition is not a handle', v.hit(100, 150) === null);
+  check('the edges resize and the body moves',
+    v.hit(1, 21)?.mode === 'l' && v.hit(199, 21)?.mode === 'r' && v.hit(100, 21)?.mode === 'move');
+
+  // Zoom asks; it does not stretch.
+  const spans = [];
+  v.onSpanChange = (a, b) => spans.push([a, b]);
+  v.setSpan(0.25, 0.5);
+  check('a zoom is reported, so a new envelope can be asked for', spans.length === 1 && spans[0][0] === 0.25);
+  v.setSpan(0.25, 0.5);
+  check('setting the same span again asks for nothing', spans.length === 1);
+  check('the binding requests only the span on screen',
+    /this\.view\.span;[\s\S]{0,260}requestEnvelope\(s0, s1, this\.view\.columns/.test(ab));
+
+  const z = zoomSpan(0, 1, 0.25, 0.5);
+  check('zooming in keeps the point under the pointer where it is',
+    Math.abs((0.25 - z.start) / (z.end - z.start) - 0.25) < 1e-9, JSON.stringify(z));
+  const out = zoomSpan(0.9, 1, 0.95, 4);
+  check('zooming out near the end slides back inside the tape, same zoom level',
+    out.end <= 1 + 1e-12 && Math.abs((out.end - out.start) - 0.4) < 1e-9, JSON.stringify(out));
+  check('zoom never goes wider than the tape', zoomSpan(0, 1, 0.5, 8).end - zoomSpan(0, 1, 0.5, 8).start === 1);
+
+  const from = { start: 0.2, end: 0.4 };
+  const mv = dragRegion(from, 'move', 0.9);
+  check('a move keeps the length and stops at the end of the tape',
+    Math.abs((mv.end - mv.start) - 0.2) < 1e-9 && Math.abs(mv.end - 1) < 1e-9, JSON.stringify(mv));
+  check('a move stops at the start too', dragRegion(from, 'move', -5).start === 0);
+  const l = dragRegion(from, 'l', 0.9);
+  check('the left edge cannot cross the right one', l.start < l.end && l.end === 0.4, JSON.stringify(l));
+  const r = dragRegion(from, 'r', -0.9);
+  check('the right edge cannot cross the left one', r.end > r.start && r.start === 0.2, JSON.stringify(r));
+
+  // The drag is the inverse of zoneSpan: what the hand sets is what the engine gets.
+  const dragBody = /\n  _dragZone\(prefix, start, end, mode\) \{([\s\S]*?)\n  \}\n/.exec(ab)?.[1] ?? '';
+  check('a drag writes the params and sends nothing itself',
+    /this\.ps\.set\(`\$\{prefix\}\.start`/.test(dragBody) && !/this\.engine\./.test(dragBody),
+    'a second road to the engine would skip the refusals the params go through');
 }
 
 console.log(failures ? `\n${failures} FAILURE(S)\n` : '\nAll tape-view checks passed.\n');

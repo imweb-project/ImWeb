@@ -1225,18 +1225,32 @@ ImWeb</textarea
                 </div>
                 <!-- AUDIO TAB -->
                 <div id="tab-audio" class="tab-content">
-                    <div class="panel-section">
-                        <div class="section-header">Tape</div>
-                        <canvas id="audio-tape-view" class="tape-view"></canvas>
-                    </div>
-                    <div class="panel-section" >
-                        <div class="section-header">Engine</div>
-                        <div id="audio-engine-params"></div>
+                    <!-- The deck: the Tape and the switches that start it,
+                         pinned at the top and never collapsed. NOT a
+                         .panel-section on purpose — every .panel-section is
+                         collapsed at boot except the one carrying
+                         data-default-open, and that attribute also picks the
+                         landing tab, so it cannot be spent here. The Tape is
+                         the playing surface; it must not start folded away. -->
+                    <div id="audio-deck" class="audio-deck">
+                        <div class="audio-deck-head">
+                            <span>Tape</span>
+                            <span id="audio-tape-hint" class="audio-deck-hint">wheel zooms · drag zones · double-click fits</span>
+                            <button id="audio-tape-float" class="audio-deck-btn" title="Open the Tape as a large window">⤢</button>
+                        </div>
+                        <div id="audio-tape-home" class="tape-home">
+                            <canvas id="audio-tape-view" class="tape-view"></canvas>
+                        </div>
+                        <div id="audio-setup-params"></div>
                         <!-- §8.6: the loop is a CONDITION, so it gets its own
                              persistent line rather than sharing the status line,
                              which is a log of the last thing that happened. -->
                         <div id="audio-loop-warning" class="audio-loop-warning hidden"></div>
                         <div id="audio-status" style="padding:4px 6px;opacity:.7;font-size:11px"></div>
+                    </div>
+                    <div class="panel-section" >
+                        <div class="section-header">Engine</div>
+                        <div id="audio-engine-params"></div>
                     </div>
                     <div class="panel-section">
                         <div class="section-header">Partitions</div>
@@ -1254,6 +1268,10 @@ ImWeb</textarea
                     <div class="panel-section">
                         <div class="section-header">Spectral Writer</div>
                         <div id="audio-spec-params"></div>
+                    </div>
+                    <div class="panel-section">
+                        <div class="section-header">Stretch</div>
+                        <div id="audio-stretch-params"></div>
                     </div>
                     <div class="panel-section">
                         <div class="section-header">Corpus</div>

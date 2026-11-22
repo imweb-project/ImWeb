@@ -13,6 +13,7 @@
 
 import {
   captureSnapshot, restoreSnapshot, snapshotToJSON, snapshotFromJSON, CHUNK_SECONDS,
+  normalizeSpan, NORMALIZE_PEAK,
 } from '../src/audio/tape-snapshot.js';
 
 let failures = 0;
@@ -109,6 +110,46 @@ console.log('\na shorter tape drops what no longer fits');
   let threw = null;
   try { restoreSnapshot(snap, dst.write, SR, 10 * SR); } catch (e) { threw = e; }
   check('no write past the end', threw === null, String(threw));
+}
+
+// Normalize (2026-11-22). What can go wrong quietly: a gain per channel (the
+// stereo image collapses toward the centre and still "sounds normalized"),
+// samples outside the selection touched, or silence divided into noise.
+console.log('\nnormalize scales a selection, and only the selection');
+{
+  const t = fakeTape(LEN);
+  const A = 2 * SR, B = 23 * SR;                      // spans three chunks
+  // Loud for the first eight seconds, a quarter of that afterwards — so the
+  // later read chunks hold only quiet material. A gain worked out per chunk
+  // would bring those up to full level too, and a test whose every chunk had
+  // the same peak could not see it (the first version of this one did not).
+  const amp = (i) => (i < A + 8 * SR ? 1 : 0.25);
+  for (let i = A; i < B; i++) { t.l[i] = 0.2 * amp(i) * Math.sin(i * 0.01); t.r[i] = 0.05 * amp(i) * Math.sin(i * 0.013); }
+  t.l[A - 1] = 0.3; t.l[B] = 0.3;                     // neighbours that must not move
+  const res = await normalizeSpan(t.read, t.write, A, B, SR);
+  let pl = 0, pr = 0;
+  for (let i = A; i < B; i++) { pl = Math.max(pl, Math.abs(t.l[i])); pr = Math.max(pr, Math.abs(t.r[i])); }
+  check('the loudest sample lands on the target', res.ok && Math.abs(pl - NORMALIZE_PEAK) < 1e-4, `peak ${pl}`);
+  check('both channels got the SAME gain — the stereo balance is kept',
+    Math.abs(pr / pl - 0.25) < 1e-3, `R/L is ${(pr / pl).toFixed(4)}, was 0.25`);
+  let late = 0;
+  for (let i = A + 12 * SR; i < B; i++) late = Math.max(late, Math.abs(t.l[i]));
+  check('ONE gain for the whole selection — the quiet part stays a quarter of the loud part',
+    Math.abs(late / pl - 0.25) < 1e-3, `quiet/loud is ${(late / pl).toFixed(4)}, was 0.25`);
+  check('the samples either side are untouched',
+    Math.abs(t.l[A - 1] - 0.3) < 1e-7 && Math.abs(t.l[B] - 0.3) < 1e-7);
+  check('it reads in chunks, never the whole span', t.maxRead <= CHUNK_SECONDS * SR, `${t.maxRead}`);
+  const again = await normalizeSpan(t.read, t.write, A, B, SR);
+  check('a second pass changes nothing', again.ok && again.gain === 1);
+
+  const quiet = fakeTape(LEN);
+  const r2 = await normalizeSpan(quiet.read, quiet.write, 0, 5 * SR, SR);
+  check('silence is refused, not amplified', !r2.ok && /silent/.test(r2.reason) && quiet.l.every((v) => v === 0));
+
+  const loud = fakeTape(LEN);
+  for (let i = 0; i < SR; i++) loud.l[i] = 1.5 * Math.sin(i * 0.01);
+  const r3 = await normalizeSpan(loud.read, loud.write, 0, SR, SR);
+  check('an over-full selection is brought DOWN', r3.ok && r3.gain < 1 && Math.max(...loud.l.subarray(0, SR)) <= NORMALIZE_PEAK + 1e-4);
 }
 
 if (failures) { console.error(`\n${failures} tape-snapshot check(s) FAILED`); process.exit(1); }

@@ -156,7 +156,7 @@ check('generatePreset requires ps', /generatePreset needs the ParameterSystem/.t
   check('the preset budget is well clear of the 2000 that failed', budget >= 8000);
 }
 
-const EXPECTED_CHECKS = 79;
+const EXPECTED_CHECKS = 80;   // +1: the astretch prefix (PaulStretch), 2026-11-21
 if (ran !== EXPECTED_CHECKS) {
   console.error(`FAIL audit-ai-param-reference: ran ${ran} checks, expected ${EXPECTED_CHECKS} — a section was skipped or added without updating the count.`);
   process.exit(1);

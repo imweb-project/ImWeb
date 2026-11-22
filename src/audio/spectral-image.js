@@ -25,6 +25,8 @@
  * SELECT parameter stores, so inserting in the middle re-tunes every saved
  * project (the SOURCE_DEFS rule, one subsystem over).
  */
+const TRITAVE = tritave();
+
 export const SCALES = Object.freeze([
   { name: 'Chromatic',      kind: 'steps',    steps: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] },
   { name: 'Major',          kind: 'steps',    steps: [0, 2, 4, 5, 7, 9, 11] },
@@ -39,7 +41,66 @@ export const SCALES = Object.freeze([
   // pitch here, and that is the whole character of it: a vertical brush stroke
   // paints a harmonic spectrum, so drawing produces timbre rather than chords.
   { name: 'Harmonic series', kind: 'harmonic', steps: null },
+
+  // ── appended 2026-11 — everything below is NEW indices, nothing above moved ──
+  // The modes that were missing.
+  { name: 'Phrygian',       kind: 'steps',    steps: [0, 1, 3, 5, 7, 8, 10] },
+  { name: 'Lydian',         kind: 'steps',    steps: [0, 2, 4, 6, 7, 9, 11] },
+  { name: 'Mixolydian',     kind: 'steps',    steps: [0, 2, 4, 5, 7, 9, 10] },
+  { name: 'Locrian',        kind: 'steps',    steps: [0, 1, 3, 5, 6, 8, 10] },
+  { name: 'Melodic minor',  kind: 'steps',    steps: [0, 2, 3, 5, 7, 9, 11] },
+  // Other twelve-tone scales.
+  { name: 'Blues',          kind: 'steps',    steps: [0, 3, 5, 6, 7, 10] },
+  { name: 'Hungarian minor', kind: 'steps',   steps: [0, 2, 3, 6, 7, 8, 11] },
+  { name: 'Double harmonic', kind: 'steps',   steps: [0, 1, 4, 5, 7, 8, 11] },
+  { name: 'Phrygian dominant', kind: 'steps', steps: [0, 1, 4, 5, 7, 8, 10] },
+  { name: 'Hirajoshi',      kind: 'steps',    steps: [0, 2, 3, 7, 8] },
+  { name: 'In-sen',         kind: 'steps',    steps: [0, 1, 5, 7, 10] },
+  { name: 'Messiaen 3',     kind: 'steps',    steps: [0, 2, 3, 4, 6, 7, 8, 10, 11] },
+  // Bare interval stacks: a picture becomes organ-like columns of one interval.
+  { name: 'Fifths',         kind: 'steps',    steps: [0, 7] },
+  { name: 'Octaves',        kind: 'steps',    steps: [0] },
+  // Microtonal. `steps` has always been in semitones and has never had to be
+  // whole ones — these need no new mechanism, only fractions.
+  { name: 'Quarter-tone',   kind: 'steps',    steps: equal(24, 12) },
+  { name: '19-tone equal',  kind: 'steps',    steps: equal(19, 12) },
+  { name: '31-tone equal',  kind: 'steps',    steps: equal(31, 12) },
+  { name: 'Slendro',        kind: 'steps',    steps: equal(5, 12) },
+  // An approximation, and named for what it evokes: a real pelog differs from
+  // one gamelan to the next and is not a set of semitone offsets at all.
+  { name: 'Pelog',          kind: 'steps',    steps: [0, 1.2, 2.7, 5.4, 6.7, 7.9, 10.4] },
+  // Just intonation: whole-number ratios, so chords painted in it do not beat.
+  { name: 'Just major',     kind: 'steps',    steps: ratios([1, 9 / 8, 5 / 4, 4 / 3, 3 / 2, 5 / 3, 15 / 8]) },
+  { name: '7-limit just',   kind: 'steps',    steps: ratios([1, 8 / 7, 7 / 6, 5 / 4, 4 / 3, 7 / 5, 3 / 2, 5 / 3, 7 / 4]) },
+  // Thirteen equal steps of the 3:1 "tritave" — the one scale here that does
+  // not repeat at the octave, which is what `period` exists for.
+  { name: 'Bohlen-Pierce',  kind: 'steps',    steps: equal(13, TRITAVE), period: TRITAVE },
+  // Series that are not step patterns at all, like the harmonic one above.
+  // Undertones: the harmonic series upside down, spanning the same range.
+  { name: 'Subharmonic series', kind: 'subharmonic', steps: null },
+  // Odd harmonics only — the hollow, clarinet-like half of the spectrum.
+  { name: 'Odd harmonics',  kind: 'odd',      steps: null },
+  // Harmonics pulled progressively sharp, as a stiff string or a bell does.
+  { name: 'Stretched harmonics', kind: 'stretched', steps: null },
+  // Evenly spaced as the EAR hears pitch (the mel scale), root to ~12 kHz:
+  // the spacing a spectrogram of real sound wants, where the musical scales
+  // above deliberately throw most of the spectrum away.
+  { name: 'Mel (by ear)',   kind: 'mel',      steps: null },
 ]);
+
+/** Semitones in a 3:1 tritave. */
+function tritave() { return 12 * Math.log2(3); }
+/** `n` equal divisions of `period` semitones. */
+function equal(n, period) {
+  return Array.from({ length: n }, (_, i) => (i * period) / n);
+}
+/** Frequency ratios → semitone offsets. */
+function ratios(list) { return list.map((r) => 12 * Math.log2(r)); }
+
+/** Inharmonicity of the stretched series — audible by the 8th partial, a bell by the 30th. */
+const STRETCH_B = 0.0008;
+const hzToMel = (hz) => 2595 * Math.log10(1 + hz / 700);
+const melToHz = (mel) => 700 * (Math.pow(10, mel / 2595) - 1);
 
 export const SCALE_NAMES = Object.freeze(SCALES.map((s) => s.name));
 
@@ -62,9 +123,24 @@ export function buildPitches(scaleIndex, rootHz, rows, sampleRate) {
     let hz;
     if (scale.kind === 'harmonic') {
       hz = rootHz * (r + 1);
+    } else if (scale.kind === 'subharmonic') {
+      // Undertones of `rootHz × rows`, listed upward: the lowest row is the
+      // root and the top row is the generator they are all divisions of.
+      hz = (rootHz * rows) / (rows - r);
+    } else if (scale.kind === 'odd') {
+      hz = rootHz * (2 * r + 1);
+    } else if (scale.kind === 'stretched') {
+      const k = r + 1;
+      // Divided through by the first partial's own stretch, so that Root is
+      // still the pitch of the bottom row and not a few cents above it.
+      hz = rootHz * k * Math.sqrt((1 + STRETCH_B * k * k) / (1 + STRETCH_B));
+    } else if (scale.kind === 'mel') {
+      const lo = hzToMel(rootHz);
+      const hi = hzToMel(Math.max(rootHz, Math.min(12000, nyquist * 0.9)));
+      hz = melToHz(rows > 1 ? lo + ((hi - lo) * r) / (rows - 1) : lo);
     } else {
       const n = scale.steps.length;
-      const semitones = scale.steps[r % n] + 12 * Math.floor(r / n);
+      const semitones = scale.steps[r % n] + (scale.period ?? 12) * Math.floor(r / n);
       hz = rootHz * Math.pow(2, semitones / 12);
     }
     // Strictly below Nyquist, not at it: a partial exactly at Nyquist is
@@ -145,6 +221,68 @@ export function boxAverage(src, width, height, rows, frames, weight = null) {
         }
       }
       out[f * rows + r] = n > 0 ? sum / n : 0;
+    }
+  }
+  return out;
+}
+
+/** How many octaves of speed Tilt spans at ±1: 2^3 = eight times. */
+export const TILT_OCTAVES = 3;
+
+/**
+ * Tilt: give each ROW of a frame-major image its own speed along time.
+ *
+ * The engine's time axis is one playhead for every row — at a given sample all
+ * oscillators read the same column. Tilt is what happens when they do not. At
+ * `tilt` > 0 the HIGHEST row is the slow one: it plays the picture once across
+ * the whole zone, exactly as with no Tilt. Every row below it runs faster, by
+ * pitch height, and REPEATS the picture to fill the time — the bottom row up
+ * to 2^3 = eight times at a tilt of 1. `tilt` < 0 is the mirror: the low rows
+ * play once and the high rows repeat. The result is a canon, the same picture
+ * at every speed between one and eight at once, and relative to its neighbours
+ * the slow end is stretched.
+ *
+ * **Repeat, not truncate.** The first version stretched the slow rows from the
+ * left edge and let the zone run out on them, so at a tilt of 1 the top row got
+ * through an eighth of the picture and most of the picture was never played —
+ * with a subject in the middle of the frame, the upper two-thirds of the rows
+ * were silent and what remained piled up at the right-hand end of the zone
+ * (the owner's report, 2026-11-22). Nothing is dropped now: every row plays
+ * the whole picture at least once and the zone is full from start to end.
+ *
+ * Done here, to the image, so it costs no engine or protocol change: the
+ * engine still crossfades between neighbouring columns, and is simply handed
+ * columns in which each row has already been resampled — averaged over the
+ * source columns each output column covers, wrapping from the last to the first.
+ *
+ * `tilt === 0` returns the SAME array, untouched — not a copy that happens to
+ * be equal — so a project that never touches Tilt renders bit-for-bit as before.
+ * Used for the pan image too: a position must stay with the magnitude it places.
+ */
+export function tiltImage(img, rows, frames, tilt) {
+  if (!tilt || !img || rows < 1 || frames < 2) return img;
+  const out = new Float32Array(img.length);
+  const amt = Math.min(Math.abs(tilt), 1) * TILT_OCTAVES;
+  for (let r = 0; r < rows; r++) {
+    const h = rows > 1 ? r / (rows - 1) : 0;           // 0 bottom … 1 top
+    // How many times this row plays the picture. 1 at the slow end.
+    const speed = Math.pow(2, amt * (tilt > 0 ? 1 - h : h));
+    // One output column on this row covers `speed` source columns, so it is
+    // their AVERAGE, not a sample of one of them — the same reason `boxAverage`
+    // exists. Point-sampled, a row at eight repeats read every eighth column
+    // and stepped clean over a thin bright stroke, which then sounded on some
+    // rows and not on others depending on where the steps happened to fall.
+    const n = Math.ceil(speed - 1e-9);
+    for (let f = 0; f < frames; f++) {
+      let sum = 0;
+      for (let k = 0; k < n; k++) {
+        const pos = (f * speed + (k * speed) / n) % frames;
+        const c = pos | 0;
+        const c1 = c + 1 < frames ? c + 1 : 0;         // wraps: the picture repeats
+        const a = img[c * rows + r];
+        sum += a + (img[c1 * rows + r] - a) * (pos - c);
+      }
+      out[f * rows + r] = sum / n;
     }
   }
   return out;

@@ -141,8 +141,17 @@ export class AudioEngine {
    * therefore a fresh, empty tape — the same thing Audio Off has always meant.
    */
   async start() {
+    // ONE start in flight. `node` is only assigned two awaits in (resume, then
+    // addModule), so a second call arriving in that window used to sail past
+    // the check below and build a second node — and in dev a second
+    // `registerProcessor`, which throws.
+    if (this._starting) return this._starting;
     if (this.node) return this._ready;
+    this._starting = this._start().finally(() => { this._starting = null; });
+    return this._starting;
+  }
 
+  async _start() {
     this.context();
     if (this.ctx.state === 'suspended') await this.ctx.resume();
     // Cache-bust the processor in dev. `addModule()` fetches a stable URL and
@@ -202,14 +211,25 @@ export class AudioEngine {
     this._mic?.connect(this.node);
     this._routeTap();
 
+    let timer;
     this._ready = new Promise((resolve, reject) => {
-      this._onReady = resolve;
+      this._onReady = (v) => { clearTimeout(timer); resolve(v); };
       // A handshake that never answers is a hang, and a hang during load reads
       // as "the app is broken" rather than "the engine refused".
-      setTimeout(() => reject(new Error('engine did not answer /engine/hello')), 5000);
+      timer = setTimeout(() => reject(new Error('engine did not answer /engine/hello')), 5000);
     });
     this._send('/engine/hello', PROTO_VERSION);
-    return this._ready;
+    try {
+      return await this._ready;
+    } catch (e) {
+      // Take the half-built node down with the failure. It used to stay: the
+      // binding never reached `running`, so its `stop()` returned early and
+      // never called `close()`, and every later `start()` found `this.node`
+      // and handed back the SAME rejected promise — Audio On was dead until
+      // the page was reloaded.
+      await this.close();
+      throw e;
+    }
   }
 
   /**
@@ -280,7 +300,29 @@ export class AudioEngine {
    */
   async openMic(constraints = { echoCancellation: false, noiseSuppression: false, autoGainControl: false }) {
     if (this._mic) return this._micStream;
+    // One open in flight: the check above is before an await, so two callers
+    // (the tap and the Mic toggle) could both pass it, and the second stream
+    // then overwrote the first, whose tracks were never stopped — a device
+    // light that stays on with nothing holding it.
+    if (this._micOpening) return this._micOpening;
+    const opening = this._openMic(constraints).finally(() => {
+      if (this._micOpening === opening) this._micOpening = null;
+    });
+    this._micOpening = opening;
+    return opening;
+  }
+
+  async _openMic(constraints) {
+    const gen = this._micGen = (this._micGen ?? 0) + 1;
     const stream = await navigator.mediaDevices.getUserMedia({ audio: constraints });
+    // Closed while it was opening (Audio Off during the permission prompt, or
+    // a device change): this stream belongs to nobody. Stop it here, or it is
+    // a device held open by nothing — `closeMic` could not have stopped a
+    // stream that did not exist yet.
+    if (gen !== this._micGen) {
+      stream.getTracks().forEach((t) => t.stop());
+      return null;
+    }
     this._micStream = stream;
     // `context()`, not `this.ctx`: the engine need not be running. A consumer
     // that only wants to ANALYSE the mic (the sound-reactive controllers) has
@@ -293,6 +335,8 @@ export class AudioEngine {
   }
 
   closeMic() {
+    this._micGen = (this._micGen ?? 0) + 1;   // cancels an open still in flight
+    this._micOpening = null;
     this._mic?.disconnect();
     this._micStream?.getTracks().forEach((t) => t.stop());
     this._mic = this._micStream = null;
@@ -426,6 +470,19 @@ export class AudioEngine {
   }
 
   cancelJob(jobId) { this._send(`/job/${jobId}/cancel`); }
+
+  /**
+   * Stretch one span of tape into another (PaulStretch). All absolute samples;
+   * `window` a power of two. Paced like a render and settled the same way:
+   * `done` resolves `{ ok }` or `{ ok: false, code, message }`.
+   */
+  stretch(srcStart, srcLen, dstStart, dstLen, window, amount, level) {
+    const jobId = this._nextJobId++;
+    const done = new Promise((resolve) => this._jobs.set(jobId, resolve));
+    this._send('/stretch/render',
+      srcStart | 0, srcLen | 0, dstStart | 0, dstLen | 0, window | 0, amount, level, jobId);
+    return { jobId, done };
+  }
 
   // ── the corpus index (§4.6) ───────────────────────────────────────────────
 

@@ -1638,6 +1638,50 @@ async function main() {
     // needs a running engine.
     const tapeEl = document.getElementById("audio-tape-view");
     if (tapeEl) audio.attachView(tapeEl);
+    // The Tape as a large window. The SAME canvas is moved into it — never a
+    // second view kept in step (LEARNED 2026-09-22, "one thing shown two
+    // ways"). The binding's ResizeObserver is on the canvas itself, so the
+    // move alone makes it ask the engine for an envelope at the new width.
+    {
+      const home = document.getElementById("audio-tape-home");
+      const btn = document.getElementById("audio-tape-float");
+      if (tapeEl && home && btn) {
+        const box = document.createElement("div");
+        box.className = "tape-float";
+        box.hidden = true;
+        const head = document.createElement("div");
+        head.className = "tape-float-head";
+        const title = document.createElement("span");
+        title.textContent = "Tape";
+        const close = document.createElement("button");
+        close.className = "audio-deck-btn";
+        close.textContent = "✕";
+        close.title = "Put the Tape back in the Audio tab";
+        head.append(title, close);
+        box.appendChild(head);
+        document.body.appendChild(box);
+        const win = makeFloating(box, head, "imweb.tapeFloat", {
+          isHidden: () => box.hidden,
+          defaultPos: (w, h, vw, vh) => ({ x: (vw - w) / 2, y: Math.max(40, vh - h - 60) }),
+        });
+        const setFloating = (on) => {
+          box.hidden = !on;
+          btn.classList.toggle("active", on);
+          home.classList.toggle("away", on);
+          if (on) {
+            box.appendChild(tapeEl);
+            home.textContent = "Tape is in its own window";
+            win.place();
+          } else {
+            home.textContent = "";
+            home.appendChild(tapeEl);
+          }
+          try { localStorage.setItem("imweb.tapeFloat.open", on ? "1" : "0"); } catch { /* private mode */ }
+        };
+        btn.addEventListener("click", () => setFloating(box.hidden));
+        close.addEventListener("click", () => setFloating(false));
+      }
+    }
     // The corpus pad (§4.6). Attached before the engine starts too — the axes
     // and the cursor are meaningful with an empty cloud, and the pad says so.
     const corpusEl = document.getElementById("audio-corpus-view");
@@ -5265,8 +5309,87 @@ async function main() {
   btnAudioIn.textContent = "▶ Audio";
   btnAudioIn.title = "Enable audio input / vectorscope";
 
-  const audioDeviceSel = _ioSel();
-  audioDeviceSel.innerHTML = '<option value="">—</option>';
+  // ── The audio input device: ONE choice, shown in two places ──
+  // Sources > Sound and the Audio tab's deck both show this list. It used to
+  // exist only here, so starting sound meant choosing the input in Sources
+  // and then crossing to Audio to switch the engine on. Two <select>s over
+  // one value (`_audioInputId`), never two lists kept in step by hand. The
+  // choice is remembered per origin — a device id means nothing on another
+  // machine, so it is localStorage and deliberately not a parameter.
+  const AUDIO_INPUT_KEY = "imweb.audioInput";
+  const _audioInputSels = [];
+  let _audioInputId = "";
+  try { _audioInputId = localStorage.getItem(AUDIO_INPUT_KEY) || ""; } catch { /* private mode */ }
+  let _audioInputList = [];
+  const _fillAudioInputs = () => {
+    for (const sel of _audioInputSels) {
+      sel.innerHTML = "";
+      const def = document.createElement("option");
+      def.value = ""; def.textContent = "Default input";
+      sel.appendChild(def);
+      _audioInputList.forEach((d, i) => {
+        // Before permission is granted the browser lists devices with empty
+        // ids and labels; an empty id cannot be chosen, so it is not offered.
+        if (!d.deviceId) return;
+        const o = document.createElement("option");
+        o.value = d.deviceId;
+        o.textContent = d.label || `Input ${i + 1}`;
+        sel.appendChild(o);
+      });
+      sel.value = _audioInputId;
+      // A remembered device that is not in the list right now (unplugged, or
+      // ids not revealed yet) still reads as itself rather than as Default.
+      if (sel.value !== _audioInputId) {
+        const o = document.createElement("option");
+        o.value = _audioInputId; o.textContent = "Saved input";
+        sel.appendChild(o);
+        sel.value = _audioInputId;
+      }
+    }
+  };
+  const refreshAudioInputs = () => {
+    // Optional-chained: navigator.mediaDevices is undefined in insecure
+    // contexts (iOS Safari over http:// LAN).
+    navigator.mediaDevices?.enumerateDevices?.().then((devices) => {
+      _audioInputList = devices.filter((d) => d.kind === "audioinput");
+      _fillAudioInputs();
+    }).catch(() => {});
+  };
+  const setAudioInput = (id, { apply = true } = {}) => {
+    _audioInputId = id || "";
+    try {
+      if (_audioInputId) localStorage.setItem(AUDIO_INPUT_KEY, _audioInputId);
+      else localStorage.removeItem(AUDIO_INPUT_KEY);
+    } catch { /* private mode */ }
+    for (const sel of _audioInputSels) sel.value = _audioInputId;
+    // An open mic moves to the new device at once; a closed one remembers it.
+    if (apply) audio.setInputDevice(_audioInputId);
+  };
+  const makeAudioInputSel = () => {
+    const sel = _ioSel();
+    sel.title = "Which input the microphone opens on — remembered for next time";
+    sel.addEventListener("change", () => setAudioInput(sel.value));
+    _audioInputSels.push(sel);
+    return sel;
+  };
+  // The remembered device, told to the binding before anything can open it.
+  audio.setInputDevice(_audioInputId);
+  // Labels and real ids only exist once permission does, so list again then.
+  audio.onInputOpen = refreshAudioInputs;
+  // The binding fell back to the default because the saved device is gone.
+  audio.onInputLost = () => setAudioInput("", { apply: false });
+  navigator.mediaDevices?.addEventListener?.("devicechange", refreshAudioInputs);
+
+  const audioDeviceSel = makeAudioInputSel();
+  // The Audio tab's copy, directly under Mic in the deck.
+  {
+    const micRow = document.querySelector('#audio-setup-params [data-param-id="audio.mic"]');
+    const row = _ioRow("Input", makeAudioInputSel());
+    row.id = "audio-input-row";
+    if (micRow) micRow.after(row);
+    else document.getElementById("audio-setup-params")?.appendChild(row);
+  }
+  _fillAudioInputs();
   // Sound (source 12) has no parameters — soundTexture is a 1x1 DataTexture
   // driven straight from the analyser — so the Audio In device row is the
   // panel's real content. Falls back into the I/O block if the container is
@@ -5321,17 +5444,9 @@ async function main() {
 
   navigator.mediaDevices?.enumerateDevices?.().then(devices => {
     const cams = devices.filter(d => d.kind === "videoinput");
-    const mics = devices.filter(d => d.kind === "audioinput");
     refreshCameraDevices(cams);
-    if (mics.length) {
-      audioDeviceSel.innerHTML = "";
-      mics.forEach((d, i) => {
-        const o = document.createElement("option");
-        o.value = d.deviceId;
-        o.textContent = d.label || `Mic ${i + 1}`;
-        audioDeviceSel.appendChild(o);
-      });
-    }
+    _audioInputList = devices.filter(d => d.kind === "audioinput");
+    _fillAudioInputs();
   }).catch(() => {});
 
   // Auto-connect vectorscope when ControllerManager sound is already active
@@ -5357,35 +5472,16 @@ async function main() {
       btnAudioIn.classList.remove("active");
       return;
     }
-    const deviceId = audioDeviceSel.options[audioDeviceSel.selectedIndex]?.value || undefined;
-    const ok = await vectorscope.initMic(deviceId);
+    // The device is the shared choice above; the binding already holds it.
+    const ok = await vectorscope.initMic(_audioInputId || undefined);
     if (ok) {
-      // Re-enumerate with full labels now that permission is granted
-      // (optional-chained — mediaDevices is undefined in insecure contexts)
-      navigator.mediaDevices?.enumerateDevices?.().then(devices => {
-        const mics = devices.filter(d => d.kind === "audioinput");
-        if (!mics.length) return;
-        const prev = audioDeviceSel.value;
-        audioDeviceSel.innerHTML = "";
-        mics.forEach((d, i) => {
-          const o = document.createElement("option");
-          o.value = d.deviceId;
-          o.textContent = d.label || `Mic ${i + 1}`;
-          audioDeviceSel.appendChild(o);
-        });
-        if (prev) audioDeviceSel.value = prev;
-      }).catch(() => {});
       btnAudioIn.textContent = "■ Audio";
       btnAudioIn.classList.add("active");
     }
   });
-
-  // Device switch while audio is active
-  audioDeviceSel.addEventListener("change", async () => {
-    if (!btnAudioIn.classList.contains("active")) return;
-    const deviceId = audioDeviceSel.value || undefined;
-    await vectorscope.initMic(deviceId); // stop() + restart in new initMic
-  });
+  // No device-change listener here any more: `setAudioInput` reopens the one
+  // shared microphone, and the tap this vectorscope hangs off is the same node
+  // before and after, so there is nothing to re-initialise.
 
   // ── Display resolution ──
   // ONE list, read by both selects below. There were two hand-copied literals

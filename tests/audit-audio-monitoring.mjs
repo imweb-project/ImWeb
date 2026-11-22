@@ -249,8 +249,24 @@ console.log('\nthe default assumes the loop is closed');
     + 'that matters on the setup where it matters');
   // Same principle as `audio.tapSrc` defaulting to mic-only: the safe state must
   // require no selection from the performer.
-  check('and the mic is off by default, so nothing is live until asked for',
-    ps.get('audio.mic').value === 0);
+  // CHANGED 2026-11-21, by the owner's decision: starting sound took three
+  // switches in two tabs, and Audio On is now the one switch. The invariant
+  // this check guards is unchanged — NOTHING IS LIVE UNTIL ASKED FOR — but the
+  // ask is `audio.enable`, not the Mic toggle. Mic is ARMED by default and
+  // opens only when the engine is started by hand. So the pin is now on both
+  // halves: the engine is off by default, and an armed mic opens no device on
+  // its own (its handler exists only inside `_subscribe`, i.e. while running).
+  check('the engine is off by default, so nothing is live until asked for',
+    ps.get('audio.enable').value === 0);
+  check('the mic is armed by default — Audio On is the one switch',
+    ps.get('audio.mic').value === 1);
+  {
+    const ab = read('src/audio/AudioBinding.js');
+    const opens = [...ab.matchAll(/this\._openArmedMic\(\)/g)].length;
+    check('an armed mic is opened from exactly two places: engine start and the Mic toggle',
+      opens === 2 && /async _start\(\)[\s\S]*?this\._openArmedMic\(\)/.test(ab),
+      `${opens} call sites — a third would be a way to open the device without Audio On`);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

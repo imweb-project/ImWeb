@@ -489,12 +489,17 @@ export function buildMappingPanels(ps, contextMenu) {
     // 'global' param through pick() reports it as "placed but not registered"
     // — and routing it through a TEMPLATE literal would hide it from that
     // audit entirely, which is worse than failing.
+    // The deck's switches: what it takes to get sound in. Pinned under the
+    // Tape (index.html #audio-deck), so starting never means opening a section.
+    // main.js adds the input-device row after Mic — a device list is not a
+    // parameter. Monitoring sits directly under them: Mic and Monitoring are
+    // the two halves of §8.6's loop, and the answer to "is this dangerous" is
+    // only meaningful as a pair. All 'global', so listed by id, not picked.
+    'audio-setup-params': [
+      ps.get('audio.enable'), ps.get('audio.mic'), ps.get('audio.monitor'),
+    ].filter(Boolean),
     'audio-engine-params': [
-      ps.get('audio.enable'), ps.get('audio.tapeSec'), ps.get('audio.mic'),
-      // Monitoring sits directly under Mic: they are the two halves of §8.6's
-      // loop, and the answer to "is this dangerous" is only meaningful as a
-      // pair. Group 'global', so it is listed explicitly rather than picked.
-      ps.get('audio.monitor'),
+      ps.get('audio.tapeSec'),
       ...pick('audio', ['tapSrc', 'glide', 'outGain', 'limitThresh', 'limitRel']),
     ].filter(Boolean),
     'audio-partition-params': [0, 1, 2, 3].flatMap(i => [
@@ -508,7 +513,7 @@ export function buildMappingPanels(ps, contextMenu) {
     // ...plus cueSlot/cueStore, appended by id for the same stated reason the
     // decks' are: they are group 'global', so pick() cannot reach them.
     'audio-play-params': [...pick('aplay', ['part', 'start', 'len', 'pos', 'rate', 'level', 'unsafe', 'on']),
-      ps.get('aplay.cueSlot'), ps.get('aplay.cueStore')].filter(Boolean),
+      ps.get('aplay.normalize'), ps.get('aplay.cueSlot'), ps.get('aplay.cueStore')].filter(Boolean),
     // Signal order, not registration order: source → its own controls → filter
     // → saturator → level, so the row list reads as the chain it is.
     // The spectral writer (§4.5). Destination first, then the musical decision
@@ -521,7 +526,7 @@ export function buildMappingPanels(ps, contextMenu) {
       // picture is read", and pan is the one that reads a channel the others
       // throw away. Before the verb, because it changes what Render produces.
       ...pick('aspec', ['part', 'start', 'len', 'unsafe', 'scale', 'root', 'rows',
-        'frames', 'gamma', 'floor', 'pan', 'panWidth', 'level']),
+        'frames', 'slow', 'tilt', 'gamma', 'floor', 'pan', 'panWidth', 'level']),
       ps.get('aspec.render'), ps.get('aspec.cancel'),
     ].filter(Boolean),
     // The corpus (§4.6). Axes first — they are what the pad above means — then
@@ -532,6 +537,12 @@ export function buildMappingPanels(ps, contextMenu) {
       ...pick('acorp', ['xAxis', 'yAxis', 'x', 'y']),
       ps.get('acorp.hop'), ps.get('acorp.window'),
       ps.get('acorp.analyse'), ps.get('acorp.cancel'),
+    ].filter(Boolean),
+    // The stretch: where it lands, how much, how grainy, then the verb. Its
+    // source is the Playback zone, so there are no source controls here.
+    'audio-stretch-params': [
+      ...pick('astretch', ['part', 'start', 'len', 'unsafe', 'amount', 'window', 'level']),
+      ps.get('astretch.render'), ps.get('astretch.cancel'),
     ].filter(Boolean),
     // `pos` sits next to `part`: it is a POSITION within that partition, and it
     // is the control an LFO gets attached to for time stretch.
