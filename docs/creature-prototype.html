@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>ImWeb creature prototype</title>
+<style>
+:root{--bg:#f4f3ef;--panel:#e9e7e0;--text:#2c2c2a;--muted:#6b6a65;--accent:#185FA5;--accentbg:#E6F1FB}
+@media (prefers-color-scheme:dark){:root{--bg:#1a1a19;--panel:#262624;--text:#ecebe6;--muted:#a3a29c;--accent:#85B7EB;--accentbg:#0C447C}}
+body{margin:0;padding:24px;background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;max-width:900px}
+button{background:transparent;color:var(--text);border:1px solid var(--muted);border-radius:8px;padding:6px 12px;cursor:pointer}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.on{background:var(--accentbg)!important;color:var(--accent)!important;border-color:var(--accent)!important}
+.r{display:grid;grid-template-columns:110px minmax(0,1fr) 40px;gap:10px;align-items:center;margin:6px 0}
+.l{font-size:13px;color:var(--muted)}
+#c{width:100%;height:560px;display:block;border-radius:12px;background:var(--panel);cursor:grab;touch-action:none}
+code{font-size:12px;color:var(--muted)}
+</style></head><body>
+<div class="row" id="topo" style="margin:0 0 10px"></div>
+<canvas id="c"></canvas>
+<div class="row" style="justify-content:space-between;margin:10px 0">
+<code>bone i: pitch, yaw += A·sin(2π·h·t/T − k·i), integer h ⇒ seamless loop</code><span class="l" id="loop"></span></div>
+<div class="r"><span class="l">Bones</span><input type="range" id="bones" min="6" max="24" step="1" value="14"><span class="l" id="bones_o"></span></div>
+<div class="r"><span class="l">Amplitude A</span><input type="range" id="amp" min="0" max="1" step="0.05" value="0.55"><span class="l" id="amp_o"></span></div>
+<div class="r"><span class="l">Phase lag k</span><input type="range" id="k" min="0" max="1.2" step="0.05" value="0.45"><span class="l" id="k_o"></span></div>
+<div class="r"><span class="l">Harmonic h</span><input type="range" id="h" min="1" max="4" step="1" value="1"><span class="l" id="h_o"></span></div>
+<div class="r"><span class="l">Arms</span><input type="range" id="arms" min="3" max="9" step="1" value="5"><span class="l" id="arms_o"></span></div>
+<div class="row" style="margin-top:6px"><label class="l"><input type="checkbox" id="sk"> Show skeleton</label><span class="l">Drag to orbit</span></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const TAU=Math.PI*2,P={},T=4,RS=14,V3=THREE.Vector3;
+['bones','amp','k','h','arms'].forEach(id=>{const el=document.getElementById(id),o=document.getElementById(id+'_o');const f=()=>{P[id]=+el.value;o.textContent=Number.isInteger(P[id])?P[id]:P[id].toFixed(2);};el.oninput=f;f();});
+const topos={starfish:'Starfish',jelly:'Jellyfish',tentacles:'Tentacles',ring:'Ring'};let topo='jelly';
+const te=document.getElementById('topo');function ui(){te.innerHTML='';Object.keys(topos).forEach(k=>{const b=document.createElement('button');b.textContent=topos[k];if(k===topo)b.className='on';b.onclick=()=>{topo=k;ui();};te.appendChild(b);});}ui();
+const cv=document.getElementById('c');const ren=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true});ren.setPixelRatio(Math.min(2,window.devicePixelRatio||1));ren.setClearColor(0,0);
+const scene=new THREE.Scene(),cam=new THREE.PerspectiveCamera(35,1,0.1,50);cam.position.set(0,1.2,6.4);cam.lookAt(0,-0.1,0);
+scene.add(new THREE.HemisphereLight(0xfff1e0,0x2a3f5f,0.85));const dl=new THREE.DirectionalLight(0xffffff,0.95);dl.position.set(3,5,4);scene.add(dl);const d2=new THREE.DirectionalLight(0x88ccff,0.4);d2.position.set(-4,-2,-3);scene.add(d2);
+const skin=new THREE.MeshPhysicalMaterial({color:0xd8866a,roughness:0.38,clearcoat:0.7,clearcoatRoughness:0.25,side:THREE.DoubleSide});
+const bellMat=new THREE.MeshPhysicalMaterial({color:0x9fd6cb,roughness:0.25,clearcoat:1,transparent:true,opacity:0.78,side:THREE.DoubleSide});
+const lineMat=new THREE.LineBasicMaterial({color:0x1D9E75}),ptMat=new THREE.PointsMaterial({color:0x1D9E75,size:0.07});
+const grp=new THREE.Group();scene.add(grp);let limbs=[],body=null,key='';
+function makeLimb(nj,closed){const M=closed?140:nj*4+1,pos=new Float32Array(M*(RS+1)*3),g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(pos,3));const idx=[];
+for(let i=0;i<M-1;i++)for(let j=0;j<RS;j++){const a=i*(RS+1)+j,b=a+1,c=a+RS+1,d=c+1;idx.push(a,c,b,b,c,d);}g.setIndex(idx);const mesh=new THREE.Mesh(g,skin);grp.add(mesh);
+const lp=new Float32Array(nj*3),lg=new THREE.BufferGeometry();lg.setAttribute('position',new THREE.BufferAttribute(lp,3));const line=closed?new THREE.LineLoop(lg,lineMat):new THREE.Line(lg,lineMat),pts=new THREE.Points(lg,ptMat);grp.add(line);grp.add(pts);
+return{M,pos,g,mesh,lp,lg,line,pts,closed};}
+function updLimb(L,joints,r0,r1){const curve=new THREE.CatmullRomCurve3(joints,L.closed),Pp=curve.getPoints(L.M-1),M=L.M;
+joints.forEach((j,i)=>{L.lp[i*3]=j.x;L.lp[i*3+1]=j.y;L.lp[i*3+2]=j.z;});L.lg.attributes.position.needsUpdate=true;L.lg.computeBoundingSphere();
+const show=document.getElementById('sk').checked;L.line.visible=show;L.pts.visible=show;
+let N=null,k=0;for(let i=0;i<M;i++){const a=Pp[Math.max(0,i-1)],b=Pp[Math.min(M-1,i+1)];let Tg=new V3().subVectors(b,a);if(L.closed&&(i===0||i===M-1))Tg.subVectors(Pp[1],Pp[M-2]);Tg.normalize();
+if(L.closed){N=new V3(0,1,0).addScaledVector(Tg,-Tg.y).normalize();}else if(!N){const ref=Math.abs(Tg.y)<0.9?new V3(0,1,0):new V3(1,0,0);N=ref.addScaledVector(Tg,-Tg.dot(ref)).normalize();}else{N.addScaledVector(Tg,-Tg.dot(N)).normalize();}
+const B=new V3().crossVectors(Tg,N),u=i/(M-1),r=L.closed?r0:r0*(1-0.9*u)+r1*u;
+for(let j=0;j<=RS;j++){const an=TAU*j/RS,c=Math.cos(an)*r,s=Math.sin(an)*r;L.pos[k++]=Pp[i].x+N.x*c+B.x*s;L.pos[k++]=Pp[i].y+N.y*c+B.y*s;L.pos[k++]=Pp[i].z+N.z*c+B.z*s;}}
+L.g.attributes.position.needsUpdate=true;L.g.computeVertexNormals();L.g.computeBoundingSphere();}
+function chain(o,d0,ref,n,total,ph){const a1=new V3().crossVectors(d0,ref).normalize(),a2=new V3().crossVectors(a1,d0).normalize();const d=d0.clone(),pts=[o.clone()];let p=o.clone();const base=total/((1-Math.pow(0.93,n))/0.07);
+for(let i=0;i<n;i++){const w=ph-P.k*i;d.applyAxisAngle(a1,P.amp*0.3*Math.sin(w)).applyAxisAngle(a2,P.amp*0.18*Math.sin(w+1.3)).normalize();p=p.clone().addScaledVector(d,base*Math.pow(0.93,i));pts.push(p);}return pts;}
+function rebuild(){limbs.forEach(L=>{grp.remove(L.mesh,L.line,L.pts);L.g.dispose();L.lg.dispose();});limbs=[];if(body){grp.remove(body);body.geometry.dispose();body=null;}
+const n=P.bones+1,A=P.arms;
+if(topo==='starfish'){for(let j=0;j<A;j++)limbs.push(makeLimb(n,false));body=new THREE.Mesh(new THREE.SphereGeometry(0.4,32,20),skin);}
+if(topo==='jelly'){for(let j=0;j<A*2;j++)limbs.push(makeLimb(n,false));body=new THREE.Mesh(new THREE.SphereGeometry(0.75,40,20,0,TAU,0,Math.PI/2),bellMat);}
+if(topo==='tentacles'){for(let j=0;j<A;j++)limbs.push(makeLimb(n,false));body=new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.65,0.18,40),skin);}
+if(topo==='ring'){limbs.push(makeLimb(P.bones*3,true));}
+if(body)grp.add(body);}
+function frame(ph){const k2=topo+P.bones+'|'+P.arms;if(k2!==key){key=k2;rebuild();}const A=P.arms;
+if(topo==='starfish'){const pulse=1+0.08*Math.sin(ph);body.scale.set(pulse,0.55*pulse,pulse);body.position.set(0,0,0);
+limbs.forEach((L,j)=>{const a=j*TAU/A,d0=new V3(Math.cos(a),0,Math.sin(a));updLimb(L,chain(d0.clone().multiplyScalar(0.28),d0,new V3(0,1,0),P.bones,1.7,ph-TAU*j/A),0.22,0.02);});}
+if(topo==='jelly'){const pulse=Math.sin(ph),sx=1+0.12*pulse,sy=1-0.16*pulse;body.scale.set(sx,sy,sx);body.position.set(0,0.75,0);
+limbs.forEach((L,j)=>{const a=j*TAU/(A*2),rr=0.68*sx;const d0=new V3(Math.cos(a)*0.25,-1,Math.sin(a)*0.25).normalize();updLimb(L,chain(new V3(Math.cos(a)*rr,0.78,Math.sin(a)*rr),d0,new V3(Math.cos(a),0,Math.sin(a)),P.bones,2.3,ph-0.9-j*TAU*2/(A*2)),0.07,0.008);});}
+if(topo==='tentacles'){body.position.set(0,-1.25,0);body.scale.set(1,1,1);
+limbs.forEach((L,j)=>{const a=j*TAU/A;updLimb(L,chain(new V3(Math.cos(a)*0.32,-1.2,Math.sin(a)*0.32),new V3(Math.cos(a)*0.15,1,Math.sin(a)*0.15).normalize(),new V3(Math.cos(a),0,Math.sin(a)),P.bones,2.4,ph-TAU*j/A),0.17,0.015);});}
+if(topo==='ring'){const n=P.bones*3,js=[];for(let i=0;i<n;i++){const th=TAU*i/n,r=1.15*(1+P.amp*0.3*Math.sin(A*th-ph));js.push(new V3(Math.cos(th)*r,P.amp*0.45*Math.sin((A-1)*th+ph*(1+Math.round(P.k*2))),Math.sin(th)*r));}updLimb(limbs[0],js,0.17,0.17);}}
+let drag=false,lx=0,ly=0,ry=0.4,rx=0.18;
+cv.addEventListener('pointerdown',e=>{drag=true;lx=e.clientX;ly=e.clientY;cv.setPointerCapture(e.pointerId);cv.style.cursor='grabbing';});
+cv.addEventListener('pointermove',e=>{if(!drag)return;ry+=(e.clientX-lx)*0.01;rx=Math.max(-1.4,Math.min(1.4,rx+(e.clientY-ly)*0.01));lx=e.clientX;ly=e.clientY;});
+cv.addEventListener('pointerup',()=>{drag=false;cv.style.cursor='grab';});
+function resize(){const w=cv.clientWidth,h=cv.clientHeight;ren.setSize(w,h,false);cam.aspect=w/h;cam.updateProjectionMatrix();}new ResizeObserver(resize).observe(cv);resize();
+let tt=0,last=performance.now();const lpEl=document.getElementById('loop');
+function loop(now){const dt=Math.min(0.05,(now-last)/1000);last=now;tt+=dt;if(!drag)ry+=dt*0.12;const ph=TAU*P.h*(tt%T)/T;frame(ph);grp.rotation.set(rx,ry,0);ren.render(scene,cam);
+lpEl.textContent='loop '+T.toFixed(1)+' s · frame '+(Math.floor((tt%T)/T*96)+1)+' / 96';requestAnimationFrame(loop);}
+requestAnimationFrame(loop);
+</script></body></html>
