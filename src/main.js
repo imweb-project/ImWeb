@@ -10727,7 +10727,13 @@ void main() {
   // Permission outcome is otherwise invisible — flash it in the OSD so
   // on-device debugging isn't blind (fires for Enable Motion AND inline
   // assignment requests)
-  ctrl.onMotionPermission = (state) => showModeOSD(`MOTION: ${state}`);
+  // "denied" / "no sensors" is about THIS device only. Since ImWeb Remote can
+  // feed Tilt X / Tilt Y / Compass from a phone, a bare "MOTION: denied" on a
+  // Mac reads as "tilt is broken" while the Remote's tilt works (owner,
+  // first iPad test) — so say whose sensors, and what still works.
+  ctrl.onMotionPermission = (state) => showModeOSD(state === "granted"
+    ? "MOTION: granted"
+    : `MOTION: ${state} on this device — Remote Tilt still works`);
   // Recalled states can restore tilt controllers wholesale — re-arm the
   // sensor listener. CRITICAL: never call requestMotionPermission here on
   // iOS — a no-gesture call at boot burns the one prompt Safari allows per

@@ -611,6 +611,8 @@ const TILT_TAP_MS = 250;
 const tiltBtn = $('tilt');
 const tilt = { x: 0.5, y: 0.5, c: 0.5 };   // what ImWeb was last told
 let tiltReady = false, tiltHeld = null, tiltLast = null, tiltQueued = false;
+/** Which way up the screen was when Tilt was engaged (0/90/180/270). */
+let tiltAngle = 0;
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 /** Shortest way from `was` to `now` on an angle that wraps every `turn` degrees. */
@@ -624,14 +626,17 @@ function turnDelta(now, was, turn) {
 function onTilt(e) {
   if (e.beta == null || e.gamma == null) return;   // a browser with no sensors says so with nulls
   // Screen-relative, as ImWeb's own tilt is: X is toward/away from you, Y is
-  // left/right, whichever way up the device is held.
-  const angle = (((screen.orientation?.angle ?? window.orientation ?? 0) % 360) + 360) % 360;
+  // left/right, whichever way up the device is held — as it was held when
+  // Tilt was ENGAGED. Tilting far enough makes the device rotate its screen,
+  // and following that swapped the two axes mid-gesture (owner, first iPad
+  // test): the hand's axes do not change because the picture turned.
+  const angle = tiltAngle;
   const [sx, sy] = angle === 90 ? [-e.gamma, e.beta] : angle === 180 ? [-e.beta, -e.gamma]
     : angle === 270 ? [e.gamma, -e.beta] : [e.beta, e.gamma];
-  const now = { sx, sy, a: e.alpha ?? 0, angle };
+  const now = { sx, sy, a: e.alpha ?? 0 };
   const was = tiltLast;
   tiltLast = now;
-  if (!was || was.angle !== angle) return;   // the first reading is the pose it was grabbed in
+  if (!was) return;   // the first reading is the pose it was grabbed in
   const dx = turnDelta(sx, was.sx, 360), dy = turnDelta(sy, was.sy, 360), da = turnDelta(now.a, was.a, 360);
   if (Math.abs(dx) > TILT_JUMP || Math.abs(dy) > TILT_JUMP || Math.abs(da) > TILT_JUMP) return;
   tilt.x = clamp01(tilt.x + dx / TILT_TRAVEL);
@@ -696,6 +701,7 @@ tiltBtn.addEventListener('pointerdown', (e) => {
   tiltDownAt = performance.now();
   tiltBtn.classList.add('held');
   tiltLast = null;
+  tiltAngle = (((screen.orientation?.angle ?? window.orientation ?? 0) % 360) + 360) % 360;
   addEventListener('deviceorientation', onTilt);
 });
 tiltBtn.addEventListener('pointerup', (e) => {

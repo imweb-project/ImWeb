@@ -235,17 +235,26 @@ const onClient = (ws, req) => {
     out.sent++; out.last = `${m.address} ${m.args?.[0]}`; out.to = `${host}:${port}`;
   });
 };
-new WebSocketServer({ server }).on('connection', onClient);
+// `ws` re-emits the http server's errors on itself, and an unheard 'error' is a
+// crash with a stack trace — before the port-in-use message below can be shown.
+// The servers' own handlers report; these only keep the error from throwing.
+new WebSocketServer({ server }).on('connection', onClient).on('error', () => {});
 
 /** Addresses a phone on the same network can reach this Mac at. */
 function lanUrls() {
   const urls = [];
   for (const list of Object.values(os.networkInterfaces())) {
-    for (const a of list ?? []) if (a.family === 'IPv4' && !a.internal) urls.push(`http://${a.address}:${WS_PORT}/`);
+    // 169.254.x.x is self-assigned (a cable with nothing on it): no phone reaches it.
+    for (const a of list ?? []) if (a.family === 'IPv4' && !a.internal && !a.address.startsWith('169.254.')) urls.push(`http://${a.address}:${WS_PORT}/`);
   }
   return urls;
 }
-server.on('error', (e) => { console.error(`[relay] port ${WS_PORT}:`, e.message); process.exit(1); });
+server.on('error', (e) => {
+  console.error(e.code === 'EADDRINUSE'
+    ? `[relay] port ${WS_PORT} is already in use — another relay is still running. Stop it first (Ctrl+C in its terminal), then start this one.`
+    : `[relay] port ${WS_PORT}: ${e.message}`);
+  process.exit(1);
+});
 server.listen(WS_PORT, () => {
   console.log(`[relay] Remote page  http://localhost:${WS_PORT}/`);
   for (const u of lanUrls()) console.log(`[relay]   on the phone/iPad: ${u}`);
@@ -256,7 +265,7 @@ server.listen(WS_PORT, () => {
 // port already in use costs the Tilt button, never the relay.
 if (TLS) {
   const secure = https.createServer({ key: TLS.key, cert: TLS.cert }, servePage);
-  new WebSocketServer({ server: secure }).on('connection', onClient);
+  new WebSocketServer({ server: secure }).on('connection', onClient).on('error', () => {});
   secure.on('error', (e) => console.error(`[relay] secure port ${TLS_PORT}: ${e.message} — Tilt will not work, the rest does`));
   secure.listen(TLS_PORT, () => {
     // The names the certificate was made for are the only ones a phone accepts.
