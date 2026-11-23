@@ -8,6 +8,7 @@
  *   ← /imweb/remote/who              ImWeb (re)connected — say hello again
  *   ↔ /imweb/<id> <0..1>             a value, normalised, both ways
  *   → /imweb/toggle/<id>, /imweb/trigger/<id>, /imweb/state/<n>, /imweb/key/<k>
+ *   → /imweb/remote/tilt <x> <y> <c> the device's tilt and turn, 0..1 each
  *
  * The page knows nothing on its own: everything it shows comes from the
  * manifest, so placing a control in ImWeb (right-click → Remote page 1–4) is
@@ -52,7 +53,8 @@ function send(address, ...args) {
 }
 
 function connect() {
-  ws = new WebSocket(`ws://${location.host}`);
+  // The secure address (https, for the motion sensors) needs a secure socket.
+  ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`);
   ws.onopen = () => { setStatus('on', 'connected'); send('/imweb/remote/hello'); };
   ws.onclose = () => { setStatus('off', 'reconnecting…'); setTimeout(connect, 2000); };
   ws.onerror = () => {};
@@ -582,6 +584,135 @@ function openKeys() {
 }
 $('keys').addEventListener('click', openKeys);
 function closeSheet() { sheet?.remove(); sheet = null; }
+
+// ── Tilt ────────────────────────────────────────────────────────────────────
+
+/*
+ * The device's motion sensors as three controller values — ImWeb's Tilt X,
+ * Tilt Y and Compass (right-click a control → Tilt X). Sent only while the
+ * Tilt button is HELD (or latched on by a tap), so a phone put down on the
+ * table drives nothing.
+ *
+ * Relative, like the faders: holding the button is a clutch. The values move
+ * with the device from the pose it was GRABBED in and stay where they were
+ * left on release, so engaging never jumps a parameter and there is no "flat"
+ * pose to find — an iPad held at 40° is as good a centre as one lying down.
+ *
+ * Browsers hand out the sensors only on a secure page, and on iOS only after
+ * a tap that asks. So: https (see tools/remote-cert.mjs), then one tap.
+ */
+const TILT_TRAVEL = 90;    // degrees of tilt for the full 0..1
+const TURN_TRAVEL = 180;   // degrees of turning on the spot for the full 0..1
+/** A step bigger than this in one reading is the angles flipping over (the
+ *  device passing vertical, the screen rotating), not a movement. */
+const TILT_JUMP = 30;
+/** A touch shorter than this is a tap: it latches Tilt on instead of holding it. */
+const TILT_TAP_MS = 250;
+const tiltBtn = $('tilt');
+const tilt = { x: 0.5, y: 0.5, c: 0.5 };   // what ImWeb was last told
+let tiltReady = false, tiltHeld = null, tiltLast = null, tiltQueued = false;
+
+const clamp01 = (v) => Math.max(0, Math.min(1, v));
+/** Shortest way from `was` to `now` on an angle that wraps every `turn` degrees. */
+function turnDelta(now, was, turn) {
+  let d = now - was;
+  if (d > turn / 2) d -= turn;
+  if (d < -turn / 2) d += turn;
+  return d;
+}
+
+function onTilt(e) {
+  if (e.beta == null || e.gamma == null) return;   // a browser with no sensors says so with nulls
+  // Screen-relative, as ImWeb's own tilt is: X is toward/away from you, Y is
+  // left/right, whichever way up the device is held.
+  const angle = (((screen.orientation?.angle ?? window.orientation ?? 0) % 360) + 360) % 360;
+  const [sx, sy] = angle === 90 ? [-e.gamma, e.beta] : angle === 180 ? [-e.beta, -e.gamma]
+    : angle === 270 ? [e.gamma, -e.beta] : [e.beta, e.gamma];
+  const now = { sx, sy, a: e.alpha ?? 0, angle };
+  const was = tiltLast;
+  tiltLast = now;
+  if (!was || was.angle !== angle) return;   // the first reading is the pose it was grabbed in
+  const dx = turnDelta(sx, was.sx, 360), dy = turnDelta(sy, was.sy, 360), da = turnDelta(now.a, was.a, 360);
+  if (Math.abs(dx) > TILT_JUMP || Math.abs(dy) > TILT_JUMP || Math.abs(da) > TILT_JUMP) return;
+  tilt.x = clamp01(tilt.x + dx / TILT_TRAVEL);
+  tilt.y = clamp01(tilt.y + dy / TILT_TRAVEL);
+  tilt.c = clamp01(tilt.c - da / TURN_TRAVEL);   // alpha runs anticlockwise; turning right goes up
+  if (tiltQueued) return;
+  tiltQueued = true;                             // at most one send per frame
+  requestAnimationFrame(() => {
+    tiltQueued = false;
+    send('/imweb/remote/tilt', +tilt.x.toFixed(4), +tilt.y.toFixed(4), +tilt.c.toFixed(4));
+  });
+}
+
+/** Ask for the sensors. Must run in a tap on iOS; everywhere else it just succeeds. */
+async function enableTilt() {
+  if (tiltReady) return;
+  if (!window.isSecureContext || typeof DeviceOrientationEvent === 'undefined') { tiltHelp(); return; }
+  if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+    let r = 'denied';
+    try { r = await DeviceOrientationEvent.requestPermission(); } catch { /* not in a tap */ }
+    // Refused once, iOS refuses silently from then on — say so, or the button
+    // just looks dead.
+    if (r !== 'granted') { tiltHelp('refused'); return; }
+  }
+  tiltReady = true;
+  tiltBtn.classList.add('ready');
+}
+
+function tiltHelp(why) {
+  newSheet('Tilt');
+  const p = document.createElement('p');
+  p.className = 'sheet-note';
+  p.innerHTML = why === 'refused'
+    ? 'Motion access was not allowed.<br><br>Close this page, open it again, tap <b>Tilt</b> and choose <b>Allow</b>.'
+    : window.isSecureContext
+    ? 'This browser gives no motion sensors.'
+    : 'Tilt needs the secure address — phones only give their motion sensors to an <b>https</b> page.<br><br>'
+      + 'On the Mac, once: <code>node tools/remote-cert.mjs</code>, then restart the relay and follow what it prints.';
+  sheet.append(p);
+  document.body.append(sheet);
+}
+
+tiltBtn.addEventListener('click', enableTilt);
+/*
+ * Hold = tilt for as long as the finger is down. A quick TAP latches it on, so
+ * both hands are free for the faders; the next touch lets go. Lit while it is
+ * sending either way, with a ● when latched — a latched tilt on a phone about
+ * to be put down is the one thing here that must be visible at a glance.
+ */
+let tiltLatched = false, tiltDownAt = 0;
+function tiltStop() {
+  tiltHeld = null; tiltLatched = false;
+  tiltBtn.classList.remove('held');
+  tiltBtn.textContent = 'Tilt';
+  removeEventListener('deviceorientation', onTilt);
+}
+tiltBtn.addEventListener('pointerdown', (e) => {
+  if (!tiltReady || tiltHeld !== null) return;
+  tiltHeld = e.pointerId;
+  tiltBtn.setPointerCapture(tiltHeld);
+  if (tiltLatched) { tiltDownAt = 0; return; }   // this touch lets go, on release
+  tiltDownAt = performance.now();
+  tiltBtn.classList.add('held');
+  tiltLast = null;
+  addEventListener('deviceorientation', onTilt);
+});
+tiltBtn.addEventListener('pointerup', (e) => {
+  if (e.pointerId !== tiltHeld) return;
+  if (tiltDownAt && performance.now() - tiltDownAt < TILT_TAP_MS) {
+    tiltHeld = null; tiltLatched = true;
+    tiltBtn.textContent = 'Tilt ●';
+    return;
+  }
+  tiltStop();
+});
+tiltBtn.addEventListener('pointercancel', (e) => { if (e.pointerId === tiltHeld) tiltStop(); });
+// A latched tilt does not outlive the page being put away.
+document.addEventListener('visibilitychange', () => { if (document.hidden && (tiltLatched || tiltHeld !== null)) tiltStop(); });
+// Android asks nothing: ready as soon as the page is secure. iOS waits for the tap.
+if (window.isSecureContext && typeof DeviceOrientationEvent !== 'undefined'
+  && typeof DeviceOrientationEvent.requestPermission !== 'function') enableTilt();
 
 // ── Keep the screen on while performing (Safari 16.4+; silently absent before)
 let wake = null;

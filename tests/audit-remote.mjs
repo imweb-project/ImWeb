@@ -21,6 +21,13 @@
  *      and a spring flag only on the control that has one.
  *  15. page names: trimmed, capped, carried on the manifest's pages, kept when
  *      a page empties, persisted and round-tripped; junk names are dropped.
+ *  16. tilt: `/imweb/remote/tilt x y c` reaches ControllerManager.feedMotion and
+ *      drives exactly the params mapped to Tilt X / Tilt Y / Compass; it is not
+ *      a parameter address, and OSC Learn does not hear it.
+ *  17. the secure address: with a certificate from tools/remote-cert.mjs the
+ *      relay ALSO serves https + wss on port + 363, the certificate verifies
+ *      against its authority, the two ports are one room, and only the
+ *      authority's public half is ever served. Without one, nothing changes.
  * Negative checks are paired with a positive control through the same rig.
  *
  * Run:  node tests/audit-remote.mjs
@@ -433,6 +440,114 @@ if (!RealWS) {
     check('never back to the sender', a.got.length === 0, JSON.stringify(a.got));
     a.close(); b.close();
   } finally { relay.kill(); }
+}
+
+console.log('\n16. tilt: the remote\'s sensors drive Tilt X / Tilt Y / Compass');
+{
+  const { ControllerManager } = await import('../src/controls/ControllerManager.js');
+  globalThis.window ??= { addEventListener() {}, removeEventListener() {} };   // its keyboard listeners
+  const { ps, bridge, msg } = rig();
+  ps.register({ id: 't.ty', label: 'Y', group: 'g', min: 0, max: 1, value: 0 });
+  ps.register({ id: 't.cp', label: 'C', group: 'g', min: 0, max: 1, value: 0 });
+  const cm = new ControllerManager(ps);
+  cm.assign('t.cont', { type: 'tilt-x' });
+  cm.assign('t.ty', { type: 'tilt-y' });
+  cm.assign('t.cp', { type: 'compass' });
+  const got = [];
+  bridge.setMotionSink((x, y, c) => { got.push([x, y, c]); cm.feedMotion(x, y, c); });
+  const before = ps.get('t.other').value;
+  msg('/imweb/remote/tilt', [0.8, 0.25, 0.6]);
+  check('the sink gets three numbers', JSON.stringify(got) === '[[0.8,0.25,0.6]]', JSON.stringify(got));
+  const near = (a, b) => Math.abs(a - b) < 1e-6;
+  check('Tilt X drives its param', near(ps.get('t.cont').normalized, 0.8), String(ps.get('t.cont').normalized));
+  check('Tilt Y drives its param', near(ps.get('t.ty').normalized, 0.25), String(ps.get('t.ty').normalized));
+  check('Compass drives its param', near(ps.get('t.cp').normalized, 0.6), String(ps.get('t.cp').normalized));
+  check('a param with no tilt controller is left alone', ps.get('t.other').value === before);
+  msg('/imweb/remote/tilt', [5, 'x']);
+  check('out of range is clamped; a missing axis keeps its value',
+    near(ps.get('t.cont').normalized, 1) && near(ps.get('t.ty').normalized, 0.25) && near(ps.get('t.cp').normalized, 0.6),
+    `${ps.get('t.cont').normalized} ${ps.get('t.ty').normalized} ${ps.get('t.cp').normalized}`);
+  let heard = 0;
+  bridge._observeLearn = () => { heard++; };
+  bridge._learn = { paramId: 't.other', cands: new Map(), settleTimer: null };
+  msg('/imweb/remote/tilt', [0.1, 0.1, 0.1]);
+  check('OSC Learn does not hear the sensor stream', heard === 0, String(heard));
+  msg('/imweb/t.other', [0.5]);
+  check('…and does hear a control (positive control)', heard === 1, String(heard));
+  bridge._learn = null;
+}
+
+console.log('\n17. the secure address (https + wss), for the Tilt button');
+{
+  const { mkdtempSync, rmSync, existsSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const https = await import('node:https');
+  const { readFileSync } = await import('node:fs');
+  const { WebSocket: WS } = await import('ws');
+  const dir = mkdtempSync(join(tmpdir(), 'imweb-cert-'));
+  const env = { ...process.env, IMWEB_REMOTE_CERT: dir };
+  const run = (args) => new Promise((res) => {
+    const p = spawn(process.execPath, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    let o = ''; p.stdout.on('data', (d) => { o += d; }); p.stderr.on('data', (d) => { o += d; });
+    p.on('close', (code) => res({ code, o }));
+  });
+  const UDP = 39600 + Math.floor(Math.random() * 300), WSP = UDP + 600, TLSP = WSP + 363;
+  const start = async () => {
+    const relay = spawn(process.execPath, ['tools/osc-relay.mjs', String(UDP), String(WSP)], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    relay.log = '';
+    relay.stdout.on('data', (d) => { relay.log += d; });
+    relay.stderr.on('data', (d) => { relay.log += d; });
+    for (let i = 0; i < 50 && !relay.log.includes('WebSocket listening'); i++) await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 200));
+    return relay;
+  };
+  const stop = (relay) => new Promise((res) => { relay.on('close', res); relay.kill(); });
+  const get = (ca) => new Promise((res) => {
+    https.get({ host: 'localhost', port: TLSP, path: '/', ca }, (r) => {
+      let b = ''; r.on('data', (d) => { b += d; }); r.on('end', () => res(b));
+    }).on('error', (e) => res(`ERR ${e.code ?? e.message}`));
+  });
+  try {
+    // Without a certificate: the plain relay, and nothing more.
+    let relay = await start();
+    check('no certificate → no secure port', (await get(undefined)).startsWith('ERR'));
+    check('no certificate → /ca.crt is not served',
+      await fetch(`http://localhost:${WSP}/ca.crt`).then((r) => r.status) === 404);
+    check('…and the relay says how to get Tilt', relay.log.includes('remote-cert.mjs'), relay.log);
+    await stop(relay);
+
+    const made = await run(['tools/remote-cert.mjs']);
+    check('remote-cert.mjs makes an authority and a relay certificate',
+      made.code === 0 && ['ca.crt', 'ca.key', 'server.crt', 'server.key'].every((f) => existsSync(join(dir, f))), made.o);
+    const ca1 = readFileSync(join(dir, 'ca.crt'), 'utf8');
+    const again = await run(['tools/remote-cert.mjs']);
+    check('run again, the authority is KEPT — devices need nothing new',
+      again.code === 0 && readFileSync(join(dir, 'ca.crt'), 'utf8') === ca1, again.o);
+
+    relay = await start();
+    const page = await get(ca1);
+    check('https serves the remote page, and the certificate verifies against the authority',
+      page.includes('ImWeb Remote'), page.slice(0, 80));
+    check('…and does NOT verify without it (so the check above means something)', (await get(undefined)).startsWith('ERR'));
+    const pub = await fetch(`http://localhost:${WSP}/ca.crt`).then((r) => r.text());
+    check('/ca.crt is the authority\'s public certificate', pub === ca1);
+    const keys = await Promise.all(['/ca.key', '/server.key', '/.remote-cert/ca.key'].map((u) => fetch(`http://localhost:${WSP}${u}`).then((r) => r.status)));
+    check('no key is ever served', keys.length === 3 && keys.every((k) => k === 404), keys.join(' '));
+    check('the relay prints the secure address', relay.log.includes(`:${TLSP}/`) && relay.log.includes('https://'), relay.log);
+    const open = (u, o) => new Promise((res, rej) => { const s = new WS(u, o); s.got = []; s.on('message', (d) => s.got.push(JSON.parse(String(d)))); s.on('open', () => res(s)); s.on('error', rej); });
+    const phone = await open(`wss://localhost:${TLSP}`, { ca: ca1 });
+    const imweb = await open(`ws://localhost:${WSP}`);
+    phone.send(JSON.stringify({ address: '/imweb/remote/tilt', args: [0.7, 0.3, 0.5] }));
+    imweb.send(JSON.stringify({ address: '/imweb/t.cont', args: [0.4] }));
+    await new Promise((r) => setTimeout(r, 250));
+    check('phone (wss) → ImWeb (ws): tilt crosses the two ports',
+      imweb.got.some((m) => m.address === '/imweb/remote/tilt' && m.args[0] === 0.7 && m.args[2] === 0.5), JSON.stringify(imweb.got));
+    check('ImWeb (ws) → phone (wss): feedback crosses back',
+      phone.got.some((m) => m.address === '/imweb/t.cont' && m.args[0] === 0.4), JSON.stringify(phone.got));
+    phone.close(); imweb.close();
+    await stop(relay);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 
 console.log(failures ? `\n${failures} FAILED` : '\nall passed');

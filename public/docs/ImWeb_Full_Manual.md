@@ -3459,6 +3459,21 @@ phone, and there is no app to install.
   list, such as a source, shows the current option by name with ◀ ▶ to step;
   tap the name for a grid of every option. If the row's min/max fields narrow
   a list or a range, the remote uses the same narrower span.
+- **Tilt** (top right) turns the device's motion sensors into three
+  controllers. In ImWeb, right-click a control → **Tilt X** (toward / away from
+  you), **Tilt Y** (left / right) or **Compass** (turning on the spot). On the
+  remote, hold **Tilt** and move the device; let go and the values stay where
+  they are. A quick tap latches it on instead, so both hands are free: the
+  button shows **Tilt ●** until you touch it again (it also lets go when the
+  page is put away). It is relative, like the faders: the pose you grab the device in is
+  the starting point, so pressing Tilt never makes a value jump. 90° of tilt or
+  180° of turning covers the full range. The button is dashed until the sensors
+  are allowed (on iPhone/iPad: tap it once and choose Allow, each time the page
+  is opened). Tilt needs the secure address: on the Mac run
+  `node tools/remote-cert.mjs` once, restart the relay, and it prints an
+  `https://…:8443/` address plus how to make the device trust it (a
+  certificate to install once per device). The plain address keeps working,
+  without Tilt.
 - **State tiles** recall that Display State. The lit tile is the active one.
   They stay in one row on every page; if the bank has more than fit, the last
   tile is **More…**, which opens all of them.

@@ -125,6 +125,12 @@ export class OSCBridge {
    */
   setKeyProvider(provider) { this._keys = provider; }
 
+  /**
+   * Where the remote's tilt goes: `fn(tiltX, tiltY, compass)`, each 0..1 (NaN =
+   * that axis did not move). Wired in main.js to ControllerManager.feedMotion.
+   */
+  setMotionSink(fn) { this._motionSink = fn; }
+
   /** Re-send the manifest if anything on it changed (a clip racked, a key bound). */
   refreshRemote() { this._sendManifest(false); }
 
@@ -446,6 +452,15 @@ export class OSCBridge {
   }
 
   _dispatch(address, args) {
+    // /imweb/remote/tilt <x> <y> <compass> — the remote's motion sensors. Not a
+    // control on the page and not a parameter: it feeds the Tilt X / Tilt Y /
+    // Compass controllers. First, and out: a stream of sensor readings must not
+    // be watched by OSC Learn or counted as a control that moved.
+    if (address === '/imweb/remote/tilt') {
+      this._motionSink?.(Number(args[0]), Number(args[1]), Number(args[2]));
+      return;
+    }
+
     // A button is not a fader. A momentary button sends 1 then 0, and acting
     // on both fired a trigger twice per press — the same bug audit-midi-buttons
     // pins for MIDI CC. No value at all (a bare Flic click) is a press.

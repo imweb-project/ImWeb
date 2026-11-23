@@ -27,6 +27,12 @@
  * socket they send from. Most controller apps listen on a separate port, so
  * give them the third argument, set to the port the app RECEIVES on.
  *
+ * Tilt: the Remote's Tilt button reads the device's motion sensors, which
+ * browsers give only to an https page with a certificate the device trusts.
+ * `node tools/remote-cert.mjs` makes one; from then on this relay also serves
+ * the Remote at https on the WebSocket port + 363 (8443 for 8080) and prints
+ * the address. Without a certificate nothing changes.
+ *
  * Addresses ImWeb understands (see src/io/OSCBridge.js):
  *   /imweb/<paramId>      <0..1>   set a parameter, NORMALISED (not raw units);
  *                                  a TOGGLE takes >0.5 as on
@@ -44,15 +50,27 @@
  * type tag, and writes floats and strings, which is all ImWeb exchanges.
  */
 
+import crypto from 'node:crypto';
 import dgram from 'node:dgram';
 import http from 'node:http';
+import https from 'node:https';
 import os from 'node:os';
+import path from 'node:path';
+import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 
 const UDP_PORT = Number(process.argv[2] ?? 9000);
 const WS_PORT  = Number(process.argv[3] ?? 8080);
+const TLS_PORT = WS_PORT + 363;   // the Remote's secure address, when a certificate exists
+// tools/remote-cert.mjs writes here. No certificate → no secure address, and
+// everything else is exactly as it was.
+const CERT_DIR = process.env.IMWEB_REMOTE_CERT || fileURLToPath(new URL('./.remote-cert/', import.meta.url));
+const TLS = (() => {
+  const f = (n) => readFileSync(path.join(CERT_DIR, n));
+  try { return { key: f('server.key'), cert: f('server.crt'), ca: f('ca.crt') }; } catch { return null; }
+})();
 // Feedback target: "host:port", "port" (on the last sender's host), or absent
 // (the last sender's own address and port).
 const REPLY = (() => {
@@ -167,18 +185,27 @@ const REMOTE_FILES = {
   '/remote.js':  ['remote.js',  'text/javascript; charset=utf-8'],
   '/remote.css': ['remote.css', 'text/css; charset=utf-8'],
 };
-const server = http.createServer(async (req, res) => {
-  const f = REMOTE_FILES[(req.url ?? '/').split('?')[0]];
+const servePage = async (req, res) => {
+  const url = (req.url ?? '/').split('?')[0];
+  // The certificate authority's PUBLIC half, so a phone can fetch and trust it.
+  // Its key is never served: this and REMOTE_FILES are all that is reachable.
+  if (url === '/ca.crt' && TLS) {
+    res.writeHead(200, { 'Content-Type': 'application/x-x509-ca-cert', 'Cache-Control': 'no-store' }).end(TLS.ca);
+    return;
+  }
+  const f = REMOTE_FILES[url];
   if (!f) { res.writeHead(404).end('not found'); return; }
   try {
     const body = await readFile(REMOTE_DIR + f[0]);
     res.writeHead(200, { 'Content-Type': f[1], 'Cache-Control': 'no-store' }).end(body);
   } catch { res.writeHead(500).end('remote page missing'); }
-});
+};
+const server = http.createServer(servePage);
 
-const wss = new WebSocketServer({ server });
 const clients = new Set();
-wss.on('connection', (ws, req) => {
+// One room, two doors: a browser on the plain port and one on the secure port
+// are peers like any others (ImWeb on ws://localhost, the phone on wss://).
+const onClient = (ws, req) => {
   clients.add(ws);
   console.log(`[relay] browser connected (${req.socket.remoteAddress}) — ${clients.size} client(s)`);
   ws.on('close', () => { clients.delete(ws); console.log(`[relay] client left — ${clients.size} left`); });
@@ -207,7 +234,8 @@ wss.on('connection', (ws, req) => {
     udp.send(encodeOSC(m.address, Array.isArray(m.args) ? m.args : []), port, host, () => {});
     out.sent++; out.last = `${m.address} ${m.args?.[0]}`; out.to = `${host}:${port}`;
   });
-});
+};
+new WebSocketServer({ server }).on('connection', onClient);
 
 /** Addresses a phone on the same network can reach this Mac at. */
 function lanUrls() {
@@ -221,7 +249,35 @@ server.on('error', (e) => { console.error(`[relay] port ${WS_PORT}:`, e.message)
 server.listen(WS_PORT, () => {
   console.log(`[relay] Remote page  http://localhost:${WS_PORT}/`);
   for (const u of lanUrls()) console.log(`[relay]   on the phone/iPad: ${u}`);
+  if (!TLS) console.log('[relay]   (for the Tilt button: node tools/remote-cert.mjs, then restart)');
 });
+
+// The secure address — only with a certificate from tools/remote-cert.mjs. A
+// port already in use costs the Tilt button, never the relay.
+if (TLS) {
+  const secure = https.createServer({ key: TLS.key, cert: TLS.cert }, servePage);
+  new WebSocketServer({ server: secure }).on('connection', onClient);
+  secure.on('error', (e) => console.error(`[relay] secure port ${TLS_PORT}: ${e.message} — Tilt will not work, the rest does`));
+  secure.listen(TLS_PORT, () => {
+    // The names the certificate was made for are the only ones a phone accepts.
+    const names = String(new crypto.X509Certificate(TLS.cert).subjectAltName ?? '')
+      .split(',').map((s) => s.trim().replace(/^(DNS|IP Address):/, ''))
+      .filter((n) => n && n !== 'localhost' && n !== '127.0.0.1');
+    const live = new Set(lanUrls().map((u) => new URL(u).hostname));
+    console.log('[relay] Remote with Tilt (secure):');
+    for (const n of names) {
+      if (/^[0-9.]+$/.test(n) && !live.has(n)) continue;   // an address this Mac no longer has
+      console.log(`[relay]   https://${n}:${TLS_PORT}/`);
+    }
+    if ([...live].some((a) => !names.includes(a))) {
+      console.log('[relay]   (this Mac has a new address — use the .local name, or run node tools/remote-cert.mjs again)');
+    }
+    console.log(`[relay]   first time on a device: open  http://${[...live][0] ?? 'localhost'}:${WS_PORT}/ca.crt  there and trust it`);
+    console.log('[relay]   iPhone/iPad: Allow → Settings → Profile Downloaded → Install, then');
+    console.log('[relay]                Settings → General → About → Certificate Trust Settings → switch it on');
+    console.log('[relay]   Android:     Settings → Security → Install a certificate → CA certificate');
+  });
+}
 
 const udp = dgram.createSocket('udp4');
 udp.on('message', (buf, rinfo) => {

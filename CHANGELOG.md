@@ -8,6 +8,22 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+### Added
+- **ImWeb Remote: Tilt.** The phone or iPad's motion sensors are now three
+  controllers. In ImWeb, right-click a control → **Tilt X** (toward / away from
+  you), **Tilt Y** (left / right) or **Compass** (turning on the spot); on the
+  remote, hold the new **Tilt** button and move the device. It only sends while
+  the button is held, so a phone put down drives nothing. A quick tap latches
+  it on instead (the button shows **Tilt ●**), leaving both hands free for the
+  faders; touch it again to let go. Like the faders it is
+  relative: the values move from the pose you grabbed the device in and stay
+  where you left them, so pressing Tilt never jumps a parameter. 90° of tilt or
+  180° of turning covers the full range. Phones give their sensors only to a
+  secure page, so this needs a one-time setup: `node tools/remote-cert.mjs`,
+  restart the relay, and follow what it prints (install its certificate on the
+  device once, then open the `https://…:8443/` address). The plain address
+  works as before, without Tilt.
+
 ---
 
 ## [0.31.0] — 2026-11-23 — In Play

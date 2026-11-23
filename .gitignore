@@ -316,3 +316,6 @@ public/assets/imweb-demo_ALL-I.mp4
 *.duf
 *.pz3
 *.pzz
+
+# ImWeb Remote: the secure address's certificate and keys (tools/remote-cert.mjs)
+tools/.remote-cert/

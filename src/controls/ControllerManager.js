@@ -916,8 +916,24 @@ export class ControllerManager {
     this.motion.tiltX = clamp01((sx + 90) / 180);
     this.motion.tiltY = clamp01((sy + 90) / 180);
     this.motion.compass = (((e.alpha ?? 0) % 360) + 360) % 360 / 360;
+    this._driveMotion();
+  };
 
-    // Drive assigned params reactively (same pattern as mouse-x/y)
+  /**
+   * Tilt from ImWeb Remote (tools/remote/): the phone's sensors, already
+   * normalised 0..1 by the page, arriving through OSCBridge. It feeds the SAME
+   * three values this device's own sensors do, so Tilt X / Tilt Y / Compass in
+   * the controller menu mean "whichever device is tilting" and nothing about
+   * a mapping changes. A value that is not a finite number leaves its axis be.
+   */
+  feedMotion(tiltX, tiltY, compass) {
+    const set = (k, v) => { if (Number.isFinite(v)) this.motion[k] = Math.max(0, Math.min(1, v)); };
+    set('tiltX', tiltX); set('tiltY', tiltY); set('compass', compass);
+    this._driveMotion();
+  }
+
+  /** Drive assigned params reactively (same pattern as mouse-x/y). */
+  _driveMotion() {
     this.ps.getAll().forEach(p => {
       if (!p.controller) return;
       const { type, modifiers } = p.controller;
@@ -926,7 +942,7 @@ export class ControllerManager {
       if (type === 'tilt-y') p.setNormalized(this.motion.tiltY);
       if (type === 'compass') p.setNormalized(this.motion.compass);
     });
-  };
+  }
 
   _initMouse() {
     const canvas = document.getElementById('output-canvas');
