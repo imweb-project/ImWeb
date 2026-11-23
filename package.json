@@ -24,7 +24,8 @@
     "express": "^5.2.1",
     "marked": "^18.0.5",
     "multer": "^2.1.1",
-    "three": "^0.168.0"
+    "three": "^0.168.0",
+    "ws": "^8.23.0"
   },
   "devDependencies": {
     "@vitejs/plugin-basic-ssl": "^2.3.0",

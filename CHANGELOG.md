@@ -211,6 +211,11 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   were on. Tab still works as usual inside text fields and the shader editor.
 
 ### Fixed
+- **The OSC relay (`tools/osc-relay.mjs`) starts on a fresh clone.** It imports
+  `ws`, which was never listed in `package.json`, so `npm install` didn't
+  install it, and the relay (and the ImWeb Remote it serves) crashed on startup
+  everywhere except on a machine that already had `ws` lying around. `ws` is now
+  a dependency.
 - **Vectorscope trails now fade all the way to black.** Long trails used to
   leave a permanent grey ghost of everything ever drawn, and silence burned a
   bright dot into the centre.
