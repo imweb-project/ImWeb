@@ -8,6 +8,10 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+---
+
+## [0.31.0] — 2026-11-23 — In Play
+
 ### Added
 - **ImWeb Remote**: ImWeb's own remote, a page opened in Safari on a phone or
   iPad on the same Wi-Fi. Run `node tools/osc-relay.mjs` and open the address it
