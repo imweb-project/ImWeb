@@ -3438,6 +3438,11 @@ phone, and there is no app to install.
 - **Pages** are the tabs along the bottom. Only pages with something on them
   get a tab. Switching is a tap, never a swipe, so a fader drag can't flip the
   page by accident. Each phone or iPad remembers the page it was on.
+  **Naming a page:** right-click anything on it → **Page 2 name**, type
+  ("Drums", "Ending", up to 16 characters) and its tab says that instead of
+  Page 2. It is saved as you type; Enter closes the menu, Escape undoes. A name
+  stays with its page when you empty it; clear the field to go back to the
+  number.
 - **Layout:** a page is 12 slots: one row of strips on an iPad in landscape, 6×2
   in portrait, 4×3 on a phone. A strip keeps its width when a page holds fewer,
   so a fader is always where your hand expects it. Knobs, buttons and keys take

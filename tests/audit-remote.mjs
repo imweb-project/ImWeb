@@ -19,6 +19,8 @@
  *      message, keys are pinned by key, the manifest carries the pages and a
  *      fader/knob per continuous control (° → knob unless the performer chose),
  *      and a spring flag only on the control that has one.
+ *  15. page names: trimmed, capped, carried on the manifest's pages, kept when
+ *      a page empties, persisted and round-tripped; junk names are dropped.
  * Negative checks are paired with a positive control through the same rig.
  *
  * Run:  node tests/audit-remote.mjs
@@ -44,7 +46,7 @@ globalThis.localStorage ??= {
 };
 
 const { OSCBridge } = await import('../src/io/OSCBridge.js');
-const { RemoteList, REMOTE_MAX, REMOTE_KEY, REMOTE_PAGES, PAGE_MAX, autoWidget } = await import('../src/io/RemoteList.js');
+const { RemoteList, REMOTE_MAX, REMOTE_KEY, REMOTE_PAGES, PAGE_MAX, NAME_MAX, autoWidget } = await import('../src/io/RemoteList.js');
 const { ProjectFile } = await import('../src/io/ProjectFile.js');
 
 let failures = 0;
@@ -375,6 +377,33 @@ console.log('\n14. pages: put, move, full, keys, widgets');
     JSON.stringify(RemoteList.normalize({ pages: [{ items: [{ id: 'a', s: true }, { id: 'b', s: 'yes' }, { id: 'c', s: 1 }] }] })[0].items)
       === '[{"id":"a","s":true},{"id":"b"},{"id":"c"}]');
   check('setSpring off', list.setSpring('t.cont', false) && !list.springOf('t.cont') && springIn() === '');
+}
+
+console.log('\n15. page names');
+{
+  const { list, msg, manifests } = rig();
+  list.put({ id: 't.cont' }, 1);
+  msg('/imweb/remote/hello');
+  const names = () => manifests().at(-1)?.pages?.map((p) => p.name ?? '').join('|');
+  check('no page is named until asked (positive control: the page is there)',
+    names() === '|||' && manifests().at(-1).pages[1].items[0]?.id === 't.cont', names());
+  const before = manifests().length;
+  check('setName trims and names the page', list.setName(1, '  Drums  ') && list.nameOf(1) === 'Drums');
+  check('the manifest carries the name, re-sent', names() === '|Drums||' && manifests().length > before, names());
+  check('the same name again changes nothing', list.setName(1, 'Drums') === false);
+  check('a page that is not there refuses', list.setName(REMOTE_PAGES, 'x') === false && list.setName(-1, 'x') === false);
+  list.setName(2, 'x'.repeat(40));
+  check(`a name is capped at ${NAME_MAX}`, list.nameOf(2).length === NAME_MAX, String(list.nameOf(2).length));
+  list.remove('t.cont');
+  check('a page that empties keeps its name', list.nameOf(1) === 'Drums' && list.pages[1].items.length === 0);
+  check('it survives a reload of the store', new RemoteList().nameOf(1) === 'Drums');
+  const back = new RemoteList(); back.restore(list.capture());
+  check('it round-trips through capture/restore (the project file)', back.nameOf(1) === 'Drums' && back.nameOf(2) === list.nameOf(2));
+  check('normalize drops a name that is not text, or only spaces',
+    RemoteList.normalize({ pages: [{ name: 42, items: [] }, { name: '   ', items: [] }, { name: ' Ok ', items: [] }] })
+      .map((p) => p.name ?? '-').join() === '-,-,Ok,-');
+  check('setName \'\' clears it — the tab says "Page n" again', list.setName(1, '') && list.nameOf(1) === ''
+    && !('name' in manifests().at(-1).pages[1]), JSON.stringify(manifests().at(-1).pages[1]));
 }
 
 console.log('\n7. relay: serves the page, relays browser↔browser');

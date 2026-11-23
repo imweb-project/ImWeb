@@ -42,6 +42,8 @@ let page = 0;
 try { page = Number(localStorage.getItem(PAGE_STORE)) || 0; } catch { /* private mode */ }
 /** Each page's items resolved against the manifest: { c } a control, { k } a key. */
 let pages = [];
+/** The performer's page names from ImWeb ('' = none, the tab says "Page n"). */
+let pageNames = [];
 
 // ── Connection ──────────────────────────────────────────────────────────────
 
@@ -139,6 +141,7 @@ function render(m) {
   pages = (m.pages ?? [{ items: (m.controls ?? []).map((c) => ({ id: c.id })) }]).map((p) =>
     (p.items ?? []).map((it) => (it.id ? byId.has(it.id) && { c: byId.get(it.id) } : byKey.has(it.key) && { k: byKey.get(it.key) }))
       .filter(Boolean));
+  pageNames = (m.pages ?? []).map((p) => (typeof p?.name === 'string' ? p.name : ''));
 
   renderStates();
   closeSheet();   // a picker open over the old layout would drive a stale view
@@ -154,7 +157,9 @@ function showPage(n) {
   pagesEl.replaceChildren(...used.map((i) => {
     const b = document.createElement('button');
     b.className = `page-tab${i === page ? ' on' : ''}`;
-    b.textContent = `Page ${i + 1}`;
+    const t = document.createElement('span');   // the span clamps a long name to two lines
+    t.textContent = pageNames[i] || `Page ${i + 1}`;
+    b.append(t);
     b.addEventListener('click', () => { if (i !== page) { closeSheet(); showPage(i); } });
     return b;
   }));

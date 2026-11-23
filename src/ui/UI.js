@@ -24,7 +24,7 @@ import { openGuide, openPictureLightbox } from './Guide.js';
 import { setViewportPos } from './layout/LayoutManager.js';
 import { makeFloating } from './components/FloatingWindow.js';
 import { openExplain } from './explain/Explain.js';
-import { REMOTE_PAGES, autoWidget } from '../io/RemoteList.js';
+import { REMOTE_PAGES, NAME_MAX, autoWidget } from '../io/RemoteList.js';
 const DEFAULT_FX_ORDER_SP = DEFAULT_FX_ORDER;
 
 // ── Tab switching ──────────────────────────────────────────────────────────────
@@ -2654,7 +2654,8 @@ export function remoteMenuRows(list, target, { param = null, done = () => {}, no
   label.textContent = at < 0 ? 'Remote page' : 'On Remote';
   row.append(label);
   for (let n = 0; n < REMOTE_PAGES; n++) {
-    row.append(btn(String(n + 1), n === at ? `On page ${n + 1}` : `Put it on Remote page ${n + 1}`, n === at, () => {
+    const named = list.nameOf(n) ? ` (${list.nameOf(n)})` : '';
+    row.append(btn(String(n + 1), n === at ? `On page ${n + 1}${named}` : `Put it on Remote page ${n + 1}${named}`, n === at, () => {
       const msg = list.put(target, n);
       done();
       if (msg) notify(msg);
@@ -2667,6 +2668,34 @@ export function remoteMenuRows(list, target, { param = null, done = () => {}, no
     }));
   }
   frag.append(row);
+  if (at >= 0) {
+    // The name of the page this is on — what its tab says on the remote. Saved
+    // as you type, so closing the menu any way at all keeps it; Escape undoes.
+    const orig = list.nameOf(at);
+    const nameRow = document.createElement('div');
+    nameRow.className = 'remote-row';
+    const nl = document.createElement('span');
+    nl.className = 'remote-row-label';
+    nl.textContent = `Page ${at + 1} name`;
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.className = 'remote-name';
+    inp.maxLength = NAME_MAX;
+    inp.value = orig;
+    inp.placeholder = `Page ${at + 1}`;
+    inp.title = 'What this page\'s tab says on the Remote';
+    inp.spellcheck = false;
+    inp.addEventListener('input', () => list.setName(at, inp.value));
+    inp.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();   // Escape here is "undo the name", not the app's Escape
+      if (e.key === 'Escape') list.setName(at, orig);
+      done();
+    });
+    nameRow.append(nl, inp);
+    frag.append(nameRow);
+  }
   if (param && at >= 0 && param.type === 'continuous') {
     const w = list.widgetOf(param.id) ?? autoWidget(param);
     const row2 = document.createElement('div');

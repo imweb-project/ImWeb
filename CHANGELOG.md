@@ -15,7 +15,9 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   (the active one lit, one row, the rest under **More…**) and up to 4 pages of
   12 controls placed by right-click → **Remote page 1 2 3 4**, saved with the
   project. The layout is made in ImWeb only, never on the phone. Pages switch
-  by tapping tabs at the bottom, never by swiping. A page is 12 slots: one row
+  by tapping tabs at the bottom, never by swiping; a page can be named
+  ("Drums", "Ending") with right-click on anything on it → **Page n name**,
+  and its tab says that. A page is 12 slots: one row
   of thin strips on an iPad in landscape, 6×2 in portrait, 4×3 on a phone.
   Controls show their real names and units: faders that never jump on touch
   (the same finger travel on every device), knobs (automatic for anything in

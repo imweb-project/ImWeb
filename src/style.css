@@ -3919,6 +3919,20 @@ body.sp-floating #signal-path-docked-space {
     color: var(--accent);
     border-color: var(--accent);
 }
+.remote-name {
+    width: 18ch;   /* NAME_MAX (16) plus the padding: the whole name is visible */
+    padding: 2px 5px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: var(--bg-3);
+    color: var(--text-0);
+    font-family: var(--mono);
+    font-size: 11px;
+}
+.remote-name:focus {
+    outline: none;
+    border-color: var(--accent);
+}
 .ctx-item.ctx-remote-head {
     color: var(--text-2);
     cursor: default;

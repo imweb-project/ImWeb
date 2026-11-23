@@ -112,8 +112,14 @@ header { display: flex; align-items: center; gap: 12px; flex: none; }
 /* Pages: tap only, at the bottom where the thumb is. */
 .pages { flex: none; display: flex; gap: 8px; height: 52px; }
 .page-tab {
-  flex: 1; border-radius: 10px; border: 1px solid var(--line);
-  background: var(--panel); color: var(--text); font: inherit; font-size: 13px;
+  flex: 1; min-width: 0; padding: 0 4px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--panel); color: var(--text); font: inherit; font-size: 12px;
+}
+/* A page name is the performer's, up to 16 characters: on a phone four tabs
+   hold about 7 a line, so a name gets two lines, like a strip's label. */
+.page-tab span {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; overflow-wrap: anywhere; line-height: 1.2;
 }
 .page-tab.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
 .seg { flex: 1; display: grid; gap: 4px; padding: 8px; grid-auto-rows: minmax(0, 1fr); }

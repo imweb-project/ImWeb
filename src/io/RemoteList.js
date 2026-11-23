@@ -7,7 +7,7 @@
  * This is the "what": REMOTE_PAGES pages of up to PAGE_MAX items each. An item
  * is a parameter (`{ id }`, optionally `w` to force a fader or a knob, `s` to
  * spring back on release) or one of ImWeb's shortcut keys pinned as a button
- * (`{ key }`).
+ * (`{ key }`). A page may carry a `name`, which its tab on the remote shows.
  *
  * The layout is written HERE, in ImWeb, never on the phone: right-click →
  * Remote page 1–4. A performance surface with edit gestures on it is one slip
@@ -24,6 +24,10 @@ export const PAGE_MAX = 12;          // items on one page — one row of strips 
 export const REMOTE_MAX = PAGE_MAX;  // older name: the cap a "full" message quotes
 export const REMOTE_KEY = 'imweb.remoteList'; // per origin, like every key here
 export const WIDGETS = ['fader', 'knob'];
+export const NAME_MAX = 16;          // a page tab on a phone holds about this much
+
+/** A page name as stored: trimmed, capped, '' for none. */
+export function pageName(s) { return typeof s === 'string' ? s.trim().slice(0, NAME_MAX).trim() : ''; }
 
 /**
  * Fader or knob when the performer has not said: a knob for angles and hues
@@ -47,7 +51,11 @@ export class RemoteList {
   // ── Reading ─────────────────────────────────────────────────────────────────
   /** Every parameter id on any page, in page order. */
   get ids() { return this._pages.flatMap((p) => p.items.filter((it) => it.id).map((it) => it.id)); }
-  get pages() { return this._pages.map((p) => ({ items: p.items.map((it) => ({ ...it })) })); }
+  get pages() {
+    return this._pages.map((p) => ({ ...(p.name ? { name: p.name } : {}), items: p.items.map((it) => ({ ...it })) }));
+  }
+  /** The performer's name for page n, or '' — the remote then says "Page n+1". */
+  nameOf(n) { return this._pages[n]?.name ?? ''; }
   has(id) { return this.pageOf(id) >= 0; }
   hasKey(key) { return this._find({ key }) >= 0; }
   pageOf(id) { return this._find({ id }); }
@@ -116,6 +124,22 @@ export class RemoteList {
     return true;
   }
 
+  /**
+   * Name page n ("Drums", "Ending") — the remote's tab says it instead of
+   * "Page n". '' (or only spaces) clears it. A name stays with its page when
+   * the page empties: it is where the performer files things, not a label on
+   * what is there now.
+   */
+  setName(n, name) {
+    const p = this._pages[n];
+    if (!p) return false;
+    const next = pageName(name);
+    if ((p.name ?? '') === next) return false;
+    if (next) p.name = next; else delete p.name;
+    this._changed();
+    return true;
+  }
+
   onChange(fn) { this._listeners.add(fn); return () => this._listeners.delete(fn); }
 
   // ── Project file hook (ProjectFile.extras.remote) ───────────────────────────
@@ -139,6 +163,8 @@ export class RemoteList {
     const seen = new Set();
     const pages = emptyPages();
     raw.slice(0, REMOTE_PAGES).forEach((p, n) => {
+      const name = pageName(p?.name);
+      if (name) pages[n].name = name;
       for (const it of Array.isArray(p?.items) ? p.items : []) {
         if (pages[n].items.length >= PAGE_MAX) break;
         const id = typeof it?.id === 'string' && it.id ? it.id : null;
