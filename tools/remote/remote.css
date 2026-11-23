@@ -1,0 +1,182 @@
+:root {
+  --bg: #111113;
+  --panel: #1b1b1f;
+  --line: #2c2c33;
+  --text: #d8d8dc;
+  --dim: #8a8a94;
+  --accent: #e8c547;
+  --accent-ink: #1a1500;
+  --fill: #e8c54733;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); }
+body {
+  font: 13px/1.3 ui-monospace, "SF Mono", Menlo, monospace;
+  display: flex; flex-direction: column; gap: 10px;
+  padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right))
+           max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  overscroll-behavior: none; touch-action: manipulation;
+}
+header { display: flex; align-items: center; gap: 12px; flex: none; }
+.brand { color: var(--accent); font-weight: 600; letter-spacing: .04em; }
+.bank { color: var(--dim); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status { font-size: 11px; color: var(--dim); }
+.status.on { color: #7bd389; }
+.status.off { color: #e26d5a; }
+
+.states {
+  /* ONE row on every page; columns are set by remote.js (as many as fit, then "More…"). */
+  flex: none; display: grid; gap: 8px; grid-auto-rows: 56px; overflow: hidden;
+}
+.states .tile { min-height: 0; height: 56px; }
+.tile {
+  min-height: 56px; padding: 8px; border-radius: 10px;
+  background: var(--panel); border: 1px solid var(--line); color: var(--text);
+  font: inherit; text-align: left; display: flex; align-items: flex-end;
+  overflow: hidden; word-break: break-word;
+}
+.tile.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.tile:active { transform: scale(.97); }
+
+/* A page is 12 slots, whatever the device: a strip keeps its width when the
+   page holds fewer, so a fader is always where the hand expects it. */
+.controls {
+  flex: 1; min-height: 0; display: grid; gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+}
+@media (orientation: portrait) and (min-width: 600px) {
+  .controls { grid-template-columns: repeat(6, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); }
+}
+@media (orientation: landscape) {
+  .controls { grid-template-columns: repeat(12, minmax(0, 1fr)); grid-template-rows: minmax(0, 1fr); }
+}
+.slot { min-width: 0; min-height: 0; }
+/* Two half-height items (knobs, buttons, keys) share a slot, one above the other. */
+.stack { display: grid; grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.ctl {
+  position: relative; min-height: 0; border-radius: 12px; overflow: hidden;
+  background: var(--panel); border: 1px solid var(--line);
+  display: flex; flex-direction: column; touch-action: none;
+}
+.ctl .label {
+  position: relative; z-index: 1; padding: 7px 6px 0; font-size: 10px; line-height: 1.25;
+  color: var(--dim); text-transform: uppercase; letter-spacing: .02em; flex: none;
+  /* A strip is narrow: two lines of name before an ellipsis, not one. */
+  overflow: hidden; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.ctl .value {
+  position: relative; z-index: 1; padding: 2px 6px; font-size: 13px; color: var(--text); flex: none;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ctl.held .value { color: var(--accent); }
+/* Fader: the fill rises from the bottom. */
+.fader .fill {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 0;
+  background: var(--fill); border-top: 2px solid var(--accent);
+}
+.fader.held, .knob.held { border-color: var(--accent); }
+/* A spring control says so: it will not stay where you leave it. */
+.spring .label::after { content: ' ↺'; color: var(--accent); }
+
+/* Knob: the same vertical drag as a fader, drawn as an arc. */
+.knob { align-items: stretch; }
+.knob svg { flex: 1; min-height: 0; width: 100%; padding: 2px 4px; }
+.knob .value { text-align: center; padding-bottom: 6px; }
+.k-track, .k-arc { fill: none; stroke-width: 9; stroke-linecap: round; }
+.k-track { stroke: var(--line); }
+.k-arc { stroke: var(--accent); }
+.k-tick { stroke: var(--text); stroke-width: 5; stroke-linecap: round; }
+/* Buttons: toggle, trigger, select segments. */
+.btn, .seg button {
+  font: inherit; color: var(--text); background: transparent; border: 0;
+}
+.toggle, .trigger, .keyctl { align-items: stretch; }
+.toggle .big, .trigger .big, .keyctl .big {
+  font: inherit; color: var(--text); background: transparent;
+  flex: 1; margin: 8px; border-radius: 10px; border: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: center; font-size: 15px;
+}
+.toggle.on .big { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.trigger .big.flash { background: var(--accent); color: var(--accent-ink); }
+.toggle .big, .trigger .big, .keyctl .big { margin: 6px; min-height: 0; }
+/* A key on a page is momentary: lit only while held. */
+.keyctl .big kbd { font: inherit; font-size: 18px; color: var(--accent); }
+.keyctl .big.on { background: var(--accent); border-color: var(--accent); }
+.keyctl .big.on kbd { color: var(--accent-ink); }
+
+/* Pages: tap only, at the bottom where the thumb is. */
+.pages { flex: none; display: flex; gap: 8px; height: 52px; }
+.page-tab {
+  flex: 1; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--panel); color: var(--text); font: inherit; font-size: 13px;
+}
+.page-tab.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.seg { flex: 1; display: grid; gap: 4px; padding: 8px; grid-auto-rows: minmax(0, 1fr); }
+.seg button {
+  border-radius: 8px; border: 1px solid var(--line); padding: 4px; min-height: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.seg button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+
+.empty { color: var(--dim); text-align: center; margin: auto; line-height: 1.6; }
+
+/* Picker: a long option list (sources) — the current option named big. */
+.picker .pick-name {
+  flex: 1; margin: 6px 8px 0; min-height: 0; border-radius: 10px;
+  border: 1px solid var(--line); background: transparent; color: var(--text);
+  font: inherit; font-size: 15px; padding: 6px; overflow: hidden;
+  word-break: break-word;
+}
+.picker .pick-step { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 6px 8px 8px; flex: none; }
+.picker .pick-step button {
+  height: 44px; border-radius: 10px; border: 1px solid var(--line);
+  background: transparent; color: var(--text); font: inherit; font-size: 16px;
+}
+.picker .pick-step button:active, .picker .pick-name:active { background: var(--fill); }
+
+/* The full-screen grid a picker opens. */
+.sheet {
+  position: fixed; inset: 0; z-index: 10; background: var(--bg);
+  display: flex; flex-direction: column; gap: 10px;
+  padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right))
+           max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+}
+.sheet-head { display: flex; align-items: center; justify-content: space-between; flex: none; color: var(--accent); }
+.sheet-close {
+  width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--line);
+  background: transparent; color: var(--text); font: inherit; font-size: 16px;
+}
+.sheet-grid {
+  flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y;
+  display: grid; gap: 8px; align-content: start;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+}
+
+/* An empty rack slot: still there, visibly nothing in it. */
+.tile.empty, .pick-name.empty { opacity: .45; font-style: italic; }
+
+/* Keys: ImWeb's shortcuts as buttons. */
+.keys-btn {
+  font: inherit; font-size: 12px; color: var(--text); background: transparent;
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px;
+}
+.keys-section {
+  grid-column: 1 / -1; color: var(--dim); font-size: 11px;
+  text-transform: uppercase; letter-spacing: .04em; margin-top: 6px;
+}
+.keys-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+.tile.key { align-items: center; gap: 10px; touch-action: none; min-height: 52px; }
+.tile.key span {
+  font-size: 12px; line-height: 1.25; word-break: normal; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.tile.key kbd {
+  flex: none; min-width: 30px; padding: 4px 6px; border-radius: 6px; text-align: center;
+  border: 1px solid var(--line); background: var(--bg); color: var(--accent); font: inherit;
+}
+.tile.key.on kbd { background: var(--accent-ink); }

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#111113">
+  <title>ImWeb Remote</title>
+  <link rel="stylesheet" href="remote.css">
+</head>
+<body>
+  <header>
+    <span class="brand">ImWeb</span>
+    <span id="bank" class="bank"></span>
+    <button id="keys" class="keys-btn" hidden>⌨ Keys</button>
+    <span id="status" class="status" title="Connection">connecting…</span>
+  </header>
+  <section id="states" class="states" aria-label="Display States"></section>
+  <section id="controls" class="controls" aria-label="Controls"></section>
+  <p id="empty" class="empty" hidden>
+    Nothing on this page yet.<br>
+    In ImWeb, right-click a control → <b>Remote page</b> 1–4 (12 per page).
+  </p>
+  <nav id="pages" class="pages" aria-label="Pages" hidden></nav>
+  <script type="module" src="remote.js"></script>
+</body>
+</html>

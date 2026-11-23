@@ -24,6 +24,7 @@ import { openGuide, openPictureLightbox } from './Guide.js';
 import { setViewportPos } from './layout/LayoutManager.js';
 import { makeFloating } from './components/FloatingWindow.js';
 import { openExplain } from './explain/Explain.js';
+import { REMOTE_PAGES, autoWidget } from '../io/RemoteList.js';
 const DEFAULT_FX_ORDER_SP = DEFAULT_FX_ORDER;
 
 // ── Tab switching ──────────────────────────────────────────────────────────────
@@ -2624,6 +2625,67 @@ export class SignalPath {
 
 // ── Context menu for parameter controller assignment ───────────────────────────
 
+/**
+ * The Remote rows of a context menu — "Remote page [1][2][3][4] ✕", and for a
+ * continuous control already on it, "[Fader][Knob] [Spring]". ONE builder for every
+ * place something can be put on the Remote (a parameter row, a rack clip, a
+ * key in the keyboard help), so they cannot drift apart.
+ *
+ * `target` is `{ id }` or `{ key }`. `done()` closes the menu; `notify(msg)`
+ * shows a toast (a full page).
+ */
+export function remoteMenuRows(list, target, { param = null, done = () => {}, notify = () => {} } = {}) {
+  const frag = document.createDocumentFragment();
+  if (!list) return frag;
+  const at = target.id ? list.pageOf(target.id) : list.pageOfKey(target.key);
+  const btn = (text, title, on, fn) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `remote-pg${on ? ' active' : ''}`;
+    b.textContent = text;
+    b.title = title;
+    b.addEventListener('click', (e) => { e.stopPropagation(); fn(); });
+    return b;
+  };
+  const row = document.createElement('div');
+  row.className = 'remote-row';
+  const label = document.createElement('span');
+  label.className = 'remote-row-label';
+  label.textContent = at < 0 ? 'Remote page' : 'On Remote';
+  row.append(label);
+  for (let n = 0; n < REMOTE_PAGES; n++) {
+    row.append(btn(String(n + 1), n === at ? `On page ${n + 1}` : `Put it on Remote page ${n + 1}`, n === at, () => {
+      const msg = list.put(target, n);
+      done();
+      if (msg) notify(msg);
+    }));
+  }
+  if (at >= 0) {
+    row.append(btn('✕', 'Remove from the Remote', false, () => {
+      if (target.id) list.remove(target.id); else list.removeKey(target.key);
+      done();
+    }));
+  }
+  frag.append(row);
+  if (param && at >= 0 && param.type === 'continuous') {
+    const w = list.widgetOf(param.id) ?? autoWidget(param);
+    const row2 = document.createElement('div');
+    row2.className = 'remote-row';
+    const l2 = document.createElement('span');
+    l2.className = 'remote-row-label';
+    l2.textContent = 'Shown as';
+    const spring = list.springOf(param.id);
+    row2.append(l2,
+      btn('Fader', 'A strip you ride', w === 'fader', () => { list.setWidget(param.id, 'fader'); done(); }),
+      btn('Knob', 'Half the size; for set-and-leave values', w === 'knob', () => { list.setWidget(param.id, 'knob'); done(); }),
+      btn('Spring', spring ? 'Springs back when let go — click to stop'
+        : 'Let go and it glides back to where your finger landed', spring,
+      () => { list.setSpring(param.id, !spring); done(); }));
+    frag.append(row2);
+  }
+  return frag;
+}
+
 export class ContextMenu {
   constructor(ps, controllerManager, presetManager = null, tableManager = null) {
     this.ps      = ps;
@@ -2646,6 +2708,15 @@ export class ContextMenu {
     this.el.classList.toggle('setup-only', !!param?.setup);
     this._currentParam = param;
     document.getElementById('ctx-param-label').textContent = param.label;
+    const remoteSlot = document.getElementById('ctx-remote');
+    if (remoteSlot) {
+      remoteSlot.hidden = !this.remote;
+      remoteSlot.replaceChildren(remoteMenuRows(this.remote, { id: param.id }, {
+        param,
+        done: () => this.hide(),
+        notify: (msg) => this.presets?.dispatchEvent(new CustomEvent('toast', { detail: { msg } })),
+      }));
+    }
 
     // Mark current controller type as active
     this.el.querySelectorAll('.menu-item[data-ctrl]').forEach(btn => {

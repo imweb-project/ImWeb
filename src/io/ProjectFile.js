@@ -183,6 +183,8 @@ export class ProjectFile {
       // Display States — see src/ui/layout/PanelLayout.js for why. Positions
       // are viewport px and are re-clamped to the opening machine's screen.
       panelLayout:  this.extras.panelLayout ? this.extras.panelLayout.capture() : null,
+      // Which controls the phone/iPad remote shows (src/io/RemoteList.js).
+      remote:       this.extras.remote ? this.extras.remote.capture() : null,
       audioTape,
     };
   }
@@ -409,6 +411,11 @@ export class ProjectFile {
       if (this.extras.panelLayout) this.extras.panelLayout.restore(data.panelLayout);
       else this.pendingPanelLayout = data.panelLayout;
     }
+
+    // Remote list. Like the panel layout, only honoured when present: a project
+    // written before the remote existed says nothing about it, so loading one
+    // leaves the remote alone rather than emptying it under the performer.
+    if (data.remote && this.extras.remote) this.extras.remote.restore(data.remote);
 
     return data._name ?? data.name ?? 'project';
   }

@@ -2802,6 +2802,12 @@ the same fader, button or stick drives something different on each page.
   up are exempt and act on the first touch: buttons, latched rows, relative
   sticks, and every OSC binding (an OSC remote is told the new positions
   instead).
+- **Feedback** (the row beside Pickup, on by default): ImWeb sends each
+  MIDI-bound control's value back out, so a surface that can be told where to be
+  (MIDI Designer, motorised faders, LED rings) follows Looks, Display States, the
+  AI and page switches. Toggles light their pad and option buttons light the
+  selected one. Only changes are sent, and a control is never answered with its
+  own move. Turn it off for a controller that misbehaves when it receives MIDI.
 - **Clear All MIDI** removes MIDI bindings on every page and keeps OSC and
   gamepad bindings.
 
@@ -3404,12 +3410,73 @@ node tools/osc-relay.mjs            # UDP 9000 → WebSocket 8080
   - `/imweb/<paramId> <value>`: set a parameter. A toggle takes >0.5 as on, which suits a widget that sends the state it shows.
   - `/imweb/toggle/<paramId>`: flip a toggle on the press and ignore the release. Use this for a Flic or any momentary button.
   - `/imweb/trigger/<paramId>`: fire a trigger on the press and ignore the release.
-  - `/imweb/preset/<n>`: recall preset n.
+  - `/imweb/state/<n>`: recall Display State n of the current bank.
+  - `/imweb/preset/<n>`: load bank n.
   - A message with no argument counts as a press.
 - **Feedback:** while connected, ImWeb reports changes back, batched every 50 ms with one message per parameter, so a layout follows state recalls, LFOs and the mouse. It reports **only the parameters your controller actually talks to**: a learned binding reports to its own address (a fader at `/1/fader1` tracks `/1/fader1`), and a parameter the controller has driven by id reports as `/imweb/<paramId>`. Everything else is silent — without that narrowing a patch with LFOs running measured 70–90 messages a second at a device with nothing to display. A value the remote has just set is not sent straight back to it, and triggers are not sent. A display-only widget that never sends anything is never heard from and so gets nothing; touch it once, or learn it, and it starts tracking. On a **mapping-page switch** each learned control is sent the position of the parameter now behind it, so a TouchOSC layout repositions itself instead of showing the previous page — a remote can be told where to be, which is why OSC bindings skip soft takeover. The relay sends feedback to its third argument, which should be the port your app receives on (`node tools/osc-relay.mjs 9000 8080 192.168.1.20:9001`). Without that argument it replies to the last device that sent OSC, at the port it sent from.
 - **OSC Learn** (easiest route): right-click any parameter row → **OSC Learn**, then press the button or move the fader on your controller. The address it sends binds to that row, so you never type a parameter id into the controller app — point it at `/flic/1` or anything else you like. ImWeb listens for about a second and binds **the control that moved**, so a layout that streams an accelerometer or a Max patch sending continuously does not steal the binding: a swept fader beats anything jittering in place, and a button that speaks once beats a stream running at sixty a second. `/imweb/...` addresses are never learned (they already work by id). The badge then reads `OSC:/flic/1`, the arm lasts 10 seconds, and the traffic during the window does not drive the parameter being learned. Learned bindings survive a reload (mapping autosave) and are saved in banks and `.imweb` files. A learned button flips a toggle on the press, fires a trigger once, and drives a continuous parameter by value — a button that sends no value counts as full scale.
 - **Latch** (any button, not just OSC): right-click a parameter's badge → **Latch (press alternates)**. On a continuous parameter, each press then alternates between that row's **min and max fields** — which is what lets a press-only device like a Flic drive it both ways, instead of only upward. The badge shows `⇄` while it is on, the release never acts, and the press always travels to whichever end the value is further from, so a state recall cannot leave the button out of step. Off by default; not offered on a toggle (a press already flips one) or on a stick axis (that is a position, not a button — for a stick, see **Relative** under Gamepad).
 - **Status:** OSC dot in status bar (click to toggle/connect)
+
+### ImWeb Remote (phone / iPad)
+
+ImWeb's own remote: a page you open in Safari on a phone or iPad on the same
+Wi-Fi. It shows the current bank's Display States as big named tiles and up to
+4 pages of 12 controls you choose, by their real names and in real units, and
+it follows everything ImWeb does. The layout is made in ImWeb, never on the
+phone, and there is no app to install.
+
+1. Run the relay on the Mac: `node tools/osc-relay.mjs`. It prints the address to
+   open on the phone, such as `http://192.168.1.20:8080/`.
+2. In ImWeb, connect OSC to `ws://localhost:8080` (click the OSC dot in the
+   status bar). After the first time it reconnects by itself.
+3. Right-click any control → **Remote page 1 2 3 4**: click a number to put it
+   on that page, or to move it there from another page; **✕** takes it off.
+   A page holds 12. The layout is saved with the project.
+4. Open the printed address in Safari on the phone or iPad.
+
+- **Pages** are the tabs along the bottom. Only pages with something on them
+  get a tab. Switching is a tap, never a swipe, so a fader drag can't flip the
+  page by accident. Each phone or iPad remembers the page it was on.
+- **Layout:** a page is 12 slots: one row of strips on an iPad in landscape, 6×2
+  in portrait, 4×3 on a phone. A strip keeps its width when a page holds fewer,
+  so a fader is always where your hand expects it. Knobs, buttons and keys take
+  half a slot, so two stack in one.
+- **Faders** move relative to where your finger lands, so touching one never
+  makes the value jump. Full range is the same finger travel on every device.
+  **Knobs** turn with the same up/down drag. A control in degrees (hues,
+  rotations) is a knob by itself; for any other, right-click → **Shown as
+  Fader / Knob**. **Spring** (same menu row) makes a fader or knob glide back
+  to where your finger landed when you let go, in about 0.15 s: push it and the
+  picture blooms, let go and you are back on the Look. Its name on the remote
+  ends in ↺. **Toggles** switch on a tap, **triggers** fire on a tap,
+  and a choice with up to 6 options shows a button per option. A longer
+  list, such as a source, shows the current option by name with ◀ ▶ to step;
+  tap the name for a grid of every option. If the row's min/max fields narrow
+  a list or a range, the remote uses the same narrower span.
+- **State tiles** recall that Display State. The lit tile is the active one.
+  They stay in one row on every page; if the bank has more than fit, the last
+  tile is **More…**, which opens all of them.
+- **Movie clips:** right-click any clip in a deck's rack → **Clip picker on the
+  Remote 1 2 3 4**. The picker shows the racked clips by name, and empty slots
+  are dimmed. (The deck's **Clip** row has the same menu. It sits at the end
+  of the deck's controls, below the cue row.)
+- **A key on a page:** open the keyboard help (**?**), right-click a key such as
+  **K** → **Remote page 1 2 3 4**. It becomes a button beside the faders, lit
+  while you hold it.
+- **⌨ Keys** (top right) opens ImWeb's performance shortcuts as named buttons:
+  Camera (V), Movie A (M), Keyer (K), Blend (B), Solo (S), Hold (H), Tap tempo
+  (T) and the rest of the single-key ones, plus any key you bound yourself
+  with right-click → **Key...**. A button presses the key in ImWeb, so it does
+  exactly what the key does. Keys that save, open or reset are not offered. If
+  the keyboard lock in ImWeb's top bar is on, letter keys are blocked here too.
+- Everything follows ImWeb: a recalled state, a Look, the AI or a hand on the
+  Mac moves the controls on the phone. A control you are holding is left alone.
+- The remote uses the OSC protocol (`/imweb/<paramId>`, `/imweb/toggle/…`,
+  `/imweb/state/<n>`), so it works beside a Flic or TouchOSC on the same relay.
+- It doesn't work: read the relay's log first. `browser ↔ browser` lines mean
+  the phone and ImWeb are talking. If they never appear, check that ImWeb's OSC
+  dot is on and that the phone is on the same network.
 
 ---
 

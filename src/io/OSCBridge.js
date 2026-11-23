@@ -19,10 +19,13 @@
  *   { address: "/imweb/foo", args: [0.5] }
  */
 
-import { applyControlInput } from '../controls/controlInput.js';
+import { applyControlInput, surfaceNorm } from '../controls/controlInput.js';
+import { autoWidget } from './RemoteList.js';
 
 const DEFAULT_URL = 'ws://localhost:8080';
 const FLUSH_MS    = 50;
+/** How often the remote's layout is re-checked for changes (sent only if changed). */
+const REMOTE_REFRESH_MS = 2000;
 /**
  * Where the last working relay URL is remembered, so the next launch connects
  * by itself. Per origin, like every other localStorage key here: a URL learned
@@ -79,10 +82,124 @@ export class OSCBridge {
      */
     this.learnWindowMs = LEARN_WINDOW_MS;
     this._ctrl       = null;   // ControllerManager, for assign() + badge repaint
+    this.remote      = null;   // RemoteList — see setRemoteList
+    this._remoteSeen = false;  // a remote page has said hello on this relay
+    this._optLabels  = new Map(); // param id → () => option labels (see setOptionLabels)
+    this._keys       = null;      // { list(), press(key) } — see setKeyProvider
+    this._lastManifest = '';      // what the remote last got, so refreshes only send changes
   }
 
   /** Wired in main.js so a learned binding goes through the sanctioned writer. */
   setControllerManager(ctrl) { this._ctrl = ctrl; }
+
+  // ── ImWeb Remote (tools/remote/) ────────────────────────────────────────────
+
+  /**
+   * Wire the remote list (src/io/RemoteList.js). The remote page draws only
+   * what the manifest says, so every fact the manifest carries re-sends it when
+   * it changes: the list itself, the bank (another bank has other states), and
+   * the active state (the lit tile).
+   */
+  setRemoteList(list) {
+    this.remote = list;
+    list.onChange(() => this._sendManifest());
+    const resend = () => this._sendManifest();
+    for (const ev of ['presetActivated', 'stateRecalled', 'stateSaved', 'bankRenamed', 'banksChanged']) {
+      this.presets?.addEventListener?.(ev, resend);
+    }
+  }
+
+  /**
+   * Real names for a select's options on the remote. `movie.clip` is "1"…"8"
+   * in ImWeb because what sits in each rack slot differs per project — but on
+   * a phone "Harbour night" is playable and "3" is not. `fn()` returns the
+   * current names by index; a missing one is an empty slot.
+   */
+  setOptionLabels(id, fn) { this._optLabels.set(id, fn); }
+
+  /**
+   * The remote's Keys sheet: `list()` → [{ key, label, section }], the keys a
+   * remote may press; `press(key)` presses one in ImWeb. Wired in main.js, where
+   * the shortcut handler and its help list live — the bridge only refuses keys
+   * not on the list, so a remote can never reach ⌘S or Reset All.
+   */
+  setKeyProvider(provider) { this._keys = provider; }
+
+  /** Re-send the manifest if anything on it changed (a clip racked, a key bound). */
+  refreshRemote() { this._sendManifest(false); }
+
+  /** What the remote page needs to draw itself. Pure — the audit reads it. */
+  buildManifest() {
+    // `lo`/`hi` are the row's min/max fields — the range a controller write
+    // actually lands in — so the page's 0–1 means what ImWeb's does. For a
+    // select they are option indices, and the page offers only that span.
+    const controls = (this.remote?.ids ?? []).map((id) => this.ps.get(id)).filter(Boolean).map((p) => {
+      const isSel = p.type === 'select';
+      const last = (p.options?.length ?? 1) - 1;
+      const lo = isSel ? Math.max(0, Math.min(last, Math.round(p.ctrlMin ?? 0))) : (p.ctrlMin ?? p.min);
+      const hi = isSel ? Math.max(lo, Math.min(last, Math.round(p.ctrlMax ?? last))) : (p.ctrlMax ?? p.max);
+      return {
+        id: p.id, label: p.label ?? p.id, type: p.type,
+        min: p.min, max: p.max, lo, hi, invert: !!p.invert,
+        step: p.step, unit: p.unit ?? '', curve: p.curve ?? 'linear',
+        options: this._labelsFor(p), value: surfaceNorm(p),
+        empty: this._emptyFor(p),
+        // Fader or knob: the performer's choice (right-click → Remote), else by unit.
+        ...(p.type === 'continuous' ? { w: this.remote?.widgetOf?.(p.id) ?? autoWidget(p) } : {}),
+        ...(p.type === 'continuous' && this.remote?.springOf?.(p.id) ? { spring: true } : {}),
+      };
+    });
+    const bank = this.presets?.current ?? null;
+    const states = (bank?.states ?? []).map((s, i) => (s ? { i, name: s.name || `State ${i}` } : null)).filter(Boolean);
+    let keys = [];
+    try { keys = this._keys?.list?.() ?? []; } catch (e) { console.warn('[Remote] key list', e); }
+    // Pages say WHERE; `controls` and `keys` say WHAT. An item names a control
+    // by id or a key by key and the page looks it up, so nothing is described
+    // twice — and an item whose control or key has gone simply isn't drawn.
+    const pages = this.remote?.pages ?? [];
+    return { v: 2, pages, controls, bank: bank?.name ?? '', states, active: bank?.activeState ?? null, keys };
+  }
+
+  /** Option names for the remote: the live labels where a provider exists. */
+  _labelsFor(p) {
+    if (!p.options) return null;
+    const fn = this._optLabels.get(p.id);
+    if (!fn) return p.options;
+    let names = [];
+    try { names = fn() ?? []; } catch { /* a provider must not break the manifest */ }
+    return p.options.map((o, i) => (names[i] ? String(names[i]) : `${o} · empty`));
+  }
+
+  /** Indices of options a provider says are empty — the page dims them. */
+  _emptyFor(p) {
+    const fn = this._optLabels.get(p.id);
+    if (!fn || !p.options) return [];
+    let names = [];
+    try { names = fn() ?? []; } catch { return []; }
+    return p.options.map((_, i) => i).filter((i) => !names[i]);
+  }
+
+  /**
+   * Send the manifest — only once a remote has said hello, so a rig of Flics
+   * and TouchOSC never pays for it. Every control on it becomes addressed-by-id,
+   * which is all the existing `_flush` needs to keep the remote in sync: no
+   * second feedback path. Its addresses are recorded as already shown, because
+   * the page redraws from the manifest's own values.
+   */
+  _sendManifest(force = true) {
+    if (!this._remoteSeen || !this._active) return;
+    const m = this.buildManifest();
+    // Values ride on ordinary feedback, so they are left out of the change test:
+    // a fader moving must not re-send the whole layout.
+    const shape = JSON.stringify({ ...m, controls: m.controls.map(({ value, ...c }) => c) });
+    if (!force && shape === this._lastManifest) return;
+    this._lastManifest = shape;
+    for (const c of m.controls) {
+      this._addressedById.add(c.id);
+      this._sentVal.set(`/imweb/${c.id}`, c.value);
+    }
+    this.send('/imweb/remote/manifest', JSON.stringify(m));
+  }
 
   /**
    * Arm: the next incoming address binds to `paramId`.
@@ -152,6 +269,7 @@ export class OSCBridge {
   disconnect() {
     clearTimeout(this._retryTimer);
     clearInterval(this._flushTimer);
+    clearInterval(this._refreshTimer);
     this._dirty.clear();
     // Deliberate: turning OSC off should STAY off across launches. A dropped
     // connection is not this path and must not forget — the relay being
@@ -177,7 +295,7 @@ export class OSCBridge {
   }
 
   sendParam(param) {
-    this.send(`/imweb/${param.id}`, param.normalized);
+    this.send(`/imweb/${param.id}`, surfaceNorm(param));
   }
 
   /**
@@ -255,7 +373,10 @@ export class OSCBridge {
     for (const p of this._dirty) {
       const address = this._feedbackAddress(p);
       if (!address) continue;
-      const n = p.normalized;
+      // Where the surface should SHOW it — the slew target, in the row's range,
+      // invert undone. `p.normalized` (the gliding value, full range) made the
+      // Remote's faders jump back on release. See controlInput.surfaceNorm.
+      const n = surfaceNorm(p);
       if (this._heard.has(p.id)) { this._sentVal.set(address, n); continue; }
       if (this._sentVal.get(address) === n) continue;
       this._sentVal.set(address, n);
@@ -288,13 +409,22 @@ export class OSCBridge {
       // A new connection may be a different device: assume it shows nothing.
       this._sentVal.clear();
       this._watchParams();
+      // ImWeb (re)connected while a remote page may already be on the relay:
+      // ask it to say hello, so it gets a manifest without being reloaded.
+      this.send('/imweb/remote/who');
       clearInterval(this._flushTimer);
       this._flushTimer = setInterval(() => this._flush(), FLUSH_MS);
+      // A clip racked, a state renamed, a key bound: none of these is an event
+      // the bridge hears, so the remote's layout is re-checked every 2 s and
+      // sent only if it changed. Silent until a remote has said hello.
+      clearInterval(this._refreshTimer);
+      this._refreshTimer = setInterval(() => this.refreshRemote(), REMOTE_REFRESH_MS);
     };
 
     this._ws.onclose = () => {
       this._active = false;
       clearInterval(this._flushTimer);
+      clearInterval(this._refreshTimer);
       this._dirty.clear();
       this._updateIndicator(false);
       this._scheduleRetry();
@@ -343,6 +473,36 @@ export class OSCBridge {
     if (!m) return;
 
     const rest = m[1];
+
+    // /imweb/remote/hello — ImWeb's own remote page announcing itself. It is
+    // answered with the manifest: what to draw, and where everything is now.
+    if (rest === 'remote/hello') {
+      this._remoteSeen = true;
+      this._sendManifest();
+      return;
+    }
+
+    // /imweb/key/<key> — the remote's Keys sheet pressing a shortcut. Only keys
+    // the provider lists are pressed; anything else is ignored.
+    if (rest.startsWith('key/')) {
+      const key = decodeURIComponent(rest.slice(4));
+      let allowed = [];
+      try { allowed = this._keys?.list?.() ?? []; } catch { /* none */ }
+      if (!allowed.some((k) => k.key === key)) return;
+      // Down and up, like a real key: a Key... binding on a continuous control
+      // is momentary and falls back on the release.
+      if (isPress) this._keys.press(key);
+      else this._keys.release?.(key);
+      return;
+    }
+
+    // /imweb/state/<n> — recall Display State n of the CURRENT bank. Not to be
+    // confused with /imweb/preset/<n> below, which loads a whole BANK.
+    if (rest.startsWith('state/')) {
+      const n = parseInt(rest.slice(6));
+      if (isPress && Number.isInteger(n) && n >= 0) this.presets?.recallState?.(n);
+      return;
+    }
 
     // /imweb/preset/<n>
     if (rest.startsWith('preset/')) {

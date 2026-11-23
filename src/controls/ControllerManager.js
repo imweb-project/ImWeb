@@ -13,7 +13,7 @@ import { SeqController, seqNormalize } from './SeqController.js';
 import { LFOController } from './LFO.js';
 import { BeatDetector }  from './BeatDetector.js';
 import { compileExpression } from './ExprCompiler.js';
-import { applyControlInput, isPagedBinding, isLatched, isRelative } from './controlInput.js';
+import { applyControlInput, isPagedBinding, isLatched, isRelative, surfaceNorm } from './controlInput.js';
 
 /**
  * Default sweep range for an X-map targeting an LFO's rate.
@@ -1063,10 +1063,8 @@ export class ControllerManager {
    * `c:<ch>:<cc>` or `n:<ch>:<note>` — the same physical-control identity the
    * input side uses — so input and output agree about which control is which.
    *
-   * The value is the INVERSE of what input does (controlInput / setNormalized):
-   * honours ctrlMin/ctrlMax, curve and invert, and reads the slew TARGET rather
-   * than the gliding value, or a slewed knob would be dragged back toward the
-   * glide while the finger is still on it. Response tables are not inverted —
+   * The value is `surfaceNorm(p)` (controlInput.js), the one inverse of what
+   * input does, shared with OSC and the Remote. Response tables are not inverted —
    * they need not be invertible — which is why the echo rule in
    * `_tickFeedback` compares against what the param SETTLED on, not against
    * the incoming CC.
@@ -1081,18 +1079,7 @@ export class ControllerManager {
       // A note binding on a continuous param is velocity-driven; the pad has no
       // position to be told about.
       if (c.type === 'midi-note' && p.type !== PARAM_TYPE.TOGGLE) return out;
-      let n;
-      if (p.type === PARAM_TYPE.TOGGLE) n = p.value ? 1 : 0;
-      else if (p.type === PARAM_TYPE.SELECT) {
-        const last = (p.options?.length ?? 1) - 1;
-        const lo = Math.max(0, Math.min(last, Math.round(p.ctrlMin ?? 0)));
-        const hi = Math.max(lo, Math.min(last, Math.round(p.ctrlMax ?? last)));
-        n = hi > lo ? (p.value - lo) / (hi - lo) : 0;
-      } else {
-        const v = p.slew > 0 ? p._target : p.value;
-        n = p.toNorm(v, p.ctrlMin ?? p.min, p.ctrlMax ?? p.max);
-      }
-      if (p.invert) n = 1 - n;
+      const n = surfaceNorm(p);   // the shared inverse — see controlInput.js
       const v127 = Math.round(Math.max(0, Math.min(1, n)) * 127);
       out.push([c.type === 'midi-cc' ? `c:${ch}:${c.cc}` : `n:${ch}:${c.note}`, v127]);
     } else if (c.type === 'midi-cc-map') {

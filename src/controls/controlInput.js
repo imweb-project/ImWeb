@@ -142,3 +142,40 @@ export function isRelative(param) {
   return !!param?.controller?.relative && param.type === 'continuous'
     && String(param.controller.type).startsWith('gamepad-axis-');
 }
+
+/**
+ * Where a control surface should SHOW a parameter, 0–1: the exact inverse of
+ * how input lands on it (`applyControlInput` → `setNormalized`). Every feedback
+ * path — MIDI (ControllerManager._feedbackTargets), OSC (OSCBridge._flush) and
+ * the ImWeb Remote's manifest — reads this one function, so a surface shows the
+ * same position whichever wire it is on. Two copies is how they drift.
+ *
+ *  - the slew TARGET, not the gliding value. Reporting the glide made the
+ *    Remote's fader jump back on release and creep after it, and kept sending a
+ *    converging tail of ever-smaller changes for half a minute (measured on the
+ *    owner's relay: 20 msg/s on a slewed param nobody was touching);
+ *  - the row's min/max fields (`ctrlMin`/`ctrlMax`) and `curve`, which bound
+ *    and shape every controller write;
+ *  - `invert`, undone — but NOT for a toggle, which every input path flips on
+ *    the press without consulting invert, so its state is shown as it is.
+ *
+ * Response tables are not undone: they need not be invertible. Feedback paths
+ * therefore carry an echo rule (a control that just spoke is not answered).
+ */
+export function surfaceNorm(p) {
+  if (!p) return 0;
+  if (p.type === 'toggle') return p.value ? 1 : 0;
+  if (p.type === 'trigger') return 0;
+  let n;
+  if (p.type === 'select') {
+    const last = (p.options?.length ?? 1) - 1;
+    const lo = Math.max(0, Math.min(last, Math.round(p.ctrlMin ?? 0)));
+    const hi = Math.max(lo, Math.min(last, Math.round(p.ctrlMax ?? last)));
+    n = hi > lo ? (p.value - lo) / (hi - lo) : 0;
+  } else {
+    const v = p.slew > 0 ? p._target : p.value;
+    n = p.toNorm(v, p.ctrlMin ?? p.min, p.ctrlMax ?? p.max);
+  }
+  if (p.invert) n = 1 - n;
+  return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 0;
+}

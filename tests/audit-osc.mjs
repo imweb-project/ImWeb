@@ -309,9 +309,13 @@ console.log('\nfeedback respects the connection');
   msg('/imweb/t.cont', [0]);  // addressed, so silence below is about the connection
   flush();
   bridge.disconnect();
+  // Counted from HERE: on connect the bridge sends /imweb/remote/who (asking an
+  // ImWeb Remote page to say hello), which is before the disconnect under test.
+  const sentAtDisconnect = ws.sent.length;
   ps.set('t.cont', 55);
   bridge._flush?.();
-  check('nothing is sent after disconnect', ws.sent.length === 0, `${ws.sent.length} sent`);
+  check('nothing is sent after disconnect', ws.sent.length === sentAtDisconnect,
+    `${ws.sent.length - sentAtDisconnect} sent`);
   // The flush above is not what runs in life — disconnect stops the timer, so
   // nothing flushes until reconnect. Change again with NO flush in between, or
   // this check is passed by the flush discarding the queue (mutation found it).

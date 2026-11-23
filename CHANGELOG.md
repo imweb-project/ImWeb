@@ -9,6 +9,41 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **ImWeb Remote**: ImWeb's own remote, a page opened in Safari on a phone or
+  iPad on the same Wi-Fi. Run `node tools/osc-relay.mjs` and open the address it
+  prints. The page shows the current bank's Display States as big named tiles
+  (the active one lit, one row, the rest under **More…**) and up to 4 pages of
+  12 controls placed by right-click → **Remote page 1 2 3 4**, saved with the
+  project. The layout is made in ImWeb only, never on the phone. Pages switch
+  by tapping tabs at the bottom, never by swiping. A page is 12 slots: one row
+  of thin strips on an iPad in landscape, 6×2 in portrait, 4×3 on a phone.
+  Controls show their real names and units: faders that never jump on touch
+  (the same finger travel on every device), knobs (automatic for anything in
+  degrees, else right-click → **Shown as Knob**), toggles, triggers and option
+  buttons. Knobs and buttons take half a slot. **Spring** (same menu row): let
+  go of a fader or knob and it glides back to where your finger landed in
+  about 0.15 s — throw-and-return, playable without looking. A long
+  list, such as a source, is a picker: the current option named big, ◀ ▶ to
+  step, and a tap opens a grid of every option. A movie deck's clip picker
+  shows the racked clips by name: right-click a clip in the rack → **Clip
+  picker on the Remote**. Any key in the keyboard help (?) can go on a page as
+  a button the same way, e.g. K Keyer. **⌨ Keys** opens ImWeb's performance shortcuts (K Keyer,
+  V Camera, B Blend…) and any key bound with Key..., as named buttons. They
+  are pressed through ImWeb's own shortcut handler, and nothing that saves,
+  opens or resets is offered. It
+  stays in sync both ways, so recalls, Looks and the AI move the phone's
+  controls. It needs no layout work and no app install. The relay now also
+  serves the page and passes messages between browsers. New OSC address
+  `/imweb/state/<n>` recalls a Display State (`/imweb/preset/<n>` loads a
+  bank, as before). `tests/audit-remote.mjs`.
+- **OSC feedback reports where a control was SET, not where it is gliding.**
+  On a slewed parameter, OSC feedback used to send the moving value, so a remote
+  fader jumped back when you let go and then crept. It also kept sending ever-
+  smaller changes for half a minute: 20 msg/s on a parameter nobody touched.
+  Feedback now sends the slew target, within the row's own min/max fields and
+  with invert undone. MIDI feedback, OSC feedback and the Remote now share one
+  rule for this (`surfaceNorm` in controlInput.js). An inverted toggle's MIDI
+  pad no longer lights backwards.
 - **MIDI Feedback** (Sources › Live In, beside Pickup; on by default). ImWeb
   now sends every MIDI-bound control's value back to the surface, so MIDI
   Designer, motorised faders and LED rings follow whatever moved it: a Look, a

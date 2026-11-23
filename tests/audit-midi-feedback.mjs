@@ -146,6 +146,14 @@ console.log('\n5. inverse mapping, kinds');
   note(36, 127);                            // press on the pad itself
   out = pass();
   check('pad press is not echoed back', out.length === 0, JSON.stringify(out));
+  // Every input path flips a toggle on the press without consulting invert, so
+  // its pad must show the state as it is — an inverted toggle once lit dark.
+  ps.get('t.tog').invert = true;
+  ps.set('t.tog', 0); pass();
+  ps.set('t.tog', 1);
+  out = pass();
+  check('an inverted toggle still lights its pad when ON', has(out, JSON.stringify([0x90, 36, 127])), JSON.stringify(out));
+  ps.get('t.tog').invert = false;
 
   cm.assign('t.sel', { type: 'midi-cc-map', ccs: [40, 41, 42, null, null], notes: [null, null, null, 60, null], channel: 1 });
   pass();

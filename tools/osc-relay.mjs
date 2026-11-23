@@ -16,6 +16,11 @@
  * Then in ImWeb click the OSC badge in the status bar and accept
  * ws://localhost:8080.
  *
+ * ImWeb Remote: the same port also serves the phone/iPad remote page
+ * (tools/remote/). Open the http://<this Mac's address>:8080/ printed at start
+ * in Safari on a device on the same Wi-Fi. Browser clients are relayed to each
+ * other, so the remote and ImWeb talk through here exactly like an OSC device.
+ *
  * Feedback goes to the third argument: `host:port`, or just `port` on the host
  * of whichever device last sent OSC. Without it, feedback goes back to that
  * device's own address AND port — which only works for apps that listen on the
@@ -40,6 +45,10 @@
  */
 
 import dgram from 'node:dgram';
+import http from 'node:http';
+import os from 'node:os';
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 
 const UDP_PORT = Number(process.argv[2] ?? 9000);
@@ -135,31 +144,83 @@ function encodeOSC(address, args) {
 // ── Relay ───────────────────────────────────────────────────────────────────
 // Feedback is batched in ImWeb but still steady (a running LFO sends 20 msg/s),
 // so it is summarised once a second rather than logged per message.
-const out = { sent: 0, noTarget: 0, last: '', to: '' };
+const out = { sent: 0, noTarget: 0, last: '', to: '', peer: 0, peerLast: '' };
 setInterval(() => {
   if (out.sent) console.log(`[relay] ← imweb  ${out.sent} msg/s → ${out.to}  (last ${out.last})`);
+  if (out.peer) console.log(`[relay] browser ↔ browser  ${out.peer} msg/s  (last ${out.peerLast})`);
+  out.peer = 0;
   if (out.noTarget) console.log(`[relay] ← imweb  ${out.noTarget} feedback msg(s) dropped — no device has sent OSC yet; or pass host:port as the 3rd argument`);
   out.sent = 0; out.noTarget = 0;
 }, 1000).unref();
 
-const wss = new WebSocketServer({ port: WS_PORT });
+// ── ImWeb Remote page ───────────────────────────────────────────────────────
+// The phone/iPad remote (tools/remote/) is served from HERE, over plain http on
+// the WebSocket port, rather than from Vite. Two reasons, both Safari: the dev
+// server is https with a self-signed certificate (a warning page on every
+// phone), and an https page may not open a plain ws:// socket to the Mac. Same
+// origin as the socket, so the page simply dials ws://<the host it came from>.
+// A fixed list of files — nothing else on disk is reachable through this.
+const REMOTE_DIR = fileURLToPath(new URL('./remote/', import.meta.url));
+const REMOTE_FILES = {
+  '/':           ['index.html', 'text/html; charset=utf-8'],
+  '/index.html': ['index.html', 'text/html; charset=utf-8'],
+  '/remote.js':  ['remote.js',  'text/javascript; charset=utf-8'],
+  '/remote.css': ['remote.css', 'text/css; charset=utf-8'],
+};
+const server = http.createServer(async (req, res) => {
+  const f = REMOTE_FILES[(req.url ?? '/').split('?')[0]];
+  if (!f) { res.writeHead(404).end('not found'); return; }
+  try {
+    const body = await readFile(REMOTE_DIR + f[0]);
+    res.writeHead(200, { 'Content-Type': f[1], 'Cache-Control': 'no-store' }).end(body);
+  } catch { res.writeHead(500).end('remote page missing'); }
+});
+
+const wss = new WebSocketServer({ server });
 const clients = new Set();
 wss.on('connection', (ws, req) => {
   clients.add(ws);
-  console.log(`[relay] ImWeb connected (${req.socket.remoteAddress}) — ${clients.size} client(s)`);
+  console.log(`[relay] browser connected (${req.socket.remoteAddress}) — ${clients.size} client(s)`);
   ws.on('close', () => { clients.delete(ws); console.log(`[relay] client left — ${clients.size} left`); });
   ws.on('error', () => clients.delete(ws));
-  // ImWeb's parameter feedback: { address, args } JSON → OSC over UDP.
   ws.on('message', (d) => {
     let m;
     try { m = JSON.parse(String(d)); } catch { return; }
     if (typeof m?.address !== 'string' || !m.address.startsWith('/')) return;
+    // Browser to browser: ImWeb's feedback reaches the remote page, and the
+    // remote's moves reach ImWeb. Never back to the sender — that would be an
+    // echo of its own move.
+    const line = JSON.stringify({ address: m.address, args: Array.isArray(m.args) ? m.args : [] });
+    let peers = 0;
+    for (const c of clients) {
+      if (c === ws || c.readyState !== 1) continue;
+      try { c.send(line); peers++; } catch {}
+    }
+    if (peers) { out.peer++; out.peerLast = `${m.address} ${String(m.args?.[0] ?? '').slice(0, 24)}`; }
+    // The remote's own vocabulary means nothing to a hardware OSC device.
+    if (m.address.startsWith('/imweb/remote/')) return;
+    // Out to UDP (Flic, TouchOSC, Max). With no device yet, it is only a drop
+    // worth reporting when no browser peer took the message either.
     const host = REPLY?.host ?? lastSender?.address;
     const port = REPLY?.port ?? lastSender?.port;
-    if (!host || !port) { out.noTarget++; return; }
+    if (!host || !port) { if (!peers) out.noTarget++; return; }
     udp.send(encodeOSC(m.address, Array.isArray(m.args) ? m.args : []), port, host, () => {});
     out.sent++; out.last = `${m.address} ${m.args?.[0]}`; out.to = `${host}:${port}`;
   });
+});
+
+/** Addresses a phone on the same network can reach this Mac at. */
+function lanUrls() {
+  const urls = [];
+  for (const list of Object.values(os.networkInterfaces())) {
+    for (const a of list ?? []) if (a.family === 'IPv4' && !a.internal) urls.push(`http://${a.address}:${WS_PORT}/`);
+  }
+  return urls;
+}
+server.on('error', (e) => { console.error(`[relay] port ${WS_PORT}:`, e.message); process.exit(1); });
+server.listen(WS_PORT, () => {
+  console.log(`[relay] Remote page  http://localhost:${WS_PORT}/`);
+  for (const u of lanUrls()) console.log(`[relay]   on the phone/iPad: ${u}`);
 });
 
 const udp = dgram.createSocket('udp4');
@@ -181,7 +242,7 @@ udp.on('message', (buf, rinfo) => {
 udp.on('error', (e) => { console.error('[relay] UDP error:', e.message); process.exit(1); });
 udp.bind(UDP_PORT, () => {
   console.log(`[relay] OSC/UDP  listening on ${UDP_PORT}`);
-  console.log(`[relay] WebSocket listening on ws://localhost:${WS_PORT}`);
+  console.log(`[relay] WebSocket listening on ws://localhost:${WS_PORT} (and the Remote page, same port)`);
   console.log(REPLY
     ? `[relay] feedback → ${REPLY.host ?? '(last sender host)'}:${REPLY.port}`
     : '[relay] feedback → the last device that sent OSC, at the port it sent from');

@@ -133,6 +133,7 @@ import { GestureArbitrator } from "./core/GestureArbitrator.js";
 import { MobileStatePad } from "./ui/components/MobileStatePad.js";
 import { PresetManager, openDB } from "./state/Preset.js";
 import { OSCBridge } from "./io/OSCBridge.js";
+import { RemoteList } from "./io/RemoteList.js";
 import { MontyBridge } from "./io/MontyBridge.js";
 import { ProjectFile } from "./io/ProjectFile.js";
 import clipLibrary from "./io/ClipLibrary.js";
@@ -194,6 +195,7 @@ import {
   buildPaletteSection,
   buildAnalogPresetBar,
   initHelpMenu,
+  remoteMenuRows,
 } from "./ui/UI.js";
 import { openCtrlPopover } from "./ui/components/CtrlPopover.js";
 import { makeFloating } from "./ui/components/FloatingWindow.js";
@@ -4492,6 +4494,88 @@ async function main() {
   // ── OSC bridge ────────────────────────────────────────────────────────────
   const oscBridge   = new OSCBridge(ps, presetMgr);
   ctrl.setOSCBridge(oscBridge); // so the context menu's OSC Learn can arm it
+  // ImWeb Remote: which controls the phone/iPad page shows (right-click → Add
+  // to Remote). Wired before autoConnect so a remote already on the relay gets
+  // its manifest on the first connect.
+  const remoteList = new RemoteList();
+  oscBridge.setRemoteList(remoteList);
+  contextMenu.remote = remoteList;
+  // The clip pickers show what is racked, by name — "3" is not playable on a
+  // phone. Same name the rack row shows (extension stripped).
+  const _clipNames = (deck) => () => deck.clips.map((c) => String(c?.name ?? "").replace(/\.[^/.]+$/, ""));
+  oscBridge.setOptionLabels("movie.clip", _clipNames(movieInput));
+  oscBridge.setOptionLabels("movieB.clip", _clipNames(movieInputB));
+  /**
+   * The remote's Keys sheet. A remote press is replayed as a real keydown/keyup
+   * on the page, so it goes through the ONE shortcut handler (and the Key...
+   * controllers in ControllerManager) — no second copy of any shortcut to drift.
+   *
+   * Names are read from the keyboard help (#kb-help), which is what a person
+   * reads too. Only the performance keys below are offered: no UI-layout keys
+   * (fullscreen needs a real gesture anyway, `l` acts on the pointer), and
+   * nothing with ⌘ or ⇧Esc — a phone must not be able to save, open or reset.
+   */
+  const REMOTE_KEYS = {
+    v: "KeyV", m: "KeyM", q: "KeyQ", a: "KeyA", z: "KeyZ", n: "KeyN", p: "KeyP",
+    b: "KeyB", k: "KeyK", x: "KeyX", s: "KeyS", h: "KeyH", c: "KeyC", t: "KeyT",
+    "⌫": "Backspace",
+  };
+  const _remoteKeyList = () => {
+    const out = [];
+    let section = "";
+    document.querySelectorAll("#kb-help .kb-section, #kb-help .kb-row").forEach((el) => {
+      if (el.classList.contains("kb-section")) { section = el.textContent.trim(); return; }
+      const kbd = el.querySelector("kbd")?.textContent.trim();
+      const code = REMOTE_KEYS[kbd];
+      if (!code) return;
+      out.push({ key: code === "Backspace" ? "Backspace" : kbd, code, cap: kbd.toUpperCase(),
+        label: el.querySelector("span")?.textContent.trim() ?? kbd, section });
+    });
+    // Keys you bound yourself (right-click → Key...), named by their control.
+    for (const p of ps.getAll()) {
+      const k = p.controller?.type === "key" ? p.controller.key : null;
+      if (!k || out.some((e) => e.key === k)) continue;
+      out.push({ key: k, code: "", cap: k.length === 1 ? k.toUpperCase() : k, label: p.label, section: "Your keys" });
+    }
+    return out;
+  };
+  const _remoteKeyEvent = (type, key) => {
+    const e = _remoteKeyList().find((x) => x.key === key);
+    if (!e) return;
+    document.body.dispatchEvent(new KeyboardEvent(type, { key: e.key, code: e.code, bubbles: true, cancelable: true }));
+  };
+  oscBridge.setKeyProvider({
+    list: _remoteKeyList,
+    press: (key) => _remoteKeyEvent("keydown", key),
+    release: (key) => _remoteKeyEvent("keyup", key),
+  });
+  // A key on a Remote PAGE, as a button beside the faders (K Keyer one tap
+  // away instead of inside the Keys sheet): right-click it in the keyboard
+  // help (?), the list the Keys sheet is read from.
+  document.getElementById("kb-help")?.addEventListener("contextmenu", (e) => {
+    const row = e.target.closest?.(".kb-row");
+    const kbd = row?.querySelector("kbd")?.textContent.trim();
+    const k = kbd && _remoteKeyList().find((x) => x.cap === kbd.toUpperCase() && x.code === REMOTE_KEYS[kbd]);
+    if (!k) return;
+    e.preventDefault();
+    document.querySelector(".clip-ctx-menu")?.remove();
+    const menu = document.createElement("div");
+    menu.className = "clip-ctx-menu ctx-menu";
+    menu.innerHTML = `<div class="ctx-item ctx-remote-head"></div><div class="ctx-remote-rows"></div>`;
+    menu.firstChild.textContent = `${k.cap} ${k.label.split(" — ")[0]} on the Remote`;
+    menu.lastChild.append(remoteMenuRows(remoteList, { key: k.key }, {
+      done: () => menu.remove(),
+      notify: (msg) => presetMgr.dispatchEvent(new CustomEvent("toast", { detail: { msg } })),
+    }));
+    menu.style.cssText = `position:fixed;left:${e.clientX}px;top:${e.clientY}px;z-index:10001`;
+    document.body.appendChild(menu);
+    const close = (ev) => {
+      if (menu.contains(ev.target)) return;
+      menu.remove();
+      document.removeEventListener("pointerdown", close, true);
+    };
+    setTimeout(() => document.addEventListener("pointerdown", close, true), 0);
+  });
   // Reconnect to the relay that worked last time. Silent when OSC has never
   // been used: autoConnect() dials nothing unless a connection once succeeded.
   oscBridge.autoConnect();
@@ -4507,6 +4591,7 @@ async function main() {
     stillsBuffer,
     scene3d: scene3d,
     seqBuffers: [seq1, seq2, seq3],
+    remote: remoteList,
     audioTape: {
       capture: () => audio.tapeSnapshot(),
       restore: (snap) => audio.loadTapeSnapshot(snap),
@@ -6046,9 +6131,18 @@ async function main() {
         document.querySelector(".clip-ctx-menu")?.remove();
         const menu = document.createElement("div");
         menu.className = "clip-ctx-menu ctx-menu";
+        // The deck's clip picker on the Remote. Offered here because the Clip
+        // ROW sits at the bottom of the deck's controls, far from the rack
+        // (owner looked for it and found the cue row instead).
         menu.innerHTML =
           `<div class="ctx-item" data-action="midi">Assign MIDI controller</div>` +
+          `<div class="ctx-item ctx-remote-head">Clip picker on the Remote</div>` +
+          `<div class="ctx-remote-rows"></div>` +
           `<div class="ctx-item ctx-danger" data-action="remove">Remove clip</div>`;
+        menu.querySelector(".ctx-remote-rows").append(remoteMenuRows(remoteList, { id: `${prefix}.clip` }, {
+          done: () => menu.remove(),
+          notify: (msg) => presetMgr.dispatchEvent(new CustomEvent("toast", { detail: { msg } })),
+        }));
         menu.style.cssText = `position:fixed;left:${e.clientX}px;top:${e.clientY}px;z-index:999`;
         document.body.appendChild(menu);
         // Racks sit at the panel's right edge — keep the menu on screen.
