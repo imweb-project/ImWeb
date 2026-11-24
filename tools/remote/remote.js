@@ -9,6 +9,8 @@
  *   ↔ /imweb/<id> <0..1>             a value, normalised, both ways
  *   → /imweb/toggle/<id>, /imweb/trigger/<id>, /imweb/state/<n>, /imweb/key/<k>
  *   → /imweb/remote/tilt <x> <y> <c> the device's tilt and turn, 0..1 each
+ *   → /imweb/remote/shake <0..1>     how hard it is being shaken
+ *   → /imweb/remote/mic <0..1>       its microphone level
  *
  * The page knows nothing on its own: everything it shows comes from the
  * manifest, so placing a control in ImWeb (right-click → Remote page 1–4) is
@@ -650,6 +652,41 @@ function onTilt(e) {
   });
 }
 
+/*
+ * Shake: how hard the device is being moved, as one value — ImWeb's Shake
+ * (Remote) controller. It rides on the Tilt button: engaged, the device sends
+ * both. An envelope, not the raw reading: it jumps up with a jolt and falls
+ * back over SHAKE_FALL_MS, so one flick is a visible pulse rather than a
+ * single-frame spike, and steady shaking holds a level.
+ */
+const SHAKE_FULL = 20;       // m/s² of movement (gravity removed) for the full 1.0 — a firm shake
+const SHAKE_FALL_MS = 350;   // how long a jolt takes to fall back to rest
+/** Below this the device is being HELD, not shaken: a hand is never still, and
+ *  without a floor a resting phone sends a trickle of small values forever. */
+const SHAKE_REST = 0.6;      // m/s²
+const shake = { env: 0, sent: 0, at: 0, grav: null };
+function onShake(e) {
+  let a = e.acceleration;
+  if (a?.x == null) {
+    // No gravity-free reading on this device: take gravity out ourselves, as
+    // whatever the reading settles on while the device is held still.
+    const g = e.accelerationIncludingGravity;
+    if (g?.x == null) return;
+    shake.grav ??= { x: g.x, y: g.y, z: g.z };
+    for (const k of ['x', 'y', 'z']) shake.grav[k] += (g[k] - shake.grav[k]) * 0.1;
+    a = { x: g.x - shake.grav.x, y: g.y - shake.grav.y, z: g.z - shake.grav.z };
+  }
+  const now = performance.now();
+  const dt = shake.at ? Math.min(100, now - shake.at) : 0;
+  shake.at = now;
+  const hit = Math.min(1, Math.max(0, Math.hypot(a.x, a.y, a.z) - SHAKE_REST) / (SHAKE_FULL - SHAKE_REST));
+  shake.env = Math.max(hit, shake.env - dt / SHAKE_FALL_MS);
+  const v = +shake.env.toFixed(3);
+  if (Math.abs(v - shake.sent) < 0.004 && !(v === 0 && shake.sent > 0)) return;   // at rest, say nothing
+  shake.sent = v;
+  send('/imweb/remote/shake', v);
+}
+
 /** Ask for the sensors. Must run in a tap on iOS; everywhere else it just succeeds. */
 async function enableTilt() {
   if (tiltReady) return;
@@ -660,16 +697,24 @@ async function enableTilt() {
     // Refused once, iOS refuses silently from then on — say so, or the button
     // just looks dead.
     if (r !== 'granted') { tiltHelp('refused'); return; }
+    // Shake reads devicemotion, which iOS gates separately but answers from
+    // the same Allow — asked in the same tap, and Tilt works without it.
+    try { await DeviceMotionEvent?.requestPermission?.(); } catch { /* tilt only */ }
   }
   tiltReady = true;
   tiltBtn.classList.add('ready');
 }
 
 function tiltHelp(why) {
-  newSheet('Tilt');
+  newSheet(String(why).startsWith('mic') ? 'Mic' : 'Tilt');
   const p = document.createElement('p');
   p.className = 'sheet-note';
-  p.innerHTML = why === 'refused'
+  p.innerHTML = why === 'mic-refused'
+    ? 'Microphone access was not allowed.<br><br>Allow the microphone for this page in the browser\'s site settings, then tap <b>Mic</b> again.'
+    : why === 'mic-insecure'
+    ? 'The microphone needs the secure address — phones only give it to an <b>https</b> page.<br><br>'
+      + 'On the Mac, once: <code>node tools/remote-cert.mjs</code>, then restart the relay and follow what it prints.'
+    : why === 'refused'
     ? 'Motion access was not allowed.<br><br>Close this page, open it again, tap <b>Tilt</b> and choose <b>Allow</b>.'
     : window.isSecureContext
     ? 'This browser gives no motion sensors.'
@@ -692,6 +737,9 @@ function tiltStop() {
   tiltBtn.classList.remove('held');
   tiltBtn.textContent = 'Tilt';
   removeEventListener('deviceorientation', onTilt);
+  removeEventListener('devicemotion', onShake);
+  // Let go mid-shake, the value must not hang where it was.
+  if (shake.sent > 0) { shake.env = 0; shake.sent = 0; send('/imweb/remote/shake', 0); }
 }
 tiltBtn.addEventListener('pointerdown', (e) => {
   if (!tiltReady || tiltHeld !== null) return;
@@ -703,6 +751,8 @@ tiltBtn.addEventListener('pointerdown', (e) => {
   tiltLast = null;
   tiltAngle = (((screen.orientation?.angle ?? window.orientation ?? 0) % 360) + 360) % 360;
   addEventListener('deviceorientation', onTilt);
+  shake.env = 0; shake.at = 0; shake.grav = null;
+  addEventListener('devicemotion', onShake);
 });
 tiltBtn.addEventListener('pointerup', (e) => {
   if (e.pointerId !== tiltHeld) return;
@@ -719,6 +769,67 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && (ti
 // Android asks nothing: ready as soon as the page is secure. iOS waits for the tap.
 if (window.isSecureContext && typeof DeviceOrientationEvent !== 'undefined'
   && typeof DeviceOrientationEvent.requestPermission !== 'function') enableTilt();
+
+// ── Mic ─────────────────────────────────────────────────────────────────────
+
+/*
+ * This device's microphone level as one controller value — ImWeb's Mic
+ * (Remote). Tap Mic to switch it on (the browser asks once), tap again to
+ * switch it off. Only the LEVEL leaves the device, about 30 times a second:
+ * no sound is sent, recorded or played. Like every sensor here it needs the
+ * secure address.
+ *
+ * The level is what ImWeb's own Sound controller uses — RMS × 4, capped at 1 —
+ * so a mapping feels the same from either microphone. Up at once, down over
+ * MIC_FALL_MS, so speech is a moving level and not a flicker.
+ */
+const MIC_FALL_MS = 250;
+const micBtn = $('mic');
+let mic = null;   // { stream, ctx, raf } while on
+
+function micStop() {
+  if (!mic) return;
+  cancelAnimationFrame(mic.raf);
+  mic.stream.getTracks().forEach((t) => t.stop());
+  mic.ctx.close().catch(() => {});
+  mic = null;
+  micBtn.classList.remove('held', 'ready');
+  send('/imweb/remote/mic', 0);
+}
+
+async function micStart() {
+  if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) { tiltHelp('mic-insecure'); return; }
+  let stream;
+  try {
+    // The phone's voice processing would level the very thing being measured.
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+  } catch { tiltHelp('mic-refused'); return; }
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  await ctx.resume().catch(() => {});
+  const an = ctx.createAnalyser();
+  an.fftSize = 1024;
+  ctx.createMediaStreamSource(stream).connect(an);   // analysed only — never to the speaker
+  const buf = new Float32Array(an.fftSize);
+  mic = { stream, ctx, raf: 0 };
+  micBtn.classList.add('held', 'ready');
+  let env = 0, sent = -1, at = performance.now(), sentAt = 0;
+  const step = (now) => {
+    if (!mic) return;
+    an.getFloatTimeDomainData(buf);
+    let sum = 0;
+    for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+    const level = Math.min(1, Math.sqrt(sum / buf.length) * 4);
+    env = Math.max(level, env - (now - at) / MIC_FALL_MS);
+    at = now;
+    const v = +env.toFixed(3);
+    if (now - sentAt >= 33 && Math.abs(v - sent) >= 0.004) { sent = v; sentAt = now; send('/imweb/remote/mic', v); }
+    mic.raf = requestAnimationFrame(step);
+  };
+  mic.raf = requestAnimationFrame(step);
+}
+micBtn.addEventListener('click', () => (mic ? micStop() : micStart()));
+// A live microphone does not outlive the page being put away.
+document.addEventListener('visibilitychange', () => { if (document.hidden) micStop(); });
 
 // ── Keep the screen on while performing (Safari 16.4+; silently absent before)
 let wake = null;

@@ -3474,6 +3474,16 @@ phone, and there is no app to install.
   `https://…:8443/` address plus how to make the device trust it (a
   certificate to install once per device). The plain address keeps working,
   without Tilt.
+- **Shake** uses the same Tilt button. Right-click a control in ImWeb →
+  **Shake (Remote)**, then hold or latch **Tilt** and shake the device. The
+  value is how hard it is moving: a flick gives a pulse that falls back in
+  about a third of a second, steady shaking holds a level, and a device held
+  still gives 0.
+- **Mic** sends the device's microphone level. Right-click a control in ImWeb
+  → **Mic (Remote)**, then tap **Mic** on the remote and allow the microphone;
+  tap again to switch it off. Only the level is sent, never the sound. It is
+  scaled like ImWeb's own Sound controller, and it switches off by itself when
+  the page is put away. It needs the secure address, like Tilt.
 - **State tiles** recall that Display State. The lit tile is the active one.
   They stay in one row on every page; if the bank has more than fit, the last
   tile is **More…**, which opens all of them.

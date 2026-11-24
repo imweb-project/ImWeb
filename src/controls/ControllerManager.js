@@ -119,7 +119,8 @@ export class ControllerManager {
     this.mouse   = { x: 0.5, y: 0.5 };
     // Device motion (iPad tilt/compass) — normalized like mouse.
     // Listener binds lazily: only with permission AND a mapped param.
-    this.motion  = { tiltX: 0.5, tiltY: 0.5, compass: 0 };
+    // shake / mic come only from ImWeb Remote (see feedMotion): 0 = at rest.
+    this.motion  = { tiltX: 0.5, tiltY: 0.5, compass: 0, shake: 0, mic: 0 };
     this._motionBound = false;
     this._motionPermission = 'unknown'; // 'unknown' | 'granted' | 'denied'
     this.modifiers = { capsLock: false, shift: false, ctrl: false, alt: false, meta: false };
@@ -514,6 +515,8 @@ export class ControllerManager {
     if (t === 'tilt-x') return this.motion.tiltX;
     if (t === 'tilt-y') return this.motion.tiltY;
     if (t === 'compass') return this.motion.compass;
+    if (t === 'shake') return this.motion.shake;
+    if (t === 'remote-mic') return this.motion.mic;
     if (t === 'rand1') return this.rand[0].val;
     if (t === 'rand2') return this.rand[1].val;
     if (t === 'rand3') return this.rand[2].val;
@@ -924,11 +927,16 @@ export class ControllerManager {
    * normalised 0..1 by the page, arriving through OSCBridge. It feeds the SAME
    * three values this device's own sensors do, so Tilt X / Tilt Y / Compass in
    * the controller menu mean "whichever device is tilting" and nothing about
-   * a mapping changes. A value that is not a finite number leaves its axis be.
+   * a mapping changes. `shake` and `mic` (the Shake and Remote Mic controllers)
+   * exist only here: this device's own microphone is the Sound controllers.
+   * `values` holds any of tiltX / tiltY / compass / shake / mic; a key that is
+   * missing or not a finite number leaves that value be.
    */
-  feedMotion(tiltX, tiltY, compass) {
-    const set = (k, v) => { if (Number.isFinite(v)) this.motion[k] = Math.max(0, Math.min(1, v)); };
-    set('tiltX', tiltX); set('tiltY', tiltY); set('compass', compass);
+  feedMotion(values) {
+    for (const k of ['tiltX', 'tiltY', 'compass', 'shake', 'mic']) {
+      const v = values?.[k];
+      if (Number.isFinite(v)) this.motion[k] = Math.max(0, Math.min(1, v));
+    }
     this._driveMotion();
   }
 
@@ -941,6 +949,9 @@ export class ControllerManager {
       if (type === 'tilt-x') p.setNormalized(this.motion.tiltX);
       if (type === 'tilt-y') p.setNormalized(this.motion.tiltY);
       if (type === 'compass') p.setNormalized(this.motion.compass);
+      // Remote-only: how hard the device is being shaken, and its microphone level.
+      if (type === 'shake') p.setNormalized(this.motion.shake);
+      if (type === 'remote-mic') p.setNormalized(this.motion.mic);
     });
   }
 

@@ -126,8 +126,9 @@ export class OSCBridge {
   setKeyProvider(provider) { this._keys = provider; }
 
   /**
-   * Where the remote's tilt goes: `fn(tiltX, tiltY, compass)`, each 0..1 (NaN =
-   * that axis did not move). Wired in main.js to ControllerManager.feedMotion.
+   * Where the remote's sensors go: `fn({ tiltX, tiltY, compass })`, `fn({ shake })`
+   * or `fn({ mic })`, each value 0..1. Wired in main.js to
+   * ControllerManager.feedMotion.
    */
   setMotionSink(fn) { this._motionSink = fn; }
 
@@ -457,9 +458,13 @@ export class OSCBridge {
     // Compass controllers. First, and out: a stream of sensor readings must not
     // be watched by OSC Learn or counted as a control that moved.
     if (address === '/imweb/remote/tilt') {
-      this._motionSink?.(Number(args[0]), Number(args[1]), Number(args[2]));
+      this._motionSink?.({ tiltX: Number(args[0]), tiltY: Number(args[1]), compass: Number(args[2]) });
       return;
     }
+    // /imweb/remote/shake <0..1>, /imweb/remote/mic <0..1> — how hard the
+    // device is being shaken, and its microphone level. Sensor streams too.
+    if (address === '/imweb/remote/shake') { this._motionSink?.({ shake: Number(args[0]) }); return; }
+    if (address === '/imweb/remote/mic') { this._motionSink?.({ mic: Number(args[0]) }); return; }
 
     // A button is not a fader. A momentary button sends 1 then 0, and acting
     // on both fired a trigger twice per press — the same bug audit-midi-buttons

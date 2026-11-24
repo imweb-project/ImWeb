@@ -23,7 +23,8 @@
  *      a page empties, persisted and round-tripped; junk names are dropped.
  *  16. tilt: `/imweb/remote/tilt x y c` reaches ControllerManager.feedMotion and
  *      drives exactly the params mapped to Tilt X / Tilt Y / Compass; it is not
- *      a parameter address, and OSC Learn does not hear it.
+ *      a parameter address, and OSC Learn does not hear it. Likewise
+ *      `/imweb/remote/shake` and `/imweb/remote/mic` for Shake and Mic (Remote).
  *  17. the secure address: with a certificate from tools/remote-cert.mjs the
  *      relay ALSO serves https + wss on port + 363, the certificate verifies
  *      against its authority, the two ports are one room, and only the
@@ -454,10 +455,10 @@ console.log('\n16. tilt: the remote\'s sensors drive Tilt X / Tilt Y / Compass')
   cm.assign('t.ty', { type: 'tilt-y' });
   cm.assign('t.cp', { type: 'compass' });
   const got = [];
-  bridge.setMotionSink((x, y, c) => { got.push([x, y, c]); cm.feedMotion(x, y, c); });
+  bridge.setMotionSink((v) => { got.push(v); cm.feedMotion(v); });
   const before = ps.get('t.other').value;
   msg('/imweb/remote/tilt', [0.8, 0.25, 0.6]);
-  check('the sink gets three numbers', JSON.stringify(got) === '[[0.8,0.25,0.6]]', JSON.stringify(got));
+  check('the sink gets three numbers', JSON.stringify(got) === '[{"tiltX":0.8,"tiltY":0.25,"compass":0.6}]', JSON.stringify(got));
   const near = (a, b) => Math.abs(a - b) < 1e-6;
   check('Tilt X drives its param', near(ps.get('t.cont').normalized, 0.8), String(ps.get('t.cont').normalized));
   check('Tilt Y drives its param', near(ps.get('t.ty').normalized, 0.25), String(ps.get('t.ty').normalized));
@@ -467,11 +468,26 @@ console.log('\n16. tilt: the remote\'s sensors drive Tilt X / Tilt Y / Compass')
   check('out of range is clamped; a missing axis keeps its value',
     near(ps.get('t.cont').normalized, 1) && near(ps.get('t.ty').normalized, 0.25) && near(ps.get('t.cp').normalized, 0.6),
     `${ps.get('t.cont').normalized} ${ps.get('t.ty').normalized} ${ps.get('t.cp').normalized}`);
+  ps.register({ id: 't.sh', label: 'S', group: 'g', min: 0, max: 1, value: 0 });
+  ps.register({ id: 't.mic', label: 'M', group: 'g', min: 0, max: 1, value: 0 });
+  cm.assign('t.sh', { type: 'shake' });
+  cm.assign('t.mic', { type: 'remote-mic' });
+  msg('/imweb/remote/shake', [0.9]);
+  check('Shake drives its param, and only its own',
+    near(ps.get('t.sh').normalized, 0.9) && near(ps.get('t.mic').normalized, 0) && near(ps.get('t.ty').normalized, 0.25),
+    `${ps.get('t.sh').normalized} ${ps.get('t.mic').normalized} ${ps.get('t.ty').normalized}`);
+  msg('/imweb/remote/mic', [0.35]);
+  check('Mic drives its param, and leaves Shake where it was',
+    near(ps.get('t.mic').normalized, 0.35) && near(ps.get('t.sh').normalized, 0.9),
+    `${ps.get('t.mic').normalized} ${ps.get('t.sh').normalized}`);
+  check('shake and mic are not parameter addresses', !ps.get('remote/shake') && !ps.get('remote/mic'));
   let heard = 0;
   bridge._observeLearn = () => { heard++; };
   bridge._learn = { paramId: 't.other', cands: new Map(), settleTimer: null };
   msg('/imweb/remote/tilt', [0.1, 0.1, 0.1]);
-  check('OSC Learn does not hear the sensor stream', heard === 0, String(heard));
+  msg('/imweb/remote/shake', [0.2]);
+  msg('/imweb/remote/mic', [0.2]);
+  check('OSC Learn does not hear the sensor streams', heard === 0, String(heard));
   msg('/imweb/t.other', [0.5]);
   check('…and does hear a control (positive control)', heard === 1, String(heard));
   bridge._learn = null;

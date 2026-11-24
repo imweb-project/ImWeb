@@ -23,6 +23,16 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   restart the relay, and follow what it prints (install its certificate on the
   device once, then open the `https://…:8443/` address). The plain address
   works as before, without Tilt.
+- **ImWeb Remote: Shake and Mic.** Two more sensors from the phone or iPad, as
+  controllers in the right-click menu. **Shake (Remote)** is how hard the
+  device is being moved: a flick is a pulse that falls back in about a third
+  of a second, steady shaking holds a level, and a device held still sends
+  nothing. It rides on the Tilt button — hold or latch Tilt and the device
+  sends both. **Mic (Remote)** is the device's microphone level, scaled like
+  ImWeb's own Sound controller: tap the new **Mic** button on the remote to
+  switch it on (the browser asks once) and again to switch it off. Only the
+  level is sent, about 30 times a second; no sound leaves the device. Both
+  need the secure address, like Tilt.
 
 ---
 

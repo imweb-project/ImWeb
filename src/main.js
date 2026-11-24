@@ -4502,7 +4502,8 @@ async function main() {
   contextMenu.remote = remoteList;
   // The remote's Tilt button: the phone's sensors drive the same Tilt X /
   // Tilt Y / Compass controllers this device's own sensors do.
-  oscBridge.setMotionSink((x, y, c) => ctrl.feedMotion(x, y, c));
+  // Its Shake and Mic feed the Shake / Mic (Remote) controllers the same way.
+  oscBridge.setMotionSink((values) => ctrl.feedMotion(values));
   // The clip pickers show what is racked, by name — "3" is not playable on a
   // phone. Same name the rack row shows (extension stripped).
   const _clipNames = (deck) => () => deck.clips.map((c) => String(c?.name ?? "").replace(/\.[^/.]+$/, ""));
