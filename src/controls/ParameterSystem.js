@@ -1085,6 +1085,38 @@ export class ParameterSystem extends EventTarget {
     return r;
   }
 
+  /**
+   * What a Display State keeps: the generators, and nothing about the desk.
+   *
+   * A hardware binding (MIDI, OSC, gamepad) says what the rig is wired to, and
+   * it belongs to the bank and the session — a state that carried it made every
+   * state change a re-learn. So an entry whose controller is a binding is left
+   * out, and with it the range/table/slew that describe how that control feels.
+   * `midiPages` never goes into a state at all.
+   */
+  serializeStateControllers() {
+    const r = {};
+    for (const [id, s] of Object.entries(this.serializeControllers())) {
+      const bound = isPagedBinding(s.controller?.type) || !!s.midiPages;
+      const generator = s.controller && !isPagedBinding(s.controller.type);
+      const { midiPages, ...rest } = s;
+      if (!bound || generator) r[id] = rest;
+      else if (s.xControllers) r[id] = { id, value: s.value, xControllers: s.xControllers };
+    }
+    return r;
+  }
+
+  /** The hardware bindings alone, without values — what the bank keeps. */
+  serializeBindings() {
+    const r = {};
+    for (const [id, s] of Object.entries(this.serializeMappings())) {
+      const generator = s.controller && !isPagedBinding(s.controller.type);
+      if (!isPagedBinding(s.controller?.type) && !s.midiPages) continue;
+      r[id] = generator ? { ...s, controller: null } : s;
+    }
+    return r;
+  }
+
   deserializeControllers(data) {
     Object.entries(data).forEach(([id, d]) => {
       const p = this.params.get(id);

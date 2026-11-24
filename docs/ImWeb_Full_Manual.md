@@ -2946,7 +2946,7 @@ There is no server-side auto-save. Use `Cmd+S` whenever you want a checkpoint.
 
 ### Banks
 
-A Bank is a named group of up to 32 States. Banks also carry the current controller assignments as a reference baseline (though each State stores its own controller snapshot too).
+A Bank is a named group of up to 32 States. The Bank carries the desk map — your MIDI, OSC and gamepad assignments — which stays in place through every State change. Each State stores its own generators (LFO, Random, Fixed and the like), which change with it.
 
 #### Switching Banks
 

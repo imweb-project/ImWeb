@@ -125,70 +125,67 @@ console.log('\nthe instrument under test is wired (no vacuous passes)');
 }
 
 /**
- * The owner's sequence. The value is deliberately UNCHANGED by the recall —
- * that is the case the old code could not see, because the badge rode on
- * `onChange` and an unchanged `set` fires nothing.
+ * The owner's sequence, now on GENERATORS. It was first written with an OSC
+ * binding, when a recall dropped those too; since 2026-11-24 hardware bindings
+ * outlive a recall (tests/audit-state-recall-bindings.mjs) and only generators
+ * are swapped, so they are what can go stale on a row.
  */
-console.log('\na recall that drops a binding blanks the badge');
+console.log('\na recall that drops a generator blanks the badge');
 {
   const { ps, cm, pm, paint } = rig();
-  await pm.saveCurrentState(0);            // state 1: no bindings
-  await pm.saveCurrentState(1);            // state 2: no bindings
+  await pm.saveCurrentState(0);            // state 1: no controllers
+  await pm.saveCurrentState(1);            // state 2: no controllers
   await pm.recallState(0);
 
-  cm.setPageBinding('t.a', { type: 'osc', address: '/flic/1' });  // assigned, NOT saved
+  cm.assign('t.a', { type: 'lfo-sine', hz: 1 });   // assigned, NOT saved
+  ps.get('t.a').value = 40;                        // park it where the state has it
   paint();
-  check('the badge shows the binding once assigned',
-    /OSC/i.test(badgeFor('t.a').textContent), badgeFor('t.a').textContent);
+  check('the badge shows the LFO once assigned',
+    showsBinding('t.a'), badgeFor('t.a').textContent);
 
-  const valueBefore = ps.get('t.a').value;
   await pm.recallState(1);
-  check('the recall really did drop the binding (the premise holds)',
+  check('the recall really did drop the LFO (the premise holds)',
     ps.get('t.a').controller === null, JSON.stringify(ps.get('t.a').controller));
-  check('the recall left the VALUE untouched — the blind spot',
-    ps.get('t.a').value === valueBefore,
-    `${ps.get('t.a').value} vs ${valueBefore}`);
-  check('AND THE BADGE STOPS SHOWING OSC',
+  check('AND THE BADGE STOPS SHOWING IT',
     !showsBinding('t.a'),
     JSON.stringify(badgeFor('t.a').textContent));
 }
 
-console.log('\na recall that RESTORES a binding paints it back');
+console.log('\na recall that RESTORES a generator paints it back');
 {
   const { ps, cm, pm, paint } = rig();
-  cm.setPageBinding('t.a', { type: 'osc', address: '/flic/1' });
-  await pm.saveCurrentState(0);            // state 1 carries the binding
+  cm.assign('t.a', { type: 'lfo-sine', hz: 1 });
+  await pm.saveCurrentState(0);            // state 1 carries the LFO
   cm.assign('t.a', null);
   await pm.saveCurrentState(1);            // state 2 carries none
   await pm.recallState(1);
   paint();
-  check('state 2 shows no binding', !showsBinding('t.a'),
+  check('state 2 shows no controller', !showsBinding('t.a'),
     badgeFor('t.a').textContent);
 
   await pm.recallState(0);
   check('state 1 restores it in the model',
-    ps.get('t.a').controller?.address === '/flic/1',
+    ps.get('t.a').controller?.type === 'lfo-sine',
     JSON.stringify(ps.get('t.a').controller));
   check('and the badge says so without anything else having to change',
-    /OSC/i.test(badgeFor('t.a').textContent), badgeFor('t.a').textContent);
+    showsBinding('t.a'), badgeFor('t.a').textContent);
 }
 
 console.log('\nevery row that changed is repainted, not just the first');
 {
   const { ps, cm, pm, paint } = rig();
-  await pm.saveCurrentState(1);            // state 2: no bindings
-  cm.setPageBinding('t.a', { type: 'osc', address: '/flic/1' });
-  cm.setPageBinding('t.b', { type: 'midi-cc', cc: 7 });
+  await pm.saveCurrentState(1);            // state 2: no controllers
+  cm.assign('t.a', { type: 'lfo-sine', hz: 1 });
+  cm.assign('t.b', { type: 'random', hz: 2 });
   paint();
-  await pm.saveCurrentState(0);            // state 1: both bindings
+  await pm.saveCurrentState(0);            // state 1: both
 
   await pm.recallState(1);
   check('both badges stop naming a controller',
     !showsBinding('t.a') && !showsBinding('t.b'),
     `${badgeFor('t.a').textContent} / ${badgeFor('t.b').textContent}`);
   await pm.recallState(0);
-  check('both badges come back', /OSC/i.test(badgeFor('t.a').textContent)
-    && showsBinding('t.b'),
+  check('both badges come back', showsBinding('t.a') && showsBinding('t.b'),
     `${badgeFor('t.a').textContent} / ${badgeFor('t.b').textContent}`);
 }
 
@@ -228,7 +225,7 @@ console.log('\nthe bag swap is one function, so a second caller cannot half-do i
   // its own explanation and went red against correct code.
   const src = sanitizeSource(raw, { blankStrings: false });
   const bagCalls = src.match(/_applyControllerBag\(/g) ?? [];
-  check('the bag swap is one function', /_applyControllerBag\(bag\)/.test(src));
+  check('the bag swap is one function', /_applyControllerBag\(bag, /.test(src));
   check('and both call sites use it (declaration + 2 uses)',
     bagCalls.length === 3, `${bagCalls.length} occurrences`);
   check('neither call site clears assignments on its own',

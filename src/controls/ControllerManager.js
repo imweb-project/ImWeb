@@ -781,14 +781,37 @@ export class ControllerManager {
    * than at the call sites for the same reason `setPageBinding` is one writer —
    * a fifth caller must not be able to reintroduce it.
    */
-  clearAllAssignments() {
+  clearAllAssignments({ keepBindings = false } = {}) {
     this.ps.getAll().forEach(p => {
+      /**
+       * `keepBindings` is a STATE RECALL: a hardware binding says what the desk
+       * is wired to, which is a fact about the rig and not about the look, so
+       * it stays; a generator (LFO, random, fixed, expr…) is part of the look
+       * and goes. Recall used to drop both, which meant re-learning the whole
+       * desk after every state change.
+       */
+      if (keepBindings && this._holdsBinding(p)) {
+        (p.xControllers ?? []).forEach((_, i) => this._xLFOs.delete(`${p.id}:${i}`));
+        p.xControllers = [];
+        // A generator the previous state laid OVER the binding: take it off,
+        // give the binding back its own range/table/slew, and project it again.
+        if (p.controller && !isPagedBinding(p.controller.type)) {
+          this._removeController(p.id);
+          p.controller = null;
+          if (p._rigFeel) { Object.assign(p, p._rigFeel); p._rigFeel = null; }
+          const cfg = p.midiPages?.[this._mapPage] ?? null;
+          if (cfg) this.assign(p.id, cfg);
+          this._repaintCtrlBadge(p.id);
+        }
+        return;
+      }
       const had = !!p.controller;
       this._removeController(p.id);
       // Clear xLFOs for this param
       (p.xControllers ?? []).forEach((_, i) => this._xLFOs.delete(`${p.id}:${i}`));
       p.controller   = null;
       p.xControllers = [];
+      p._rigFeel     = null;
       /**
        * Pages too. This function claims to clear everything, and since mapping
        * pages arrived `controller` is only the CURRENT page's projection —
@@ -802,6 +825,42 @@ export class ControllerManager {
       // `document.querySelector` per id, and this runs on every state recall.
       if (had) this._repaintCtrlBadge(p.id);
     });
+  }
+
+  /**
+   * True when a hardware binding lives on this parameter — on the page showing,
+   * on another page, or underneath a generator a state laid over it.
+   */
+  _holdsBinding(p) {
+    return isPagedBinding(p.controller?.type) || this._isPaged(p);
+  }
+
+  /** True when the rig has any hardware binding at all. */
+  hasBindings() {
+    return this.ps.getAll().some(p => this._holdsBinding(p));
+  }
+
+  /**
+   * Arm soft takeover for these parameters — a state recall has just moved
+   * them out from under their faders. Same exclusions as a page switch.
+   */
+  armPickup(ids) {
+    for (const id of ids) {
+      const p = this.ps.get(id);
+      if (p) this._armPickup(p, p.controller);
+    }
+  }
+
+  _armPickup(p, cfg) {
+    if (!cfg || !isPagedBinding(cfg.type)) return;
+    const cannotPickUp = String(cfg.type ?? '').startsWith('gamepad-btn-')
+      || cfg.type === 'osc'
+      || isLatched(p)
+      || isRelative(p);
+    if (p.type !== PARAM_TYPE.TOGGLE && p.type !== PARAM_TYPE.TRIGGER
+        && p.type !== PARAM_TYPE.SELECT && !cannotPickUp) {
+      this._pickup.set(p.id, { prev: null });
+    }
   }
 
   // ── Retrigger all LFOs (on DisplayState recall) ───────────────────────────
@@ -1450,14 +1509,7 @@ export class ControllerManager {
        *    one control surface that CAN be told where to be, which is the
        *    better answer than pickup and is tracked separately in TASKS.
        */
-      const cannotPickUp = String(cfg?.type ?? '').startsWith('gamepad-btn-')
-        || cfg?.type === 'osc'
-        || isLatched(p)
-        || isRelative(p);
-      if (cfg && p.type !== PARAM_TYPE.TOGGLE && p.type !== PARAM_TYPE.TRIGGER
-              && p.type !== PARAM_TYPE.SELECT && !cannotPickUp) {
-        this._pickup.set(p.id, { prev: null });
-      }
+      this._armPickup(p, cfg);
     }
     if (this.ps.get('midi.page')?.value !== n) this.ps.set('midi.page', n);
     return n;

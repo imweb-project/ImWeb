@@ -103,6 +103,12 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
     recall, as it does after a page change, so the value does not jump.
   - A bank with no map of its own no longer clears the desk when you load it.
 
+### Fixed
+- **3D Depth with Transparent Background on** kept every earlier frame: the
+  depth map was never cleared, so it filled up with old silhouettes of whatever
+  had moved (measured: 12,941 px of "depth" behind a 1,783 px shape). It is
+  cleared every frame now, as it always was with the background off.
+
 ---
 
 ## [0.31.0] — 2026-11-23 — In Play

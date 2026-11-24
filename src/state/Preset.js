@@ -22,6 +22,15 @@ import {
   migrateStatesNoiseParams,
 } from '../controls/ParameterSystem.js';
 import { creatureSelfDriven } from '../scene3d/CreatureParams.js';
+import { isPagedBinding } from '../controls/controlInput.js';
+
+/** Which physical control a binding listens to — the page, feel and value aside. */
+const controlKey = (c) => JSON.stringify([c.type, c.channel ?? null, c.cc ?? null,
+  c.note ?? null, c.program ?? null, c.address ?? null, c.ccs ?? null, c.notes ?? null]);
+
+/** What describes how a bound control FEELS — it travels with the binding. */
+const RIG_FEEL = ['table', 'ctrlMin', 'ctrlMax', 'invert', 'cycle', 'slew',
+  'slewShape', 'slewStrength', 'slewDamp'];
 
 export const MAX_STATES = 32;
 
@@ -263,16 +272,104 @@ export class PresetManager extends EventTarget {
    * Two call sites — a bank load and a state recall — had this as three loose
    * steps each, which is how one of them could have been fixed and not the other.
    */
-  _applyControllerBag(bag) {
-    this.ctrl.clearAllAssignments();
-    if (bag && Object.keys(bag).length) {
-      this.ps.deserializeControllers(bag);
-      Object.entries(bag).forEach(([paramId, cfg]) => {
-        if (cfg.controller) this.ctrl.assign(paramId, cfg.controller);
-      });
-      this.ctrl.rebuildXControllers();
-      Object.keys(bag).forEach((id) => this.ctrl._repaintCtrlBadge?.(id));
+  _applyControllerBag(bag, { keepBindings = false } = {}) {
+    /**
+     * `keepBindings` — the rig's hardware bindings (MIDI, OSC, gamepad) outlive
+     * this swap; only the generators change. A state recall asks for it always,
+     * a bank load when the bank carries no bindings of its own.
+     *
+     * It is honoured only when there IS a rig to keep. With nothing bound, the
+     * bag is applied whole, exactly as before — which is what lets a state
+     * saved before this rule existed, still carrying its own MIDI map, hand
+     * that map over once instead of losing it.
+     */
+    const keep = keepBindings && !!this.ctrl.hasBindings?.();
+    if (!keep) {
+      this.ctrl.clearAllAssignments();
+      if (bag && Object.keys(bag).length) {
+        this.ps.deserializeControllers(bag);
+        Object.entries(bag).forEach(([paramId, cfg]) => {
+          if (cfg.controller) this.ctrl.assign(paramId, cfg.controller);
+        });
+        this.ctrl.rebuildXControllers();
+        Object.keys(bag).forEach((id) => this.ctrl._repaintCtrlBadge?.(id));
+      }
+      return;
     }
+    this.ctrl.clearAllAssignments({ keepBindings: true });
+    for (const [id, d] of Object.entries(bag ?? {})) {
+      const p = this.ps.get(id);
+      if (!p || !d) continue;
+      const generator = d.controller && !isPagedBinding(d.controller.type);
+      const { midiPages, ...entry } = d;        // a state's pages never apply
+      if (this.ctrl._holdsBinding(p)) {
+        if (generator && !this.ctrl._isPaged(p)) {
+          // A binding with no page copy (the page controls themselves) has
+          // nowhere to come back from, so the desk wins outright.
+        } else if (generator) {
+          // The state's generator plays over the binding while the state is
+          // live; the binding's own feel is set aside and returns with it.
+          p._rigFeel ??= Object.fromEntries(RIG_FEEL.map((k) => [k, p[k]]));
+          p.deserialize(entry);
+          this.ctrl.assign(id, d.controller);
+        } else if (d.xControllers) {
+          p.deserialize({ xControllers: d.xControllers });
+        }
+      } else if (generator || !d.controller) {
+        p.deserialize(entry);
+        if (generator) this.ctrl.assign(id, d.controller);
+      }
+      else this._adoptOldBinding(p, d);
+      this.ctrl._repaintCtrlBadge?.(id);
+    }
+    this.ctrl.rebuildXControllers();
+  }
+
+  /**
+   * A binding saved INSIDE a state, from before bindings moved to the rig, on
+   * a parameter the rig does not bind.
+   *
+   * Those states are the only place such a map was ever written — the owner's
+   * master bank carried none while eight of its states carried 5 to 14 each,
+   * and not the same ones. So the map is taken up rather than dropped, which
+   * makes the rig the union of what the old states knew, gathered as they are
+   * visited. Two things it must not do: move a parameter the rig already binds
+   * (handled by the caller — the rig wins), or put a second parameter on a
+   * control the rig is already using, which would be one knob moving two
+   * things with nothing on screen to say why.
+   */
+  _adoptOldBinding(p, d) {
+    const page = this.ctrl._mapPage ?? 0;
+    const cfg  = d.midiPages?.some?.(Boolean) ? (d.midiPages[page] ?? null) : d.controller;
+    if (cfg) {
+      const key = controlKey(cfg);
+      const taken = this.ps.getAll().some((q) =>
+        q !== p && isPagedBinding(q.controller?.type) && controlKey(q.controller) === key);
+      if (taken) return;
+    }
+    p.deserialize({ ...d, controller: cfg });
+    if (cfg) this.ctrl.assign(p.id, cfg);
+  }
+
+  /**
+   * After a recall, the faders are where the last state left them. Arm soft
+   * takeover for each bound parameter the recall is about to move — only those,
+   * because a fader already sitting on its value must not be made to hunt.
+   */
+  _armPickupFor(values) {
+    if (!values || !this.ctrl.armPickup) return;
+    const ids = [];
+    for (const p of this.ps.getAll()) {
+      if (!isPagedBinding(p.controller?.type) || !(p.id in values)) continue;
+      if (!this._same(p, p.value, values[p.id])) ids.push(p.id);
+    }
+    this.ctrl.armPickup(ids);
+  }
+
+  /** True when a saved controller bag carries hardware bindings of its own. */
+  _bagHasBindings(bag) {
+    return Object.values(bag ?? {}).some((c) =>
+      isPagedBinding(c?.controller?.type) || c?.midiPages?.some?.(Boolean));
   }
 
   setMediaRef(key, filename) { this._mediaRefs[key] = filename; }
@@ -336,10 +433,13 @@ export class PresetManager extends EventTarget {
       if (!(p.id in stored)) continue; // param newer than the state
       if (!this._same(p, live[p.id], stored[p.id])) return true;
     }
-    const liveCtrl  = Object.entries(this.ps.serializeControllers())
-      .filter(([, c]) => c.controller).map(([id, c]) => `${id}:${c.controller.type}`).sort();
-    const savedCtrl = Object.entries(ds.controllers ?? {})
-      .filter(([, c]) => c?.controller).map(([id, c]) => `${id}:${c.controller.type}`).sort();
+    // Generators only, on both sides: a binding is the desk, not the look, and
+    // an older state may still carry one that a recall no longer applies.
+    const gens = (bag) => Object.entries(bag ?? {})
+      .filter(([, c]) => c?.controller && !isPagedBinding(c.controller.type))
+      .map(([id, c]) => `${id}:${c.controller.type}`).sort();
+    const liveCtrl  = gens(this.ps.serializeStateControllers());
+    const savedCtrl = gens(ds.controllers);
     return liveCtrl.join('|') !== savedCtrl.join('|');
   }
 
@@ -394,11 +494,15 @@ export class PresetManager extends EventTarget {
 
     // Clear all assignments so leftover controllers from the previous bank
     // don't leak into the new one, then restore this bank's own.
-    this._applyControllerBag(p.controllers);
+    // A bank that carries a desk map brings it; one that carries none leaves
+    // the desk as it is wired rather than unplugging it.
+    this._applyControllerBag(p.controllers,
+      { keepBindings: !this._bagHasBindings(p.controllers) });
 
     // Get target state values
     const stateIdx = p.activeState ?? 0;
     const ds = p.getState(stateIdx);
+    this._armPickupFor(ds?.values);
 
     if (ds?.values && fade && this.ps.get('global.morphspeed')?.value > 0) {
       // Start a morph animation instead of snapping
@@ -513,11 +617,17 @@ export class PresetManager extends EventTarget {
     if (!p) return;
     const values      = this.ps.captureState();
     const fxOrder     = this.pipeline ? [...this.pipeline.fxOrder] : null;
-    const controllers = this.ps.serializeControllers();
+    const controllers = this.ps.serializeStateControllers();
     const mediaRefs   = { ...this._mediaRefs };
     const pins        = this._getPins ? this._getPins() : null;
     const extra       = this._getExtra ? this._getExtra() : null;
     const idx = p.addState(values, stateIndex, fxOrder, controllers, mediaRefs, pins, extra);
+    // The desk map goes with the BANK, so a bank saved one state at a time
+    // still carries it to another machine. Bindings only — the bank's other
+    // entries are left as its last explicit save wrote them.
+    const kept = Object.fromEntries(Object.entries(p.controllers ?? {})
+      .filter(([, c]) => !this._bagHasBindings({ c })));
+    p.controllers = { ...kept, ...this.ps.serializeBindings() };
     // A look carried in from another bank has no active tile; once saved, the
     // tile it went into IS what is on screen.
     if (p.activeState == null && idx !== null) p.activeState = idx;
@@ -535,7 +645,7 @@ export class PresetManager extends EventTarget {
     return {
       values:      this.ps.captureState(),
       fxOrder:     this.pipeline ? [...this.pipeline.fxOrder] : null,
-      controllers: this.ps.serializeControllers(),
+      controllers: this.ps.serializeStateControllers(),
       mediaRefs:   { ...this._mediaRefs },
       pins:        this._getPins ? this._getPins() : null,
       extra:       this._getExtra ? this._getExtra() : null,
@@ -598,12 +708,14 @@ export class PresetManager extends EventTarget {
     this._morphTo        = null;
     this._morphOnComplete = null;
 
-    // Clear all controller assignments — states are self-contained;
-    // leftover LFOs/randoms/exprs from the previous state would keep writing
-    // to params and corrupt the restored values on the very next frame. Then
-    // restore this state's own, so Fixed controllers are wired up (they write
-    // their value once in ctrl.assign), and repaint what changed.
-    this._applyControllerBag(ds.controllers);
+    // Clear the generators — a state owns its LFOs/randoms/exprs, and a
+    // leftover one from the previous state would keep writing to params and
+    // corrupt the restored values on the very next frame. Then restore this
+    // state's own, so Fixed controllers are wired up (they write their value
+    // once in ctrl.assign), and repaint what changed. Hardware bindings are
+    // NOT the state's: the desk stays wired through every recall.
+    this._applyControllerBag(ds.controllers, { keepBindings: true });
+    this._armPickupFor(ds.values);
 
     // Restore fx chain order
     if (ds.fxOrder && this.pipeline) this.pipeline.setFxOrder(ds.fxOrder);
