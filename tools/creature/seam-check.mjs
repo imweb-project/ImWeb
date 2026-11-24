@@ -65,6 +65,32 @@ for (const def of CREATURES) {
   else console.log(`ok  ${def.NAME} transitions start at pose(from) and end at pose(target) (max ${worst.toExponential(1)})`);
 }
 
+// ImWeb plays these creatures too (src/scene3d/), and its Movement menu holds a COPY of each
+// animal's movement names — it must be right before the definition file has loaded, and the
+// position of a name in it is what saved ImWeb states store. So a movement added, renamed, moved
+// or removed here has to be followed there, or the menu shows the wrong names.
+//   Added at the END, or renamed in place: update the list in CREATURE_KINDS, nothing else changes.
+//   Inserted, reordered or removed: saved states now recall a different movement. Ask the owner
+//   (through the session that owns the engine) before doing that to an animal ImWeb already has.
+// An animal ImWeb does not list yet (the jellyfish, the peacock spider) is not checked.
+{
+  const { CREATURE_KINDS } = await import('../../src/scene3d/CreatureParams.js');
+  const byName = new Map(CREATURES.map(d => [d.NAME, d]));
+  const before = fail;
+  for (const K of CREATURE_KINDS) {
+    const def = byName.get(K.label);
+    if (!def) { console.log(`FAIL ImWeb lists "${K.label}" (${K.key}), but no loaded definition has that NAME`); fail++; continue; }
+    const names = def.SEGMENTS.map(s => s.name);
+    if (names.join('|') === K.moves.join('|')) continue;
+    const kept = K.moves.every((n, i) => names[i] === n);
+    console.log(`FAIL ${def.NAME}: ImWeb's Movement menu is out of step with ${K.key}-def.js — ` +
+      (kept ? `added at the end: ${names.slice(K.moves.length).join(', ')}. Append ${names.length - K.moves.length === 1 ? 'it' : 'them'} to "${K.key}" in src/scene3d/CreatureParams.js CREATURE_KINDS.`
+            : `the existing movements changed (ImWeb has [${K.moves.join(', ')}]). A rename in place: update CREATURE_KINDS. A reorder, insert or removal changes what saved ImWeb states recall — ask first.`));
+    fail++;
+  }
+  if (fail === before) console.log(`ok  ImWeb's Movement menus match (${CREATURE_KINDS.map(k => k.label).join(', ')})`);
+}
+
 const total = CREATURES.reduce((n, d) => n + d.SEGMENTS.length, 0);
 console.log(fail ? `${fail} failure(s)` : `all ${total} segments of ${CREATURES.length} creatures loop seamlessly`);
 process.exit(fail ? 1 : 0);

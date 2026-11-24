@@ -1089,6 +1089,15 @@ const NON_VISUAL_PREFIXES = [
   'glsl',
 ];
 
+// Single ids kept out, for the same reason. creature.segment is an index into
+// the movements of whichever animal creature.kind names: the reference could
+// only ever list the CURRENT animal's movements, a reply naming another
+// animal's was validated against that list and rejected, and a reply that put
+// the movement before the animal had it reset to 0 as the animal changed. The
+// model may choose the animal, its skin and its pace; the movement stays with
+// the player (or with Advance).
+const NON_VISUAL_IDS = new Set(['creature.segment']);
+
 /** Type-specific range text, so the model knows what a legal value is. */
 function _paramRange(p) {
   switch (p.type) {
@@ -1112,7 +1121,7 @@ export function buildParamReference(ps) {
   const groups = new Map();
   for (const [id, p] of ps.params) {
     const prefix = id.split('.')[0];
-    if (NON_VISUAL_PREFIXES.includes(prefix)) continue;
+    if (NON_VISUAL_PREFIXES.includes(prefix) || NON_VISUAL_IDS.has(id)) continue;
     // A TRIGGER fires an event and resets; it is an action, not a look.
     if (p.type === PARAM_TYPE.TRIGGER) continue;
     if (!groups.has(prefix)) groups.set(prefix, []);
@@ -1131,7 +1140,7 @@ export function buildParamReference(ps) {
 export function allowedParamIds(ps) {
   const ids = new Set();
   for (const [id, p] of ps.params) {
-    if (NON_VISUAL_PREFIXES.includes(id.split('.')[0])) continue;
+    if (NON_VISUAL_PREFIXES.includes(id.split('.')[0]) || NON_VISUAL_IDS.has(id)) continue;
     if (p.type === PARAM_TYPE.TRIGGER) continue;
     ids.add(id);
   }

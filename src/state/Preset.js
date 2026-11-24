@@ -21,6 +21,7 @@ import {
   migrateNoiseParams,
   migrateStatesNoiseParams,
 } from '../controls/ParameterSystem.js';
+import { creatureSelfDriven } from '../scene3d/CreatureParams.js';
 
 export const MAX_STATES = 32;
 
@@ -325,11 +326,13 @@ export class PresetManager extends EventTarget {
       // Nothing stored to compare with: unsaved only if the look is not the
       // bare defaults (an empty bank at startup is not "work").
       return this.ps.getAll().some(p => p.group !== 'global' &&
-        !(this._locked(p.id)) && !p.controller && !this._same(p, p.value, p.defaultValue));
+        !(this._locked(p.id)) && !p.controller && !creatureSelfDriven(this.ps, p.id) && !this._same(p, p.value, p.defaultValue));
     }
     const stored = ds.values;
     for (const p of this.ps.getAll()) {
       if (p.group === 'global' || p.controller || this._locked(p.id)) continue;
+      // Moved by the instrument itself, as a controller would (CreatureParams.js).
+      if (creatureSelfDriven(this.ps, p.id)) continue;
       if (!(p.id in stored)) continue; // param newer than the state
       if (!this._same(p, live[p.id], stored[p.id])) return true;
     }

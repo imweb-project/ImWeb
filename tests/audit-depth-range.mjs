@@ -42,6 +42,27 @@ check('the range uniforms are wired', ['uDepthNear', 'uDepthFar', 'uCamNear', 'u
 check('the range is set from the scene bounds in the depth pass', /_depthBox\.setFromObject\(this\.scene\)/.test(src) && /_depthRange\.far\.value\s*=/.test(src));
 check('the map is clamped, so nothing can be clipped out of it', /clamp\( \( viewDist - uDepthNear \)/.test(src));
 
+// The depth target is cleared every frame. With a background colour three.js
+// does that itself; with Transparent Background the scene has none, and
+// renderer.autoClear is off app-wide, so nothing did: 3D Depth kept every
+// earlier frame's silhouette (2026-11-23). The clear must sit between binding
+// the depth target and drawing the scene into it.
+{
+  // The pass, from its own `if` to the end of render(). Code anchors, never a
+  // comment's wording; each position is checked for -1 before any is compared.
+  const iPass = src.indexOf("if (params.get('scene3d.depth.active')?.value) {");
+  const iEnd = iPass === -1 ? -1 : src.indexOf('get texture()', iPass);
+  const found = iPass !== -1 && iEnd !== -1;
+  const pass = found ? src.slice(iPass, iEnd) : '';
+  const iBind = pass.indexOf('this.renderer.setRenderTarget(this.depthTarget);');
+  const iClear = pass.indexOf('if (this._alphaBg) this.renderer.clear(true, true, true);');
+  const iDraw = iBind === -1 ? -1 : pass.indexOf('this.renderer.render(this.scene, this.camera);', iBind);
+  check('the depth pass is found in the source', found && iBind !== -1 && iDraw !== -1);
+  const cleared = iBind !== -1 && iClear !== -1 && iDraw !== -1;
+  check('with no background colour the depth target is cleared before the scene is drawn into it',
+    cleared && iBind < iClear && iClear < iDraw);
+}
+
 // The arithmetic, with the camera's real planes read from the source.
 const cam = src.match(/new THREE\.PerspectiveCamera\(\s*[\d.]+\s*,[^,]+,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)/);
 check('the 3D camera planes can be read from the source', !!cam);

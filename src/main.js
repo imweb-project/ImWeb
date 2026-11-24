@@ -128,6 +128,8 @@ import { SceneManager } from "./scene3d/SceneManager.js";
 import { ModelSlots, SLOT_PREFIXES } from "./scene3d/ModelSlots.js";
 import { EASING, PLANE_NAMES, PLANE_PAIRS, PLANE_HELP, PLANE_MENU_ORDER } from "./scene3d/HypercubeGeometry.js";
 import { registerHypercubeParams, HC_SLOT_SPEED } from "./scene3d/HypercubeParams.js";
+import { registerCreatureParams, CREATURE_SKIN_VIDEO } from "./scene3d/CreatureParams.js";
+import { buildCreaturePanel } from "./scene3d/CreatureUI.js";
 import { Pipeline } from "./core/Pipeline.js";
 import { GestureArbitrator } from "./core/GestureArbitrator.js";
 import { MobileStatePad } from "./ui/components/MobileStatePad.js";
@@ -402,6 +404,9 @@ async function main() {
   registerTeletextParams(ps);
 
   registerHypercubeParams(ps);
+  // The creature in the 3D scene. Params only: its code is imported by
+  // SceneManager the first time creature.active is on (CreatureObject.js).
+  registerCreatureParams(ps);
 
   // ── 3. Controllers ────────────────────────────────────────────────────────
 
@@ -1859,6 +1864,23 @@ async function main() {
       ps.set("scene3d.active", 1);
     },
   });
+
+  // ── Creature panel — a section inside #tab-scene3d, after Import Model ─────
+  {
+    const scene3dTab = document.getElementById('tab-scene3d');
+    if (scene3dTab) {
+      const crSection = document.createElement('div');
+      crSection.className = 'panel-section';
+      const crHeader = document.createElement('div');
+      crHeader.className = 'section-header';
+      crHeader.textContent = 'Creature';
+      const crContainer = document.createElement('div');
+      crSection.appendChild(crHeader);
+      crSection.appendChild(crContainer);
+      scene3dTab.appendChild(crSection);
+      buildCreaturePanel(crContainer, ps, id => buildParamRow(ps.get(id), contextMenu));
+    }
+  }
 
   // ── Hypercube panel — appended as a section inside #tab-scene3d ───────────
   {
@@ -11315,6 +11337,9 @@ void main() {
       _s3d(ps.get("scene3d.mat.texsrc")?.value ?? 0),
       _dispSel >= 2 ? _s3d(_dispSel - 2) : -1,   // 0 = the surface's own, 1 = the DS layer (_cDs)
       (ps.get("scene3d.shatter.mask")?.value ?? 0) - 1,   // OPT_SOURCES: 0 is None
+      // The creature's Video skin (OPT_SOURCES) — only while it is being worn.
+      ps.get("creature.active")?.value && ps.get("creature.skin")?.value === CREATURE_SKIN_VIDEO
+        ? (ps.get("creature.texsrc")?.value ?? 0) - 1 : -1,
       ...SLOT_PREFIXES.map((pre) => {
         const v = ps.get(`${pre}.texsrc`)?.value ?? 0;   // 0 = Shared
         return ps.get(`${pre}.visible`)?.value && v > 0 ? _s3d(v - 1) : -1;

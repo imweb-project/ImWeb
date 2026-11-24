@@ -30,10 +30,14 @@
 
 export const TAU = Math.PI * 2;
 
+// Field of view (degrees) of the camera a view's `camera: { pos, target }` was framed with — the
+// test page's. ImWeb reads it to give a creature the same framing under its own camera.
+export const VIEW_FOV = 35;
+
 // Every creature, in button order. Each is <name>-def.js plus a view (<name>-view.js exporting
 // VIEW, or a block in views.js). The page and seam-check.mjs both read this list, and both skip a
 // name whose files do not exist yet, so a creature can be registered before it is written.
-export const CREATURES = ['jelly', 'octopus', 'centipede', 'spider', 'snake', 'cuttlefish', 'manta', 'paradise', 'featherstar'];
+export const CREATURES = ['jelly', 'octopus', 'centipede', 'spider', 'snake', 'cuttlefish', 'manta', 'paradise', 'featherstar', 'pods'];
 
 export function segmentState(def, i) {
   return { ...def.DEFAULT, ...def.SEGMENTS[i].s };

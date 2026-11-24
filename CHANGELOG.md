@@ -9,6 +9,40 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Creatures in the 3D scene**: eight procedural creatures — Octopus, Centipede,
+  Cobra, Cuttlefish, Manta ray, Parotia (bird of paradise), Feather star and
+  Pods (a string of swelling, many-eyed balls with simulated hair) —
+  as a moving object in the 3D scene. Open the 3D workspace → **Creature**,
+  switch it on and pick an **Animal**. It shows wherever 3D Scene is routed,
+  and its shape reaches 3D Depth. Each animal has its own skeleton and its own
+  list of **Movements** (8 to 26 of them); every movement loops without a seam
+  and the animal glides from one into the next over one loop. **Creature
+  Advance** plays the whole list as one piece (Next), picks at random, or
+  stays on one movement (Off), after **Creature Loops** loops each. **Creature
+  Speed** runs from still to twice its natural pace. **Skin**: Soft is the
+  animal's own skin with its colours, markings and fur; Chrome and Glassy keep
+  the body and the movement and replace the surface; **Video** wears any source
+  chosen in **Skin Source** — the camera, a movie, the draw layer, a mix bus —
+  wrapped onto the body from three sides so it sticks to the skin as the animal
+  bends and stretches (one picture spans the animal; the 3D Scene itself is
+  refused, as it would feed back). **Creature Size**, and
+  Transform (position, rotation, spin, scale) moves it as it moves the object.
+  The creature replaces the scene's own object unless **Show Object** is on;
+  models M2–M4 are never hidden. All ten controls take LFO, MIDI and OSC like
+  any other row, and Display States and project files save them — a state can
+  recall "Cuttlefish, movement 26, Chrome".
+  The animals are the ones on the creature test page
+  (`tools/creature/creature.html`), run by the same engine file
+  (`tools/creature/engine.js`), so what is judged there is what plays here. The
+  code for an animal is fetched the first time it is chosen, and nothing of the
+  feature loads until Creature is first switched on. The first time an animal
+  appears on a machine the picture pauses for one to two seconds while the
+  graphics driver builds its skin shader (its shaders are prepared in the
+  background first, which cut that pause to under half, measured); after that
+  the driver remembers, and going back to an animal already used in the
+  session is instant. The jellyfish and the peacock spider are not in the list
+  yet: they cost 9 and 15 ms a frame against 1–4 for the ones that are (Pods,
+  the heaviest, about 4).
 - **ImWeb Remote: Tilt.** The phone or iPad's motion sensors are now three
   controllers. In ImWeb, right-click a control → **Tilt X** (toward / away from
   you), **Tilt Y** (left / right) or **Compass** (turning on the spot); on the

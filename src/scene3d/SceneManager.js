@@ -1260,6 +1260,7 @@ export class SceneManager {
       this.mesh.position.set(px, py, pz);
     }
     this._rideTransform(p, s);
+    this._creatureTick(p, dt, s, inputs);
 
     // Material
     // Rebuild material if type changed
@@ -1610,6 +1611,7 @@ export class SceneManager {
     const _t = this._orbitTarget(p);
     this.camera.lookAt(_t.x, _t.y, _t.z);
     this.camera.updateProjectionMatrix();
+    this._creature?.face(this.camera, _t);   // it shows the camera the side its view was framed from
 
     // Light
     this.lights.directional.intensity = p.get('scene3d.light.intensity').value;
@@ -1744,8 +1746,20 @@ export class SceneManager {
         }
       }
       this.renderer.setRenderTarget(this.depthTarget);
+      // Transparent background: the scene then has NO background, and this
+      // renderer never clears by itself (autoClear is off app-wide, main.js) —
+      // three.js clears for a scene only when it has a background colour. So
+      // with Transparent Background on, every frame's depth was drawn over all
+      // the earlier ones and 3D Depth filled up with old silhouettes (measured
+      // 2026-11-23: 12,941 px of "depth" behind a 1,783 px creature).
+      if (this._alphaBg) this.renderer.clear(true, true, true);
+      // A creature steps out of the override pass and draws itself after it:
+      // the one override material cannot follow its stretch and thinning
+      // (CreatureObject.js, Depth pass).
+      const creatureDepth = this._creature?.depthBegin();
       this.renderer.render(this.scene, this.camera);
       this.scene.overrideMaterial = null;
+      if (creatureDepth) this._creature.depthDraw(this.renderer, this.camera, mode === 1);
     }
 
     this.renderer.setRenderTarget(prev);
@@ -1882,6 +1896,40 @@ export class SceneManager {
   }
 
   /**
+   * The creature (creature.* params, CreatureObject.js). Nothing of it exists
+   * until creature.active is first seen on: the module is imported then, as
+   * the Hypercube's is, and it fetches an animal's files when one is chosen.
+   * It rides the Transform this frame just gave the scene's object and, unless
+   * Show Object is on, REPLACES that object — a creature switched on beside
+   * the default sphere would have the sphere stuck through it.
+   *
+   * Hidden by `visible`, on purpose: the whole object goes, children and all
+   * (Shatter hides single meshes by layer for the opposite reason), and
+   * nothing else sets this.mesh.visible. Compared before writing, and against
+   * whatever this.mesh is NOW — it is replaced by Geometry, an import and the
+   * instancer's adoption, and each new one arrives visible.
+   */
+  _creatureTick(p, dt, scale, inputs) {
+    if (this._creature) {
+      // Skin Source: any source, through the one canonical resolver. Identity,
+      // not a flag: the 3D Scene worn as a skin inside the 3D Scene is a
+      // feedback loop, and the texture object is what says so.
+      const skinTex = this._resolveOptSource(p, 'creature.texsrc', inputs);
+      this._creature.tick(p, dt, this.mesh, scale, skinTex === this.target.texture ? null : skinTex);
+    } else if (p.get('creature.active')?.value && !this._creatureImport) {
+      // One import, ever: the promise is kept so later frames do not start another.
+      this._creatureImport = Promise.all([import('./CreatureObject.js'), import('./CreatureFiles.js')]).then(
+        ([{ CreatureObject }, { loadCreatureFiles }]) => { this._creature = new CreatureObject(this, loadCreatureFiles); },
+        (e) => console.error('[Scene3D] the creature module did not load', e));
+    }
+    const solo = !!this._creature?.shown && !p.get('creature.withObject')?.value;
+    if (this.mesh.visible === solo) this.mesh.visible = !solo;
+    // Shards are twins BESIDE the object (ShardScatter), so they need telling too.
+    const shards = this._shards._group;
+    if (shards && shards.visible === solo) shards.visible = !solo;
+  }
+
+  /**
    * What the camera circles and looks at: the world origin, or — with Orbit
    * centre: object — the scene object's position as Transform just set it.
    * While the instancer is adopted this.mesh IS the instancer, which rides the
@@ -1954,6 +2002,7 @@ export class SceneManager {
   }
 
   dispose() {
+    this._creature?.dispose();
     this._shards.dispose();
     this.target.dispose();
     this.depthTarget.dispose();

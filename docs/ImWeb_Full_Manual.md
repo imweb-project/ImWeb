@@ -939,6 +939,47 @@ all assemble again when **Shatter** returns to 0. Panel: **3D Scene** workspace
   the mesh, and models in slots 2–4 are not shattered.
 - The depth output shows the object whole.
 
+#### Parameters — Creature
+
+A moving animal in the 3D scene: an Octopus, a Centipede, a Cobra, a
+Cuttlefish, a Manta ray, a Parotia (bird of paradise), a Feather star or Pods
+(a string of swelling, many-eyed balls whose hair is simulated live). Each
+has its own skeleton and its own list of movements. Every movement loops
+without a seam, and the animal glides from one movement into the next over one
+loop, so the whole list plays as one continuous piece. Panel: **3D Scene**
+workspace ▸ **Creature**.
+
+It shows wherever 3D Scene is routed, and its shape reaches 3D Depth exactly,
+stretched arms included. Transform (position, rotation, spin, scale) moves it
+as it moves the object, and the 3D camera views it like anything else.
+
+| Parameter | Range | Description |
+|-----------|-------|-------------|
+| `creature.active` | TOGGLE | **Creature** — puts the animal in the scene |
+| `creature.kind` | SELECT | **Animal** — which one. A new animal starts at its first movement |
+| `creature.segment` | SELECT | **Movement** — the movement being played; the list belongs to the animal (8 to 26 of them). With Advance on it follows along by itself |
+| `creature.advance` | Off / Next / Random | **Creature Advance** — what happens when a movement has played its loops. Off keeps looping it, Next goes on to the following one, Random picks any other |
+| `creature.loops` | 1–16 | **Creature Loops** — loops of each movement before Advance moves on. Default 2 |
+| `creature.speed` | 0–2 | **Creature Speed** — 1 is the animal's natural pace, 0 holds it still |
+| `creature.skin` | Soft / Chrome / Glassy / Video | **Skin** — Soft is the animal's own skin, with its colours, markings and fur; Chrome and Glassy keep the body and the movement and replace the surface; Video wears the picture chosen in Skin Source |
+| `creature.texsrc` | SELECT (source) | **Skin Source** — the picture the Video skin wears: the camera, a movie, the draw layer, a mix bus, any source. Default Movie A. One picture spans the animal, wrapped on from three sides, and it sticks to the skin as the animal bends and stretches. Used only while Skin is Video |
+| `creature.scale` | 0.1–4 | **Creature Size** — at 1 the animal fills the picture with the 3D camera at its defaults |
+| `creature.withObject` | TOGGLE | **Show Object** — off, the creature replaces the scene's own object (the geometry or imported model); on, both are shown and share Transform. Models M2–M4 are never hidden |
+
+- **It is saved like everything else.** A Display State or a project recalls
+  the animal, its movement and its skin together, and every row takes an LFO,
+  MIDI or OSC. To step through movements from a controller, set Creature
+  Advance to Off and map the Movement row.
+- **Seen from above.** The animal is tipped toward the camera by the angle it
+  was designed to be seen from, so a walker shows its back and its floor rather
+  than a line on the horizon. Camera **Elevation** adds to that as usual.
+- **A short pause the first time.** The first time an animal appears on a
+  computer the picture pauses for a second or two while its skin is prepared;
+  after that the computer remembers. Within a session, going back to an animal
+  already used is instant, so visit the animals you will play before a show.
+- The animals are developed on a test page of their own,
+  `tools/creature/creature.html`, and run by the same engine there and here.
+
 #### Parameters — Animation (imported models)
 
 | Parameter | Range | Description |
