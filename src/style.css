@@ -1551,6 +1551,32 @@ div.param-select .imw-sel-trigger {
     color: var(--text-0);
     border-color: var(--border-hi);
 }
+.creature-files {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px 4px;
+}
+.creature-files .import-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+.creature-guide-link {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    margin-left: auto;
+}
+.creature-files-status {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-2, var(--text-1));
+    padding: 2px 10px 8px;
+}
+.creature-files-status.bad {
+    color: var(--warn, #e0705a);
+}
 .import-btn.active {
     color: var(--accent);
     border-color: var(--accent);

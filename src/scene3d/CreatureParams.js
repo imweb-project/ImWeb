@@ -9,6 +9,7 @@
  */
 
 import { OPT_SOURCES } from '../controls/ParameterSystem.js';
+import { initCreatureCustom, customMovesFor, onCreatureCustomChange } from './CreatureCustom.js';
 
 /**
  * The creatures ImWeb offers, and each one's movements.
@@ -64,8 +65,13 @@ export const CREATURE_SKINS = ['soft', 'chrome', 'glass', 'video'];
 /** Index of the Video skin — the one that wears creature.texsrc. */
 export const CREATURE_SKIN_VIDEO = CREATURE_SKINS.indexOf('video');
 
-/** The Movement menu of animal `kind`: numbered, as the creature page numbers them. */
-export function creatureMoveOptions(kind, names = CREATURE_KINDS[kind]?.moves ?? []) {
+/**
+ * The Movement menu of animal `kind`: numbered, as the creature page numbers
+ * them. A custom creature built on that animal (CreatureCustom.js) brings its
+ * own movements, and they are known from its file alone — so the menu is right
+ * at once here too, before any creature code has loaded.
+ */
+export function creatureMoveOptions(kind, names = customMovesFor(CREATURE_KINDS[kind]?.key) ?? CREATURE_KINDS[kind]?.moves ?? []) {
   return names.map((n, i) => `${i + 1} · ${n}`);
 }
 
@@ -96,6 +102,7 @@ export function registerCreatureParams(ps) {
   // here points into a list that lives in code and only ever grows (above), so
   // a saved index means the same thing on every machine and every origin.
   const g = 'creature';
+  initCreatureCustom(CREATURE_KINDS.map(k => k.key));   // the custom creature the last session left, before any menu is filled
   ps.register({ id: 'creature.active', type: 'toggle', value: 0, label: 'Creature', group: g,
     help: 'Puts a moving creature into the 3D scene. It shows wherever 3D Scene is routed, and its shape reaches 3D Depth too.' });
   // kind BEFORE segment: a state recall writes params in registration order,
@@ -136,6 +143,14 @@ export function registerCreatureParams(ps) {
   // at its first movement; on a recall the saved movement is written next.
   kind.onChange(i => {
     seg.options = creatureMoveOptions(i);
+    seg.value = 0;
+  });
+  // A custom creature loaded or removed: the animal it is built on changes its
+  // movements under the same `kind`, so the menu is refilled here as well.
+  onCreatureCustomChange((now, before) => {
+    const key = CREATURE_KINDS[Math.round(kind.value)]?.key;
+    if (key !== now?.base && key !== before?.base) return;
+    seg.options = creatureMoveOptions(Math.round(kind.value));
     seg.value = 0;
   });
 }

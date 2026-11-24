@@ -23,6 +23,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { createCreature } from '../../tools/creature/engine.js';
 import { VIEW_FOV } from '../../tools/creature/core.js';
 import { CREATURE_KINDS, CREATURE_ADVANCE, CREATURE_SKINS } from './CreatureParams.js';
+import { getCreatureCustom, applyCreatureFile, onCreatureCustomChange } from './CreatureCustom.js';
 
 /**
  * Output encoding. ImWeb draws the 3D scene into a render target, and three.js
@@ -81,6 +82,20 @@ export class CreatureObject {
     this._axis = new THREE.Vector3(1, 0, 0);
     this._ps = null;
     this._env = null;        // environment for the Chrome and Glassy skins, made on first use
+    // A custom creature (CreatureCustom.js) replaces the movements and colours
+    // of the animal it is built on. Loading or removing one makes the kept copy
+    // of that animal stale: it is let go, and tick() builds it again.
+    this._offCustom = onCreatureCustomChange((now, before) => {
+      for (const key of new Set([now?.base, before?.base])) {
+        const kind = CREATURE_KINDS.findIndex(k => k.key === key), kept = this._kept.get(kind);
+        if (kind < 0) continue;
+        if (this._failed === kind) this._failed = -1;
+        if (!kept) continue;
+        if (this._stage === kept) { this.turn.remove(kept.home); this._stage = null; }
+        this._kept.delete(kind);
+        this._free(kept);
+      }
+    });
   }
 
   /** True while a creature is actually on screen (switched on AND built). */
@@ -209,11 +224,18 @@ export class CreatureObject {
     this._loading = kind;
     let stage = null;
     try {
-      const { def, view } = await this._loadFiles(K.key);
+      let { def, view } = await this._loadFiles(K.key);
       if (!this.sm) return;
+      const custom = getCreatureCustom();
+      if (custom?.base === K.key) ({ def, view } = applyCreatureFile(def, view, custom));
       stage = this._make(kind, def, view);
+      stage.custom = custom?.base === K.key ? custom : null;
       await this._warm(stage);
       if (!this.sm) { this._free(stage); return; }
+      // Built for a custom creature that was swapped or removed while this was
+      // on its way: not the animal asked for any more. Let it go; tick() asks again.
+      const cuNow = getCreatureCustom();
+      if (stage.custom !== (cuNow?.base === K.key ? cuNow : null)) { this._free(stage); return; }
       this._kept.set(kind, stage);
       this._failed = -1;
       // Shown only if it is still the animal asked for — not `_loading`, which
@@ -245,7 +267,7 @@ export class CreatureObject {
     // two disagree the menu is showing the wrong names (tests/audit-creature.mjs
     // and tools/creature/seam-check.mjs both fail on this — say so here too).
     const names = def.SEGMENTS.map(s => s.name);
-    if (names.join('|') !== K.moves.join('|'))
+    if (!def.CUSTOM && names.join('|') !== K.moves.join('|'))
       console.warn(`[Creature] ${K.label}: the Movement menu (CreatureParams.js CREATURE_KINDS) is out of step with ${K.key}-def.js`);
 
     // home: the creature's own stage, and the engine's `world` — where a view
@@ -394,6 +416,7 @@ export class CreatureObject {
   }
 
   dispose() {
+    this._offCustom?.();
     for (const st of [...this._kept.values()]) this._free(st);
     this._env?.dispose(); this._env = null;
     this.sm.scene.remove(this.root);

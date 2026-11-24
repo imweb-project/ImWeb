@@ -949,6 +949,16 @@ without a seam, and the animal glides from one movement into the next over one
 loop, so the whole list plays as one continuous piece. Panel: **3D Scene**
 workspace ▸ **Creature**.
 
+**Your own creatures.** Under the rows, **Export…** saves the animal on screen
+as a creature file (`.imcreature`): its movements and colours as plain numbers
+and names, no code. Edit it in a text editor — rename it, change or add
+movements, change colours — and bring it back with **Import…**. A custom
+creature replaces the movements and colours of the animal it is built on until
+you click **Remove**; one is loaded at a time, and it stays loaded in this
+browser. Saved states remember the animal and the movement number, not the
+file. **How to make a creature** opens the full guide (*Making creatures*),
+which also says where to find creatures other people have shared.
+
 It shows wherever 3D Scene is routed, and its shape reaches 3D Depth exactly,
 stretched arms included. Transform (position, rotation, spin, scale) moves it
 as it moves the object, and the 3D camera views it like anything else.

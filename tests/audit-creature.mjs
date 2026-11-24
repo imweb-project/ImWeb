@@ -344,7 +344,8 @@ console.log('7. Wiring');
   const main = read('src/main.js'), smSrc = read('src/scene3d/SceneManager.js');
   check('main.js registers the creature params', /registerCreatureParams\(ps\)/.test(main));
   check('main.js builds the Creature panel with standard param rows',
-    /buildCreaturePanel\(crContainer, ps,\s*id => buildParamRow\(ps\.get\(id\), contextMenu\)\)/.test(main));
+    // (the row builder is what is checked; what follows it — the guide opener — is free to grow)
+    /buildCreaturePanel\(crContainer, ps,\s*id => buildParamRow\(ps\.get\(id\), contextMenu\)[,)]/.test(main));
   const apply = between(smSrc, '  applyParams(params, dt = 0, inputs = {}) {', '\n  // ── Render', 'applyParams');
   const iRide = apply.indexOf('this._rideTransform(p, s);'), iTick = apply.indexOf('this._creatureTick(p, dt, s, inputs);');
   const iLook = apply.indexOf('this.camera.lookAt('), iFace = apply.indexOf('this._creature?.face(this.camera, _t)');

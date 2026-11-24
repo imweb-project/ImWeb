@@ -1,0 +1,17 @@
+{
+  "format": "imweb-creature",
+  "version": 1,
+  "name": "Blue Pods",
+  "base": "pods",
+  "moves": [
+    { "name": "Calm Eight", "desc": "a quiet figure eight, the balls barely swelling", "values": { "eight": 1, "wv": 1, "swell": 0.3, "live": 0.4 } },
+    { "name": "Wide Flower", "desc": "three lobes, long hair", "values": { "flower": 1, "wv": 2, "hair": 1.4 } },
+    { "name": "Long Hair Ring", "desc": "the plain ring with long, light hair", "values": { "lift": 0.09, "hair": 1.8, "grav": 0.4 } },
+    { "name": "Drifting Knot", "desc": "the knot turning once a loop in a strong current", "values": { "knot": 1, "turn": 1, "wv": 1, "swell": 0.6, "flow": 0.8 } }
+  ],
+  "look": {
+    "limb": "#dfe9f5",
+    "roughness": 0.3,
+    "colours": { "uIris": "#3fb7c9", "uVein": "#7a4fd0" }
+  }
+}

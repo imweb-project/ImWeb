@@ -9,6 +9,17 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 ## [Unreleased]
 
 ### Added
+- **Creature files: make, save and share your own creatures.** In the Creature
+  panel, **Export…** saves the animal on screen as a `.imcreature` file — its
+  movements and colours as plain numbers and names. Edit it in a text editor
+  and load it with **Import…**: the animal it is built on takes on your
+  movements and colours until you click **Remove**. A creature file holds no
+  code, so one from a stranger is safe to try; it can re-choreograph and
+  re-colour an animal ImWeb has, not bring a new body. One custom creature is
+  loaded at a time and it stays in the browser; Display States remember the
+  animal and movement number, not the file. **How to make a creature** opens a
+  new guide, *Making creatures*, which also says where to find and share them.
+  An example, *Blue Pods*, is in `public/Creatures/`.
 - **Creatures in the 3D scene**: eight procedural creatures — Octopus, Centipede,
   Cobra, Cuttlefish, Manta ray, Parotia (bird of paradise), Feather star and
   Pods (a string of swelling, many-eyed balls with simulated hair) —

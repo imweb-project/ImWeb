@@ -198,6 +198,7 @@ import {
   buildAnalogPresetBar,
   initHelpMenu,
   remoteMenuRows,
+  openDocsViewer,
 } from "./ui/UI.js";
 import { openCtrlPopover } from "./ui/components/CtrlPopover.js";
 import { makeFloating } from "./ui/components/FloatingWindow.js";
@@ -1878,7 +1879,7 @@ async function main() {
       crSection.appendChild(crHeader);
       crSection.appendChild(crContainer);
       scene3dTab.appendChild(crSection);
-      buildCreaturePanel(crContainer, ps, id => buildParamRow(ps.get(id), contextMenu));
+      buildCreaturePanel(crContainer, ps, id => buildParamRow(ps.get(id), contextMenu), openDocsViewer);
     }
   }
 
