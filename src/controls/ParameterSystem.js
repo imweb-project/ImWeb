@@ -760,6 +760,7 @@ export class Parameter {
       "tilt-y": "TLY",
       "compass": "CMP",
       "shake": "SHK",
+      "north": "NTH",
       "remote-mic": "RMIC",
       "midi-cc": c.channel
         ? `${c.channel}:CC${c.cc ?? "?"}`

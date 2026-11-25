@@ -687,6 +687,40 @@ function onShake(e) {
   send('/imweb/remote/shake', v);
 }
 
+/*
+ * North: which way the top of the screen points on the real compass — ImWeb's
+ * North (Remote) controller. Unlike Compass above, which counts how far the
+ * device has turned since Tilt was grabbed, this is ABSOLUTE: the same
+ * direction in the room is the same value tomorrow.
+ *
+ * North is the MIDDLE (0.5): east of it goes up, west goes down, and the one
+ * place the value wraps (1 → 0) is due south, behind the player, rather than
+ * at the direction most likely to be faced. iOS reports the heading itself
+ * (webkitCompassHeading); elsewhere it comes from the absolute orientation
+ * event, whose alpha runs anticlockwise from north.
+ */
+const NORTH_SMOOTH = 0.25;   // a magnetometer jitters a degree or two at rest
+const north = { h: null, sent: -1, queued: false };
+function onNorth(e) {
+  let h = e.webkitCompassHeading;
+  if (h == null && e.absolute && e.alpha != null) h = 360 - e.alpha;
+  if (h == null || !Number.isFinite(h)) return;   // no magnetometer, or not this event
+  // Both readings are for the device's own top edge; the player reads the
+  // SCREEN's top, so add which way up it was when Tilt was engaged.
+  h = (((h + tiltAngle) % 360) + 360) % 360;
+  north.h = north.h == null ? h : (north.h + turnDelta(h, north.h, 360) * NORTH_SMOOTH + 360) % 360;
+  if (north.queued) return;
+  north.queued = true;
+  requestAnimationFrame(() => {
+    north.queued = false;
+    if (north.h == null) return;
+    const v = +(((north.h + 180) % 360) / 360).toFixed(4);
+    if (Math.abs(v - north.sent) < 0.001) return;
+    north.sent = v;
+    send('/imweb/remote/north', v);
+  });
+}
+
 /** Ask for the sensors. Must run in a tap on iOS; everywhere else it just succeeds. */
 async function enableTilt() {
   if (tiltReady) return;
@@ -738,6 +772,9 @@ function tiltStop() {
   tiltBtn.textContent = 'Tilt';
   removeEventListener('deviceorientation', onTilt);
   removeEventListener('devicemotion', onShake);
+  removeEventListener('deviceorientation', onNorth);
+  removeEventListener('deviceorientationabsolute', onNorth);
+  north.h = null;   // unlike shake, the last heading STAYS in ImWeb: a direction has no rest value
   // Let go mid-shake, the value must not hang where it was.
   if (shake.sent > 0) { shake.env = 0; shake.sent = 0; send('/imweb/remote/shake', 0); }
 }
@@ -753,6 +790,9 @@ tiltBtn.addEventListener('pointerdown', (e) => {
   addEventListener('deviceorientation', onTilt);
   shake.env = 0; shake.at = 0; shake.grav = null;
   addEventListener('devicemotion', onShake);
+  north.h = null; north.sent = -1;
+  addEventListener('deviceorientation', onNorth);
+  addEventListener('deviceorientationabsolute', onNorth);
 });
 tiltBtn.addEventListener('pointerup', (e) => {
   if (e.pointerId !== tiltHeld) return;

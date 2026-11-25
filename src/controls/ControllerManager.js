@@ -120,7 +120,7 @@ export class ControllerManager {
     // Device motion (iPad tilt/compass) — normalized like mouse.
     // Listener binds lazily: only with permission AND a mapped param.
     // shake / mic come only from ImWeb Remote (see feedMotion): 0 = at rest.
-    this.motion  = { tiltX: 0.5, tiltY: 0.5, compass: 0, shake: 0, mic: 0 };
+    this.motion  = { tiltX: 0.5, tiltY: 0.5, compass: 0, shake: 0, mic: 0, north: 0.5 };
     this._motionBound = false;
     this._motionPermission = 'unknown'; // 'unknown' | 'granted' | 'denied'
     this.modifiers = { capsLock: false, shift: false, ctrl: false, alt: false, meta: false };
@@ -516,6 +516,7 @@ export class ControllerManager {
     if (t === 'tilt-y') return this.motion.tiltY;
     if (t === 'compass') return this.motion.compass;
     if (t === 'shake') return this.motion.shake;
+    if (t === 'north') return this.motion.north;
     if (t === 'remote-mic') return this.motion.mic;
     if (t === 'rand1') return this.rand[0].val;
     if (t === 'rand2') return this.rand[1].val;
@@ -933,7 +934,7 @@ export class ControllerManager {
    * missing or not a finite number leaves that value be.
    */
   feedMotion(values) {
-    for (const k of ['tiltX', 'tiltY', 'compass', 'shake', 'mic']) {
+    for (const k of ['tiltX', 'tiltY', 'compass', 'shake', 'mic', 'north']) {
       const v = values?.[k];
       if (Number.isFinite(v)) this.motion[k] = Math.max(0, Math.min(1, v));
     }
@@ -951,6 +952,8 @@ export class ControllerManager {
       if (type === 'compass') p.setNormalized(this.motion.compass);
       // Remote-only: how hard the device is being shaken, and its microphone level.
       if (type === 'shake') p.setNormalized(this.motion.shake);
+      // Remote-only: the true compass heading, north = 0.5 (Compass above is relative).
+      if (type === 'north') p.setNormalized(this.motion.north);
       if (type === 'remote-mic') p.setNormalized(this.motion.mic);
     });
   }

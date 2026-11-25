@@ -33,6 +33,30 @@ ImWeb uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
   switch it on (the browser asks once) and again to switch it off. Only the
   level is sent, about 30 times a second; no sound leaves the device. Both
   need the secure address, like Tilt.
+- **ImWeb Remote: North — a true compass.** A new controller in the
+  right-click menu, **North (Remote)**: which way the top of the phone or
+  iPad points on the real compass. Unlike **Compass**, which counts how far
+  you have turned since you engaged Tilt, North is absolute: the same
+  direction in the room gives the same value every time. Facing north is the
+  middle of the range, east of it goes up and west goes down; the value
+  wraps only at due south. It rides on the Tilt button, like Shake.
+
+### Changed
+- **Your MIDI map now stays when you change Display State.** A state used to
+  carry its own copy of every MIDI, OSC and gamepad assignment, so going to
+  another state dropped the map and everything had to be learned again. The
+  map now belongs to the desk: recalling a state changes the look and its
+  LFOs, Randoms and other generators, and leaves every assignment — with its
+  range, table and slew — where it is. New states no longer store assignments;
+  the bank does, so a bank file still carries the map to another machine.
+  - *Older states* still hold their own maps. Recalling one adds any
+    assignment the desk does not have yet; it never moves a parameter you have
+    already assigned, and never puts a second parameter on a knob in use.
+  - If a state has an LFO on a parameter you have since assigned to a knob, the
+    LFO plays while that state is on and the knob returns when you leave it.
+  - With Pickup on, a fader waits to be moved through the new value after a
+    recall, as it does after a page change, so the value does not jump.
+  - A bank with no map of its own no longer clears the desk when you load it.
 
 ---
 

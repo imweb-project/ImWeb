@@ -480,6 +480,12 @@ console.log('\n16. tilt: the remote\'s sensors drive Tilt X / Tilt Y / Compass')
   check('Mic drives its param, and leaves Shake where it was',
     near(ps.get('t.mic').normalized, 0.35) && near(ps.get('t.sh').normalized, 0.9),
     `${ps.get('t.mic').normalized} ${ps.get('t.sh').normalized}`);
+  ps.register({ id: 't.north', label: 'N', group: 'g', min: 0, max: 1, value: 0 });
+  cm.assign('t.north', { type: 'north' });
+  msg('/imweb/remote/north', [0.75]);
+  check('North drives its param, and leaves Compass where it was',
+    near(ps.get('t.north').normalized, 0.75) && near(ps.get('t.cp').normalized, 0.6),
+    `${ps.get('t.north').normalized} ${ps.get('t.cp').normalized}`);
   check('shake and mic are not parameter addresses', !ps.get('remote/shake') && !ps.get('remote/mic'));
   let heard = 0;
   bridge._observeLearn = () => { heard++; };
@@ -487,6 +493,7 @@ console.log('\n16. tilt: the remote\'s sensors drive Tilt X / Tilt Y / Compass')
   msg('/imweb/remote/tilt', [0.1, 0.1, 0.1]);
   msg('/imweb/remote/shake', [0.2]);
   msg('/imweb/remote/mic', [0.2]);
+  msg('/imweb/remote/north', [0.2]);
   check('OSC Learn does not hear the sensor streams', heard === 0, String(heard));
   msg('/imweb/t.other', [0.5]);
   check('…and does hear a control (positive control)', heard === 1, String(heard));

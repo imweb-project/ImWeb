@@ -463,6 +463,8 @@ export class OSCBridge {
     }
     // /imweb/remote/shake <0..1>, /imweb/remote/mic <0..1> — how hard the
     // device is being shaken, and its microphone level. Sensor streams too.
+    // /imweb/remote/north <0..1> — the true compass heading, north = 0.5.
+    if (address === '/imweb/remote/north') { this._motionSink?.({ north: Number(args[0]) }); return; }
     if (address === '/imweb/remote/shake') { this._motionSink?.({ shake: Number(args[0]) }); return; }
     if (address === '/imweb/remote/mic') { this._motionSink?.({ mic: Number(args[0]) }); return; }
 

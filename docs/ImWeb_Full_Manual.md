@@ -3479,6 +3479,13 @@ phone, and there is no app to install.
   value is how hard it is moving: a flick gives a pulse that falls back in
   about a third of a second, steady shaking holds a level, and a device held
   still gives 0.
+- **North** is a true compass, and also uses the Tilt button. Right-click a
+  control in ImWeb → **North (Remote)**, then hold or latch **Tilt**. The
+  value is which way the top of the device points: facing north is the
+  middle, turning east raises it, turning west lowers it, and it wraps only
+  at due south. Unlike **Compass** it does not start from where you grabbed:
+  the same direction in the room is always the same value. Hold the device
+  fairly flat for a steady reading, and keep it away from speakers and steel.
 - **Mic** sends the device's microphone level. Right-click a control in ImWeb
   → **Mic (Remote)**, then tap **Mic** on the remote and allow the microphone;
   tap again to switch it off. Only the level is sent, never the sound. It is
