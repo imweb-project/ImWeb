@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use ImWeb in your work, please cite it as below."
+type: software
+title: "ImWeb"
+abstract: >-
+  ImWeb is a free, real-time video synthesis instrument that runs in the
+  browser, with no install. It composites live video sources through a signal
+  chain of effects and renders them with WebGL. It is a new instrument in the
+  lineage of Image/ine by Tom Demeyer and Steina Vasulka (STEIM, Amsterdam,
+  1997).
+authors:
+  - family-names: Karlsson
+    given-names: Haraldur
+version: 0.31.0
+date-released: 2026-11-23
+license: AGPL-3.0-or-later
+url: "https://imweb.image-ine.org"
+repository-code: "https://github.com/imweb-project/ImWeb"
+keywords:
+  - video synthesis
+  - real-time video
+  - live visuals
+  - WebGL
+  - audiovisual instrument
+  - Image/ine
